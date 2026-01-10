@@ -1,0 +1,84 @@
+defmodule ExVrp.MixProject do
+  use Mix.Project
+
+  @version "0.1.0"
+  @github_url "https://github.com/sephianl/ex_vrp"
+
+  def project do
+    [
+      app: :ex_vrp,
+      version: @version,
+      elixir: "~> 1.15",
+      start_permanent: Mix.env() == :prod,
+      deps: deps(),
+      compilers: [:elixir_make] ++ Mix.compilers(),
+      make_targets: ["all"],
+      make_clean: ["clean"],
+      make_env: fn -> %{"FINE_INCLUDE_DIR" => Fine.include_dir()} end,
+
+      # Hex
+      description: "Elixir bindings for PyVRP - a state-of-the-art vehicle routing problem solver",
+      package: package(),
+
+      # Docs
+      name: "ExVrp",
+      docs: docs(),
+
+      # Testing
+      test_coverage: [tool: ExCoveralls]
+    ]
+  end
+
+  def cli do
+    [
+      preferred_envs: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test
+      ]
+    ]
+  end
+
+  def application do
+    [
+      extra_applications: [:logger],
+      mod: {ExVrp.Application, []}
+    ]
+  end
+
+  defp deps do
+    [
+      # NIF compilation
+      {:elixir_make, "~> 0.8", runtime: false},
+      {:fine, "~> 0.1.4"},
+
+      # Testing
+      {:stream_data, "~> 1.0", only: [:test, :dev]},
+      {:excoveralls, "~> 0.18", only: :test},
+
+      # Documentation
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:styler, "~> 1.10", only: [:dev, :test], runtime: false}
+    ]
+  end
+
+  defp package do
+    [
+      maintainers: ["Sephian"],
+      licenses: ["MIT"],
+      links: %{"GitHub" => @github_url},
+      files: ~w(lib c_src priv mix.exs Makefile README.md LICENSE)
+    ]
+  end
+
+  defp docs do
+    [
+      main: "readme",
+      extras: ["README.md"],
+      source_url: @github_url,
+      source_ref: "v#{@version}"
+    ]
+  end
+end
