@@ -4,11 +4,6 @@ defmodule ExVrp.Native do
 
   This module provides direct bindings to the C++ implementation.
   Users should prefer the high-level API in `ExVrp` and `ExVrp.Model`.
-
-  ## Implementation Status
-
-  NIFs are implemented incrementally. Unimplemented functions raise
-  `ExVrp.NotImplementedError` until the C++ bindings are complete.
   """
 
   # Suppress dialyzer warnings for NIF stubs.
@@ -50,7 +45,7 @@ defmodule ExVrp.Native do
   def solve(_problem_data, _opts), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
-  # Solution - Implemented NIFs
+  # Solution
   # ---------------------------------------------------------------------------
 
   @spec solution_distance(reference()) :: non_neg_integer()
@@ -70,10 +65,6 @@ defmodule ExVrp.Native do
 
   @spec solution_num_routes(reference()) :: non_neg_integer()
   def solution_num_routes(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
-
-  # ---------------------------------------------------------------------------
-  # Solution - Not Yet Implemented
-  # ---------------------------------------------------------------------------
 
   @spec solution_num_clients(reference()) :: non_neg_integer()
   def solution_num_clients(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
