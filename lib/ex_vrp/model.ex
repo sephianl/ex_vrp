@@ -22,6 +22,7 @@ defmodule ExVrp.Model do
   alias ExVrp.Client
   alias ExVrp.ClientGroup
   alias ExVrp.Depot
+  alias ExVrp.SameVehicleGroup
   alias ExVrp.VehicleType
 
   @type t :: %__MODULE__{
@@ -29,6 +30,7 @@ defmodule ExVrp.Model do
           depots: [Depot.t()],
           vehicle_types: [VehicleType.t()],
           client_groups: [ClientGroup.t()],
+          same_vehicle_groups: [SameVehicleGroup.t()],
           distance_matrices: [[[non_neg_integer()]]],
           duration_matrices: [[[non_neg_integer()]]]
         }
@@ -37,6 +39,7 @@ defmodule ExVrp.Model do
             depots: [],
             vehicle_types: [],
             client_groups: [],
+            same_vehicle_groups: [],
             distance_matrices: [],
             duration_matrices: []
 
@@ -157,7 +160,10 @@ defmodule ExVrp.Model do
 
   """
   @spec add_depot(t(), keyword()) :: t()
-  def add_depot(%__MODULE__{depots: depots, clients: clients, client_groups: groups} = model, opts) do
+  def add_depot(
+        %__MODULE__{depots: depots, clients: clients, client_groups: groups, same_vehicle_groups: svg} = model,
+        opts
+      ) do
     depot = Depot.new(opts)
     new_depots = depots ++ [depot]
 
@@ -169,7 +175,14 @@ defmodule ExVrp.Model do
         recalculate_group_indices(groups, clients, length(new_depots))
       end
 
-    %{model | depots: new_depots, client_groups: new_groups}
+    # Rebuild same-vehicle groups with shifted client indices
+    new_svg =
+      Enum.map(svg, fn group ->
+        new_clients = Enum.map(group.clients, &(&1 + 1))
+        %{group | clients: new_clients}
+      end)
+
+    %{model | depots: new_depots, client_groups: new_groups, same_vehicle_groups: new_svg}
   end
 
   defp recalculate_group_indices(groups, clients, num_depots) do
@@ -233,6 +246,63 @@ defmodule ExVrp.Model do
   end
 
   @doc """
+  Adds a same-vehicle constraint group to the model.
+
+  All clients in this group that are visited must be served by the same
+  vehicle. It is allowed to visit only a subset of the group (or none at
+  all), but any visited clients must share a route.
+
+  ## Parameters
+
+  - `model` - The model to add the group to
+  - `clients` - List of Client structs that must be served by the same vehicle
+
+  ## Options
+
+  - `:name` - Free-form name for the group (default: `""`)
+
+  ## Returns
+
+  The updated model with the new same-vehicle group added.
+
+  ## Example
+
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 1, y: 1)
+        |> Model.add_client(x: 2, y: 2)
+        |> Model.add_vehicle_type(num_available: 2)
+
+      [c1, c2] = model.clients
+      model = Model.add_same_vehicle_group(model, [c1, c2], name: "group1")
+
+  ## Raises
+
+  - `ArgumentError` if any client is not in the model
+  """
+  @spec add_same_vehicle_group(t(), [Client.t()], keyword()) :: t()
+  def add_same_vehicle_group(%__MODULE__{} = model, clients, opts \\ []) do
+    name = Keyword.get(opts, :name, "")
+    num_depots = length(model.depots)
+
+    client_indices =
+      Enum.map(clients, fn client ->
+        idx = Enum.find_index(model.clients, &(&1 == client))
+
+        if is_nil(idx) do
+          raise ArgumentError, "Client not in model"
+        end
+
+        # Client indices are offset by the number of depots
+        num_depots + idx
+      end)
+
+    group = %SameVehicleGroup{clients: client_indices, name: name}
+    %{model | same_vehicle_groups: model.same_vehicle_groups ++ [group]}
+  end
+
+  @doc """
   Sets custom distance matrices.
 
   If not provided, Euclidean distances are computed from coordinates.
@@ -288,6 +358,7 @@ defmodule ExVrp.Model do
       |> validate_matrix_dimensions(model)
       |> validate_matrix_diagonals(model)
       |> validate_client_groups(model)
+      |> validate_same_vehicle_groups(model)
 
     case errors do
       [] -> :ok
@@ -539,6 +610,36 @@ defmodule ExVrp.Model do
               end
             end) ->
           ["Group #{idx}: required client in mutually exclusive group" | acc]
+
+        true ->
+          acc
+      end
+    end)
+  end
+
+  defp validate_same_vehicle_groups(errors, %{same_vehicle_groups: []}) do
+    errors
+  end
+
+  defp validate_same_vehicle_groups(errors, %{same_vehicle_groups: groups, clients: clients, depots: depots}) do
+    num_clients = length(clients)
+    num_depots = length(depots)
+
+    Enum.reduce(Enum.with_index(groups), errors, fn {group, idx}, acc ->
+      cond do
+        # Empty same-vehicle groups are not allowed
+        group.clients == [] ->
+          ["Same-vehicle group #{idx} is empty" | acc]
+
+        # Check all client indices are valid (must be >= num_depots and < num_locs)
+        Enum.any?(group.clients, fn ci ->
+          ci < num_depots or ci >= num_depots + num_clients
+        end) ->
+          ["Same-vehicle group #{idx} has invalid client index" | acc]
+
+        # Check for duplicate clients within the group
+        length(group.clients) != length(Enum.uniq(group.clients)) ->
+          ["Same-vehicle group #{idx} has duplicate clients" | acc]
 
         true ->
           acc

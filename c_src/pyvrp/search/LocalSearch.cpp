@@ -15,13 +15,10 @@ using pyvrp::search::RouteOperator;
 using pyvrp::search::SearchSpace;
 
 pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
-                                        CostEvaluator const &costEvaluator,
-                                        bool exhaustive)
+                                        CostEvaluator const &costEvaluator)
 {
     loadSolution(solution);
-
-    if (!exhaustive)
-        perturbationManager_.perturb(solution_, searchSpace_, costEvaluator);
+    perturbationManager_.perturb(solution_, searchSpace_, costEvaluator);
 
     while (true)
     {
@@ -166,18 +163,63 @@ void LocalSearch::shuffle(RandomNumberGenerator &rng)
     rng.shuffle(routeOps.begin(), routeOps.end());
 }
 
+bool LocalSearch::wouldViolateSameVehicle(Route::Node const *U,
+                                          Route const *targetRoute) const
+{
+    // If U is not in any same-vehicle group, moving it is always allowed.
+    auto const &groups = clientToSameVehicleGroups_[U->client()];
+    if (groups.empty())
+        return false;
+
+    auto const *currentRoute = U->route();
+
+    // If U is not currently in a route, or moving to the same route, no
+    // violation is possible.
+    if (!currentRoute || currentRoute == targetRoute)
+        return false;
+
+    // Check each same-vehicle group U belongs to.
+    for (auto const groupIdx : groups)
+    {
+        auto const &group = data.sameVehicleGroup(groupIdx);
+
+        // Check if any other group member is in the current route.
+        // If so, moving U would split them.
+        for (auto const otherClient : group)
+        {
+            if (otherClient == U->client())
+                continue;
+
+            auto const *otherNode = &solution_.nodes[otherClient];
+            if (otherNode->route() == currentRoute)
+                return true;  // Would leave behind a group member
+        }
+    }
+
+    return false;
+}
+
 bool LocalSearch::applyNodeOps(Route::Node *U,
                                Route::Node *V,
                                CostEvaluator const &costEvaluator)
 {
+    auto *rU = U->route();
+    auto *rV = V->route();
+
+    // Skip if moving U to V's route (or vice versa) would violate same-vehicle
+    // constraints. We check both directions since different operators may move
+    // clients in different ways.
+    if (rU != rV)
+    {
+        if (wouldViolateSameVehicle(U, rV) || wouldViolateSameVehicle(V, rU))
+            return false;
+    }
+
     for (auto *nodeOp : nodeOps)
     {
         auto const deltaCost = nodeOp->evaluate(U, V, costEvaluator);
         if (deltaCost < 0)
         {
-            auto *rU = U->route();  // copy these because the operator can
-            auto *rV = V->route();  // modify the nodes' route membership
-
             [[maybe_unused]] auto const costBefore
                 = costEvaluator.penalisedCost(*rU)
                   + Cost(rU != rV) * costEvaluator.penalisedCost(*rV);
@@ -293,7 +335,10 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
     if (uData.required || uData.group)
         return;
 
-    if (removeCost(U, data, costEvaluator) < 0)  // remove if improving
+    // Don't remove U if it would violate same-vehicle constraints (i.e., if
+    // U is in a same-vehicle group with other clients on the same route).
+    if (!wouldViolateSameVehicle(U, nullptr)
+        && removeCost(U, data, costEvaluator) < 0)  // remove if improving
     {
         searchSpace_.markPromising(U);
         auto *route = U->route();
@@ -324,7 +369,10 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
         // We prefer inserting over replacing, but if V is not required and
         // replacing V with U is improving, we also do that now.
         ProblemData::Client const &vData = data.location(V->client());
-        if (!vData.required && inplaceCost(U, V, data, costEvaluator) < 0)
+
+        // Check same-vehicle constraint for V before removing it.
+        if (!vData.required && !wouldViolateSameVehicle(V, nullptr)
+            && inplaceCost(U, V, data, costEvaluator) < 0)
         {
             searchSpace_.markPromising(V);
             auto const idx = V->idx();
@@ -530,6 +578,12 @@ LocalSearch::LocalSearch(ProblemData const &data,
       perturbationManager_(perturbationManager),
       lastTestedNodes(data.numLocations()),
       lastTestedRoutes(data.numVehicles()),
-      lastUpdated(data.numVehicles())
+      lastUpdated(data.numVehicles()),
+      clientToSameVehicleGroups_(data.numLocations())
 {
+    // Build client-to-same-vehicle-groups lookup for efficient constraint
+    // checking during local search.
+    for (size_t groupIdx = 0; groupIdx != data.numSameVehicleGroups(); ++groupIdx)
+        for (auto const client : data.sameVehicleGroup(groupIdx))
+            clientToSameVehicleGroups_[client].push_back(groupIdx);
 }

@@ -619,6 +619,93 @@ int64_t euclidean_distance(int64_t x1, int64_t y1, int64_t x2, int64_t y2) {
     return static_cast<int64_t>(std::round(std::sqrt(dx * dx + dy * dy)));
 }
 
+// Decode Elixir binary to std::string
+std::string decode_binary_to_string(ErlNifEnv* env, ERL_NIF_TERM term) {
+    ErlNifBinary bin;
+    if (enif_inspect_binary(env, term, &bin)) {
+        return std::string(reinterpret_cast<char*>(bin.data), bin.size);
+    }
+    // Try as iolist (which includes charlists)
+    if (enif_inspect_iolist_as_binary(env, term, &bin)) {
+        return std::string(reinterpret_cast<char*>(bin.data), bin.size);
+    }
+    return "";
+}
+
+// Decode a ClientGroup from Elixir map
+ProblemData::ClientGroup decode_client_group(ErlNifEnv* env, ERL_NIF_TERM term) {
+    std::vector<size_t> clients;
+    bool required = true;
+    std::string name = "";
+
+    ERL_NIF_TERM key, value;
+
+    // Get clients list
+    key = enif_make_atom(env, "clients");
+    if (enif_get_map_value(env, term, key, &value)) {
+        unsigned len;
+        if (enif_get_list_length(env, value, &len)) {
+            clients.reserve(len);
+            ERL_NIF_TERM head, tail = value;
+            for (unsigned i = 0; i < len; i++) {
+                enif_get_list_cell(env, tail, &head, &tail);
+                unsigned long client_idx;
+                enif_get_ulong(env, head, &client_idx);
+                clients.push_back(static_cast<size_t>(client_idx));
+            }
+        }
+    }
+
+    // Get required
+    key = enif_make_atom(env, "required");
+    if (enif_get_map_value(env, term, key, &value)) {
+        char atom_buf[16];
+        if (enif_get_atom(env, value, atom_buf, sizeof(atom_buf), ERL_NIF_LATIN1)) {
+            required = (std::string(atom_buf) == "true");
+        }
+    }
+
+    // Get name
+    key = enif_make_atom(env, "name");
+    if (enif_get_map_value(env, term, key, &value)) {
+        name = decode_binary_to_string(env, value);
+    }
+
+    return ProblemData::ClientGroup(clients, required, name);
+}
+
+// Decode a SameVehicleGroup from Elixir map
+ProblemData::SameVehicleGroup decode_same_vehicle_group(ErlNifEnv* env, ERL_NIF_TERM term) {
+    std::vector<size_t> clients;
+    std::string name = "";
+
+    ERL_NIF_TERM key, value;
+
+    // Get clients list
+    key = enif_make_atom(env, "clients");
+    if (enif_get_map_value(env, term, key, &value)) {
+        unsigned len;
+        if (enif_get_list_length(env, value, &len)) {
+            clients.reserve(len);
+            ERL_NIF_TERM head, tail = value;
+            for (unsigned i = 0; i < len; i++) {
+                enif_get_list_cell(env, tail, &head, &tail);
+                unsigned long client_idx;
+                enif_get_ulong(env, head, &client_idx);
+                clients.push_back(static_cast<size_t>(client_idx));
+            }
+        }
+    }
+
+    // Get name
+    key = enif_make_atom(env, "name");
+    if (enif_get_map_value(env, term, key, &value)) {
+        name = decode_binary_to_string(env, value);
+    }
+
+    return ProblemData::SameVehicleGroup(clients, name);
+}
+
 // -----------------------------------------------------------------------------
 // NIF Functions
 // -----------------------------------------------------------------------------
@@ -661,6 +748,16 @@ fine::Ok<fine::ResourcePtr<ProblemDataResource>> create_problem_data(
     // Get duration matrices (optional)
     key = enif_make_atom(env, "duration_matrices");
     bool has_dur_matrices = enif_get_map_value(env, model_term, key, &duration_matrices_term);
+
+    // Get client groups (optional)
+    ERL_NIF_TERM client_groups_term;
+    key = enif_make_atom(env, "client_groups");
+    bool has_client_groups = enif_get_map_value(env, model_term, key, &client_groups_term);
+
+    // Get same vehicle groups (optional)
+    ERL_NIF_TERM same_vehicle_groups_term;
+    key = enif_make_atom(env, "same_vehicle_groups");
+    bool has_same_vehicle_groups = enif_get_map_value(env, model_term, key, &same_vehicle_groups_term);
 
     // Decode depots
     std::vector<ProblemData::Depot> depots;
@@ -767,13 +864,43 @@ fine::Ok<fine::ResourcePtr<ProblemDataResource>> create_problem_data(
         dur_matrices.push_back(std::move(dur_mat));
     }
 
+    // Decode client groups
+    std::vector<ProblemData::ClientGroup> client_groups;
+    if (has_client_groups) {
+        unsigned groups_len;
+        if (enif_get_list_length(env, client_groups_term, &groups_len) && groups_len > 0) {
+            client_groups.reserve(groups_len);
+            tail = client_groups_term;
+            for (unsigned i = 0; i < groups_len; i++) {
+                enif_get_list_cell(env, tail, &head, &tail);
+                client_groups.push_back(decode_client_group(env, head));
+            }
+        }
+    }
+
+    // Decode same vehicle groups
+    std::vector<ProblemData::SameVehicleGroup> same_vehicle_groups;
+    if (has_same_vehicle_groups) {
+        unsigned groups_len;
+        if (enif_get_list_length(env, same_vehicle_groups_term, &groups_len) && groups_len > 0) {
+            same_vehicle_groups.reserve(groups_len);
+            tail = same_vehicle_groups_term;
+            for (unsigned i = 0; i < groups_len; i++) {
+                enif_get_list_cell(env, tail, &head, &tail);
+                same_vehicle_groups.push_back(decode_same_vehicle_group(env, head));
+            }
+        }
+    }
+
     // Create ProblemData
     auto problem_data = std::make_shared<ProblemData>(
         std::move(clients),
         std::move(depots),
         std::move(vehicle_types),
         std::move(dist_matrices),
-        std::move(dur_matrices)
+        std::move(dur_matrices),
+        std::move(client_groups),
+        std::move(same_vehicle_groups)
     );
 
     return fine::Ok(fine::make_resource<ProblemDataResource>(problem_data));
@@ -2101,7 +2228,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_nif(
     ls.addRouteOperator(swapRoutes);
 
     // Run local search
-    Solution improved = ls(solution_resource->solution, cost_evaluator, exhaustive);
+    Solution improved = ls(solution_resource->solution, cost_evaluator);
 
     return fine::Ok(fine::make_resource<SolutionResource>(
         std::move(improved), problem_resource->data));
@@ -2254,7 +2381,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
     }
 
     // Run local search
-    Solution improved = ls(solution_resource->solution, cost_evaluator, exhaustive);
+    Solution improved = ls(solution_resource->solution, cost_evaluator);
 
     return fine::Ok(fine::make_resource<SolutionResource>(
         std::move(improved), problem_resource->data));
@@ -2415,7 +2542,7 @@ fine::Term local_search_stats_nif(
     }
 
     // Run local search
-    ls(solution_resource->solution, cost_evaluator, exhaustive);
+    ls(solution_resource->solution, cost_evaluator);
 
     // Get LocalSearch statistics
     auto const& ls_stats = ls.statistics();

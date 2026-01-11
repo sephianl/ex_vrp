@@ -38,6 +38,9 @@ class LocalSearch
     std::vector<int> lastTestedRoutes;  // tracks route operator evaluation
     std::vector<int> lastUpdated;       // tracks when routes were last modified
 
+    // Maps each client to the same-vehicle groups it belongs to.
+    std::vector<std::vector<size_t>> clientToSameVehicleGroups_;
+
     size_t numUpdates_ = 0;         // modification counter
     bool searchCompleted_ = false;  // No further improving move found?
 
@@ -66,6 +69,10 @@ class LocalSearch
 
     // Tests moves involving clients in client groups.
     void applyGroupMoves(Route::Node *U, CostEvaluator const &costEvaluator);
+
+    // Checks if moving U to targetRoute would violate same-vehicle constraints.
+    bool wouldViolateSameVehicle(Route::Node const *U,
+                                 Route const *targetRoute) const;
 
     // Updates solution state after an improving local search move.
     void update(Route *U, Route *V);
@@ -153,8 +160,7 @@ public:
      * improvements are made.
      */
     pyvrp::Solution operator()(pyvrp::Solution const &solution,
-                               CostEvaluator const &costEvaluator,
-                               bool exhaustive = false);
+                               CostEvaluator const &costEvaluator);
 
     /**
      * Performs regular (node-based) local search around the given solution,

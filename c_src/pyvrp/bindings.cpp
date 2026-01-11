@@ -230,6 +230,45 @@ PYBIND11_MODULE(_pyvrp, m)
             [](ProblemData::ClientGroup const &group) { return group.name; },
             py::return_value_policy::reference_internal);
 
+    py::class_<ProblemData::SameVehicleGroup>(
+        m, "SameVehicleGroup", DOC(pyvrp, ProblemData, SameVehicleGroup))
+        .def(py::init<std::vector<size_t>, char const *>(),
+             py::arg("clients") = py::list(),
+             py::kw_only(),
+             py::arg("name") = "")
+        .def("add_client",
+             &ProblemData::SameVehicleGroup::addClient,
+             py::arg("client"))
+        .def("clear", &ProblemData::SameVehicleGroup::clear)
+        .def_property_readonly("clients",
+                               &ProblemData::SameVehicleGroup::clients,
+                               py::return_value_policy::reference_internal)
+        .def_readonly("name",
+                      &ProblemData::SameVehicleGroup::name,
+                      py::return_value_policy::reference_internal)
+        .def(py::self == py::self)  // this is __eq__
+        .def(py::pickle(
+            [](ProblemData::SameVehicleGroup const &group) {  // __getstate__
+                return py::make_tuple(group.clients(), group.name);
+            },
+            [](py::tuple t) {  // __setstate__
+                ProblemData::SameVehicleGroup group(
+                    t[0].cast<std::vector<size_t>>(),  // clients
+                    t[1].cast<std::string>());         // name
+
+                return group;
+            }))
+        .def("__len__", &ProblemData::SameVehicleGroup::size)
+        .def(
+            "__iter__",
+            [](ProblemData::SameVehicleGroup const &group)
+            { return py::make_iterator(group.begin(), group.end()); },
+            py::return_value_policy::reference_internal)
+        .def(
+            "__str__",
+            [](ProblemData::SameVehicleGroup const &group) { return group.name; },
+            py::return_value_policy::reference_internal);
+
     py::class_<ProblemData::VehicleType>(
         m, "VehicleType", DOC(pyvrp, ProblemData, VehicleType))
         .def(py::init<size_t,
@@ -388,13 +427,15 @@ PYBIND11_MODULE(_pyvrp, m)
                       std::vector<ProblemData::VehicleType>,
                       std::vector<Matrix<pyvrp::Distance>>,
                       std::vector<Matrix<pyvrp::Duration>>,
-                      std::vector<ProblemData::ClientGroup>>(),
+                      std::vector<ProblemData::ClientGroup>,
+                      std::vector<ProblemData::SameVehicleGroup>>(),
              py::arg("clients"),
              py::arg("depots"),
              py::arg("vehicle_types"),
              py::arg("distance_matrices"),
              py::arg("duration_matrices"),
-             py::arg("groups") = py::list())
+             py::arg("groups") = py::list(),
+             py::arg("same_vehicle_groups") = py::list())
         .def("replace",
              &ProblemData::replace,
              py::arg("clients") = py::none(),
@@ -403,6 +444,7 @@ PYBIND11_MODULE(_pyvrp, m)
              py::arg("distance_matrices") = py::none(),
              py::arg("duration_matrices") = py::none(),
              py::arg("groups") = py::none(),
+             py::arg("same_vehicle_groups") = py::none(),
              DOC(pyvrp, ProblemData, replace))
         .def_property_readonly("num_clients",
                                &ProblemData::numClients,
@@ -413,6 +455,9 @@ PYBIND11_MODULE(_pyvrp, m)
         .def_property_readonly("num_groups",
                                &ProblemData::numGroups,
                                DOC(pyvrp, ProblemData, numGroups))
+        .def_property_readonly("num_same_vehicle_groups",
+                               &ProblemData::numSameVehicleGroups,
+                               DOC(pyvrp, ProblemData, numSameVehicleGroups))
         .def_property_readonly("num_locations",
                                &ProblemData::numLocations,
                                DOC(pyvrp, ProblemData, numLocations))
@@ -458,6 +503,10 @@ PYBIND11_MODULE(_pyvrp, m)
              &ProblemData::groups,
              py::return_value_policy::reference_internal,
              DOC(pyvrp, ProblemData, groups))
+        .def("same_vehicle_groups",
+             &ProblemData::sameVehicleGroups,
+             py::return_value_policy::reference_internal,
+             DOC(pyvrp, ProblemData, sameVehicleGroups))
         .def("vehicle_types",
              &ProblemData::vehicleTypes,
              py::return_value_policy::reference_internal,
@@ -479,6 +528,11 @@ PYBIND11_MODULE(_pyvrp, m)
              py::arg("group"),
              py::return_value_policy::reference_internal,
              DOC(pyvrp, ProblemData, group))
+        .def("same_vehicle_group",
+             &ProblemData::sameVehicleGroup,
+             py::arg("group"),
+             py::return_value_policy::reference_internal,
+             DOC(pyvrp, ProblemData, sameVehicleGroup))
         .def("vehicle_type",
              &ProblemData::vehicleType,
              py::arg("vehicle_type"),
@@ -505,7 +559,8 @@ PYBIND11_MODULE(_pyvrp, m)
                                       data.vehicleTypes(),
                                       data.distanceMatrices(),
                                       data.durationMatrices(),
-                                      data.groups());
+                                      data.groups(),
+                                      data.sameVehicleGroups());
             },
             [](py::tuple t) {  // __setstate__
                 using Clients = std::vector<ProblemData::Client>;
@@ -514,13 +569,15 @@ PYBIND11_MODULE(_pyvrp, m)
                 using DistMats = std::vector<pyvrp::Matrix<pyvrp::Distance>>;
                 using DurMats = std::vector<pyvrp::Matrix<pyvrp::Duration>>;
                 using Groups = std::vector<ProblemData::ClientGroup>;
+                using SameVehGroups = std::vector<ProblemData::SameVehicleGroup>;
 
                 ProblemData data(t[0].cast<Clients>(),
                                  t[1].cast<Depots>(),
                                  t[2].cast<VehicleTypes>(),
                                  t[3].cast<DistMats>(),
                                  t[4].cast<DurMats>(),
-                                 t[5].cast<Groups>());
+                                 t[5].cast<Groups>(),
+                                 t[6].cast<SameVehGroups>());
 
                 return data;
             }));

@@ -223,6 +223,65 @@ void ProblemData::ClientGroup::addClient(size_t client)
 
 void ProblemData::ClientGroup::clear() { clients_.clear(); }
 
+ProblemData::SameVehicleGroup::SameVehicleGroup(std::vector<size_t> clients,
+                                                 std::string name)
+    : name(duplicate(name.data()))
+{
+    for (auto const client : clients)
+        addClient(client);
+}
+
+ProblemData::SameVehicleGroup::SameVehicleGroup(SameVehicleGroup const &group)
+    : clients_(group.clients_), name(duplicate(group.name))
+{
+}
+
+ProblemData::SameVehicleGroup::SameVehicleGroup(SameVehicleGroup &&group)
+    : clients_(std::move(group.clients_)), name(group.name)  // we can steal
+{
+    group.name = nullptr;  // stolen
+}
+
+bool ProblemData::SameVehicleGroup::operator==(
+    SameVehicleGroup const &other) const
+{
+    // clang-format off
+    return clients_ == other.clients_
+        && std::strcmp(name, other.name) == 0;
+    // clang-format on
+}
+
+ProblemData::SameVehicleGroup::~SameVehicleGroup() { delete[] name; }
+
+bool ProblemData::SameVehicleGroup::empty() const { return clients_.empty(); }
+
+size_t ProblemData::SameVehicleGroup::size() const { return clients_.size(); }
+
+std::vector<size_t>::const_iterator ProblemData::SameVehicleGroup::begin() const
+{
+    return clients_.begin();
+}
+
+std::vector<size_t>::const_iterator ProblemData::SameVehicleGroup::end() const
+{
+    return clients_.end();
+}
+
+std::vector<size_t> const &ProblemData::SameVehicleGroup::clients() const
+{
+    return clients_;
+}
+
+void ProblemData::SameVehicleGroup::addClient(size_t client)
+{
+    if (std::find(clients_.begin(), clients_.end(), client) != clients_.end())
+        throw std::invalid_argument("Client already in same-vehicle group.");
+
+    clients_.push_back(client);
+}
+
+void ProblemData::SameVehicleGroup::clear() { clients_.clear(); }
+
 ProblemData::Depot::Depot(Coordinate x,
                           Coordinate y,
                           Duration twEarly,
@@ -500,6 +559,12 @@ std::vector<ProblemData::ClientGroup> const &ProblemData::groups() const
     return groups_;
 }
 
+std::vector<ProblemData::SameVehicleGroup> const &
+ProblemData::sameVehicleGroups() const
+{
+    return sameVehicleGroups_;
+}
+
 std::vector<ProblemData::VehicleType> const &ProblemData::vehicleTypes() const
 {
     return vehicleTypes_;
@@ -521,6 +586,13 @@ ProblemData::ClientGroup const &ProblemData::group(size_t group) const
     return groups_[group];
 }
 
+ProblemData::SameVehicleGroup const &
+ProblemData::sameVehicleGroup(size_t group) const
+{
+    assert(group < sameVehicleGroups_.size());
+    return sameVehicleGroups_[group];
+}
+
 ProblemData::VehicleType const &
 ProblemData::vehicleType(size_t vehicleType) const
 {
@@ -539,6 +611,11 @@ size_t ProblemData::numClients() const { return clients_.size(); }
 size_t ProblemData::numDepots() const { return depots_.size(); }
 
 size_t ProblemData::numGroups() const { return groups_.size(); }
+
+size_t ProblemData::numSameVehicleGroups() const
+{
+    return sameVehicleGroups_.size();
+}
 
 size_t ProblemData::numLocations() const { return numDepots() + numClients(); }
 
@@ -695,14 +772,16 @@ ProblemData::replace(std::optional<std::vector<Client>> &clients,
                      std::optional<std::vector<VehicleType>> &vehicleTypes,
                      std::optional<std::vector<Matrix<Distance>>> &distMats,
                      std::optional<std::vector<Matrix<Duration>>> &durMats,
-                     std::optional<std::vector<ClientGroup>> &groups) const
+                     std::optional<std::vector<ClientGroup>> &groups,
+                     std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups) const
 {
     return {clients.value_or(clients_),
             depots.value_or(depots_),
             vehicleTypes.value_or(vehicleTypes_),
             distMats.value_or(dists_),
             durMats.value_or(durs_),
-            groups.value_or(groups_)};
+            groups.value_or(groups_),
+            sameVehicleGroups.value_or(sameVehicleGroups_)};
 }
 
 ProblemData::ProblemData(std::vector<Client> clients,
@@ -710,13 +789,15 @@ ProblemData::ProblemData(std::vector<Client> clients,
                          std::vector<VehicleType> vehicleTypes,
                          std::vector<Matrix<Distance>> distMats,
                          std::vector<Matrix<Duration>> durMats,
-                         std::vector<ClientGroup> groups)
+                         std::vector<ClientGroup> groups,
+                         std::vector<SameVehicleGroup> sameVehicleGroups)
     : dists_(std::move(distMats)),
       durs_(std::move(durMats)),
       clients_(std::move(clients)),
       depots_(std::move(depots)),
       vehicleTypes_(std::move(vehicleTypes)),
       groups_(std::move(groups)),
+      sameVehicleGroups_(std::move(sameVehicleGroups)),
       numVehicles_(std::accumulate(vehicleTypes_.begin(),
                                    vehicleTypes_.end(),
                                    0,
