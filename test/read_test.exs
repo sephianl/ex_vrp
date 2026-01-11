@@ -4,7 +4,7 @@ defmodule ExVrp.ReadTest do
   alias ExVrp.Model
   alias ExVrp.Read
 
-  @data_dir Path.join(__DIR__, "data")
+  @data_dir Path.join(:code.priv_dir(:ex_vrp), "benchmark_data")
 
   describe "read/1" do
     test "reads OkSmall instance correctly" do
