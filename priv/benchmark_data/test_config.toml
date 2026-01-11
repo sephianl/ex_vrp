@@ -1,0 +1,36 @@
+display_interval = 10.0
+
+node_ops = [
+    "Exchange10",
+    "SwapTails",
+]
+
+
+route_ops = [
+    "SwapStar",
+]
+
+
+[ils]
+num_iters_no_improvement = 10
+history_length = 1
+
+
+[neighbourhood]
+weight_wait_time = 0
+weight_time_warp = 0
+num_neighbours = 20
+symmetric_proximity = true
+symmetric_neighbours = true
+
+
+[perturbation]
+min_perturbations = 1
+max_perturbations = 10
+
+
+[penalty]
+solutions_between_updates = 100
+penalty_increase = 1.25
+penalty_decrease = 0.85
+target_feasible = 0.43

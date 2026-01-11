@@ -58,6 +58,9 @@ defmodule ExVrp.MixProject do
       {:stream_data, "~> 1.0", only: [:test, :dev]},
       {:excoveralls, "~> 0.18", only: :test},
 
+      # Benchmarking
+      {:benchee, "~> 1.3", only: :dev},
+
       # Documentation
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
