@@ -151,6 +151,7 @@ defmodule ExVrp.StoppingCriteria do
   Note: PyVRP's `MultipleCriteria` uses OR logic (any). This is an extension
   that uses AND logic (all must be met).
   """
+  @dialyzer {:no_contracts, all: 1}
   @spec all([t()]) :: t()
   def all([]) do
     raise ArgumentError, "all requires at least one criterion"

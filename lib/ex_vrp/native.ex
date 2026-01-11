@@ -11,6 +11,11 @@ defmodule ExVrp.Native do
   `ExVrp.NotImplementedError` until the C++ bindings are complete.
   """
 
+  # Suppress dialyzer warnings for NIF stubs.
+  # The stub bodies call :erlang.nif_error/1 which never returns,
+  # but at runtime they are replaced by actual NIF implementations.
+  @dialyzer :no_return
+
   @on_load :load_nif
 
   @doc false
