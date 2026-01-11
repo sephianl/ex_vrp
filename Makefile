@@ -10,16 +10,16 @@ ERL_INTERFACE_LIB_DIR ?= $(shell erl -noshell -eval "io:format(\"~ts\", [code:li
 # Platform detection
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
-	LDFLAGS += -dynamiclib -undefined dynamic_lookup
+	LDFLAGS += -flto -dynamiclib -undefined dynamic_lookup
 	SO_EXT = so
 else
-	LDFLAGS += -shared
+	LDFLAGS += -flto -shared
 	SO_EXT = so
 endif
 
 # Compiler settings
 CXX ?= g++
-CXXFLAGS = -std=c++20 -O3 -Wall -Wextra -fPIC -fvisibility=hidden
+CXXFLAGS = -std=c++20 -O3 -flto -Wall -Wextra -fPIC -fvisibility=hidden
 # Disable dangling-reference warning from PyVRP's Route.h (false positive in GCC 14)
 CXXFLAGS += -Wno-dangling-reference
 CXXFLAGS += -I$(ERTS_INCLUDE_DIR)

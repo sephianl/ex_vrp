@@ -24,6 +24,7 @@ in
     with pkgs;
     [
       gnumake
+      gcc
     ]
     ++ lib.optionals pkgs.stdenv.isLinux [ inotify-tools ];
 
