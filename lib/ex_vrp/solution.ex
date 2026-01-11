@@ -71,6 +71,53 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
+  Returns the route at the given index as a Route struct.
+
+  The returned Route struct has its `solution_ref` and `route_idx` populated,
+  enabling methods like `Route.distance/1`, `Route.feasible?/1`, etc.
+
+  ## Example
+
+      {:ok, result} = Solver.solve(model)
+      route = Solution.route(result.best, 0)
+      Route.distance(route)
+
+  """
+  @spec route(t(), non_neg_integer()) :: ExVrp.Route.t()
+  def route(%__MODULE__{solution_ref: ref, routes: raw_routes}, idx) do
+    %ExVrp.Route{
+      visits: Enum.at(raw_routes, idx, []),
+      solution_ref: ref,
+      route_idx: idx
+    }
+  end
+
+  @doc """
+  Returns all routes as Route structs.
+
+  Each returned Route struct has its `solution_ref` and `route_idx` populated,
+  enabling methods like `Route.distance/1`, `Route.feasible?/1`, etc.
+
+  ## Example
+
+      {:ok, result} = Solver.solve(model)
+      routes = Solution.routes(result.best)
+
+      Enum.each(routes, fn route ->
+        IO.puts("Route distance: \#{Route.distance(route)}")
+      end)
+
+  """
+  @spec routes(t()) :: [ExVrp.Route.t()]
+  def routes(%__MODULE__{solution_ref: ref, routes: raw_routes}) do
+    raw_routes
+    |> Enum.with_index()
+    |> Enum.map(fn {visits, idx} ->
+      %ExVrp.Route{visits: visits, solution_ref: ref, route_idx: idx}
+    end)
+  end
+
+  @doc """
   Returns the number of assigned clients in the solution.
   """
   @spec num_clients(t()) :: non_neg_integer()

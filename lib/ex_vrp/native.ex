@@ -519,40 +519,6 @@ defmodule ExVrp.Native do
   def solution_fixed_vehicle_cost(_solution), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
-  # Route - Legacy API (delegates to solution_route_* with stored reference)
-  # ---------------------------------------------------------------------------
-
-  @spec route_distance(ExVrp.Route.t()) :: non_neg_integer()
-  def route_distance(%ExVrp.Route{} = _route) do
-    raise ExVrp.NotImplementedError,
-          "route_distance/1 - use ExVrp.Native.solution_route_distance/2 instead"
-  end
-
-  @spec route_duration(ExVrp.Route.t()) :: non_neg_integer()
-  def route_duration(%ExVrp.Route{} = _route) do
-    raise ExVrp.NotImplementedError,
-          "route_duration/1 - use ExVrp.Native.solution_route_duration/2 instead"
-  end
-
-  @spec route_delivery(ExVrp.Route.t()) :: [non_neg_integer()]
-  def route_delivery(%ExVrp.Route{} = _route) do
-    raise ExVrp.NotImplementedError,
-          "route_delivery/1 - use ExVrp.Native.solution_route_delivery/2 instead"
-  end
-
-  @spec route_pickup(ExVrp.Route.t()) :: [non_neg_integer()]
-  def route_pickup(%ExVrp.Route{} = _route) do
-    raise ExVrp.NotImplementedError,
-          "route_pickup/1 - use ExVrp.Native.solution_route_pickup/2 instead"
-  end
-
-  @spec route_is_feasible(ExVrp.Route.t()) :: boolean()
-  def route_is_feasible(%ExVrp.Route{} = _route) do
-    raise ExVrp.NotImplementedError,
-          "route_is_feasible/1 - use ExVrp.Native.solution_route_is_feasible/2 instead"
-  end
-
-  # ---------------------------------------------------------------------------
   # search::Route NIFs (low-level search route manipulation)
   # ---------------------------------------------------------------------------
 

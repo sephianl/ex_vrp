@@ -20,6 +20,8 @@ defmodule ExVrp.RouteTest do
       assert Map.has_key?(route, :start_depot)
       assert Map.has_key?(route, :end_depot)
       assert Map.has_key?(route, :trips)
+      assert Map.has_key?(route, :solution_ref)
+      assert Map.has_key?(route, :route_idx)
     end
 
     test "default values" do
@@ -29,6 +31,8 @@ defmodule ExVrp.RouteTest do
       assert route.start_depot == 0
       assert route.end_depot == 0
       assert route.trips == []
+      assert route.solution_ref == nil
+      assert route.route_idx == nil
     end
 
     test "can be created with values" do
@@ -43,6 +47,187 @@ defmodule ExVrp.RouteTest do
 
       empty_route = %Route{visits: []}
       assert Route.num_clients(empty_route) == 0
+    end
+  end
+
+  describe "Solution.route/2 and Solution.routes/1" do
+    setup do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [20])
+        |> Model.add_client(x: 20, y: 0, delivery: [30])
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
+      %{solution: result.best}
+    end
+
+    test "Solution.route/2 returns Route struct", %{solution: solution} do
+      route = Solution.route(solution, 0)
+      assert %Route{} = route
+    end
+
+    test "Solution.route/2 populates solution_ref and route_idx", %{solution: solution} do
+      route = Solution.route(solution, 0)
+      assert route.solution_ref == solution.solution_ref
+      assert route.route_idx == 0
+    end
+
+    test "Solution.routes/1 returns list of Route structs", %{solution: solution} do
+      routes = Solution.routes(solution)
+      assert is_list(routes)
+      assert Enum.all?(routes, &match?(%Route{}, &1))
+    end
+
+    test "Solution.routes/1 populates solution_ref and route_idx", %{solution: solution} do
+      routes = Solution.routes(solution)
+
+      routes
+      |> Enum.with_index()
+      |> Enum.each(fn {route, idx} ->
+        assert route.solution_ref == solution.solution_ref
+        assert route.route_idx == idx
+      end)
+    end
+
+    test "Route struct methods work with solution context", %{solution: solution} do
+      route = Solution.route(solution, 0)
+
+      # All these should work and return sensible values
+      assert is_integer(Route.distance(route))
+      assert is_integer(Route.duration(route))
+      assert is_boolean(Route.feasible?(route))
+      assert is_list(Route.delivery(route))
+      assert is_list(Route.pickup(route))
+    end
+  end
+
+  describe "Route struct methods (PyVRP parity)" do
+    setup do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [20], service_duration: 50, prize: 100)
+        |> Model.add_client(x: 20, y: 0, delivery: [30], service_duration: 75, prize: 150)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
+      route = Solution.route(result.best, 0)
+      %{route: route, solution: result.best}
+    end
+
+    test "Route.distance/1", %{route: route, solution: solution} do
+      assert Route.distance(route) == Solution.route_distance(solution, 0)
+    end
+
+    test "Route.duration/1", %{route: route, solution: solution} do
+      assert Route.duration(route) == Solution.route_duration(solution, 0)
+    end
+
+    test "Route.feasible?/1", %{route: route, solution: solution} do
+      assert Route.feasible?(route) == Solution.route_feasible?(solution, 0)
+    end
+
+    test "Route.delivery/1", %{route: route, solution: solution} do
+      assert Route.delivery(route) == Solution.route_delivery(solution, 0)
+    end
+
+    test "Route.pickup/1", %{route: route, solution: solution} do
+      assert Route.pickup(route) == Solution.route_pickup(solution, 0)
+    end
+
+    test "Route.excess_load/1", %{route: route, solution: solution} do
+      assert Route.excess_load(route) == Solution.route_excess_load(solution, 0)
+    end
+
+    test "Route.has_excess_load?/1", %{route: route, solution: solution} do
+      assert Route.has_excess_load?(route) == Solution.route_has_excess_load?(solution, 0)
+    end
+
+    test "Route.time_warp/1", %{route: route, solution: solution} do
+      assert Route.time_warp(route) == Solution.route_time_warp(solution, 0)
+    end
+
+    test "Route.has_time_warp?/1", %{route: route, solution: solution} do
+      assert Route.has_time_warp?(route) == Solution.route_has_time_warp?(solution, 0)
+    end
+
+    test "Route.excess_distance/1", %{route: route, solution: solution} do
+      assert Route.excess_distance(route) == Solution.route_excess_distance(solution, 0)
+    end
+
+    test "Route.has_excess_distance?/1", %{route: route, solution: solution} do
+      assert Route.has_excess_distance?(route) == Solution.route_has_excess_distance?(solution, 0)
+    end
+
+    test "Route.overtime/1", %{route: route, solution: solution} do
+      assert Route.overtime(route) == Solution.route_overtime(solution, 0)
+    end
+
+    test "Route.vehicle_type/1", %{route: route, solution: solution} do
+      assert Route.vehicle_type(route) == Solution.route_vehicle_type(solution, 0)
+    end
+
+    test "Route.start_depot/1", %{route: route, solution: solution} do
+      assert Route.start_depot(route) == Solution.route_start_depot(solution, 0)
+    end
+
+    test "Route.end_depot/1", %{route: route, solution: solution} do
+      assert Route.end_depot(route) == Solution.route_end_depot(solution, 0)
+    end
+
+    test "Route.num_trips/1", %{route: route, solution: solution} do
+      assert Route.num_trips(route) == Solution.route_num_trips(solution, 0)
+    end
+
+    test "Route.centroid/1", %{route: route, solution: solution} do
+      assert Route.centroid(route) == Solution.route_centroid(solution, 0)
+    end
+
+    test "Route.start_time/1", %{route: route, solution: solution} do
+      assert Route.start_time(route) == Solution.route_start_time(solution, 0)
+    end
+
+    test "Route.end_time/1", %{route: route, solution: solution} do
+      assert Route.end_time(route) == Solution.route_end_time(solution, 0)
+    end
+
+    test "Route.slack/1", %{route: route, solution: solution} do
+      assert Route.slack(route) == Solution.route_slack(solution, 0)
+    end
+
+    test "Route.service_duration/1", %{route: route, solution: solution} do
+      assert Route.service_duration(route) == Solution.route_service_duration(solution, 0)
+    end
+
+    test "Route.travel_duration/1", %{route: route, solution: solution} do
+      assert Route.travel_duration(route) == Solution.route_travel_duration(solution, 0)
+    end
+
+    test "Route.wait_duration/1", %{route: route, solution: solution} do
+      assert Route.wait_duration(route) == Solution.route_wait_duration(solution, 0)
+    end
+
+    test "Route.distance_cost/1", %{route: route, solution: solution} do
+      assert Route.distance_cost(route) == Solution.route_distance_cost(solution, 0)
+    end
+
+    test "Route.duration_cost/1", %{route: route, solution: solution} do
+      assert Route.duration_cost(route) == Solution.route_duration_cost(solution, 0)
+    end
+
+    test "Route.prizes/1", %{route: route, solution: solution} do
+      assert Route.prizes(route) == Solution.route_prizes(solution, 0)
+    end
+
+    test "Route.visits/1", %{route: route, solution: solution} do
+      assert Route.visits(route) == Solution.route_visits(solution, 0)
+    end
+
+    test "Route.schedule/1", %{route: route} do
+      schedule = Route.schedule(route)
+      assert is_list(schedule)
     end
   end
 
