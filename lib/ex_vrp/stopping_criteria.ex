@@ -182,6 +182,24 @@ defmodule ExVrp.StoppingCriteria do
   end
 
   @doc """
+  Creates a combined criterion that stops when EITHER a feasible solution
+  is found OR the other criterion is met.
+
+  This is useful for fleet minimisation where we want to stop early if we
+  find a feasible solution, but also respect an overall stopping criterion.
+
+  ## Example
+
+      # Stop when feasible or after 1000 iterations, whichever comes first
+      stop = StoppingCriteria.first_feasible_or(StoppingCriteria.max_iterations(1000))
+
+  """
+  @spec first_feasible_or(t()) :: t()
+  def first_feasible_or(%__MODULE__{} = other_criteria) do
+    multiple_criteria([first_feasible(), other_criteria])
+  end
+
+  @doc """
   Converts a StoppingCriteria struct to a stop function matching PyVRP's interface.
 
   The returned function takes `best_cost` and returns `true` to stop.
@@ -268,9 +286,10 @@ defmodule ExVrp.StoppingCriteria do
 
   def should_stop?(%__MODULE__{type: :first_feasible} = criteria, context) do
     # In PyVRP, feasibility is determined by cost being finite
-    # We use a large threshold to approximate infinity
+    # Our ILS passes :infinity for infeasible solutions (via solution_cost)
     best_cost = Map.get(context, :best_cost, :infinity)
-    is_feasible = is_integer(best_cost) and best_cost < 1_000_000_000_000
+    # :infinity is not an integer
+    is_feasible = is_integer(best_cost)
     {is_feasible, criteria}
   end
 

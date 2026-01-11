@@ -79,9 +79,14 @@ defmodule ExVrp.PenaltyManager do
   def init_from(problem_data, params \\ %Params{}) do
     num_dims = Native.problem_data_num_load_dims(problem_data)
 
-    # For now, use sensible defaults similar to PyVRP
-    # PyVRP computes these from average edge costs, but we'll use fixed defaults
-    initial_penalty = 100.0
+    # PyVRP computes initial penalties as: avg_cost / avg_value
+    # For example, init_load = avg_edge_cost / avg_client_load
+    # This ensures that 1 unit of violation costs roughly the same as 1 average edge
+    #
+    # Without access to the distance matrix here, we use a higher default (1000)
+    # that should work for most instances. The penalty manager will adapt
+    # these values during search based on solution feasibility.
+    initial_penalty = 1000.0
 
     new(
       List.duplicate(initial_penalty, num_dims),

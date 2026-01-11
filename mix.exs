@@ -52,6 +52,7 @@ defmodule ExVrp.MixProject do
       # NIF compilation
       {:elixir_make, "~> 0.8", runtime: false},
       {:fine, "~> 0.1.4"},
+      {:nx, "~> 0.10"},
 
       # Testing
       {:stream_data, "~> 1.0", only: [:test, :dev]},

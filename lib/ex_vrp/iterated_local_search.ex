@@ -119,7 +119,9 @@ defmodule ExVrp.IteratedLocalSearch do
 
     {:ok, cost_eval} = PenaltyManager.cost_evaluator(penalty_manager)
 
-    initial_cost = Native.solution_penalised_cost(initial_solution, cost_eval)
+    initial_penalised_cost = Native.solution_penalised_cost(initial_solution, cost_eval)
+    # For stopping criterion, use cost() which returns :infinity for infeasible
+    initial_stop_cost = Native.solution_cost(initial_solution, cost_eval)
 
     state = %{
       problem_data: problem_data,
@@ -127,14 +129,16 @@ defmodule ExVrp.IteratedLocalSearch do
       cost_eval: cost_eval,
       params: params,
       best: initial_solution,
-      best_cost: initial_cost,
+      best_cost: initial_penalised_cost,
+      # For stopping criterion (infinity if infeasible)
+      best_stop_cost: initial_stop_cost,
       current: initial_solution,
-      current_cost: initial_cost,
+      current_cost: initial_penalised_cost,
       history: :queue.new(),
       history_size: 0,
       iteration: 0,
       iters_no_improvement: 0,
-      initial_cost: initial_cost,
+      initial_cost: initial_penalised_cost,
       stats: %{
         improvements: 0,
         restarts: 0
@@ -159,7 +163,9 @@ defmodule ExVrp.IteratedLocalSearch do
 
   # Main iteration loop
   defp iterate(state, stop_fn) do
-    if stop_fn.(state.best_cost) do
+    # Use best_stop_cost for stopping criterion - this is :infinity for infeasible
+    # solutions, matching PyVRP's behavior where cost() returns INT_MAX for infeasible
+    if stop_fn.(state.best_stop_cost) do
       state
     else
       state
@@ -233,11 +239,13 @@ defmodule ExVrp.IteratedLocalSearch do
 
     if accept? do
       # Update best if this is a new best
-      {new_best, new_best_cost, new_iters_no_improvement, new_stats} =
+      {new_best, new_best_cost, new_best_stop_cost, new_iters_no_improvement, new_stats} =
         if candidate_cost < best_cost do
-          {candidate, candidate_cost, 0, Map.update!(state.stats, :improvements, &(&1 + 1))}
+          # Also compute the stop cost for the new best (infinity if infeasible)
+          candidate_stop_cost = Native.solution_cost(candidate, state.cost_eval)
+          {candidate, candidate_cost, candidate_stop_cost, 0, Map.update!(state.stats, :improvements, &(&1 + 1))}
         else
-          {state.best, best_cost, state.iters_no_improvement + 1, state.stats}
+          {state.best, best_cost, state.best_stop_cost, state.iters_no_improvement + 1, state.stats}
         end
 
       # Update history only when candidate improves over historical
@@ -254,6 +262,7 @@ defmodule ExVrp.IteratedLocalSearch do
           current_cost: candidate_cost,
           best: new_best,
           best_cost: new_best_cost,
+          best_stop_cost: new_best_stop_cost,
           history: new_history,
           history_size: new_history_size,
           iters_no_improvement: new_iters_no_improvement,

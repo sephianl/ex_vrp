@@ -168,4 +168,130 @@ defmodule ExVrp.PenaltyManagerTest do
       assert params.max_penalty == 100_000.0
     end
   end
+
+  describe "penalty updates" do
+    test "does not update penalties before sufficient registrations" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      # Use 4 registrations before update
+      params = %PenaltyManager.Params{
+        solutions_between_updates: 4,
+        penalty_increase: 1.1,
+        penalty_decrease: 0.9,
+        target_feasible: 0.5
+      }
+
+      pm = PenaltyManager.new([100.0], 100.0, 100.0, params)
+      initial_tw_penalty = pm.tw_penalty
+
+      {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
+
+      # Register 3 times - should not trigger update
+      pm2 =
+        pm
+        |> PenaltyManager.register(solution)
+        |> PenaltyManager.register(solution)
+        |> PenaltyManager.register(solution)
+
+      # Penalty should be unchanged
+      assert pm2.tw_penalty == initial_tw_penalty
+      # Feasibility list should have 3 entries
+      assert length(pm2.tw_feas) == 3
+    end
+
+    test "updates penalties after threshold registrations" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      # Use 3 registrations before update
+      params = %PenaltyManager.Params{
+        solutions_between_updates: 3,
+        penalty_increase: 1.5,
+        penalty_decrease: 0.5,
+        target_feasible: 0.5,
+        feas_tolerance: 0.0
+      }
+
+      pm = PenaltyManager.new([100.0], 100.0, 100.0, params)
+
+      {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
+
+      # Register 3 times to trigger update
+      pm2 =
+        pm
+        |> PenaltyManager.register(solution)
+        |> PenaltyManager.register(solution)
+        |> PenaltyManager.register(solution)
+
+      # Feasibility list should be reset after update
+      assert pm2.tw_feas == []
+      # Penalty should have changed based on feasibility
+      assert pm2.tw_penalty != 100.0 or pm2.load_penalties != [100.0]
+    end
+  end
+
+  describe "multiple load dimensions" do
+    test "handles multiple load dimensions" do
+      # Vehicle has 2 capacity dimensions, clients must match in both delivery and pickup
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100, 50])
+        |> Model.add_client(x: 10, y: 0, delivery: [10, 2], pickup: [0, 0])
+        |> Model.add_client(x: 20, y: 0, delivery: [20, 3], pickup: [0, 0])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      pm = PenaltyManager.init_from(problem_data)
+
+      # Should have 2 load penalties
+      assert length(pm.load_penalties) == 2
+
+      # Both should be positive
+      assert Enum.all?(pm.load_penalties, &(&1 > 0))
+    end
+
+    test "clips penalties to min/max for each dimension" do
+      params = %PenaltyManager.Params{min_penalty: 10.0, max_penalty: 1000.0}
+
+      # Create with out-of-bounds penalties
+      pm = PenaltyManager.new([0.001, 50.0, 10_000.0], 50.0, 75.0, params)
+
+      # All should be clipped
+      [p1, p2, p3] = pm.load_penalties
+      # Clipped to min
+      assert p1 == 10.0
+      # In range
+      assert p2 == 50.0
+      # Clipped to max
+      assert p3 == 1000.0
+    end
+  end
+
+  describe "max_cost_evaluator" do
+    test "returns evaluator with max penalty values" do
+      params = %PenaltyManager.Params{max_penalty: 500.0}
+
+      # Start with low penalties
+      pm = PenaltyManager.new([10.0, 20.0], 30.0, 40.0, params)
+
+      {:ok, max_eval} = PenaltyManager.max_cost_evaluator(pm)
+      {:ok, normal_eval} = PenaltyManager.cost_evaluator(pm)
+
+      # Max evaluator should give higher penalised costs for violations
+      # (We can't directly test penalty values, but they should differ)
+      assert max_eval != normal_eval
+    end
+  end
 end

@@ -20,6 +20,8 @@ endif
 # Compiler settings
 CXX ?= g++
 CXXFLAGS = -std=c++20 -O3 -Wall -Wextra -fPIC -fvisibility=hidden
+# Disable dangling-reference warning from PyVRP's Route.h (false positive in GCC 14)
+CXXFLAGS += -Wno-dangling-reference
 CXXFLAGS += -I$(ERTS_INCLUDE_DIR)
 CXXFLAGS += -Ic_src
 CXXFLAGS += -Ic_src/pyvrp

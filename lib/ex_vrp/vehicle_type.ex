@@ -13,13 +13,18 @@ defmodule ExVrp.VehicleType do
           capacity: [non_neg_integer()],
           fixed_cost: non_neg_integer(),
           tw_early: non_neg_integer(),
-          tw_late: non_neg_integer(),
-          shift_duration: non_neg_integer(),
-          max_distance: non_neg_integer(),
+          tw_late: non_neg_integer() | :infinity,
+          shift_duration: non_neg_integer() | :infinity,
+          max_distance: non_neg_integer() | :infinity,
           unit_distance_cost: non_neg_integer(),
           unit_duration_cost: non_neg_integer(),
+          profile: non_neg_integer(),
           start_late: non_neg_integer(),
           max_overtime: non_neg_integer(),
+          unit_overtime_cost: non_neg_integer(),
+          reload_depots: [non_neg_integer()],
+          max_reloads: non_neg_integer() | :infinity,
+          initial_load: [non_neg_integer()],
           name: String.t()
         }
 
@@ -36,8 +41,13 @@ defmodule ExVrp.VehicleType do
     max_distance: :infinity,
     unit_distance_cost: 1,
     unit_duration_cost: 0,
+    profile: 0,
     start_late: 0,
     max_overtime: 0,
+    unit_overtime_cost: 0,
+    reload_depots: [],
+    max_reloads: :infinity,
+    initial_load: [],
     name: ""
   ]
 
@@ -60,8 +70,13 @@ defmodule ExVrp.VehicleType do
   - `:max_distance` - Maximum distance allowed (default: `:infinity`)
   - `:unit_distance_cost` - Cost per unit distance (default: `1`)
   - `:unit_duration_cost` - Cost per unit time (default: `0`)
+  - `:profile` - Index of distance/duration matrix to use (default: `0`)
   - `:start_late` - Latest allowed start time (default: `0`)
   - `:max_overtime` - Maximum overtime allowed (default: `0`)
+  - `:unit_overtime_cost` - Cost per unit of overtime (default: `0`)
+  - `:reload_depots` - List of depot indices where vehicle can reload (default: `[]`)
+  - `:max_reloads` - Maximum number of reloads per route (default: `:infinity`)
+  - `:initial_load` - Initial load per dimension (default: `[]`)
   - `:name` - Vehicle type name (default: `""`)
 
   ## Examples
