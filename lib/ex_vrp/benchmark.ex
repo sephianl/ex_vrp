@@ -20,14 +20,13 @@ defmodule ExVrp.Benchmark do
     rc208: {"RC208.vrp", :dimacs, "RC208.sol"},
     pr11a: {"PR11A.vrp", :trunc, nil},
     c201: {"C201R0.25.vrp", :dimacs, "C201R0.25.sol"},
+    x101: {"X-n101-50-k13.vrp", :round, nil},
+    x115: {"X115-HVRP.vrp", :exact, "X115-HVRP.sol"},
+    pr01: {"PR01.vrp", :none, nil},
     small_vrpspd: {"SmallVRPSPD.vrp", :round, nil},
     p06: {"p06-2-50.vrp", :dimacs, nil},
     gtsp: {"50pr439.gtsp", :round, nil},
     pr107: {"pr107.tsp", :dimacs, nil}
-    # Excluded due to overflow issues:
-    # - pr01: floating-point coordinates
-    # - x101: large instance causes overflow
-    # - x115: exact rounding causes overflow
   }
 
   @doc """
@@ -102,8 +101,6 @@ defmodule ExVrp.Benchmark do
         if sol_file do
           raw_cost = parse_solution_cost(Path.join(@data_dir, sol_file))
           scale_bks(raw_cost, round_func)
-        else
-          nil
         end
 
       IO.puts(" done (distance: #{result.best.distance})")
@@ -165,7 +162,7 @@ defmodule ExVrp.Benchmark do
     num |> Float.round(2) |> Float.to_string() |> String.pad_leading(width)
   end
 
-  defp pad_num(num, width), do: to_string(num) |> String.pad_leading(width)
+  defp pad_num(num, width), do: num |> to_string() |> String.pad_leading(width)
 
   defp build_scenarios(instances, iterations) do
     for name <- instances, Map.has_key?(@instances, name), into: %{} do
@@ -183,21 +180,12 @@ defmodule ExVrp.Benchmark do
   end
 
   defp parse_solution_cost(sol_path) do
-    case File.read(sol_path) do
-      {:ok, content} ->
-        case Regex.run(~r/Cost\s+(\d+(?:\.\d+)?)/i, content) do
-          [_, cost_str] ->
-            case Float.parse(cost_str) do
-              {val, _} -> val
-              :error -> nil
-            end
-
-          _ ->
-            nil
-        end
-
-      _ ->
-        nil
+    with {:ok, content} <- File.read(sol_path),
+         [_, cost_str] <- Regex.run(~r/Cost\s+(\d+(?:\.\d+)?)/i, content),
+         {val, _} <- Float.parse(cost_str) do
+      val
+    else
+      _ -> nil
     end
   end
 

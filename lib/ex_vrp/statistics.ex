@@ -220,7 +220,8 @@ defmodule ExVrp.Statistics do
     end
 
     def slice(%ExVrp.Statistics{data: data}) do
-      {:ok, length(data), &Enum.slice(data, &1, &2)}
+      # Return a 3-arity function: fn list, start, length -> result end
+      {:ok, length(data), fn start, len, _step -> Enum.slice(data, start, len) end}
     end
   end
 end

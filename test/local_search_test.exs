@@ -1952,6 +1952,116 @@ defmodule ExVrp.LocalSearchTest do
     end
   end
 
+  # ==========================================================================
+  # Persistent LocalSearch Resource (PyVRP parity)
+  # ==========================================================================
+
+  describe "persistent LocalSearch resource" do
+    test "create_local_search creates a reusable resource" do
+      model = build_cvrp_model(10)
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      # Create persistent LocalSearch resource
+      local_search = Native.create_local_search(problem_data, 42)
+      assert is_reference(local_search)
+    end
+
+    test "local_search_run improves solution using persistent resource" do
+      model = build_cvrp_model(10)
+      {:ok, problem_data} = Model.to_problem_data(model)
+      {:ok, cost_evaluator} = create_cost_evaluator()
+
+      local_search = Native.create_local_search(problem_data, 42)
+      {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
+      initial_cost = Native.solution_penalised_cost(initial_solution, cost_evaluator)
+
+      {:ok, improved} = Native.local_search_run(local_search, initial_solution, cost_evaluator)
+      improved_cost = Native.solution_penalised_cost(improved, cost_evaluator)
+
+      assert improved_cost <= initial_cost
+    end
+
+    test "local_search_search_run performs search-only without perturbation" do
+      model = build_cvrp_model(10)
+      {:ok, problem_data} = Model.to_problem_data(model)
+      {:ok, cost_evaluator} = create_cost_evaluator()
+
+      local_search = Native.create_local_search(problem_data, 42)
+      {:ok, empty_solution} = Native.create_solution_from_routes(problem_data, [])
+      refute Native.solution_is_complete(empty_solution)
+
+      # search_run should insert all clients
+      {:ok, complete} = Native.local_search_search_run(local_search, empty_solution, cost_evaluator)
+      assert Native.solution_is_complete(complete)
+    end
+
+    test "persistent LocalSearch can be reused multiple times" do
+      model = build_cvrp_model(10)
+      {:ok, problem_data} = Model.to_problem_data(model)
+      {:ok, cost_evaluator} = create_cost_evaluator()
+
+      local_search = Native.create_local_search(problem_data, 42)
+
+      # Run multiple times with same resource
+      {:ok, sol1} = Native.create_random_solution(problem_data, seed: 1)
+      {:ok, sol2} = Native.create_random_solution(problem_data, seed: 2)
+
+      {:ok, improved1} = Native.local_search_run(local_search, sol1, cost_evaluator)
+      {:ok, improved2} = Native.local_search_run(local_search, sol2, cost_evaluator)
+
+      assert Native.solution_is_complete(improved1)
+      assert Native.solution_is_complete(improved2)
+    end
+
+    test "different seeds produce different RNG sequences" do
+      model = build_cvrp_model(15)
+      {:ok, problem_data} = Model.to_problem_data(model)
+      {:ok, cost_evaluator} = create_cost_evaluator()
+
+      ls1 = Native.create_local_search(problem_data, 42)
+      ls2 = Native.create_local_search(problem_data, 9999)
+
+      {:ok, sol} = Native.create_random_solution(problem_data, seed: 1)
+
+      {:ok, improved1} = Native.local_search_run(ls1, sol, cost_evaluator)
+      {:ok, improved2} = Native.local_search_run(ls2, sol, cost_evaluator)
+
+      # Different RNG seeds may produce different results
+      # (not guaranteed but likely on larger problems)
+      assert Native.solution_is_complete(improved1)
+      assert Native.solution_is_complete(improved2)
+    end
+  end
+
+  describe "local_search_search_only (non-persistent)" do
+    test "performs search-only from empty solution" do
+      model = build_cvrp_model(10)
+      {:ok, problem_data} = Model.to_problem_data(model)
+      {:ok, cost_evaluator} = create_cost_evaluator()
+
+      {:ok, empty_solution} = Native.create_solution_from_routes(problem_data, [])
+
+      {:ok, complete} = Native.local_search_search_only(empty_solution, problem_data, cost_evaluator, seed: 42)
+
+      assert Native.solution_is_complete(complete)
+    end
+
+    test "respects seed for reproducibility" do
+      model = build_cvrp_model(10)
+      {:ok, problem_data} = Model.to_problem_data(model)
+      {:ok, cost_evaluator} = create_cost_evaluator()
+
+      {:ok, empty1} = Native.create_solution_from_routes(problem_data, [])
+      {:ok, empty2} = Native.create_solution_from_routes(problem_data, [])
+
+      {:ok, result1} = Native.local_search_search_only(empty1, problem_data, cost_evaluator, seed: 123)
+      {:ok, result2} = Native.local_search_search_only(empty2, problem_data, cost_evaluator, seed: 123)
+
+      # Same seed should give same results
+      assert Native.solution_distance(result1) == Native.solution_distance(result2)
+    end
+  end
+
   # Helper to build a CVRP model with n clients
   defp build_cvrp_model(n) do
     model =

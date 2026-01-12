@@ -48,4 +48,31 @@ defmodule ExVrpTest do
       assert result1.best.routes == result2.best.routes
     end
   end
+
+  describe "solve!/2" do
+    @tag :nif_required
+    test "returns solution directly on success" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.add_client(x: 1, y: 1, delivery: [10])
+
+      result = ExVrp.solve!(model, max_iterations: 10)
+      assert result.best.is_feasible
+    end
+
+    @tag :nif_required
+    test "raises SolveError on validation failure" do
+      # Model with no depot should fail validation
+      model =
+        Model.new()
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.add_client(x: 1, y: 1, delivery: [10])
+
+      assert_raise ExVrp.SolveError, fn ->
+        ExVrp.solve!(model, max_iterations: 10)
+      end
+    end
+  end
 end

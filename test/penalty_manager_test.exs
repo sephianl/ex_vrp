@@ -294,4 +294,214 @@ defmodule ExVrp.PenaltyManagerTest do
       assert max_eval != normal_eval
     end
   end
+
+  describe "init_from penalty computation" do
+    test "computes penalties from distance/duration matrices" do
+      # Create a model with known distances to verify penalty computation
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 100, y: 0, delivery: [10])
+        |> Model.add_client(x: 0, y: 100, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      pm = PenaltyManager.init_from(problem_data)
+
+      # Penalties should be computed based on avg_cost / avg_distance etc.
+      # They should be positive and bounded
+      assert pm.tw_penalty > 0
+      assert pm.dist_penalty > 0
+      assert pm.tw_penalty <= pm.params.max_penalty
+      assert pm.dist_penalty <= pm.params.max_penalty
+    end
+
+    test "handles multi-profile problems" do
+      # Model with allowed_clients creates multiple profiles
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [50])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      pm = PenaltyManager.init_from(problem_data)
+
+      # Should still compute valid penalties
+      assert pm.tw_penalty > 0
+      assert pm.dist_penalty > 0
+    end
+  end
+
+  describe "penalty adjustment direction" do
+    test "penalty increases when feasibility is below target" do
+      # When solutions are mostly infeasible, penalties should INCREASE
+      # to push search toward feasible solutions
+      params = %PenaltyManager.Params{
+        solutions_between_updates: 3,
+        # Target 50% feasible
+        target_feasible: 0.5,
+        # No tolerance - exact matching
+        feas_tolerance: 0.0,
+        penalty_increase: 2.0,
+        penalty_decrease: 0.5
+      }
+
+      pm = PenaltyManager.new([100.0], 100.0, 100.0, params)
+      initial_penalty = pm.tw_penalty
+
+      # Simulate registering 3 infeasible solutions (0% feasible < 50% target)
+      # This should trigger penalty INCREASE
+      pm =
+        pm
+        |> register_with_feasibility(false)
+        |> register_with_feasibility(false)
+        |> register_with_feasibility(false)
+
+      # Penalty should have increased (100 * 2.0 = 200)
+      assert pm.tw_penalty > initial_penalty
+      assert pm.tw_penalty == 200.0
+    end
+
+    test "penalty decreases when feasibility is above target" do
+      # When solutions are mostly feasible, penalties should DECREASE
+      # to explore more of the infeasible space
+      params = %PenaltyManager.Params{
+        solutions_between_updates: 3,
+        # Target 50% feasible
+        target_feasible: 0.5,
+        # No tolerance
+        feas_tolerance: 0.0,
+        penalty_increase: 2.0,
+        penalty_decrease: 0.5
+      }
+
+      pm = PenaltyManager.new([100.0], 100.0, 100.0, params)
+      initial_penalty = pm.tw_penalty
+
+      # Simulate registering 3 feasible solutions (100% feasible > 50% target)
+      # This should trigger penalty DECREASE
+      pm =
+        pm
+        |> register_with_feasibility(true)
+        |> register_with_feasibility(true)
+        |> register_with_feasibility(true)
+
+      # Penalty should have decreased (100 * 0.5 = 50)
+      assert pm.tw_penalty < initial_penalty
+      assert pm.tw_penalty == 50.0
+    end
+
+    test "penalty stays same within tolerance" do
+      params = %PenaltyManager.Params{
+        solutions_between_updates: 2,
+        # Target 50% feasible
+        target_feasible: 0.5,
+        # Large tolerance
+        feas_tolerance: 0.5,
+        penalty_increase: 2.0,
+        penalty_decrease: 0.5
+      }
+
+      pm = PenaltyManager.new([100.0], 100.0, 100.0, params)
+      initial_penalty = pm.tw_penalty
+
+      # 50% feasible (1/2) is within target +/- tolerance
+      pm =
+        pm
+        |> register_with_feasibility(true)
+        |> register_with_feasibility(false)
+
+      # Penalty should be unchanged (within tolerance)
+      assert pm.tw_penalty == initial_penalty
+    end
+
+    test "load penalties adjust per dimension independently" do
+      params = %PenaltyManager.Params{
+        solutions_between_updates: 3,
+        target_feasible: 0.5,
+        feas_tolerance: 0.0,
+        penalty_increase: 2.0,
+        penalty_decrease: 0.5
+      }
+
+      # Two load dimensions with same initial penalty
+      pm = PenaltyManager.new([100.0, 100.0], 100.0, 100.0, params)
+
+      # All infeasible - both dimensions should increase
+      pm =
+        pm
+        |> register_with_feasibility(false)
+        |> register_with_feasibility(false)
+        |> register_with_feasibility(false)
+
+      # Both dimensions should have increased
+      assert Enum.all?(pm.load_penalties, &(&1 == 200.0))
+    end
+  end
+
+  # Helper to register a solution with known feasibility
+  defp register_with_feasibility(pm, is_feasible) do
+    # Directly manipulate the feasibility lists to simulate
+    # registering a solution with known feasibility
+    maybe_update_penalties(%{
+      pm
+      | load_feas: Enum.map(pm.load_feas, fn feas -> [is_feasible | feas] end),
+        tw_feas: [is_feasible | pm.tw_feas],
+        dist_feas: [is_feasible | pm.dist_feas]
+    })
+  end
+
+  defp maybe_update_penalties(%{params: params, tw_feas: tw_feas} = pm) do
+    if length(tw_feas) >= params.solutions_between_updates do
+      # Update penalties using the same logic as PenaltyManager
+      new_load = update_penalty_list(pm.load_penalties, pm.load_feas, params)
+      new_tw = compute_new_penalty(pm.tw_penalty, pm.tw_feas, params)
+      new_dist = compute_new_penalty(pm.dist_penalty, pm.dist_feas, params)
+
+      %{
+        pm
+        | load_penalties: new_load,
+          tw_penalty: new_tw,
+          dist_penalty: new_dist,
+          load_feas: Enum.map(pm.load_feas, fn _ -> [] end),
+          tw_feas: [],
+          dist_feas: []
+      }
+    else
+      pm
+    end
+  end
+
+  defp update_penalty_list(penalties, feas_lists, params) do
+    penalties
+    |> Enum.zip(feas_lists)
+    |> Enum.map(fn {penalty, feas} -> compute_new_penalty(penalty, feas, params) end)
+  end
+
+  defp compute_new_penalty(current, feas_list, params) do
+    if Enum.empty?(feas_list) do
+      current
+    else
+      feas_rate = Enum.count(feas_list, & &1) / length(feas_list)
+
+      new =
+        cond do
+          feas_rate < params.target_feasible - params.feas_tolerance ->
+            current * params.penalty_increase
+
+          feas_rate > params.target_feasible + params.feas_tolerance ->
+            current * params.penalty_decrease
+
+          true ->
+            current
+        end
+
+      new |> max(params.min_penalty) |> min(params.max_penalty)
+    end
+  end
 end

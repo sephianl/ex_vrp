@@ -85,10 +85,17 @@ defmodule ExVrp.Solver do
       penalty_params = opts[:penalty_params] || %PenaltyManager.Params{}
       penalty_manager = PenaltyManager.init_from(problem_data, penalty_params)
 
-      # Create initial solution
-      {:ok, cost_eval} = PenaltyManager.cost_evaluator(penalty_manager)
-      {:ok, empty_solution} = Native.create_random_solution(problem_data, seed: seed)
-      {:ok, initial_solution} = Native.local_search(empty_solution, problem_data, cost_eval)
+      # Create persistent LocalSearch resource (computes neighbours once)
+      # This matches PyVRP's behavior where LocalSearch is created once in solve()
+      # and reused for all iterations. The seed initializes the RNG stored in
+      # the resource, which advances across calls.
+      local_search = Native.create_local_search(problem_data, seed)
+
+      # Create initial solution from empty (matches PyVRP behavior)
+      # PyVRP: init = ls.search(Solution(data, []), pm.max_cost_evaluator())
+      {:ok, max_cost_eval} = PenaltyManager.max_cost_evaluator(penalty_manager)
+      {:ok, empty_solution} = Native.create_solution_from_routes(problem_data, [])
+      {:ok, initial_solution} = Native.local_search_search_run(local_search, empty_solution, max_cost_eval)
 
       # Build stopping criterion
       stop_fn = build_stop_fn(opts)
@@ -100,9 +107,11 @@ defmodule ExVrp.Solver do
         IteratedLocalSearch.run(
           problem_data,
           penalty_manager,
+          local_search,
           initial_solution,
           stop_fn,
-          ils_params
+          ils_params,
+          seed: seed
         )
 
       {:ok, result}

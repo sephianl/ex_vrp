@@ -326,6 +326,64 @@ defmodule ExVrp.CostEvaluatorTest do
     end
   end
 
+  describe "penalty overflow prevention" do
+    test "high penalties with capacity violations don't overflow" do
+      # Regression: penalty * excess could overflow int64
+      # The penalty manager uses initial penalty of ~100,000
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 100, y: 0, delivery: [100])
+        # Capacity exceeded - will have penalty applied
+        |> Model.add_vehicle_type(num_available: 1, capacity: [50])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      {:ok, cost_evaluator} =
+        Native.create_cost_evaluator(
+          load_penalties: [100_000.0],
+          tw_penalty: 100_000.0,
+          dist_penalty: 100_000.0
+        )
+
+      {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
+      cost = Native.solution_penalised_cost(solution, cost_evaluator)
+
+      # Cost should be positive and not overflow to negative
+      assert cost >= 0
+      # Should not be absurdly large (overflow indicator)
+      assert cost < 100_000_000_000
+    end
+
+    test "unconstrained max_distance doesn't cause penalty overflow" do
+      # When max_distance defaults to INT64_MAX, excess should be 0
+      # not some huge value that overflows when multiplied by penalty
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10_000, y: 0, delivery: [10])
+        # No max_distance constraint
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      {:ok, cost_evaluator} =
+        Native.create_cost_evaluator(
+          load_penalties: [100_000.0],
+          tw_penalty: 100_000.0,
+          dist_penalty: 100_000.0
+        )
+
+      {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
+      cost = Native.solution_penalised_cost(solution, cost_evaluator)
+
+      # Cost should just be the distance (no distance penalty)
+      distance = Native.solution_distance(solution)
+      # With no constraint violations, penalised cost should equal distance
+      assert cost == distance
+    end
+  end
+
   describe "cost_evaluator edge cases" do
     test "single dimension penalty" do
       model =

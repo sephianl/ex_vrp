@@ -159,6 +159,73 @@ defmodule ExVrp.ReadTest do
     end
   end
 
+  describe "VRPB (backhaul) instances" do
+    test "reads X-n101-50-k13 VRPB instance and solves to feasible solution" do
+      # This instance was the primary test case for overflow fixes
+      # Before fix: cost calculations overflowed, producing infeasible/wrong results
+      # After fix: should find feasible solution with reasonable distance
+      path = Path.join(@data_dir, "X-n101-50-k13.vrp")
+      model = Read.read(path, round_func: :none)
+
+      assert Model.num_clients(model) == 100
+      assert Model.num_depots(model) == 1
+
+      # Solve and verify result is reasonable
+      {:ok, result} =
+        ExVrp.Solver.solve(model,
+          stop: ExVrp.StoppingCriteria.max_iterations(100),
+          seed: 42
+        )
+
+      # Must be feasible (was broken before overflow fix)
+      assert ExVrp.Solution.feasible?(result.best)
+
+      # Distance should be in reasonable range (PyVRP gets ~19635)
+      distance = ExVrp.Solution.distance(result.best)
+      assert distance > 15_000 and distance < 25_000
+
+      # Should use reasonable number of routes (not overflow to crazy values)
+      num_routes = ExVrp.Solution.num_routes(result.best)
+      assert num_routes >= 10 and num_routes <= 20
+    end
+  end
+
+  describe "default value handling" do
+    test "clients without time windows get :infinity tw_late" do
+      # This ensures the fix for using :infinity instead of MAX_VALUE
+      path = Path.join(@data_dir, "E-n22-k4.txt")
+      model = Read.read(path)
+
+      # E-n22-k4 has no time windows, so all should be unconstrained
+      Enum.each(model.clients, fn client ->
+        assert client.tw_early == 0
+        # tw_late should be :infinity which gets converted to INT64_MAX in NIF
+        # In Elixir side it's stored as :infinity
+        assert client.tw_late == :infinity
+      end)
+    end
+
+    test "vehicle types without max_distance get :infinity" do
+      path = Path.join(@data_dir, "E-n22-k4.txt")
+      model = Read.read(path)
+
+      Enum.each(model.vehicle_types, fn vt ->
+        # No VEHICLES_MAX_DISTANCE in file, should default to :infinity
+        assert vt.max_distance == :infinity
+      end)
+    end
+
+    test "vehicle types without shift_duration get :infinity" do
+      path = Path.join(@data_dir, "E-n22-k4.txt")
+      model = Read.read(path)
+
+      Enum.each(model.vehicle_types, fn vt ->
+        # No VEHICLES_MAX_DURATION in file, should default to :infinity
+        assert vt.shift_duration == :infinity
+      end)
+    end
+  end
+
   describe "rounding functions" do
     test ":round rounds to nearest integer" do
       path = Path.join(@data_dir, "OkSmall.txt")
@@ -199,6 +266,135 @@ defmodule ExVrp.ReadTest do
       assert_raise ArgumentError, ~r/Unknown round_func/, fn ->
         Read.read(path, round_func: :unknown)
       end
+    end
+
+    test ":none truncates floats to integers" do
+      # :none doesn't scale but must still produce integers for C++
+      path = Path.join(@data_dir, "OkSmall.txt")
+      model = Read.read(path, round_func: :none)
+
+      # Should be integers
+      depot = hd(model.depots)
+      assert is_integer(depot.x)
+      assert is_integer(depot.y)
+    end
+  end
+
+  describe "GTSP instances" do
+    test "reads GTSP instance with required mutually exclusive groups" do
+      path = Path.join(@data_dir, "50pr439.gtsp")
+      model = Read.read(path)
+
+      # GTSP groups should be required AND mutually exclusive
+      assert length(model.client_groups) > 0
+
+      Enum.each(model.client_groups, fn group ->
+        assert group.required == true
+        assert group.mutually_exclusive == true
+      end)
+    end
+  end
+
+  describe "HFVRP (heterogeneous fleet) instances" do
+    test "reads X115-HVRP with per-vehicle capacities" do
+      path = Path.join(@data_dir, "X115-HVRP.vrp")
+      model = Read.read(path, round_func: :exact)
+
+      # Should have multiple vehicle types with different capacities
+      assert length(model.vehicle_types) >= 1
+
+      # Check capacities are properly parsed
+      capacities = Enum.map(model.vehicle_types, fn vt -> hd(vt.capacity) end)
+      # Should be scaled by 1000 for :exact
+      assert Enum.all?(capacities, &(&1 > 0))
+    end
+  end
+
+  describe "VRPB MAX_VALUE for forbidden edges" do
+    test "VRPB matrices use 2^44 for forbidden edges" do
+      # The @max_value in Read module must match PyVRP's default (1 << 44)
+      # This is critical for VRPB instances where backhaul->linehaul is forbidden
+      # Using INT64_MAX would cause overflow when computing distances
+      max_value = Bitwise.bsl(1, 44)
+
+      # Read a VRPB instance and check the matrices
+      path = Path.join(@data_dir, "X-n101-50-k13.vrp")
+      model = Read.read(path, round_func: :none)
+
+      # Get distance matrices
+      [dist_matrix] = model.distance_matrices
+
+      # Find a forbidden edge (backhaul to linehaul or depot to backhaul)
+      # In VRPB, these should have max_value
+      has_forbidden =
+        Enum.any?(dist_matrix, fn row ->
+          Enum.any?(row, fn val -> val == max_value end)
+        end)
+
+      assert has_forbidden,
+             "VRPB instance should have forbidden edges marked with 2^44"
+
+      # Verify no edge is larger than max_value (would indicate wrong value used)
+      max_edge =
+        dist_matrix
+        |> Enum.flat_map(& &1)
+        |> Enum.max()
+
+      assert max_edge == max_value,
+             "Maximum edge value should be exactly 2^44 = #{max_value}, got #{max_edge}"
+    end
+
+    test "VRPB forbidden edge value is exactly 2^44" do
+      # Regression: using INT64_MAX or wrong value causes overflow
+      # PyVRP uses 1 << 44 = 17_592_186_044_416
+      expected = 17_592_186_044_416
+      actual = Bitwise.bsl(1, 44)
+
+      assert actual == expected,
+             "@max_value should be 2^44 = #{expected}, got #{actual}"
+    end
+  end
+
+  describe "Solver initial solution creation" do
+    test "solver creates initial solution from empty via local search" do
+      # The solver creates initial solution by:
+      # 1. Creating empty solution (no routes)
+      # 2. Running local_search_search_run (search-only, no perturbation)
+      # This must produce a complete solution with all clients
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_client(x: 30, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 3, capacity: [100])
+
+      # Solve with minimal iterations to focus on initial solution quality
+      {:ok, result} = ExVrp.Solver.solve(model, max_iterations: 1, seed: 42)
+
+      # Initial solution should be complete (all clients visited)
+      assert result.best.is_complete
+      assert result.best.num_clients == 3
+
+      # stats.initial_cost should be set from the initial solution
+      assert result.stats.initial_cost > 0
+    end
+
+    test "solver respects seed for initial solution reproducibility" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 10, delivery: [10])
+        |> Model.add_client(x: 20, y: 20, delivery: [10])
+        |> Model.add_client(x: 30, y: 30, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 3, capacity: [100])
+
+      # Same seed should produce same initial solution
+      {:ok, result1} = ExVrp.Solver.solve(model, max_iterations: 1, seed: 123)
+      {:ok, result2} = ExVrp.Solver.solve(model, max_iterations: 1, seed: 123)
+
+      assert result1.stats.initial_cost == result2.stats.initial_cost
+      assert result1.best.routes == result2.best.routes
     end
   end
 end

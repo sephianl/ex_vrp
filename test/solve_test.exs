@@ -135,6 +135,19 @@ defmodule ExVrp.SolveTest do
     end
   end
 
+  describe "combined stopping criteria" do
+    test "max_runtime AND max_iterations combined" do
+      model = build_ok_small_model()
+
+      # Use both max_runtime and max_iterations - solver should use both
+      {:ok, result} = Solver.solve(model, max_iterations: 100, max_runtime: 10.0)
+
+      # Should stop when either is reached
+      assert result.num_iterations <= 100
+      assert result.runtime <= 10_000
+    end
+  end
+
   # Helper functions
 
   defp build_ok_small_model do

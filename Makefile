@@ -19,7 +19,8 @@ endif
 
 # Compiler settings
 CXX ?= g++
-CXXFLAGS = -std=c++20 -O3 -flto -Wall -Wextra -fPIC -fvisibility=hidden
+# Match PyVRP's release build: disable assertions with NDEBUG
+CXXFLAGS = -std=c++20 -O3 -flto -Wall -Wextra -fPIC -fvisibility=hidden -DNDEBUG
 # Disable dangling-reference warning from PyVRP's Route.h (false positive in GCC 14)
 CXXFLAGS += -Wno-dangling-reference
 CXXFLAGS += -I$(ERTS_INCLUDE_DIR)

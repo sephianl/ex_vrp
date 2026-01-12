@@ -27,6 +27,9 @@
 #include <cstdint>
 #include <cmath>
 #include <limits>
+#include <set>
+#include <tuple>
+#include <algorithm>
 
 using namespace pyvrp;
 
@@ -187,6 +190,69 @@ struct LoadSegmentResource {
     explicit LoadSegmentResource(LoadSegment s) : segment(std::move(s)) {}
 };
 
+// Wrap LocalSearch for resource management - allows reuse across iterations
+struct LocalSearchResource {
+    std::shared_ptr<ProblemData> problemData;
+
+    // Owned data
+    search::PerturbationParams perturbParams;
+    search::PerturbationManager perturbManager;
+    search::SearchSpace::Neighbours neighbours;
+
+    // Persistent RNG - reused across all calls like PyVRP does
+    RandomNumberGenerator rng;
+
+    // Owned operators (keep them alive)
+    std::unique_ptr<search::Exchange<1, 0>> exchange10;
+    std::unique_ptr<search::Exchange<2, 0>> exchange20;
+    std::unique_ptr<search::Exchange<1, 1>> exchange11;
+    std::unique_ptr<search::Exchange<2, 1>> exchange21;
+    std::unique_ptr<search::Exchange<2, 2>> exchange22;
+    std::unique_ptr<search::SwapTails> swapTails;
+    std::unique_ptr<search::RelocateWithDepot> relocateDepot;
+
+    // The local search object (must be last - uses references to above)
+    std::unique_ptr<search::LocalSearch> ls;
+
+    LocalSearchResource(std::shared_ptr<ProblemData> pd,
+                        search::SearchSpace::Neighbours n,
+                        uint32_t seed)
+        : problemData(std::move(pd)),
+          perturbParams(1, 25),
+          perturbManager(perturbParams),
+          neighbours(std::move(n)),
+          rng(seed)
+    {
+        auto& data = *problemData;
+
+        // Create LocalSearch
+        ls = std::make_unique<search::LocalSearch>(data, neighbours, perturbManager);
+
+        // Create and add default operators matching PyVRP
+        exchange10 = std::make_unique<search::Exchange<1, 0>>(data);
+        exchange20 = std::make_unique<search::Exchange<2, 0>>(data);
+        exchange11 = std::make_unique<search::Exchange<1, 1>>(data);
+        exchange21 = std::make_unique<search::Exchange<2, 1>>(data);
+        exchange22 = std::make_unique<search::Exchange<2, 2>>(data);
+
+        ls->addNodeOperator(*exchange10);
+        ls->addNodeOperator(*exchange20);
+        ls->addNodeOperator(*exchange11);
+        ls->addNodeOperator(*exchange21);
+        ls->addNodeOperator(*exchange22);
+
+        if (search::supports<search::SwapTails>(data)) {
+            swapTails = std::make_unique<search::SwapTails>(data);
+            ls->addNodeOperator(*swapTails);
+        }
+
+        if (search::supports<search::RelocateWithDepot>(data)) {
+            relocateDepot = std::make_unique<search::RelocateWithDepot>(data);
+            ls->addNodeOperator(*relocateDepot);
+        }
+    }
+};
+
 // Type aliases for templated operator resources (macros don't like angle brackets)
 using Exchange10Resource = ExchangeOperatorResource<1, 0>;
 using Exchange11Resource = ExchangeOperatorResource<1, 1>;
@@ -220,6 +286,7 @@ FINE_RESOURCE(RNGResource);
 FINE_RESOURCE(DynamicBitsetResource);
 FINE_RESOURCE(DurationSegmentResource);
 FINE_RESOURCE(LoadSegmentResource);
+FINE_RESOURCE(LocalSearchResource);
 
 // -----------------------------------------------------------------------------
 // Helper: Decode Elixir structs to C++ types
@@ -1053,16 +1120,15 @@ fine::Term solution_unassigned(
 {
     auto& solution = solution_resource->solution;
     auto const& neighbours = solution.neighbours();
+    auto const numDepots = solution_resource->problemData->numDepots();
 
     std::vector<ERL_NIF_TERM> unassigned;
 
-    // neighbours vector is indexed by client (starting from 0 for depots/clients)
-    // A None/nullopt entry means the client is unassigned
-    for (size_t i = 0; i < neighbours.size(); ++i) {
+    // neighbours vector is indexed by location (depots first, then clients)
+    // A None/nullopt entry means the location is unassigned
+    // We only care about unassigned clients (indices >= numDepots)
+    for (size_t i = numDepots; i < neighbours.size(); ++i) {
         if (!neighbours[i].has_value()) {
-            // i is the location index; clients start after depots
-            // But neighbours is indexed by all locations, so we need to check
-            // if this is a client (not a depot)
             unassigned.push_back(enif_make_int64(env, static_cast<int64_t>(i)));
         }
     }
@@ -1708,6 +1774,19 @@ FINE_NIF(solution_fixed_vehicle_cost, 0);
 /**
  * Create a CostEvaluator from options (map).
  */
+// Helper to get a number (double or int) as double
+static bool get_number_as_double(ErlNifEnv* env, ERL_NIF_TERM term, double* out) {
+    if (enif_get_double(env, term, out)) {
+        return true;
+    }
+    int64_t int_val;
+    if (enif_get_int64(env, term, &int_val)) {
+        *out = static_cast<double>(int_val);
+        return true;
+    }
+    return false;
+}
+
 fine::Ok<fine::ResourcePtr<CostEvaluatorResource>> create_cost_evaluator_nif(
     ErlNifEnv* env,
     fine::Term opts_term)
@@ -1727,8 +1806,10 @@ fine::Ok<fine::ResourcePtr<CostEvaluatorResource>> create_cost_evaluator_nif(
             ERL_NIF_TERM head, tail = value;
             for (unsigned i = 0; i < len; i++) {
                 enif_get_list_cell(env, tail, &head, &tail);
-                double v;
-                enif_get_double(env, head, &v);
+                double v = 0.0;
+                if (!get_number_as_double(env, head, &v)) {
+                    throw std::runtime_error("load_penalties must be a list of numbers");
+                }
                 load_penalties.push_back(v);
             }
         }
@@ -1737,13 +1818,17 @@ fine::Ok<fine::ResourcePtr<CostEvaluatorResource>> create_cost_evaluator_nif(
     // Get tw_penalty
     key = enif_make_atom(env, "tw_penalty");
     if (enif_get_map_value(env, opts_term, key, &value)) {
-        enif_get_double(env, value, &tw_penalty);
+        if (!get_number_as_double(env, value, &tw_penalty)) {
+            throw std::runtime_error("tw_penalty must be a number");
+        }
     }
 
     // Get dist_penalty
     key = enif_make_atom(env, "dist_penalty");
     if (enif_get_map_value(env, opts_term, key, &value)) {
-        enif_get_double(env, value, &dist_penalty);
+        if (!get_number_as_double(env, value, &dist_penalty)) {
+            throw std::runtime_error("dist_penalty must be a number");
+        }
     }
 
     // Validate: penalties must be non-negative
@@ -2129,31 +2214,150 @@ FINE_NIF(problem_data_groups_nif, 0);
 // -----------------------------------------------------------------------------
 
 /**
- * Build default neighbourhood for local search.
+ * Compute proximity-based neighbours matching PyVRP's compute_neighbours.
+ *
+ * Proximity is based on Vidal et al. (2013) hybrid genetic algorithm paper.
+ * This considers edge costs, time window penalties, and prizes.
  */
-pyvrp::search::SearchSpace::Neighbours build_neighbours(ProblemData const& data, size_t k = 40) {
+pyvrp::search::SearchSpace::Neighbours build_neighbours(
+    ProblemData const& data,
+    size_t numNeighbours = 60,
+    double weightWaitTime = 0.2,
+    double weightTimeWarp = 1.0,
+    bool symmetricProximity = true)
+{
     size_t const numLocs = data.numLocations();
+    size_t const numDepots = data.numDepots();
+    size_t const numClients = data.numClients();
     pyvrp::search::SearchSpace::Neighbours neighbours(numLocs);
 
-    // Get distance matrix (use profile 0)
-    auto const& distMatrix = data.distanceMatrix(0);
+    // Step 1: Collect unique (unitDistCost, unitDurCost, profile) combinations
+    std::set<std::tuple<Cost, Cost, size_t>> uniqueEdgeCosts;
+    for (auto const& vt : data.vehicleTypes()) {
+        uniqueEdgeCosts.insert({vt.unitDistanceCost, vt.unitDurationCost, vt.profile});
+    }
 
-    // For each client, find k nearest clients
-    for (size_t i = data.numDepots(); i < numLocs; ++i) {
-        std::vector<std::pair<Distance, size_t>> distances;
-
-        for (size_t j = data.numDepots(); j < numLocs; ++j) {
-            if (i != j) {
-                auto dist = distMatrix(i, j);
-                distances.emplace_back(dist, j);
+    // Step 2: Compute minimum edge cost matrix across all vehicle types
+    std::vector<std::vector<double>> edgeCosts(numLocs, std::vector<double>(numLocs, 0.0));
+    bool first = true;
+    for (auto const& [unitDist, unitDur, profile] : uniqueEdgeCosts) {
+        auto const& distMat = data.distanceMatrix(profile);
+        auto const& durMat = data.durationMatrix(profile);
+        for (size_t i = 0; i < numLocs; ++i) {
+            for (size_t j = 0; j < numLocs; ++j) {
+                double cost = static_cast<double>(unitDist.get()) * static_cast<double>(distMat(i, j).get())
+                            + static_cast<double>(unitDur.get()) * static_cast<double>(durMat(i, j).get());
+                if (first) {
+                    edgeCosts[i][j] = cost;
+                } else {
+                    edgeCosts[i][j] = std::min(edgeCosts[i][j], cost);
+                }
             }
         }
+        first = false;
+    }
 
-        // Sort by distance and take top k
-        std::sort(distances.begin(), distances.end());
+    // Step 3: Compute minimum duration matrix across all profiles (store as double)
+    std::vector<std::vector<double>> minDuration(numLocs, std::vector<double>(numLocs));
+    for (size_t i = 0; i < numLocs; ++i) {
+        for (size_t j = 0; j < numLocs; ++j) {
+            double minDur = static_cast<double>(data.durationMatrix(0)(i, j).get());
+            for (size_t p = 1; p < data.numProfiles(); ++p) {
+                minDur = std::min(minDur, static_cast<double>(data.durationMatrix(p)(i, j).get()));
+            }
+            minDuration[i][j] = minDur;
+        }
+    }
 
-        for (size_t n = 0; n < std::min(k, distances.size()); ++n) {
-            neighbours[i].push_back(distances[n].second);
+    // Step 4: Extract client time windows and service durations (store as double)
+    // Clients start at index numDepots in location array
+    std::vector<double> early(numLocs, 0.0);
+    std::vector<double> late(numLocs, 0.0);
+    std::vector<double> service(numLocs, 0.0);
+    std::vector<double> prize(numLocs, 0.0);
+
+    auto const& clients = data.clients();
+    for (size_t c = 0; c < numClients; ++c) {
+        size_t loc = numDepots + c;
+        early[loc] = static_cast<double>(clients[c].twEarly.get());
+        late[loc] = static_cast<double>(clients[c].twLate.get());
+        service[loc] = static_cast<double>(clients[c].serviceDuration.get());
+        prize[loc] = static_cast<double>(clients[c].prize.get());
+    }
+
+    // Step 5: Add time window penalties and subtract prizes
+    // min_wait[i][j] = early[j] - minDuration[i][j] - service[i] - late[i]
+    // min_tw[i][j] = early[i] + service[i] + minDuration[i][j] - late[j]
+    for (size_t i = 0; i < numLocs; ++i) {
+        for (size_t j = 0; j < numLocs; ++j) {
+            // Subtract prize for visiting j
+            edgeCosts[i][j] -= prize[j];
+
+            // Wait time penalty (arriving too early at j)
+            double minWait = early[j] - minDuration[i][j] - service[i] - late[i];
+            if (minWait > 0) {
+                edgeCosts[i][j] += weightWaitTime * minWait;
+            }
+
+            // Time warp penalty (arriving too late at j)
+            double minTw = early[i] + service[i] + minDuration[i][j] - late[j];
+            if (minTw > 0) {
+                edgeCosts[i][j] += weightTimeWarp * minTw;
+            }
+        }
+    }
+
+    // Step 6: Symmetrize proximity if requested
+    if (symmetricProximity) {
+        for (size_t i = 0; i < numLocs; ++i) {
+            for (size_t j = i + 1; j < numLocs; ++j) {
+                double minVal = std::min(edgeCosts[i][j], edgeCosts[j][i]);
+                edgeCosts[i][j] = minVal;
+                edgeCosts[j][i] = minVal;
+            }
+        }
+    }
+
+    // Step 7: Handle mutually exclusive groups - high proximity for same-group clients
+    for (auto const& group : data.groups()) {
+        if (group.mutuallyExclusive) {
+            auto const& groupClients = group.clients();
+            for (size_t ci : groupClients) {
+                for (size_t cj : groupClients) {
+                    if (ci != cj) {
+                        // Use max double (not infinity) to order before depots
+                        edgeCosts[ci][cj] = std::numeric_limits<double>::max();
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 8: Set diagonal and depot entries to infinity
+    for (size_t i = 0; i < numLocs; ++i) {
+        edgeCosts[i][i] = std::numeric_limits<double>::infinity();  // Self
+    }
+    for (size_t d = 0; d < numDepots; ++d) {
+        for (size_t j = 0; j < numLocs; ++j) {
+            edgeCosts[d][j] = std::numeric_limits<double>::infinity();  // Depots have no neighbours
+            edgeCosts[j][d] = std::numeric_limits<double>::infinity();  // Clients don't neighbour depots
+        }
+    }
+
+    // Step 9: For each client, find k nearest by proximity
+    size_t k = std::min(numNeighbours, numClients - 1);
+    for (size_t i = numDepots; i < numLocs; ++i) {
+        std::vector<std::pair<double, size_t>> proximities;
+        for (size_t j = numDepots; j < numLocs; ++j) {
+            if (i != j) {
+                proximities.emplace_back(edgeCosts[i][j], j);
+            }
+        }
+        // Stable sort to match PyVRP's numpy argsort behavior
+        std::stable_sort(proximities.begin(), proximities.end());
+
+        for (size_t n = 0; n < std::min(k, proximities.size()); ++n) {
+            neighbours[i].push_back(proximities[n].second);
         }
     }
 
@@ -2175,6 +2379,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_nif(
 
     // Parse options
     bool exhaustive = false;
+    int64_t seed = 42;
 
     ERL_NIF_TERM key, value;
     key = enif_make_atom(env, "exhaustive");
@@ -2183,6 +2388,10 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_nif(
         if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1)) {
             exhaustive = (std::string(buf) == "true");
         }
+    }
+    key = enif_make_atom(env, "seed");
+    if (enif_get_map_value(env, opts_term, key, &value)) {
+        enif_get_int64(env, value, &seed);
     }
 
     // Build neighbourhood
@@ -2195,39 +2404,37 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_nif(
     // Create local search
     pyvrp::search::LocalSearch ls(problem_data, neighbours, perturbManager);
 
-    // Add node operators (Exchange variants)
+    // Add node operators - matching PyVRP's default NODE_OPERATORS
     pyvrp::search::Exchange<1, 0> relocate(problem_data);  // RELOCATE
     pyvrp::search::Exchange<2, 0> relocate2(problem_data); // 2-RELOCATE
     pyvrp::search::Exchange<1, 1> swap11(problem_data);    // SWAP(1,1)
     pyvrp::search::Exchange<2, 1> swap21(problem_data);    // SWAP(2,1)
     pyvrp::search::Exchange<2, 2> swap22(problem_data);    // SWAP(2,2)
-    pyvrp::search::Exchange<3, 0> relocate3(problem_data); // 3-RELOCATE
-    pyvrp::search::Exchange<3, 1> swap31(problem_data);    // SWAP(3,1)
-    pyvrp::search::Exchange<3, 2> swap32(problem_data);    // SWAP(3,2)
-    pyvrp::search::Exchange<3, 3> swap33(problem_data);    // SWAP(3,3)
     pyvrp::search::SwapTails swapTails(problem_data);      // SWAP-TAILS
-    pyvrp::search::RelocateWithDepot relocateDepot(problem_data);  // Multi-trip reload
 
     ls.addNodeOperator(relocate);
     ls.addNodeOperator(relocate2);
-    ls.addNodeOperator(relocate3);
     ls.addNodeOperator(swap11);
     ls.addNodeOperator(swap21);
     ls.addNodeOperator(swap22);
-    ls.addNodeOperator(swap31);
-    ls.addNodeOperator(swap32);
-    ls.addNodeOperator(swap33);
-    ls.addNodeOperator(swapTails);
-    ls.addNodeOperator(relocateDepot);
+    if (pyvrp::search::supports<pyvrp::search::SwapTails>(problem_data)) {
+        ls.addNodeOperator(swapTails);
+    }
 
-    // Add route operators
-    pyvrp::search::SwapStar swapStar(problem_data);
-    pyvrp::search::SwapRoutes swapRoutes(problem_data);
+    // RelocateWithDepot only if supported (needs reload depots)
+    std::unique_ptr<pyvrp::search::RelocateWithDepot> relocateDepot;
+    if (pyvrp::search::supports<pyvrp::search::RelocateWithDepot>(problem_data)) {
+        relocateDepot = std::make_unique<pyvrp::search::RelocateWithDepot>(problem_data);
+        ls.addNodeOperator(*relocateDepot);
+    }
 
-    ls.addRouteOperator(swapStar);
-    ls.addRouteOperator(swapRoutes);
+    // Note: PyVRP's default ROUTE_OPERATORS is empty
 
-    // Run local search
+    // Create RNG and shuffle (like Python's __call__ does)
+    RandomNumberGenerator rng(static_cast<uint32_t>(seed));
+    ls.shuffle(rng);
+
+    // Run local search (operator() = perturbation + search + intensify loop)
     Solution improved = ls(solution_resource->solution, cost_evaluator);
 
     return fine::Ok(fine::make_resource<SolutionResource>(
@@ -2235,6 +2442,86 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_nif(
 }
 
 FINE_NIF(local_search_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
+
+/**
+ * Perform search-only local search (no perturbation).
+ *
+ * This matches PyVRP's ls.search() method which is used for the initial solution.
+ * Unlike local_search_nif (which calls operator() with perturbation), this calls
+ * the search() method directly after shuffling.
+ *
+ * PyVRP: init = ls.search(Solution(data, []), pm.max_cost_evaluator())
+ */
+fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
+    ErlNifEnv* env,
+    fine::ResourcePtr<SolutionResource> solution_resource,
+    fine::ResourcePtr<ProblemDataResource> problem_resource,
+    fine::ResourcePtr<CostEvaluatorResource> evaluator_resource,
+    fine::Term opts_term)
+{
+    auto& problem_data = *problem_resource->data;
+    auto& cost_evaluator = evaluator_resource->evaluator;
+
+    // Parse options
+    int64_t seed = 42;
+
+    ERL_NIF_TERM key, value;
+    key = enif_make_atom(env, "seed");
+    if (enif_get_map_value(env, opts_term, key, &value)) {
+        enif_get_int64(env, value, &seed);
+    }
+
+    // Build neighbourhood
+    auto neighbours = build_neighbours(problem_data);
+
+    // Create perturbation manager (won't be used but required for LocalSearch constructor)
+    pyvrp::search::PerturbationParams perturbParams(1, 25);
+    pyvrp::search::PerturbationManager perturbManager(perturbParams);
+
+    // Create local search
+    pyvrp::search::LocalSearch ls(problem_data, neighbours, perturbManager);
+
+    // Add node operators - matching PyVRP's default NODE_OPERATORS:
+    // Exchange10, Exchange20, Exchange11, Exchange21, Exchange22, SwapTails, RelocateWithDepot
+    // Note: PyVRP's default ROUTE_OPERATORS is empty, so we don't add SwapStar/SwapRoutes here
+    pyvrp::search::Exchange<1, 0> relocate(problem_data);  // RELOCATE
+    pyvrp::search::Exchange<2, 0> relocate2(problem_data); // 2-RELOCATE
+    pyvrp::search::Exchange<1, 1> swap11(problem_data);    // SWAP(1,1)
+    pyvrp::search::Exchange<2, 1> swap21(problem_data);    // SWAP(2,1)
+    pyvrp::search::Exchange<2, 2> swap22(problem_data);    // SWAP(2,2)
+    pyvrp::search::SwapTails swapTails(problem_data);      // SWAP-TAILS
+
+    ls.addNodeOperator(relocate);
+    ls.addNodeOperator(relocate2);
+    ls.addNodeOperator(swap11);
+    ls.addNodeOperator(swap21);
+    ls.addNodeOperator(swap22);
+    // SwapTails.supports() returns true if numVehicles > 1
+    if (pyvrp::search::supports<pyvrp::search::SwapTails>(problem_data)) {
+        ls.addNodeOperator(swapTails);
+    }
+
+    // RelocateWithDepot only if supported (needs reload depots)
+    std::unique_ptr<pyvrp::search::RelocateWithDepot> relocateDepot;
+    if (pyvrp::search::supports<pyvrp::search::RelocateWithDepot>(problem_data)) {
+        relocateDepot = std::make_unique<pyvrp::search::RelocateWithDepot>(problem_data);
+        ls.addNodeOperator(*relocateDepot);
+    }
+
+    // Note: PyVRP's default ROUTE_OPERATORS is empty - don't add SwapStar/SwapRoutes
+
+    // Create RNG and shuffle (like Python's ls.search() does)
+    RandomNumberGenerator rng(static_cast<uint32_t>(seed));
+    ls.shuffle(rng);
+
+    // Run search-only (no perturbation) - this is what PyVRP uses for initial solution
+    Solution improved = ls.search(solution_resource->solution, cost_evaluator);
+
+    return fine::Ok(fine::make_resource<SolutionResource>(
+        std::move(improved), problem_resource->data));
+}
+
+FINE_NIF(local_search_search_only_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
 
 // -----------------------------------------------------------------------------
 // Configurable Local Search - allows specifying which operators to use
@@ -2618,6 +2905,90 @@ fine::Term local_search_stats_nif(
 }
 
 FINE_NIF(local_search_stats_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
+
+// -----------------------------------------------------------------------------
+// Persistent LocalSearch Resource NIFs
+// -----------------------------------------------------------------------------
+
+/**
+ * Create a persistent LocalSearch resource.
+ *
+ * This pre-computes neighbours and creates all operators once, avoiding the
+ * O(n²) cost on every iteration. The resource can be reused across iterations.
+ *
+ * The seed initializes the RNG which is stored and reused across calls,
+ * matching PyVRP's behavior where one RNG is created at algorithm start.
+ */
+fine::ResourcePtr<LocalSearchResource> create_local_search_nif(
+    ErlNifEnv* env,
+    fine::ResourcePtr<ProblemDataResource> problem_resource,
+    int64_t seed)
+{
+    auto& problem_data = *problem_resource->data;
+
+    // Build neighbours (the expensive O(n²) computation)
+    auto neighbours = build_neighbours(problem_data);
+
+    return fine::make_resource<LocalSearchResource>(
+        problem_resource->data,
+        std::move(neighbours),
+        static_cast<uint32_t>(seed));
+}
+
+FINE_NIF(create_local_search_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
+
+/**
+ * Run local search using a persistent LocalSearch resource.
+ *
+ * This avoids recreating neighbours and operators on each call.
+ * Uses the stored RNG which advances across calls (matching PyVRP).
+ */
+fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_run_nif(
+    ErlNifEnv* env,
+    fine::ResourcePtr<LocalSearchResource> ls_resource,
+    fine::ResourcePtr<SolutionResource> solution_resource,
+    fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
+{
+    auto& cost_evaluator = evaluator_resource->evaluator;
+
+    // Shuffle using stored RNG (like Python's __call__ does)
+    // The RNG state advances, matching PyVRP's behavior
+    ls_resource->ls->shuffle(ls_resource->rng);
+
+    // Run local search (operator() = perturbation + search + intensify loop)
+    Solution improved = (*ls_resource->ls)(solution_resource->solution, cost_evaluator);
+
+    return fine::Ok(fine::make_resource<SolutionResource>(
+        std::move(improved), ls_resource->problemData));
+}
+
+FINE_NIF(local_search_run_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
+
+/**
+ * Run search-only (no perturbation) using a persistent LocalSearch resource.
+ *
+ * Used for initial solution construction.
+ * Uses the stored RNG which advances across calls (matching PyVRP).
+ */
+fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_run_nif(
+    ErlNifEnv* env,
+    fine::ResourcePtr<LocalSearchResource> ls_resource,
+    fine::ResourcePtr<SolutionResource> solution_resource,
+    fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
+{
+    auto& cost_evaluator = evaluator_resource->evaluator;
+
+    // Shuffle using stored RNG
+    ls_resource->ls->shuffle(ls_resource->rng);
+
+    // Run search only (no perturbation)
+    Solution improved = ls_resource->ls->search(solution_resource->solution, cost_evaluator);
+
+    return fine::Ok(fine::make_resource<SolutionResource>(
+        std::move(improved), ls_resource->problemData));
+}
+
+FINE_NIF(local_search_search_run_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
 
 // -----------------------------------------------------------------------------
 // search::Route NIFs

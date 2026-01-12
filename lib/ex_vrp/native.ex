@@ -260,6 +260,35 @@ defmodule ExVrp.Native do
 
   defp local_search_nif(_solution, _problem_data, _cost_evaluator, _opts), do: :erlang.nif_error(:nif_not_loaded)
 
+  @doc """
+  Performs search-only local search (no perturbation).
+
+  This matches PyVRP's `ls.search()` method which is used for the initial solution.
+  Unlike `local_search/4` (which calls operator() with perturbation), this calls
+  the search() method directly after shuffling.
+
+  Used by Solver.solve/2 to create the initial solution:
+  PyVRP: init = ls.search(Solution(data, []), pm.max_cost_evaluator())
+
+  ## Options
+
+  - `:seed` - Random seed for shuffling (default: 42)
+  """
+  @spec local_search_search_only(reference(), reference(), reference(), keyword()) ::
+          {:ok, reference()} | {:error, term()}
+  def local_search_search_only(solution, problem_data, cost_evaluator, opts \\ [])
+
+  def local_search_search_only(solution, problem_data, cost_evaluator, opts) when is_list(opts) do
+    local_search_search_only_nif(solution, problem_data, cost_evaluator, Map.new(opts))
+  end
+
+  def local_search_search_only(solution, problem_data, cost_evaluator, opts) when is_map(opts) do
+    local_search_search_only_nif(solution, problem_data, cost_evaluator, opts)
+  end
+
+  defp local_search_search_only_nif(_solution, _problem_data, _cost_evaluator, _opts),
+    do: :erlang.nif_error(:nif_not_loaded)
+
   # ---------------------------------------------------------------------------
   # Configurable LocalSearch with specific operators
   # ---------------------------------------------------------------------------
@@ -324,6 +353,87 @@ defmodule ExVrp.Native do
   end
 
   defp local_search_stats_nif(_solution, _problem_data, _cost_evaluator, _opts), do: :erlang.nif_error(:nif_not_loaded)
+
+  # ---------------------------------------------------------------------------
+  # Persistent LocalSearch Resource
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Creates a persistent LocalSearch resource.
+
+  This pre-computes neighbours (O(n²)) and creates all operators once.
+  The resource can be reused across iterations for significant speedup.
+
+  The seed initializes the RNG which is stored and reused across all calls,
+  matching PyVRP's behavior where one RNG is created at algorithm start.
+
+  ## Parameters
+
+  - `problem_data` - Reference to the problem data
+  - `seed` - Random seed for the RNG
+
+  ## Returns
+
+  Reference to the LocalSearch resource.
+  """
+  @spec create_local_search(reference(), integer()) :: reference()
+  def create_local_search(problem_data, seed) do
+    create_local_search_nif(problem_data, seed)
+  end
+
+  defp create_local_search_nif(_problem_data, _seed), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Runs local search using a persistent LocalSearch resource.
+
+  This avoids recreating neighbours and operators on each call.
+  Equivalent to Python's `ls(solution, cost_eval)` (with perturbation).
+
+  Uses the stored RNG which advances across calls (matching PyVRP).
+
+  ## Parameters
+
+  - `local_search` - Reference to LocalSearch resource from `create_local_search/2`
+  - `solution` - Reference to the current solution
+  - `cost_evaluator` - Reference to the cost evaluator
+
+  ## Returns
+
+  `{:ok, improved_solution}` or `{:error, reason}`
+  """
+  @spec local_search_run(reference(), reference(), reference()) ::
+          {:ok, reference()} | {:error, term()}
+  def local_search_run(local_search, solution, cost_evaluator) do
+    local_search_run_nif(local_search, solution, cost_evaluator)
+  end
+
+  defp local_search_run_nif(_local_search, _solution, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Runs search-only (no perturbation) using a persistent LocalSearch resource.
+
+  Used for initial solution construction.
+  Equivalent to Python's `ls.search(solution, cost_eval)`.
+
+  Uses the stored RNG which advances across calls (matching PyVRP).
+
+  ## Parameters
+
+  - `local_search` - Reference to LocalSearch resource from `create_local_search/2`
+  - `solution` - Reference to the current solution
+  - `cost_evaluator` - Reference to the cost evaluator
+
+  ## Returns
+
+  `{:ok, improved_solution}` or `{:error, reason}`
+  """
+  @spec local_search_search_run(reference(), reference(), reference()) ::
+          {:ok, reference()} | {:error, term()}
+  def local_search_search_run(local_search, solution, cost_evaluator) do
+    local_search_search_run_nif(local_search, solution, cost_evaluator)
+  end
+
+  defp local_search_search_run_nif(_local_search, _solution, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
   # Route - via Solution reference + route index

@@ -74,7 +74,7 @@ defmodule ExVrp do
   def solve!(%Model{} = model, opts \\ []) do
     case solve(model, opts) do
       {:ok, solution} -> solution
-      {:error, reason} -> raise ExVrp.SolveError, reason
+      {:error, reason} -> raise ExVrp.SolveError, reason: reason
     end
   end
 end

@@ -22,15 +22,48 @@ defmodule ExVrp.IteratedLocalSearch do
     @moduledoc """
     Parameters for Iterated Local Search.
     """
-    defstruct max_no_improvement: 5000,
+    # These defaults match PyVRP's IteratedLocalSearchParams
+    defstruct max_no_improvement: 50_000,
               # Number of iterations without improvement before restart
               # Size of the late acceptance history buffer
-              history_size: 50
+              history_size: 500
 
     @type t :: %__MODULE__{
             max_no_improvement: pos_integer(),
             history_size: pos_integer()
           }
+  end
+
+  # Ring buffer that matches PyVRP's RingBuffer behavior exactly
+  # Key insight: skip() advances index without storing, keeping old element
+  defmodule RingBuffer do
+    @moduledoc false
+    defstruct buffer: [], idx: 0, maxlen: 0
+
+    def new(maxlen) do
+      %__MODULE__{buffer: List.duplicate(nil, maxlen), idx: 0, maxlen: maxlen}
+    end
+
+    def clear(%__MODULE__{maxlen: maxlen}) do
+      new(maxlen)
+    end
+
+    # Returns the element at current position (will be overwritten on append)
+    def peek(%__MODULE__{buffer: buffer, idx: idx, maxlen: maxlen}) do
+      Enum.at(buffer, rem(idx, maxlen))
+    end
+
+    # Append value at current position and advance index
+    def append(%__MODULE__{buffer: buffer, idx: idx, maxlen: maxlen} = rb, value) do
+      pos = rem(idx, maxlen)
+      new_buffer = List.replace_at(buffer, pos, value)
+      %{rb | buffer: new_buffer, idx: idx + 1}
+    end
+
+    # Advance index without storing (keeps old value)
+    def skip(%__MODULE__{idx: idx} = rb) do
+      %{rb | idx: idx + 1}
+    end
   end
 
   defmodule Result do
@@ -105,6 +138,7 @@ defmodule ExVrp.IteratedLocalSearch do
 
   - `problem_data` - Reference to the problem data
   - `penalty_manager` - PenaltyManager for dynamic penalty adjustment
+  - `local_search` - Persistent LocalSearch resource from Native.create_local_search/1
   - `initial_solution` - Starting solution reference
   - `stop_fn` - Function that takes best_cost and returns true to stop
   - `params` - ILS parameters (optional)
@@ -113,32 +147,38 @@ defmodule ExVrp.IteratedLocalSearch do
 
   A Result struct containing the best solution found and statistics.
   """
-  @spec run(reference(), PenaltyManager.t(), reference(), stop_fn(), Params.t()) :: Result.t()
-  def run(problem_data, penalty_manager, initial_solution, stop_fn, params \\ %Params{}) do
+  @spec run(reference(), PenaltyManager.t(), reference(), reference(), stop_fn(), Params.t(), keyword()) :: Result.t()
+  def run(problem_data, penalty_manager, local_search, initial_solution, stop_fn, params \\ %Params{}, opts \\ []) do
     start_time = System.monotonic_time(:millisecond)
+
+    # Get seed from options, default to random
+    seed = Keyword.get(opts, :seed, :rand.uniform(1_000_000))
 
     {:ok, cost_eval} = PenaltyManager.cost_evaluator(penalty_manager)
 
     initial_penalised_cost = Native.solution_penalised_cost(initial_solution, cost_eval)
-    # For stopping criterion, use cost() which returns :infinity for infeasible
-    initial_stop_cost = Native.solution_cost(initial_solution, cost_eval)
+    # For best selection and stopping criterion, use cost() which returns :infinity for infeasible
+    # This matches PyVRP's behavior where infeasible solutions can never become "best"
+    initial_cost = Native.solution_cost(initial_solution, cost_eval)
 
     state = %{
       problem_data: problem_data,
       penalty_manager: penalty_manager,
+      local_search: local_search,
       cost_eval: cost_eval,
       params: params,
       best: initial_solution,
-      best_cost: initial_penalised_cost,
-      # For stopping criterion (infinity if infeasible)
-      best_stop_cost: initial_stop_cost,
+      # Use cost() for best selection - infeasible solutions have infinite cost
+      best_cost: initial_cost,
       current: initial_solution,
       current_cost: initial_penalised_cost,
-      history: :queue.new(),
-      history_size: 0,
+      # Ring buffer matching PyVRP's implementation exactly
+      history: RingBuffer.new(params.history_size),
       iteration: 0,
       iters_no_improvement: 0,
       initial_cost: initial_penalised_cost,
+      # Use seed for reproducible RNG in local search
+      rng_seed: seed,
       stats: %{
         improvements: 0,
         restarts: 0
@@ -163,9 +203,9 @@ defmodule ExVrp.IteratedLocalSearch do
 
   # Main iteration loop
   defp iterate(state, stop_fn) do
-    # Use best_stop_cost for stopping criterion - this is :infinity for infeasible
-    # solutions, matching PyVRP's behavior where cost() returns INT_MAX for infeasible
-    if stop_fn.(state.best_stop_cost) do
+    # Use best_cost for stopping criterion - this is cost() which returns infinity
+    # for infeasible solutions, matching PyVRP's behavior
+    if stop_fn.(state.best_cost) do
       state
     else
       state
@@ -181,12 +221,14 @@ defmodule ExVrp.IteratedLocalSearch do
   # Restart from best if no improvement for too long
   defp maybe_restart(%{iters_no_improvement: iters, params: params} = state) do
     if iters >= params.max_no_improvement do
+      # On restart, recalculate current_cost as penalised_cost of best
+      best_penalised = Native.solution_penalised_cost(state.best, state.cost_eval)
+
       %{
         state
         | current: state.best,
-          current_cost: state.best_cost,
-          history: :queue.new(),
-          history_size: 0,
+          current_cost: best_penalised,
+          history: RingBuffer.clear(state.history),
           iters_no_improvement: 0,
           stats: Map.update!(state.stats, :restarts, &(&1 + 1))
       }
@@ -197,12 +239,14 @@ defmodule ExVrp.IteratedLocalSearch do
 
   # Apply local search to generate candidate
   defp search_step(state) do
+    # Use persistent LocalSearch for performance
+    # RNG is stored in the LocalSearch resource and advances across calls,
+    # matching PyVRP's behavior
     {:ok, candidate} =
-      Native.local_search(
+      Native.local_search_run(
+        state.local_search,
         state.current,
-        state.problem_data,
-        state.cost_eval,
-        exhaustive: false
+        state.cost_eval
       )
 
     candidate_cost = Native.solution_penalised_cost(candidate, state.cost_eval)
@@ -214,74 +258,73 @@ defmodule ExVrp.IteratedLocalSearch do
   end
 
   # Late Acceptance Hill-Climbing acceptance criterion
+  # This matches PyVRP's implementation exactly:
+  # - cost() for best selection (infeasible = infinity)
+  # - penalised_cost() for LAHC acceptance
   defp accept_step(state) do
     %{
       candidate: candidate,
-      candidate_cost: candidate_cost,
-      current_cost: current_cost,
+      candidate_cost: cand_cost,
+      current: current,
+      current_cost: curr_cost,
+      best: best,
       best_cost: best_cost,
-      history: history,
-      history_size: history_size,
-      params: params
+      history: history
     } = state
 
-    # Get historical cost for comparison (or use best if history is empty)
-    hist_cost =
-      if history_size > 0 do
-        {:value, {cost, _}} = :queue.peek(history)
-        cost
+    # PyVRP line 146-149: Update best if candidate is new best (using cost())
+    # iters_no_improvement is incremented unconditionally, then reset to 0 on improvement
+    candidate_obj_cost = Native.solution_cost(candidate, state.cost_eval)
+    iters_no_improvement = state.iters_no_improvement + 1
+
+    {new_best, new_best_cost, new_iters_no_improvement, new_stats} =
+      if candidate_obj_cost < best_cost do
+        {candidate, candidate_obj_cost, 0, Map.update!(state.stats, :improvements, &(&1 + 1))}
       else
-        best_cost
+        {best, best_cost, iters_no_improvement, state.stats}
       end
 
-    # Accept if candidate is better than historical or current
-    accept? = candidate_cost < hist_cost or candidate_cost < current_cost
+    # PyVRP lines 157-159: late_cost from history.peek() or best
+    late = RingBuffer.peek(history)
 
-    if accept? do
-      # Update best if this is a new best
-      {new_best, new_best_cost, new_best_stop_cost, new_iters_no_improvement, new_stats} =
-        if candidate_cost < best_cost do
-          # Also compute the stop cost for the new best (infinity if infeasible)
-          candidate_stop_cost = Native.solution_cost(candidate, state.cost_eval)
-          {candidate, candidate_cost, candidate_stop_cost, 0, Map.update!(state.stats, :improvements, &(&1 + 1))}
-        else
-          {state.best, best_cost, state.best_stop_cost, state.iters_no_improvement + 1, state.stats}
-        end
+    late_cost =
+      if late == nil do
+        Native.solution_penalised_cost(new_best, state.cost_eval)
+      else
+        Native.solution_penalised_cost(late, state.cost_eval)
+      end
 
-      # Update history only when candidate improves over historical
-      {new_history, new_history_size} =
-        if candidate_cost < hist_cost do
-          add_to_history(history, history_size, current_cost, state.current, params.history_size)
-        else
-          {history, history_size}
-        end
+    # PyVRP line 165: Accept if better than late or current
+    accept? = cand_cost < late_cost or cand_cost < curr_cost
 
-      %{
-        state
-        | current: candidate,
-          current_cost: candidate_cost,
-          best: new_best,
-          best_cost: new_best_cost,
-          best_stop_cost: new_best_stop_cost,
-          history: new_history,
-          history_size: new_history_size,
-          iters_no_improvement: new_iters_no_improvement,
-          stats: new_stats
-      }
-    else
-      %{state | iters_no_improvement: state.iters_no_improvement + 1}
-    end
-  end
+    # Update current if accepted
+    {new_current, new_curr_cost} =
+      if accept? do
+        {candidate, cand_cost}
+      else
+        {current, curr_cost}
+      end
 
-  # Add to ring buffer history
-  defp add_to_history(history, size, cost, solution, max_size) do
-    if size >= max_size do
-      # Remove oldest, add new
-      {_, new_history} = :queue.out(history)
-      {:queue.in({cost, solution}, new_history), max_size}
-    else
-      {:queue.in({cost, solution}, history), size + 1}
-    end
+    # PyVRP lines 171-174: Update history
+    # - append(current) if curr_cost < late_cost OR late is nil
+    # - skip() otherwise
+    new_history =
+      if new_curr_cost < late_cost or late == nil do
+        RingBuffer.append(history, new_current)
+      else
+        RingBuffer.skip(history)
+      end
+
+    %{
+      state
+      | current: new_current,
+        current_cost: new_curr_cost,
+        best: new_best,
+        best_cost: new_best_cost,
+        history: new_history,
+        iters_no_improvement: new_iters_no_improvement,
+        stats: new_stats
+    }
   end
 
   # Update penalty manager with candidate solution

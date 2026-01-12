@@ -114,6 +114,113 @@ defmodule ExVrp.StatisticsTest do
       stats = Statistics.new()
       assert Enum.to_list(stats) == []
     end
+
+    test "Enum.count/1 returns number of data points" do
+      {:ok, _problem_data, cost_evaluator, solution} = ok_small_with_solution()
+
+      stats = Statistics.new()
+      assert Enum.count(stats) == 0
+
+      stats = Statistics.collect(stats, solution, solution, solution, cost_evaluator)
+      assert Enum.count(stats) == 1
+
+      stats = Statistics.collect(stats, solution, solution, solution, cost_evaluator)
+      stats = Statistics.collect(stats, solution, solution, solution, cost_evaluator)
+      assert Enum.count(stats) == 3
+    end
+
+    test "Enum.member?/2 returns true for existing datum" do
+      {:ok, _problem_data, cost_evaluator, solution} = ok_small_with_solution()
+
+      stats = Statistics.new()
+      stats = Statistics.collect(stats, solution, solution, solution, cost_evaluator)
+
+      [datum] = stats.data
+      assert Enum.member?(stats, datum) == true
+    end
+
+    test "Enum.member?/2 returns false for non-existing datum" do
+      {:ok, _problem_data, cost_evaluator, solution} = ok_small_with_solution()
+
+      stats = Statistics.new()
+      stats = Statistics.collect(stats, solution, solution, solution, cost_evaluator)
+
+      other_datum = %{
+        current_cost: 999_999,
+        current_feas: false,
+        candidate_cost: 999_999,
+        candidate_feas: false,
+        best_cost: 999_999,
+        best_feas: false
+      }
+
+      assert Enum.member?(stats, other_datum) == false
+    end
+
+    test "Enum.slice/3 returns subset of data" do
+      {:ok, _problem_data, cost_evaluator, solution} = ok_small_with_solution()
+
+      stats = Statistics.new()
+
+      stats =
+        Enum.reduce(1..5, stats, fn _, acc ->
+          Statistics.collect(acc, solution, solution, solution, cost_evaluator)
+        end)
+
+      # Slice first 2 elements
+      sliced = Enum.slice(stats, 0, 2)
+      assert length(sliced) == 2
+      assert sliced == Enum.take(stats.data, 2)
+
+      # Slice middle elements
+      sliced_middle = Enum.slice(stats, 1, 3)
+      assert length(sliced_middle) == 3
+      assert sliced_middle == Enum.slice(stats.data, 1, 3)
+
+      # Slice with range
+      sliced_range = Enum.slice(stats, 2..4)
+      assert length(sliced_range) == 3
+    end
+
+    test "Enum.empty?/1 works correctly" do
+      empty_stats = Statistics.new()
+      assert Enum.empty?(empty_stats) == true
+
+      {:ok, _problem_data, cost_evaluator, solution} = ok_small_with_solution()
+      non_empty = Statistics.collect(empty_stats, solution, solution, solution, cost_evaluator)
+      assert Enum.empty?(non_empty) == false
+    end
+
+    test "Enum.reduce/3 computes correctly" do
+      {:ok, _problem_data, cost_evaluator, solution} = ok_small_with_solution()
+
+      stats = Statistics.new()
+
+      stats =
+        Enum.reduce(1..3, stats, fn _, acc ->
+          Statistics.collect(acc, solution, solution, solution, cost_evaluator)
+        end)
+
+      # Sum all best costs
+      total = Enum.reduce(stats, 0, fn datum, acc -> acc + datum.best_cost end)
+      expected = Enum.reduce(stats.data, 0, fn datum, acc -> acc + datum.best_cost end)
+      assert total == expected
+    end
+
+    test "Enum.map/2 transforms data correctly" do
+      {:ok, _problem_data, cost_evaluator, solution} = ok_small_with_solution()
+
+      stats = Statistics.new()
+
+      stats =
+        Enum.reduce(1..3, stats, fn _, acc ->
+          Statistics.collect(acc, solution, solution, solution, cost_evaluator)
+        end)
+
+      costs = Enum.map(stats, & &1.best_cost)
+      assert length(costs) == 3
+      assert Enum.all?(costs, &is_integer/1)
+    end
   end
 
   describe "CSV serialization" do
@@ -158,6 +265,52 @@ defmodule ExVrp.StatisticsTest do
       |> Enum.each(fn {orig, read} ->
         assert_in_delta orig, read, 0.0001
       end)
+
+      # Cleanup
+      File.rm(path)
+    end
+
+    test "to_csv and from_csv with custom delimiter" do
+      {:ok, _problem_data, cost_evaluator, solution} = ok_small_with_solution()
+
+      stats = Statistics.new()
+      stats = Statistics.collect(stats, solution, solution, solution, cost_evaluator)
+      stats = Statistics.collect(stats, solution, solution, solution, cost_evaluator)
+
+      path = Path.join(System.tmp_dir!(), "test_stats_tab_#{:rand.uniform(10_000)}.csv")
+
+      # Write with tab delimiter
+      assert :ok = Statistics.to_csv(stats, path, delimiter: "\t")
+
+      # Verify file uses tabs
+      {:ok, content} = File.read(path)
+      assert content =~ "\t"
+      refute content =~ ","
+
+      # Read back with same delimiter
+      {:ok, read_stats} = Statistics.from_csv(path, delimiter: "\t")
+      assert read_stats.num_iterations == 2
+      assert length(read_stats.data) == 2
+
+      # Cleanup
+      File.rm(path)
+    end
+
+    test "from_csv returns error for non-existent file" do
+      result = Statistics.from_csv("/tmp/definitely_does_not_exist_xyz123.csv")
+      assert {:error, :enoent} = result
+    end
+
+    test "to_csv with empty statistics" do
+      stats = Statistics.new()
+      path = Path.join(System.tmp_dir!(), "test_stats_empty_#{:rand.uniform(10_000)}.csv")
+
+      assert :ok = Statistics.to_csv(stats, path)
+
+      {:ok, read_stats} = Statistics.from_csv(path)
+      assert read_stats.num_iterations == 0
+      assert read_stats.data == []
+      assert read_stats.runtimes == []
 
       # Cleanup
       File.rm(path)

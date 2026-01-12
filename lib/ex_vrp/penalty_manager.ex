@@ -78,22 +78,103 @@ defmodule ExVrp.PenaltyManager do
   @spec init_from(reference(), Params.t()) :: t()
   def init_from(problem_data, params \\ %Params{}) do
     num_dims = Native.problem_data_num_load_dims(problem_data)
+    num_profiles = Native.problem_data_num_profiles_nif(problem_data)
+    num_locs = Native.problem_data_num_locations(problem_data)
 
-    # PyVRP computes initial penalties as: avg_cost / avg_value
-    # For example, init_load = avg_edge_cost / avg_client_load
-    # This ensures that 1 unit of violation costs roughly the same as 1 average edge
-    #
-    # Without access to the distance matrix here, we use a higher default (1000)
-    # that should work for most instances. The penalty manager will adapt
-    # these values during search based on solution feasibility.
-    initial_penalty = 1000.0
+    # Get vehicle type info for edge cost computation
+    vehicle_types = Native.problem_data_vehicle_types_nif(problem_data)
 
-    new(
-      List.duplicate(initial_penalty, num_dims),
-      initial_penalty,
-      initial_penalty,
-      params
-    )
+    # Collect unique (unit_dist, unit_dur, profile) combinations
+    # vehicle_types_nif returns list of {unit_distance_cost, unit_duration_cost, profile} tuples
+    unique_edge_costs = Enum.uniq(vehicle_types)
+
+    # Compute minimum edge costs across all vehicle types
+    # Initialize with first vehicle type
+    [{first_dist, first_dur, first_prof} | rest] = unique_edge_costs
+    dist_mat = Native.problem_data_distance_matrix_nif(problem_data, first_prof)
+    dur_mat = Native.problem_data_duration_matrix_nif(problem_data, first_prof)
+
+    # Compute initial edge costs
+    initial_costs =
+      for i <- 0..(num_locs - 1) do
+        row_dist = Enum.at(dist_mat, i)
+        row_dur = Enum.at(dur_mat, i)
+
+        for j <- 0..(num_locs - 1) do
+          first_dist * Enum.at(row_dist, j) + first_dur * Enum.at(row_dur, j)
+        end
+      end
+
+    # Take elementwise minimum across remaining vehicle types
+    edge_costs =
+      Enum.reduce(rest, initial_costs, fn {unit_dist, unit_dur, profile}, acc ->
+        dist_mat = Native.problem_data_distance_matrix_nif(problem_data, profile)
+        dur_mat = Native.problem_data_duration_matrix_nif(problem_data, profile)
+
+        for {row_acc, i} <- Enum.with_index(acc) do
+          row_dist = Enum.at(dist_mat, i)
+          row_dur = Enum.at(dur_mat, i)
+
+          for {val_acc, j} <- Enum.with_index(row_acc) do
+            cost = unit_dist * Enum.at(row_dist, j) + unit_dur * Enum.at(row_dur, j)
+            min(val_acc, cost)
+          end
+        end
+      end)
+
+    # Compute minimum distance/duration matrices across all profiles
+    min_distances =
+      Enum.reduce(0..(num_profiles - 1), nil, fn p, acc ->
+        mat = Native.problem_data_distance_matrix_nif(problem_data, p)
+
+        if acc == nil do
+          mat
+        else
+          for {row_acc, row_mat} <- Enum.zip(acc, mat) do
+            for {val_acc, val_mat} <- Enum.zip(row_acc, row_mat) do
+              min(val_acc, val_mat)
+            end
+          end
+        end
+      end)
+
+    min_durations =
+      Enum.reduce(0..(num_profiles - 1), nil, fn p, acc ->
+        mat = Native.problem_data_duration_matrix_nif(problem_data, p)
+
+        if acc == nil do
+          mat
+        else
+          for {row_acc, row_mat} <- Enum.zip(acc, mat) do
+            for {val_acc, val_mat} <- Enum.zip(row_acc, row_mat) do
+              min(val_acc, val_mat)
+            end
+          end
+        end
+      end)
+
+    # Compute averages (sum / count)
+    total_entries = num_locs * num_locs
+    avg_cost = matrix_sum(edge_costs) / total_entries
+    avg_distance = matrix_sum(min_distances) / total_entries
+    avg_duration = matrix_sum(min_durations) / total_entries
+
+    # For load penalty, use max_penalty since we don't have easy access to
+    # pickup/delivery data here. PyVRP does the same for instances where
+    # avg_load computes to a very small value.
+    # The penalty manager will adapt these values during search anyway.
+    init_load = List.duplicate(params.max_penalty, num_dims)
+
+    init_tw = avg_cost / max(avg_duration, 1.0)
+    init_dist = avg_cost / max(avg_distance, 1.0)
+
+    new(init_load, init_tw, init_dist, params)
+  end
+
+  defp matrix_sum(matrix) do
+    Enum.reduce(matrix, 0, fn row, acc ->
+      acc + Enum.sum(row)
+    end)
   end
 
   @doc """

@@ -31,8 +31,11 @@ defmodule ExVrp.Read do
 
   @type round_func :: :none | :round | :trunc | :dimacs | :exact | (float() -> integer())
 
-  # Maximum value for integers (matches PyVRP's MAX_VALUE)
-  @max_value 4_611_686_018_427_387_903
+  # Maximum value for integers representing unreachable edges.
+  # PyVRP default is 1 << 44 = 17_592_186_044_416
+  # This must match PyVRP for bit-identical results.
+  # See: https://pyvrp.org/setup/faq.html
+  @max_value Bitwise.bsl(1, 44)
 
   @doc """
   Reads a VRPLIB format file and returns an ExVrp.Model.
@@ -59,7 +62,9 @@ defmodule ExVrp.Read do
   end
 
   # Get the rounding function
-  defp get_round_func(:none), do: fn x -> x end
+  # All functions must return integers since C++ expects int64 values.
+  # :none still truncates floats to integers, it just doesn't scale them.
+  defp get_round_func(:none), do: &trunc/1
   defp get_round_func(:round), do: &round/1
   defp get_round_func(:trunc), do: &trunc/1
   defp get_round_func(:dimacs), do: fn x -> trunc(10 * x) end
@@ -216,6 +221,47 @@ defmodule ExVrp.Read do
     end)
   end
 
+  # CAPACITY_SECTION: vehicle_id capacity_value
+  # Returns {vehicle_id, capacity} pairs
+  defp parse_section_data(:capacity, lines) do
+    Enum.map(lines, fn line ->
+      [vehicle_idx | capacity_values] = line |> String.split() |> Enum.map(&parse_number/1)
+      {vehicle_idx, capacity_values}
+    end)
+  end
+
+  # VEHICLES_MAX_DURATION_SECTION: vehicle_id duration
+  defp parse_section_data(:vehicles_max_duration, lines) do
+    Enum.map(lines, fn line ->
+      [vehicle_idx, duration] = line |> String.split() |> Enum.map(&parse_number/1)
+      {vehicle_idx, duration}
+    end)
+  end
+
+  # VEHICLES_MAX_DISTANCE_SECTION: vehicle_id distance
+  defp parse_section_data(:vehicles_max_distance, lines) do
+    Enum.map(lines, fn line ->
+      [vehicle_idx, distance] = line |> String.split() |> Enum.map(&parse_number/1)
+      {vehicle_idx, distance}
+    end)
+  end
+
+  # VEHICLES_FIXED_COST_SECTION: vehicle_id cost
+  defp parse_section_data(:vehicles_fixed_cost, lines) do
+    Enum.map(lines, fn line ->
+      [vehicle_idx, cost] = line |> String.split() |> Enum.map(&parse_number/1)
+      {vehicle_idx, cost}
+    end)
+  end
+
+  # VEHICLES_UNIT_DISTANCE_COST_SECTION: vehicle_id cost
+  defp parse_section_data(:vehicles_unit_distance_cost, lines) do
+    Enum.map(lines, fn line ->
+      [vehicle_idx, cost] = line |> String.split() |> Enum.map(&parse_number/1)
+      {vehicle_idx, cost}
+    end)
+  end
+
   defp parse_section_data(_section, lines) do
     # Default: return list of parsed lines
     Enum.map(lines, fn line ->
@@ -245,14 +291,15 @@ defmodule ExVrp.Read do
     num_depots = length(Map.get(instance, :depot, [1]))
     num_clients = dimension - num_depots
 
-    # Get coordinates
-    coords = build_coords(instance, round_fn)
+    # Extract raw coords and scale them for model storage
+    raw_coords = extract_raw_coords(instance)
+    coords = scale_coords(raw_coords, round_fn)
 
     # Get depot indices (1-based in file, we use 0-based internally)
     depot_indices = instance |> Map.get(:depot, [1]) |> Enum.map(&(&1 - 1))
 
-    # Build distance/duration matrix
-    {distances, durations} = build_matrices(instance, coords, dimension, round_fn)
+    # Build distance/duration matrix (uses raw coords internally)
+    {distances, durations} = build_matrices(instance, dimension, round_fn)
 
     # Build depots
     model =
@@ -281,6 +328,10 @@ defmodule ExVrp.Read do
     # Filter out groups with less than 2 members
     groups = Enum.filter(groups, fn g -> length(g) > 1 end)
 
+    # Check if this is a GTSP instance - groups are required in GTSP
+    instance_type = Map.get(instance, :type)
+    is_gtsp = is_binary(instance_type) and String.upcase(instance_type) == "GTSP"
+
     # Build client index -> group mapping
     client_to_group =
       groups
@@ -291,9 +342,18 @@ defmodule ExVrp.Read do
       |> Map.new()
 
     # Add client groups to model
+    # For GTSP: groups are required AND mutually_exclusive (exactly one member must be visited)
+    # For other types: groups are optional (at most one member can be visited)
     {model, _group_indices} =
       Enum.reduce(groups, {model, []}, fn _group, {m, indices} ->
-        {new_model, idx} = Model.add_client_group(m, required: false)
+        opts =
+          if is_gtsp do
+            [required: true, mutually_exclusive: true]
+          else
+            [required: false]
+          end
+
+        {new_model, idx} = Model.add_client_group(m, opts)
         {new_model, indices ++ [idx]}
       end)
 
@@ -314,7 +374,8 @@ defmodule ExVrp.Read do
         demand = Map.get(demands, loc_idx, [0])
         backhaul = Map.get(backhauls, loc_idx, [0])
         service = Map.get(service_times, loc_idx, 0)
-        {tw_early, tw_late} = Map.get(time_windows, loc_idx, {0, @max_value})
+        # Use :infinity for tw_late default - gets converted to INT64_MAX in NIF
+        {tw_early, tw_late} = Map.get(time_windows, loc_idx, {0, :infinity})
         prize = Map.get(prizes, loc_idx, 0)
         release = Map.get(release_times, loc_idx, 0)
 
@@ -363,9 +424,10 @@ defmodule ExVrp.Read do
       end)
 
     # Get depot time windows for vehicle types
+    # Use :infinity for tw_late default - gets converted to INT64_MAX in NIF
     depot_time_windows =
       Enum.map(depot_indices, fn depot_idx ->
-        Map.get(time_windows, depot_idx, {0, @max_value})
+        Map.get(time_windows, depot_idx, {0, :infinity})
       end)
 
     # Build vehicle types from groups (need to know profile mapping)
@@ -388,8 +450,8 @@ defmodule ExVrp.Read do
               {existing, profile_map}
           end
 
-        # Get depot time window
-        {tw_early, tw_late} = Enum.at(depot_time_windows, depot, {0, @max_value})
+        # Get depot time window - use :infinity for tw_late default
+        {tw_early, tw_late} = Enum.at(depot_time_windows, depot, {0, :infinity})
 
         m =
           Model.add_vehicle_type(m,
@@ -468,32 +530,33 @@ defmodule ExVrp.Read do
 
   defp maybe_apply_vrpb(ctx), do: {ctx.distances, ctx.durations}
 
-  # Build coordinate lookup
-  defp build_coords(instance, round_fn) do
+  defp extract_raw_coords(instance) do
     case Map.get(instance, :node_coord) do
       nil ->
         dimension = Map.get(instance, :dimension, 0)
         List.duplicate({0, 0}, dimension)
 
       coords ->
-        # Coords are {idx, [x, y]}
         coords
         |> Enum.sort_by(fn {idx, _} -> idx end)
-        |> Enum.map(fn {_idx, [x, y]} -> {round_fn.(x), round_fn.(y)} end)
+        |> Enum.map(fn {_idx, [x, y]} -> {x, y} end)
     end
   end
 
-  # Build distance and duration matrices
-  defp build_matrices(instance, coords, dimension, round_fn) do
+  defp scale_coords(raw_coords, round_fn) do
+    Enum.map(raw_coords, fn {x, y} -> {round_fn.(x), round_fn.(y)} end)
+  end
+
+  defp build_matrices(instance, dimension, round_fn) do
     edge_weight_type =
       instance
       |> Map.get(:edge_weight_type, "EXPLICIT")
       |> to_string()
       |> String.upcase()
 
-    distances = build_distance_matrix(edge_weight_type, instance, coords, dimension, round_fn)
+    raw_coords = extract_raw_coords(instance)
+    distances = build_distance_matrix(edge_weight_type, instance, raw_coords, dimension, round_fn)
 
-    # Duration matrices typically equal distance matrices in VRPLIB
     {distances, distances}
   end
 
@@ -504,10 +567,10 @@ defmodule ExVrp.Read do
     |> apply_rounding(round_fn)
   end
 
-  defp build_distance_matrix("EUC_2D", _instance, coords, _dimension, round_fn) do
-    for {x1, y1} <- coords do
-      for {x2, y2} <- coords do
-        euclidean_distance({x1, y1}, {x2, y2}, round_fn)
+  defp build_distance_matrix("EUC_2D", _instance, raw_coords, _dimension, round_fn) do
+    for {x1, y1} <- raw_coords do
+      for {x2, y2} <- raw_coords do
+        compute_euclidean_distance({x1, y1}, {x2, y2}, round_fn)
       end
     end
   end
@@ -523,7 +586,7 @@ defmodule ExVrp.Read do
     Enum.map(matrix, fn row -> Enum.map(row, round_fn) end)
   end
 
-  defp euclidean_distance({x1, y1}, {x2, y2}, round_fn) do
+  defp compute_euclidean_distance({x1, y1}, {x2, y2}, round_fn) do
     dx = x2 - x1
     dy = y2 - y1
     round_fn.(:math.sqrt(dx * dx + dy * dy))
@@ -608,18 +671,27 @@ defmodule ExVrp.Read do
   end
 
   # Get capacity for each vehicle
+  # Capacity can be:
+  # - nil: no capacity constraint
+  # - integer: same capacity for all vehicles
+  # - list of {vehicle_id, capacity_values}: per-vehicle capacities
   defp get_capacity(instance, num_vehicles, round_fn) do
-    case Map.get(instance, :capacity) do
-      nil ->
-        List.duplicate([@max_value], num_vehicles)
-
-      cap when is_number(cap) ->
-        List.duplicate([round_fn.(cap)], num_vehicles)
-
-      caps when is_list(caps) ->
-        Enum.map(caps, fn c -> [round_fn.(c)] end)
-    end
+    instance
+    |> Map.get(:capacity)
+    |> parse_capacity(num_vehicles, round_fn)
   end
+
+  defp parse_capacity(nil, num_vehicles, _round_fn), do: List.duplicate([@max_value], num_vehicles)
+
+  defp parse_capacity(cap, num_vehicles, round_fn) when is_number(cap), do: List.duplicate([round_fn.(cap)], num_vehicles)
+
+  defp parse_capacity([{_vid, values} | _] = caps, _num_vehicles, round_fn) when is_list(values) do
+    caps
+    |> Enum.sort_by(fn {vid, _} -> vid end)
+    |> Enum.map(fn {_vid, cap_values} -> Enum.map(cap_values, round_fn) end)
+  end
+
+  defp parse_capacity(caps, _num_vehicles, round_fn) when is_list(caps), do: Enum.map(caps, fn c -> [round_fn.(c)] end)
 
   # Get depot for each vehicle
   defp get_vehicles_depots(instance, num_vehicles, depot_indices) do
@@ -637,41 +709,50 @@ defmodule ExVrp.Read do
   end
 
   # Get max distances for each vehicle
+  # Use :infinity as default - this gets converted to INT64_MAX in the NIF.
+  # Using @max_value (2^44) would cause overflow when combined with MAX_VALUE distances.
   defp get_max_distances(instance, num_vehicles, round_fn) do
-    case Map.get(instance, :vehicles_max_distance) do
-      nil -> List.duplicate(@max_value, num_vehicles)
-      val when is_number(val) -> List.duplicate(round_fn.(val), num_vehicles)
-      list -> Enum.map(list, round_fn)
-    end
+    instance
+    |> Map.get(:vehicles_max_distance)
+    |> parse_vehicle_values(num_vehicles, round_fn, :infinity)
   end
 
   # Get shift durations for each vehicle
+  # Use :infinity as default - this gets converted to INT64_MAX in the NIF.
   defp get_shift_durations(instance, num_vehicles, round_fn) do
-    case Map.get(instance, :vehicles_max_duration) do
-      nil -> List.duplicate(@max_value, num_vehicles)
-      val when is_number(val) -> List.duplicate(round_fn.(val), num_vehicles)
-      list -> Enum.map(list, round_fn)
-    end
+    instance
+    |> Map.get(:vehicles_max_duration)
+    |> parse_vehicle_values(num_vehicles, round_fn, :infinity)
   end
 
   # Get fixed costs for each vehicle
   defp get_fixed_costs(instance, num_vehicles, round_fn) do
-    case Map.get(instance, :vehicles_fixed_cost) do
-      nil -> List.duplicate(0, num_vehicles)
-      val when is_number(val) -> List.duplicate(round_fn.(val), num_vehicles)
-      list -> Enum.map(list, round_fn)
-    end
+    instance
+    |> Map.get(:vehicles_fixed_cost)
+    |> parse_vehicle_values(num_vehicles, round_fn, 0)
   end
 
   # Get unit distance costs for each vehicle
+  # Note: unit distance costs are not rounded to prevent double scaling
   defp get_unit_distance_costs(instance, num_vehicles) do
-    # Note: unit distance costs are not rounded to prevent double scaling
-    case Map.get(instance, :vehicles_unit_distance_cost) do
-      nil -> List.duplicate(1, num_vehicles)
-      val when is_number(val) -> List.duplicate(val, num_vehicles)
-      list -> list
-    end
+    instance
+    |> Map.get(:vehicles_unit_distance_cost)
+    |> parse_vehicle_values(num_vehicles, &Function.identity/1, 1)
   end
+
+  # Generic parser for vehicle-indexed values (max_distance, shift_duration, fixed_cost, etc.)
+  defp parse_vehicle_values(nil, num_vehicles, _round_fn, default), do: List.duplicate(default, num_vehicles)
+
+  defp parse_vehicle_values(val, num_vehicles, round_fn, _default) when is_number(val),
+    do: List.duplicate(round_fn.(val), num_vehicles)
+
+  defp parse_vehicle_values([{_vid, _val} | _] = list, _num_vehicles, round_fn, _default) do
+    list
+    |> Enum.sort_by(fn {vid, _} -> vid end)
+    |> Enum.map(fn {_vid, val} -> round_fn.(val) end)
+  end
+
+  defp parse_vehicle_values(list, _num_vehicles, round_fn, _default) when is_list(list), do: Enum.map(list, round_fn)
 
   # Get reload depots for each vehicle
   defp get_reload_depots(instance, num_vehicles) do

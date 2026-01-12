@@ -1,4 +1,6 @@
 defmodule Mix.Tasks.Benchmark do
+  @shortdoc "Run VRP benchmarks"
+
   @moduledoc """
   Run benchmarks on VRPLIB instances.
 
@@ -17,7 +19,7 @@ defmodule Mix.Tasks.Benchmark do
   """
   use Mix.Task
 
-  @shortdoc "Run VRP benchmarks"
+  @requirements ["app.config"]
 
   @impl Mix.Task
   def run(args) do

@@ -545,6 +545,77 @@ defmodule ExVrp.SolutionTest do
     end
   end
 
+  describe "unconstrained defaults don't cause overflow" do
+    test "unconstrained max_distance produces feasible solution with no excess" do
+      # Regression: using MAX_VALUE (2^44) instead of INT64_MAX for max_distance
+      # caused overflow in cost calculations
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 1000, y: 0, delivery: [10])
+        |> Model.add_client(x: 2000, y: 0, delivery: [10])
+        # No max_distance - should use INT64_MAX internally
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
+
+      assert Solution.feasible?(result.best)
+      assert Solution.excess_distance(result.best) == 0
+      assert Solution.cost(result.best) < 100_000
+    end
+
+    test "unconstrained shift_duration produces feasible solution with no time warp" do
+      # Regression: using MAX_VALUE for shift_duration caused overflow
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 1000, y: 0, delivery: [10], service_duration: 100)
+        |> Model.add_client(x: 2000, y: 0, delivery: [10], service_duration: 100)
+        # No shift_duration - should use INT64_MAX internally
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
+
+      assert Solution.feasible?(result.best)
+      assert Solution.time_warp(result.best) == 0
+      assert Solution.cost(result.best) < 100_000
+    end
+
+    test "unconstrained tw_late produces feasible solution with no time warp" do
+      # Regression: using MAX_VALUE for tw_late caused overflow
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        # No tw_late for clients - should use INT64_MAX internally
+        |> Model.add_client(x: 1000, y: 0, delivery: [10])
+        |> Model.add_client(x: 2000, y: 0, delivery: [10])
+        # No tw_late for vehicle type
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
+
+      assert Solution.feasible?(result.best)
+      assert Solution.time_warp(result.best) == 0
+      assert Solution.cost(result.best) < 100_000
+    end
+
+    test "cost is never negative (no int64 overflow)" do
+      # Overflow could cause negative costs via wraparound
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10_000, y: 0, delivery: [10])
+        |> Model.add_client(x: 0, y: 10_000, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
+
+      cost = Solution.cost(result.best)
+      assert cost >= 0
+      assert cost < 1_000_000_000
+    end
+  end
+
   describe "edge cases" do
     test "single client solution" do
       model =
@@ -710,6 +781,247 @@ defmodule ExVrp.SolutionTest do
       # Invalid route index should return empty list
       schedule = Solution.route_schedule(solution, 999)
       assert schedule == []
+    end
+
+    test "ScheduledVisit.has_wait?/1 returns true when wait_duration > 0" do
+      # Create a visit with wait duration
+      visit_with_wait = %ScheduledVisit{
+        location: 1,
+        trip: 0,
+        start_service: 1000,
+        end_service: 1100,
+        wait_duration: 50,
+        time_warp: 0
+      }
+
+      visit_no_wait = %ScheduledVisit{
+        location: 2,
+        trip: 0,
+        start_service: 1200,
+        end_service: 1300,
+        wait_duration: 0,
+        time_warp: 0
+      }
+
+      assert ScheduledVisit.has_wait?(visit_with_wait) == true
+      assert ScheduledVisit.has_wait?(visit_no_wait) == false
+    end
+
+    test "ScheduledVisit.from_tuple/1 correctly creates struct" do
+      tuple = {5, 0, 1000, 1100, 25, 10}
+      visit = ScheduledVisit.from_tuple(tuple)
+
+      assert visit.location == 5
+      assert visit.trip == 0
+      assert visit.start_service == 1000
+      assert visit.end_service == 1100
+      assert visit.wait_duration == 25
+      assert visit.time_warp == 10
+    end
+  end
+
+  describe "Solution wrapper functions" do
+    test "cost/1 returns distance for feasible solution" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(20))
+      solution = result.best
+
+      # cost/1 should equal distance for unit_distance_cost=1
+      assert Solution.cost(solution) == Solution.distance(solution)
+    end
+
+    test "cost/2 with cost evaluator" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(20))
+      solution = result.best
+
+      {:ok, cost_eval} =
+        ExVrp.Native.create_cost_evaluator(
+          load_penalties: [100.0],
+          tw_penalty: 100.0,
+          dist_penalty: 100.0
+        )
+
+      # cost/2 should return integer or :infinity
+      cost = Solution.cost(solution, cost_eval)
+      assert is_integer(cost) or cost == :infinity
+    end
+
+    test "penalised_cost/2 returns integer" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(20))
+      solution = result.best
+
+      {:ok, cost_eval} =
+        ExVrp.Native.create_cost_evaluator(
+          load_penalties: [100.0],
+          tw_penalty: 100.0,
+          dist_penalty: 100.0
+        )
+
+      penalised = Solution.penalised_cost(solution, cost_eval)
+      assert is_integer(penalised)
+      assert penalised >= 0
+    end
+
+    test "num_clients/1 returns correct count" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_client(x: 30, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
+      solution = result.best
+
+      # Should have 3 clients
+      assert Solution.num_clients(solution) == 3
+    end
+
+    test "routes/1 returns list of Route structs" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
+      solution = result.best
+
+      routes = Solution.routes(solution)
+
+      assert is_list(routes)
+      assert length(routes) == Solution.num_routes(solution)
+
+      # Each route should be a Route struct
+      Enum.each(routes, fn route ->
+        assert %ExVrp.Route{} = route
+        assert route.solution_ref == solution.solution_ref
+      end)
+    end
+
+    test "route/2 returns single Route struct" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(20))
+      solution = result.best
+
+      route = Solution.route(solution, 0)
+
+      assert %ExVrp.Route{} = route
+      assert route.route_idx == 0
+      assert route.solution_ref == solution.solution_ref
+    end
+
+    test "aggregate functions work correctly" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 100, y: 0, delivery: [10])
+        |> Model.add_client(x: 200, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
+      solution = result.best
+
+      # time_warp should be integer
+      assert is_integer(Solution.time_warp(solution))
+
+      # excess_load should be list of integers
+      excess = Solution.excess_load(solution)
+      assert is_list(excess)
+
+      # excess_distance should be integer
+      assert is_integer(Solution.excess_distance(solution))
+
+      # overtime should be integer
+      assert is_integer(Solution.overtime(solution))
+
+      # fixed_vehicle_cost should be integer
+      assert is_integer(Solution.fixed_vehicle_cost(solution))
+
+      # has_* functions should return booleans
+      assert is_boolean(Solution.has_excess_load?(solution))
+      assert is_boolean(Solution.has_time_warp?(solution))
+      assert is_boolean(Solution.has_excess_distance?(solution))
+    end
+
+    test "unassigned/1 returns list of unassigned clients (empty for complete solution)" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
+      solution = result.best
+
+      unassigned = Solution.unassigned(solution)
+      assert is_list(unassigned)
+
+      # For a complete solution, all clients should be assigned
+      # unassigned should NOT include depot index (0) - only client indices
+      assert solution.is_complete
+      assert unassigned == [], "Complete solution should have no unassigned clients"
+    end
+
+    test "unassigned/1 excludes depot indices" do
+      # Create a model with 2 depots to verify depot filtering
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot(x: 100, y: 100)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(x: 50, y: 50, delivery: [10])
+        |> Model.add_vehicle_type(
+          num_available: 2,
+          capacity: [100],
+          start_depot: 0,
+          end_depot: 0
+        )
+        |> Model.add_vehicle_type(
+          num_available: 2,
+          capacity: [100],
+          start_depot: 1,
+          end_depot: 1
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
+      solution = result.best
+
+      unassigned = Solution.unassigned(solution)
+
+      # Unassigned should never include depot indices (0 and 1)
+      # Only client indices (2+) can be unassigned
+      refute 0 in unassigned, "Depot 0 should not be in unassigned list"
+      refute 1 in unassigned, "Depot 1 should not be in unassigned list"
+
+      # For a complete solution, should be empty
+      if solution.is_complete do
+        assert unassigned == []
+      end
     end
   end
 end

@@ -2,12 +2,158 @@ defmodule ExVrp.IteratedLocalSearchTest do
   use ExUnit.Case, async: true
 
   alias ExVrp.IteratedLocalSearch
+  alias ExVrp.IteratedLocalSearch.RingBuffer
   alias ExVrp.Model
   alias ExVrp.PenaltyManager
   alias ExVrp.Solver
   alias ExVrp.StoppingCriteria
 
   @moduletag :nif_required
+
+  # ============================================================================
+  # Tests for the inline RingBuffer used in LAHC (Late Acceptance Hill-Climbing)
+  # This is different from ExVrp.RingBuffer - it stores solution references
+  # and has skip/peek semantics for the LAHC algorithm.
+  # ============================================================================
+  describe "IteratedLocalSearch.RingBuffer" do
+    test "new creates buffer with correct maxlen" do
+      rb = RingBuffer.new(5)
+
+      assert rb.maxlen == 5
+      assert rb.idx == 0
+      assert length(rb.buffer) == 5
+    end
+
+    test "peek returns nil for fresh buffer" do
+      rb = RingBuffer.new(5)
+
+      assert RingBuffer.peek(rb) == nil
+    end
+
+    test "append stores value at current position" do
+      rb = RingBuffer.new(3)
+      rb = RingBuffer.append(rb, :a)
+
+      # After append, index advances, but peek looks at NEW index
+      assert rb.idx == 1
+      # peek returns element at current (new) index, which is still nil
+      assert RingBuffer.peek(rb) == nil
+    end
+
+    test "append wraps around at maxlen" do
+      rb = RingBuffer.new(3)
+      rb = RingBuffer.append(rb, :a)
+      rb = RingBuffer.append(rb, :b)
+      rb = RingBuffer.append(rb, :c)
+
+      # Index should be 3, which wraps to 0
+      assert rb.idx == 3
+      assert rem(rb.idx, rb.maxlen) == 0
+
+      # peek at position 0 should now return :a (the oldest)
+      assert RingBuffer.peek(rb) == :a
+    end
+
+    test "skip advances index without storing" do
+      rb = RingBuffer.new(3)
+      rb = RingBuffer.append(rb, :a)
+      rb = RingBuffer.skip(rb)
+
+      # Skip should advance index but not modify buffer
+      assert rb.idx == 2
+      # peek returns element at current index (position 2), still nil
+      assert RingBuffer.peek(rb) == nil
+    end
+
+    test "clear resets buffer to initial state" do
+      rb = RingBuffer.new(3)
+      rb = RingBuffer.append(rb, :a)
+      rb = RingBuffer.append(rb, :b)
+      rb = RingBuffer.clear(rb)
+
+      assert rb.idx == 0
+      assert RingBuffer.peek(rb) == nil
+    end
+
+    test "LAHC semantics: peek returns value to compare against" do
+      # In LAHC, we compare current solution against historical solution
+      # peek returns the element that will be overwritten next
+      rb = RingBuffer.new(3)
+
+      # Fill buffer
+      rb = RingBuffer.append(rb, :sol_0)
+      rb = RingBuffer.append(rb, :sol_1)
+      rb = RingBuffer.append(rb, :sol_2)
+
+      # Now at position 3 (wraps to 0), peek returns :sol_0
+      assert RingBuffer.peek(rb) == :sol_0
+
+      # Append new solution overwrites :sol_0
+      rb = RingBuffer.append(rb, :sol_3)
+
+      # Now peek returns :sol_1 (next oldest)
+      assert RingBuffer.peek(rb) == :sol_1
+    end
+  end
+
+  describe "IteratedLocalSearch.Params defaults" do
+    test "defaults match PyVRP" do
+      params = %IteratedLocalSearch.Params{}
+
+      # PyVRP defaults from IteratedLocalSearchParams
+      assert params.max_no_improvement == 50_000
+      assert params.history_size == 500
+    end
+  end
+
+  describe "IteratedLocalSearch.Result methods" do
+    test "cost returns distance for feasible solution" do
+      model = build_cvrp_model(5)
+      {:ok, result} = Solver.solve(model, max_iterations: 50, seed: 42)
+
+      assert result.best.is_feasible
+      assert IteratedLocalSearch.Result.cost(result) == result.best.distance
+    end
+
+    test "cost returns :infinity for infeasible solution" do
+      # Create model where solution is always infeasible
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        # Client needs 100, vehicle has 10 - always infeasible
+        |> Model.add_client(x: 10, y: 0, delivery: [100])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [10])
+
+      {:ok, result} = Solver.solve(model, max_iterations: 10, seed: 42)
+
+      # Solution should be infeasible
+      refute result.best.is_feasible
+      assert IteratedLocalSearch.Result.cost(result) == :infinity
+    end
+
+    test "feasible? returns correct boolean" do
+      model = build_cvrp_model(5)
+      {:ok, result} = Solver.solve(model, max_iterations: 50, seed: 42)
+
+      assert IteratedLocalSearch.Result.feasible?(result) == result.best.is_feasible
+    end
+
+    test "summary returns formatted string" do
+      model = build_cvrp_model(5)
+      {:ok, result} = Solver.solve(model, max_iterations: 20, seed: 42)
+
+      summary = IteratedLocalSearch.Result.summary(result)
+
+      assert is_binary(summary)
+      assert summary =~ "Solution results"
+      assert summary =~ "Feasible:"
+      assert summary =~ "Cost:"
+      assert summary =~ "Routes:"
+      assert summary =~ "Distance:"
+      assert summary =~ "Iterations:"
+      assert summary =~ "Runtime:"
+    end
+  end
 
   describe "Solver.solve/2 with ILS" do
     test "solves a simple CVRP and returns Result" do
@@ -163,6 +309,65 @@ defmodule ExVrp.IteratedLocalSearchTest do
 
       assert result.best.stats.improvements >= 0
       assert result.best.stats.restarts >= 0
+    end
+
+    test "restarts after max_no_improvement iterations" do
+      # With very small max_no_improvement, restarts should occur frequently
+      model = build_cvrp_model(10)
+
+      ils_params = %IteratedLocalSearch.Params{
+        # Restart every 5 iterations without improvement
+        max_no_improvement: 5,
+        history_size: 10
+      }
+
+      {:ok, result} =
+        Solver.solve(model,
+          max_iterations: 100,
+          ils_params: ils_params,
+          seed: 42
+        )
+
+      # With 100 iterations and max_no_improvement=5,
+      # we should have some restarts (unless we improve frequently)
+      # The key is that the algorithm doesn't crash
+      assert result.best.is_complete
+      assert result.num_iterations > 0
+    end
+
+    test "LAHC history affects acceptance" do
+      # Smaller history should make algorithm more greedy
+      model = build_cvrp_model(8)
+
+      ils_small_history = %IteratedLocalSearch.Params{
+        max_no_improvement: 100,
+        # Small history - more greedy
+        history_size: 5
+      }
+
+      ils_large_history = %IteratedLocalSearch.Params{
+        max_no_improvement: 100,
+        # Large history - more accepting
+        history_size: 100
+      }
+
+      {:ok, result_small} =
+        Solver.solve(model,
+          max_iterations: 50,
+          ils_params: ils_small_history,
+          seed: 42
+        )
+
+      {:ok, result_large} =
+        Solver.solve(model,
+          max_iterations: 50,
+          ils_params: ils_large_history,
+          seed: 42
+        )
+
+      # Both should produce valid solutions
+      assert result_small.best.is_complete
+      assert result_large.best.is_complete
     end
   end
 

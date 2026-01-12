@@ -389,4 +389,70 @@ defmodule ExVrp.StoppingCriteriaTest do
       assert stop? == true
     end
   end
+
+  describe "any/1 alias" do
+    test "any/1 is an alias for multiple_criteria/1" do
+      # any/1 should behave exactly like multiple_criteria/1
+      crit =
+        StoppingCriteria.any([
+          StoppingCriteria.max_iterations(2),
+          StoppingCriteria.no_improvement(1)
+        ])
+
+      # Should be a multiple_criteria type
+      assert crit.type == :multiple_criteria
+
+      # Should stop when any criterion is met
+      {stop?, _crit} = StoppingCriteria.should_stop?(crit, %{improved: false})
+      # After 1 non-improving, no_improvement(1) should trigger
+      assert stop? == true
+    end
+  end
+
+  describe "first_feasible_or/1" do
+    test "stops when feasible solution found" do
+      crit = StoppingCriteria.first_feasible_or(StoppingCriteria.max_iterations(100))
+
+      # With infeasible (infinity), should not stop
+      {stop?, crit} = StoppingCriteria.should_stop?(crit, %{best_cost: :infinity})
+      assert stop? == false
+
+      # With feasible (integer cost), should stop
+      {stop?, _crit} = StoppingCriteria.should_stop?(crit, %{best_cost: 1000})
+      assert stop? == true
+    end
+
+    test "stops when max_iterations reached even if infeasible" do
+      crit = StoppingCriteria.first_feasible_or(StoppingCriteria.max_iterations(2))
+
+      # First iteration - infeasible
+      {stop?, crit} = StoppingCriteria.should_stop?(crit, %{best_cost: :infinity})
+      assert stop? == false
+
+      # Second iteration - still infeasible but max_iterations reached
+      {stop?, _crit} = StoppingCriteria.should_stop?(crit, %{best_cost: :infinity})
+      assert stop? == true
+    end
+
+    test "first_feasible_or creates combined criterion" do
+      inner = StoppingCriteria.max_runtime(60.0)
+      combined = StoppingCriteria.first_feasible_or(inner)
+
+      assert combined.type == :multiple_criteria
+      assert length(combined.state.criteria) == 2
+
+      # Should contain first_feasible and the original criterion
+      types = Enum.map(combined.state.criteria, & &1.type)
+      assert :first_feasible in types
+      assert :max_runtime in types
+    end
+  end
+
+  describe "raises on empty all/1" do
+    test "all/1 raises on empty list" do
+      assert_raise ArgumentError, ~r/at least one criterion/, fn ->
+        StoppingCriteria.all([])
+      end
+    end
+  end
 end

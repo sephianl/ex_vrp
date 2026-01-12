@@ -25,7 +25,12 @@ defmodule ExVrp.MixProject do
       docs: docs(),
 
       # Testing
-      test_coverage: [tool: ExCoveralls]
+      test_coverage: [tool: ExCoveralls],
+
+      # Dialyzer
+      dialyzer: [
+        plt_add_apps: [:mix]
+      ]
     ]
   end
 
@@ -59,7 +64,8 @@ defmodule ExVrp.MixProject do
       {:excoveralls, "~> 0.18", only: :test},
 
       # Benchmarking
-      {:benchee, "~> 1.3", only: :dev},
+      {:benchee, "~> 1.3", only: [:dev, :test]},
+      {:jason, "~> 1.4", only: [:dev, :test]},
 
       # Documentation
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
