@@ -286,7 +286,7 @@ defmodule ExVrp.ReadTest do
       model = Read.read(path)
 
       # GTSP groups should be required AND mutually exclusive
-      assert length(model.client_groups) > 0
+      assert model.client_groups != []
 
       Enum.each(model.client_groups, fn group ->
         assert group.required == true
@@ -300,8 +300,8 @@ defmodule ExVrp.ReadTest do
       path = Path.join(@data_dir, "X115-HVRP.vrp")
       model = Read.read(path, round_func: :exact)
 
-      # Should have multiple vehicle types with different capacities
-      assert length(model.vehicle_types) >= 1
+      # Should have at least one vehicle type
+      assert model.vehicle_types != []
 
       # Check capacities are properly parsed
       capacities = Enum.map(model.vehicle_types, fn vt -> hd(vt.capacity) end)

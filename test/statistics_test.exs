@@ -119,7 +119,7 @@ defmodule ExVrp.StatisticsTest do
       {:ok, _problem_data, cost_evaluator, solution} = ok_small_with_solution()
 
       stats = Statistics.new()
-      assert Enum.count(stats) == 0
+      assert Enum.empty?(stats)
 
       stats = Statistics.collect(stats, solution, solution, solution, cost_evaluator)
       assert Enum.count(stats) == 1

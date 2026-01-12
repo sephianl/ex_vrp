@@ -4,11 +4,11 @@ defmodule ExVrp.BenchmarkTest do
   alias ExVrp.Benchmark
 
   describe "available_instances/0" do
-    test "returns a list of atoms" do
+    test "returns a non-empty list of atoms" do
       instances = Benchmark.available_instances()
 
       assert is_list(instances)
-      assert length(instances) > 0
+      assert instances != []
       assert Enum.all?(instances, &is_atom/1)
     end
 
