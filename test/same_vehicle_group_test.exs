@@ -225,4 +225,169 @@ defmodule ExVrp.SameVehicleGroupTest do
       assert Solution.group_feasible?(result.best)
     end
   end
+
+  describe "same-vehicle group with multi-trip" do
+    test "same-vehicle constraint allows clients across multiple trips of same vehicle" do
+      # This test verifies that clients in a same-vehicle group can be served
+      # by the same vehicle across different trips. The constraint requires
+      # same VEHICLE, not same TRIP.
+      #
+      # Setup: 4 clients with high delivery demands that can't fit in one trip
+      # but can be served by a single vehicle doing multiple trips.
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        # 4 clients each requiring 60 units - too much for one trip (capacity 100)
+        # but achievable with multi-trip
+        |> Model.add_client(x: 10, y: 0, delivery: [60])
+        |> Model.add_client(x: 20, y: 0, delivery: [60])
+        |> Model.add_client(x: 30, y: 0, delivery: [60])
+        |> Model.add_client(x: 40, y: 0, delivery: [60])
+        # Single vehicle with reload capability
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          reload_depots: [0],
+          max_reloads: 3
+        )
+
+      [c1, c2, c3, c4] = model.clients
+
+      # All 4 clients must be served by the same vehicle
+      model = Model.add_same_vehicle_group(model, [c1, c2, c3, c4])
+
+      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 500)
+      solution = result.best
+
+      # Solution should be feasible - same-vehicle constraint is satisfied
+      # because all clients are on the same route (same vehicle), even if
+      # they're spread across multiple trips
+      assert Solution.feasible?(solution)
+      assert Solution.group_feasible?(solution)
+      assert Solution.complete?(solution)
+
+      # Verify we have one route with multiple trips
+      assert Solution.num_routes(solution) == 1
+
+      # The route should have multiple trips since single trip can't fit all
+      num_trips = Solution.route_num_trips(solution, 0)
+      assert num_trips >= 2, "Expected multiple trips, got #{num_trips}"
+    end
+
+    test "same-vehicle constraint fails when clients are on different vehicles" do
+      # Setup a scenario where clients COULD be split across vehicles
+      # if not for the same-vehicle constraint
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [30])
+        |> Model.add_client(x: 20, y: 0, delivery: [30])
+        |> Model.add_client(x: 30, y: 0, delivery: [30])
+        # Two vehicles, each can handle 2 clients
+        |> Model.add_vehicle_type(num_available: 2, capacity: [70])
+
+      [c1, c2, c3] = model.clients
+
+      # All clients must be on same vehicle
+      model = Model.add_same_vehicle_group(model, [c1, c2, c3])
+
+      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 200)
+      solution = result.best
+
+      # Should be feasible - solver must put all on one vehicle
+      assert Solution.group_feasible?(solution)
+
+      # All clients should be on the same route
+      routes = Solution.routes(solution)
+
+      if length(routes) == 1 do
+        # Good - all clients on one route
+        assert true
+      else
+        # If multiple routes, verify group clients are together
+        route_with_group_clients =
+          Enum.find(routes, fn route ->
+            visits = ExVrp.Route.visits(route)
+            # Check if this route has any of clients 1, 2, 3
+            Enum.any?([1, 2, 3], &(&1 in visits))
+          end)
+
+        if route_with_group_clients do
+          visits = ExVrp.Route.visits(route_with_group_clients)
+          # All group clients should be on this route
+          assert 1 in visits
+          assert 2 in visits
+          assert 3 in visits
+        end
+      end
+    end
+
+    test "multiple same-vehicle groups with multi-trip" do
+      # Two independent same-vehicle groups
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        # Group 1: clients at x=10, 20
+        |> Model.add_client(x: 10, y: 0, delivery: [40])
+        |> Model.add_client(x: 20, y: 0, delivery: [40])
+        # Group 2: clients at x=100, 110
+        |> Model.add_client(x: 100, y: 0, delivery: [40])
+        |> Model.add_client(x: 110, y: 0, delivery: [40])
+        |> Model.add_vehicle_type(
+          num_available: 2,
+          capacity: [100],
+          reload_depots: [0],
+          max_reloads: 2
+        )
+
+      [c1, c2, c3, c4] = model.clients
+
+      # Group 1: clients 1 and 2 must be on same vehicle
+      model = Model.add_same_vehicle_group(model, [c1, c2], name: "group1")
+      # Group 2: clients 3 and 4 must be on same vehicle
+      model = Model.add_same_vehicle_group(model, [c3, c4], name: "group2")
+
+      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 300)
+      solution = result.best
+
+      assert Solution.feasible?(solution)
+      assert Solution.group_feasible?(solution)
+    end
+
+    test "same-vehicle group with time windows forcing multi-trip" do
+      # Use time windows to force clients into different trips
+      # Client 1: early time window
+      # Client 2: late time window
+      # Both must be on same vehicle but different trips due to time
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        # Early client - must be served in first trip
+        |> Model.add_client(x: 10, y: 0, delivery: [30], tw_early: 0, tw_late: 50)
+        # Late client - must be served after returning to depot
+        |> Model.add_client(x: 20, y: 0, delivery: [30], tw_early: 200, tw_late: 300)
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          reload_depots: [0],
+          max_reloads: 2,
+          tw_early: 0,
+          tw_late: 500
+        )
+
+      [c1, c2] = model.clients
+      model = Model.add_same_vehicle_group(model, [c1, c2])
+
+      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 300)
+      solution = result.best
+
+      # Should be feasible - both clients on same vehicle (different trips OK)
+      assert Solution.feasible?(solution)
+      assert Solution.group_feasible?(solution)
+      assert Solution.complete?(solution)
+
+      # Should have one route (one vehicle)
+      assert Solution.num_routes(solution) == 1
+    end
+  end
 end

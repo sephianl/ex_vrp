@@ -276,6 +276,47 @@ Solution::Solution(ProblemData const &data, std::vector<Route> routes)
         isGroupFeas_ &= group.required ? numInSol == 1 : numInSol <= 1;
     }
 
+    // Check same-vehicle groups: all visited clients in a group must be on
+    // the same route (vehicle). Partial service is allowed - some clients
+    // in the group may be dropped, but those that ARE visited must share
+    // the same vehicle.
+    if (data.numSameVehicleGroups() > 0)
+    {
+        // Build client-to-route map
+        std::vector<std::optional<size_t>> clientRoute(data.numLocations());
+        for (size_t routeIdx = 0; routeIdx != routes_.size(); ++routeIdx)
+        {
+            for (auto const client : routes_[routeIdx])
+            {
+                clientRoute[client] = routeIdx;
+            }
+        }
+
+        for (size_t groupIdx = 0; groupIdx != data.numSameVehicleGroups();
+             ++groupIdx)
+        {
+            auto const &group = data.sameVehicleGroup(groupIdx);
+            std::optional<size_t> groupRoute = std::nullopt;
+
+            for (auto const client : group)
+            {
+                if (isVisited[client])
+                {
+                    if (!groupRoute.has_value())
+                    {
+                        // First visited client in group
+                        groupRoute = clientRoute[client];
+                    }
+                    else if (clientRoute[client] != groupRoute)
+                    {
+                        // Client is on a different route than other group members
+                        isGroupFeas_ = false;
+                    }
+                }
+            }
+        }
+    }
+
     for (size_t vehType = 0; vehType != data.numVehicleTypes(); vehType++)
         if (usedVehicles[vehType] > data.vehicleType(vehType).numAvailable)
         {
