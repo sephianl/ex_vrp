@@ -976,40 +976,6 @@ fine::Ok<fine::ResourcePtr<ProblemDataResource>> create_problem_data(
 FINE_NIF(create_problem_data, 0);
 
 /**
- * Solve the VRP problem - creates random solution and runs basic local search.
- */
-fine::Ok<fine::ResourcePtr<SolutionResource>> solve(
-    ErlNifEnv* env,
-    fine::ResourcePtr<ProblemDataResource> problem_resource,
-    fine::Term opts_term)
-{
-    auto& problem_data = problem_resource->data;
-
-    // Parse options
-    int64_t seed = 42;
-
-    ERL_NIF_TERM key, value;
-
-    key = enif_make_atom(env, "seed");
-    if (enif_get_map_value(env, opts_term, key, &value)) {
-        enif_get_int64(env, value, &seed);
-    }
-
-    // Create RNG
-    RandomNumberGenerator rng(static_cast<uint32_t>(seed));
-
-    // Create initial random solution
-    Solution solution(*problem_data, rng);
-
-    // For now, just return the random solution
-    // TODO: Implement proper local search once we understand the full API
-
-    return fine::Ok(fine::make_resource<SolutionResource>(std::move(solution), problem_data));
-}
-
-FINE_NIF(solve, ERL_NIF_DIRTY_JOB_CPU_BOUND);
-
-/**
  * Get solution total distance.
  */
 int64_t solution_distance(
