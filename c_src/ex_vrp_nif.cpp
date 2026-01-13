@@ -1046,6 +1046,18 @@ bool solution_is_feasible(
 FINE_NIF(solution_is_feasible, 0);
 
 /**
+ * Check if solution is group feasible (same-vehicle constraints satisfied).
+ */
+bool solution_is_group_feasible(
+    [[maybe_unused]] ErlNifEnv* env,
+    fine::ResourcePtr<SolutionResource> solution_resource)
+{
+    return solution_resource->solution.isGroupFeasible();
+}
+
+FINE_NIF(solution_is_group_feasible, 0);
+
+/**
  * Check if solution is complete.
  */
 bool solution_is_complete(
@@ -2435,7 +2447,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_nif(
     ls.shuffle(rng);
 
     // Run local search (operator() = perturbation + search + intensify loop)
-    Solution improved = ls(solution_resource->solution, cost_evaluator);
+    Solution improved = ls(solution_resource->solution, cost_evaluator, exhaustive);
 
     return fine::Ok(fine::make_resource<SolutionResource>(
         std::move(improved), problem_resource->data));
@@ -2668,7 +2680,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
     }
 
     // Run local search
-    Solution improved = ls(solution_resource->solution, cost_evaluator);
+    Solution improved = ls(solution_resource->solution, cost_evaluator, exhaustive);
 
     return fine::Ok(fine::make_resource<SolutionResource>(
         std::move(improved), problem_resource->data));
@@ -2829,7 +2841,7 @@ fine::Term local_search_stats_nif(
     }
 
     // Run local search
-    ls(solution_resource->solution, cost_evaluator);
+    ls(solution_resource->solution, cost_evaluator, exhaustive);
 
     // Get LocalSearch statistics
     auto const& ls_stats = ls.statistics();

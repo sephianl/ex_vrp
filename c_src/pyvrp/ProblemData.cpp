@@ -696,6 +696,27 @@ void ProblemData::validate() const
         }
     }
 
+    // Same-vehicle group checks.
+    for (size_t idx = 0; idx != numSameVehicleGroups(); ++idx)
+    {
+        auto const &group = sameVehicleGroups_[idx];
+
+        if (group.empty())
+        {
+            auto const *msg = "Empty same-vehicle group not understood.";
+            throw std::invalid_argument(msg);
+        }
+
+        for (auto const client : group)
+        {
+            if (client < numDepots() || client >= numLocations())
+            {
+                auto const *msg = "Same-vehicle group references invalid client.";
+                throw std::out_of_range(msg);
+            }
+        }
+    }
+
     // Vehicle type checks.
     if (vehicleTypes_.empty())
         throw std::invalid_argument("Expected at least one vehicle type.");

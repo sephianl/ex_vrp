@@ -160,7 +160,8 @@ public:
      * improvements are made.
      */
     pyvrp::Solution operator()(pyvrp::Solution const &solution,
-                               CostEvaluator const &costEvaluator);
+                               CostEvaluator const &costEvaluator,
+                               bool exhaustive = false);
 
     /**
      * Performs regular (node-based) local search around the given solution,

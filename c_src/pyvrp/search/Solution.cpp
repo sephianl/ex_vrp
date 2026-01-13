@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstring>
 #include <iterator>
+#include <limits>
 
 using pyvrp::search::Solution;
 
@@ -138,8 +140,89 @@ bool Solution::insert(Route::Node *U,
 {
     assert(size_t(std::distance(nodes.data(), U)) < nodes.size());
 
-    Route::Node *UAfter = routes[0][0];  // fallback option
-    auto bestCost = insertCost(U, UAfter, data_, costEvaluator);
+    // Check if U is in any same-vehicle group and find the required route.
+    // If any group member is already in a route, U must go into that same route
+    // (or a route with the same vehicle name for multi-shift scenarios).
+    Route *requiredRoute = nullptr;
+    char const *requiredVehicleName = nullptr;
+
+    for (size_t groupIdx = 0; groupIdx != data_.numSameVehicleGroups();
+         ++groupIdx)
+    {
+        auto const &group = data_.sameVehicleGroup(groupIdx);
+
+        // Check if U is in this group
+        bool uInGroup = false;
+        for (auto const client : group)
+        {
+            if (client == U->client())
+            {
+                uInGroup = true;
+                break;
+            }
+        }
+
+        if (!uInGroup)
+            continue;
+
+        // U is in this group - check if any other member is in a route
+        for (auto const otherClient : group)
+        {
+            if (otherClient == U->client())
+                continue;
+
+            auto *otherNode = &nodes[otherClient];
+            if (otherNode->route())
+            {
+                requiredRoute = otherNode->route();
+                requiredVehicleName = data_.vehicleType(requiredRoute->vehicleType()).name;
+                break;
+            }
+        }
+
+        if (requiredRoute)
+            break;
+    }
+
+    // Helper to check if a route is compatible with the required route
+    auto isCompatibleRoute = [&](Route const *route) -> bool
+    {
+        if (!requiredRoute)
+            return true;  // No constraint
+
+        if (route == requiredRoute)
+            return true;  // Same route
+
+        // Check if vehicles have the same name (multi-shift scenario)
+        if (requiredVehicleName && requiredVehicleName[0] != '\0')
+        {
+            auto const *routeName
+                = data_.vehicleType(route->vehicleType()).name;
+            if (routeName && routeName[0] != '\0'
+                && std::strcmp(requiredVehicleName, routeName) == 0)
+                return true;
+        }
+
+        return false;
+    };
+
+    Route::Node *UAfter = nullptr;
+    auto bestCost = std::numeric_limits<Cost>::max();
+
+    // Initialize fallback to the first compatible route
+    for (auto &route : routes)
+    {
+        if (isCompatibleRoute(&route))
+        {
+            UAfter = route[0];
+            bestCost = insertCost(U, UAfter, data_, costEvaluator);
+            break;
+        }
+    }
+
+    // If no compatible route found, we cannot insert
+    if (!UAfter)
+        return false;
 
     // First attempt a neighbourhood search to place U into routes that are
     // already in use.
@@ -147,7 +230,7 @@ bool Solution::insert(Route::Node *U,
     {
         auto *V = &nodes[vClient];
 
-        if (!V->route())
+        if (!V->route() || !isCompatibleRoute(V->route()))
             continue;
 
         auto const cost = insertCost(U, V, data_, costEvaluator);
@@ -158,24 +241,35 @@ bool Solution::insert(Route::Node *U,
         }
     }
 
-    // Next consider empty routes, of each vehicle type. We insert into the
-    // first improving route.
+    // Next consider all routes (empty and non-empty). For non-empty routes,
+    // try inserting at the start (after depot). This handles the case where
+    // U is not in the neighbourhood of any client in the route.
     for (auto const &[vehType, offset] : searchSpace.vehTypeOrder())
     {
         auto const begin = routes.begin() + offset;
         auto const end = begin + data_.vehicleType(vehType).numAvailable;
-        auto const pred = [](auto const &route) { return route.empty(); };
-        auto empty = std::find_if(begin, end, pred);
 
-        if (empty == end)
-            continue;
-
-        auto const cost = insertCost(U, (*empty)[0], data_, costEvaluator);
-        if (cost < bestCost)
+        for (auto it = begin; it != end; ++it)
         {
-            bestCost = cost;
-            UAfter = (*empty)[0];
-            break;
+            if (!isCompatibleRoute(&*it))
+                continue;
+
+            // For non-empty routes, only try if we haven't found something via
+            // neighbourhood (the neighbourhood search is more thorough for
+            // non-empty routes since it evaluates multiple positions).
+            if (!it->empty() && UAfter->route() == &*it)
+                continue;
+
+            auto const cost = insertCost(U, (*it)[0], data_, costEvaluator);
+            if (cost < bestCost)
+            {
+                bestCost = cost;
+                UAfter = (*it)[0];
+
+                // For empty routes, stop at the first improving one.
+                if (it->empty())
+                    break;
+            }
         }
     }
 

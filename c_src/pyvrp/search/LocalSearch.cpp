@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstring>
 #include <numeric>
 
 using pyvrp::Solution;
@@ -15,10 +16,13 @@ using pyvrp::search::RouteOperator;
 using pyvrp::search::SearchSpace;
 
 pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
-                                        CostEvaluator const &costEvaluator)
+                                        CostEvaluator const &costEvaluator,
+                                        bool exhaustive)
 {
     loadSolution(solution);
-    perturbationManager_.perturb(solution_, searchSpace_, costEvaluator);
+
+    if (!exhaustive)
+        perturbationManager_.perturb(solution_, searchSpace_, costEvaluator);
 
     while (true)
     {
@@ -177,6 +181,22 @@ bool LocalSearch::wouldViolateSameVehicle(Route::Node const *U,
     // violation is possible.
     if (!currentRoute || currentRoute == targetRoute)
         return false;
+
+    // If the target route exists and has the same vehicle name as the current
+    // route, moving is allowed (same vehicle with different shifts).
+    if (targetRoute)
+    {
+        auto const *currentName
+            = data.vehicleType(currentRoute->vehicleType()).name;
+        auto const *targetName
+            = data.vehicleType(targetRoute->vehicleType()).name;
+
+        // If both have the same non-empty name, they represent the same
+        // vehicle (possibly with different shifts), so moving is allowed.
+        if (currentName && targetName && currentName[0] != '\0'
+            && std::strcmp(currentName, targetName) == 0)
+            return false;
+    }
 
     // Check each same-vehicle group U belongs to.
     for (auto const groupIdx : groups)
@@ -349,7 +369,18 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
     if (U->route())
         return;
 
-    // Attempt to re-insert U using a first-improving neighbourhood search.
+    // Attempt to insert U into the solution. This considers both existing
+    // routes (via neighbourhood search) and empty routes, inserting U if doing
+    // so improves the objective.
+    if (solution_.insert(U, searchSpace_, costEvaluator, false))
+    {
+        update(U->route(), U->route());
+        searchSpace_.markPromising(U);
+        return;
+    }
+
+    // If neighbourhood-based insertion failed, try replacing another optional
+    // client with U if that would be improving.
     for (auto const vClient : searchSpace_.neighboursOf(U->client()))
     {
         auto *V = &solution_.nodes[vClient];
@@ -358,16 +389,6 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
         if (!route)
             continue;
 
-        if (insertCost(U, V, data, costEvaluator) < 0)  // insert if improving
-        {
-            route->insert(V->idx() + 1, U);
-            update(route, route);
-            searchSpace_.markPromising(U);
-            return;
-        }
-
-        // We prefer inserting over replacing, but if V is not required and
-        // replacing V with U is improving, we also do that now.
         ProblemData::Client const &vData = data.location(V->client());
 
         // Check same-vehicle constraint for V before removing it.

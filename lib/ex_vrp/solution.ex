@@ -136,6 +136,17 @@ defmodule ExVrp.Solution do
   def complete?(%__MODULE__{is_complete: complete}), do: complete
 
   @doc """
+  Checks if the solution is group feasible (same-vehicle constraints satisfied).
+
+  Returns true if all clients in each same-vehicle group that are visited
+  are on the same route.
+  """
+  @spec group_feasible?(t()) :: boolean()
+  def group_feasible?(%__MODULE__{solution_ref: solution_ref}) do
+    ExVrp.Native.solution_is_group_feasible(solution_ref)
+  end
+
+  @doc """
   Returns a list of unassigned client indices.
   """
   @spec unassigned(t()) :: [non_neg_integer()]

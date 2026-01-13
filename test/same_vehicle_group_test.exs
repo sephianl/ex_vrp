@@ -207,5 +207,22 @@ defmodule ExVrp.SameVehicleGroupTest do
       # Solution should be feasible
       assert Solution.feasible?(result.best)
     end
+
+    test "group_feasible? returns true when constraint is satisfied" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 1, y: 1)
+        |> Model.add_client(x: 2, y: 2)
+        |> Model.add_client(x: 3, y: 3)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+
+      [c1, c2, _c3] = model.clients
+      model = Model.add_same_vehicle_group(model, [c1, c2])
+
+      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 100)
+
+      assert Solution.group_feasible?(result.best)
+    end
   end
 end

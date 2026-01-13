@@ -60,6 +60,9 @@ defmodule ExVrp.Native do
   @spec solution_is_feasible(reference()) :: boolean()
   def solution_is_feasible(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
 
+  @spec solution_is_group_feasible(reference()) :: boolean()
+  def solution_is_group_feasible(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
+
   @spec solution_is_complete(reference()) :: boolean()
   def solution_is_complete(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
 
