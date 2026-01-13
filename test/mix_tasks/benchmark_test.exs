@@ -19,7 +19,7 @@ defmodule Mix.Tasks.BenchmarkTest do
 
     test "task has shortdoc" do
       # Mix tasks with @shortdoc will be listed in `mix help`
-      assert function_exported?(Benchmark, :__info__, 1)
+      assert Mix.Task.shortdoc(Benchmark)
     end
   end
 end
