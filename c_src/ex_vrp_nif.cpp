@@ -33,6 +33,9 @@
 
 using namespace pyvrp;
 
+// Forward declarations
+std::string decode_binary_to_string(ErlNifEnv* env, ERL_NIF_TERM term);
+
 // -----------------------------------------------------------------------------
 // Resource Types
 // -----------------------------------------------------------------------------
@@ -458,6 +461,7 @@ ProblemData::VehicleType decode_vehicle_type(ErlNifEnv* env, ERL_NIF_TERM term, 
     std::vector<int64_t> reload_depots_vec;
     int64_t max_reloads = std::numeric_limits<int64_t>::max();
     std::vector<int64_t> initial_load_vec;
+    std::string name;
 
     ERL_NIF_TERM key, value;
     ErlNifMapIterator iter;
@@ -564,6 +568,8 @@ ProblemData::VehicleType decode_vehicle_type(ErlNifEnv* env, ERL_NIF_TERM term, 
                         initial_load_vec[i] = v;
                     }
                 }
+            } else if (key_str == "name") {
+                name = decode_binary_to_string(env, value);
             }
         }
         enif_map_iterator_next(env, &iter);
@@ -606,7 +612,7 @@ ProblemData::VehicleType decode_vehicle_type(ErlNifEnv* env, ERL_NIF_TERM term, 
         static_cast<size_t>(max_reloads),
         Duration(max_overtime),
         Cost(unit_overtime_cost),
-        std::string("")  // name
+        std::move(name)
     );
 }
 

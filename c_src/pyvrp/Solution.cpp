@@ -3,6 +3,7 @@
 #include "DynamicBitset.h"
 
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <numeric>
 #include <unordered_map>
@@ -276,41 +277,57 @@ Solution::Solution(ProblemData const &data, std::vector<Route> routes)
         isGroupFeas_ &= group.required ? numInSol == 1 : numInSol <= 1;
     }
 
-    // Check same-vehicle groups: all visited clients in a group must be on
-    // the same route (vehicle). Partial service is allowed - some clients
-    // in the group may be dropped, but those that ARE visited must share
-    // the same vehicle.
-    if (data.numSameVehicleGroups() > 0)
+    // Build client-to-route mapping for same-vehicle group checks.
+    std::vector<std::optional<size_t>> clientRoute(data.numLocations());
+    for (size_t routeIdx = 0; routeIdx != routes_.size(); ++routeIdx)
+        for (auto const client : routes_[routeIdx])
+            clientRoute[client] = routeIdx;
+
+    for (auto const &group : data.sameVehicleGroups())
     {
-        // Build client-to-route map
-        std::vector<std::optional<size_t>> clientRoute(data.numLocations());
-        for (size_t routeIdx = 0; routeIdx != routes_.size(); ++routeIdx)
+        // The solution is feasible w.r.t. this same-vehicle group if all
+        // visited clients in the group are on routes that share the same
+        // vehicle name (allowing different shifts of the same vehicle), or
+        // if names are not available, they must be on the same route.
+        std::optional<size_t> expectedRoute = std::nullopt;
+        char const *expectedVehicleName = nullptr;
+        for (auto const client : group)
         {
-            for (auto const client : routes_[routeIdx])
+            if (!isVisited[client])
+                continue;  // Client not in solution, skip
+
+            auto const routeIdx = clientRoute[client].value();
+            auto const vehType = routes_[routeIdx].vehicleType();
+            auto const *vehicleName = data.vehicleType(vehType).name;
+
+            if (!expectedRoute.has_value())
             {
-                clientRoute[client] = routeIdx;
+                expectedRoute = routeIdx;
+                expectedVehicleName = vehicleName;
             }
-        }
-
-        for (size_t groupIdx = 0; groupIdx != data.numSameVehicleGroups();
-             ++groupIdx)
-        {
-            auto const &group = data.sameVehicleGroup(groupIdx);
-            std::optional<size_t> groupRoute = std::nullopt;
-
-            for (auto const client : group)
+            else
             {
-                if (isVisited[client])
+                // Check if both vehicles have the same non-empty name.
+                bool const hasNames = expectedVehicleName && vehicleName
+                                      && expectedVehicleName[0] != '\0'
+                                      && vehicleName[0] != '\0';
+
+                if (hasNames)
                 {
-                    if (!groupRoute.has_value())
+                    // Names are available: allow different routes if same name
+                    if (std::strcmp(expectedVehicleName, vehicleName) != 0)
                     {
-                        // First visited client in group
-                        groupRoute = clientRoute[client];
+                        isGroupFeas_ = false;  // Different vehicle names
+                        break;
                     }
-                    else if (clientRoute[client] != groupRoute)
+                }
+                else
+                {
+                    // No names: fall back to same-route constraint
+                    if (clientRoute[client] != expectedRoute)
                     {
-                        // Client is on a different route than other group members
-                        isGroupFeas_ = false;
+                        isGroupFeas_ = false;  // Different routes
+                        break;
                     }
                 }
             }

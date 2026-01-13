@@ -389,5 +389,136 @@ defmodule ExVrp.SameVehicleGroupTest do
       # Should have one route (one vehicle)
       assert Solution.num_routes(solution) == 1
     end
+
+    test "same-vehicle group with split vehicles (multiple vehicle types with same name)" do
+      # This tests the scenario where a single physical vehicle is modeled as
+      # multiple vehicle types with the same name but different time windows.
+      # This models "equipment constraints" where certain clients require a
+      # specific piece of equipment (e.g., a key) and only the vehicle with that
+      # equipment can service them. With multiple shifts of the same vehicle,
+      # the equipment can be split across routes.
+      #
+      # This test matches PyVRP's test_same_vehicle_group_spanning_multiple_shifts_with_capacity
+
+      # Duration matrix (5x5): depot at index 0, clients at 1-4
+      # All locations close to each other (1 time unit travel)
+      duration_matrix = [
+        [0, 1, 1, 1, 1],
+        [1, 0, 1, 1, 1],
+        [1, 1, 0, 1, 1],
+        [1, 1, 1, 0, 1],
+        [1, 1, 1, 1, 0]
+      ]
+
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        # 4 clients with demand 1 each, but vehicle capacity is only 2.
+        # All 4 clients must be on the same vehicle (same-vehicle group).
+        # This is only possible with multiple routes/shifts of that vehicle.
+        |> Model.add_client(x: 1, y: 0, delivery: [1], required: true)
+        |> Model.add_client(x: 2, y: 0, delivery: [1], required: true)
+        |> Model.add_client(x: 3, y: 0, delivery: [1], required: true)
+        |> Model.add_client(x: 4, y: 0, delivery: [1], required: true)
+        # Two shifts of the same vehicle (same name, capacity=2 each)
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [2],
+          tw_early: 0,
+          tw_late: 500,
+          name: "v0"
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [2],
+          tw_early: 500,
+          tw_late: 1000,
+          name: "v0"
+        )
+        |> Model.set_duration_matrices([duration_matrix])
+        |> Model.set_distance_matrices([duration_matrix])
+
+      [c1, c2, c3, c4] = model.clients
+
+      # All 4 clients must be on the same vehicle (v0)
+      # They can be split across the two shifts but must be on routes with the
+      # same vehicle name.
+      model = Model.add_same_vehicle_group(model, [c1, c2, c3, c4])
+
+      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 1000)
+      solution = result.best
+
+      # Should be feasible and group feasible
+      assert Solution.feasible?(solution), "Solution should be feasible"
+      assert Solution.group_feasible?(solution), "Solution should be group feasible"
+      assert Solution.complete?(solution), "Solution should visit all clients"
+
+      # Should have 2 routes (one per shift of the same vehicle)
+      assert Solution.num_routes(solution) == 2
+
+      # Both routes should be using vehicle types with name "v0"
+      routes = Solution.routes(solution)
+
+      for route <- routes do
+        vtype_idx = ExVrp.Route.vehicle_type(route)
+        vtype = Enum.at(model.vehicle_types, vtype_idx)
+        assert vtype.name == "v0"
+      end
+
+      # All 4 clients should be visited across the 2 routes
+      all_visits =
+        routes
+        |> Enum.flat_map(&ExVrp.Route.visits/1)
+        |> MapSet.new()
+
+      assert MapSet.equal?(all_visits, MapSet.new([1, 2, 3, 4]))
+    end
+
+    test "without same-vehicle constraint, split vehicles can serve different clients" do
+      # First verify that split vehicles work correctly WITHOUT the constraint
+      duration_matrix = [
+        [0, 1, 1, 1, 1],
+        [1, 0, 1, 1, 1],
+        [1, 1, 0, 1, 1],
+        [1, 1, 1, 0, 1],
+        [1, 1, 1, 1, 0]
+      ]
+
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
+        |> Model.add_client(x: 1, y: 0, service_duration: 116, tw_early: 0, tw_late: 1000)
+        |> Model.add_client(x: 2, y: 0, service_duration: 116, tw_early: 0, tw_late: 1000)
+        |> Model.add_client(x: 3, y: 0, service_duration: 116, tw_early: 0, tw_late: 1000)
+        |> Model.add_client(x: 4, y: 0, service_duration: 116, tw_early: 0, tw_late: 1000)
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [1000],
+          tw_early: 0,
+          tw_late: 250,
+          name: "v0"
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [1000],
+          tw_early: 500,
+          tw_late: 800,
+          name: "v0"
+        )
+        |> Model.set_duration_matrices([duration_matrix])
+        |> Model.set_distance_matrices([duration_matrix])
+
+      # NO same-vehicle group constraint
+
+      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 1000)
+      solution = result.best
+
+      # Should be feasible
+      assert Solution.feasible?(solution), "Solution should be feasible without constraint"
+      assert Solution.complete?(solution), "Solution should visit all clients"
+
+      # Should have 2 routes
+      assert Solution.num_routes(solution) == 2
+    end
   end
 end
