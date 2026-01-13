@@ -2882,7 +2882,7 @@ fine::Term local_search_stats_nif(
     return fine::Term(result_map);
 }
 
-FINE_NIF(local_search_stats_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
+FINE_NIF(local_search_stats_nif, 0);
 
 // -----------------------------------------------------------------------------
 // Persistent LocalSearch Resource NIFs
