@@ -35,16 +35,6 @@ defmodule ExVrp.Native do
   def create_problem_data(_model), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
-  # Solver
-  # ---------------------------------------------------------------------------
-
-  @doc """
-  Runs the solver on ProblemData.
-  """
-  @spec solve(reference(), keyword()) :: {:ok, reference()} | {:error, term()}
-  def solve(_problem_data, _opts), do: :erlang.nif_error(:nif_not_loaded)
-
-  # ---------------------------------------------------------------------------
   # Solution
   # ---------------------------------------------------------------------------
 
