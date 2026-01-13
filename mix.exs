@@ -67,11 +67,17 @@ defmodule ExVrp.MixProject do
       {:benchee, "~> 1.3", only: [:dev, :test]},
       {:jason, "~> 1.4", only: [:dev, :test]},
 
-      # Documentation
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:styler, "~> 1.10", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
+      # Mix check
+      {:ex_check, "~> 0.16.0", only: [:dev, :test], runtime: false},
+      # Static code analysis
+      {:credo, ">= 0.0.0", only: [:dev], runtime: false},
+      {:dialyxir, ">= 0.0.0", only: [:dev, :test], runtime: false},
+      {:ex_doc, ">= 0.0.0", only: [:dev, :test], runtime: false},
+      {:sobelow, ">= 0.0.0", only: [:dev, :test], runtime: false},
+      {:mix_audit, ">= 0.0.0", only: [:dev, :test], runtime: false},
+
+      # Formatting
+      {:styler, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 

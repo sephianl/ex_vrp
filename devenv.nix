@@ -35,13 +35,16 @@ in
       files = ".ex[s]?$";
       entry = "mix format";
     };
-    mix-credo = {
+    mix-check = {
       enable = !config.devenv.isTesting;
-      name = "mix-credo";
-      entry = "mix credo";
+      name = "mix-check";
+      entry = "mix check";
       pass_filenames = false;
-      stages = [ "pre-push" ];
-      files = ".ex$";
+      stages = [
+        "pre-commit"
+        "pre-push"
+      ];
+      files = ".ex[s]?$";
     };
 
     prettier.enable = !config.devenv.isTesting;

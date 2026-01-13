@@ -1,0 +1,20 @@
+# Sobelow false positive skips
+#
+# These are internal developer tools processing trusted VRPLIB benchmark files,
+# not web endpoints accepting user input.
+
+# benchmark.ex: Paths from compile-time @data_dir + hardcoded filenames.
+# Atom conversion from Benchee scenario names (bounded set from @instances keys).
+Traversal.FileModule: Directory Traversal in `File.write!`,lib/ex_vrp/benchmark.ex:222,5A27918
+Traversal.FileModule: Directory Traversal in `File.read`,lib/ex_vrp/benchmark.ex:183,613B36C
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/ex_vrp/benchmark.ex:207,6B8752B
+
+# read.ex: Developer API for reading VRPLIB files - caller controls path.
+# Atoms from VRPLIB section headers - bounded set defined by file format spec.
+Traversal.FileModule: Directory Traversal in `File.read!`,lib/ex_vrp/read.ex:59,1BDF4F3
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/ex_vrp/read.ex:103,36E8205
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/ex_vrp/read.ex:93,7326BB1
+
+# statistics.ex: Developer utility for saving/loading stats files.
+Traversal.FileModule: Directory Traversal in `File.read`,lib/ex_vrp/statistics.ex:161,1529F9D
+Traversal.FileModule: Directory Traversal in `File.write`,lib/ex_vrp/statistics.ex:146,273456C
