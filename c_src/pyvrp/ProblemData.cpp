@@ -224,7 +224,7 @@ void ProblemData::ClientGroup::addClient(size_t client)
 void ProblemData::ClientGroup::clear() { clients_.clear(); }
 
 ProblemData::SameVehicleGroup::SameVehicleGroup(std::vector<size_t> clients,
-                                                 std::string name)
+                                                std::string name)
     : name(duplicate(name.data()))
 {
     for (auto const client : clients)
@@ -286,14 +286,23 @@ ProblemData::Depot::Depot(Coordinate x,
                           Coordinate y,
                           Duration twEarly,
                           Duration twLate,
+                          Duration serviceDuration,
                           std::string name)
-    : x(x), y(y), twEarly(twEarly), twLate(twLate), name(duplicate(name.data()))
+    : x(x),
+      y(y),
+      twEarly(twEarly),
+      twLate(twLate),
+      serviceDuration(serviceDuration),
+      name(duplicate(name.data()))
 {
     if (twEarly > twLate)
         throw std::invalid_argument("tw_early must be <= tw_late.");
 
     if (twEarly < 0)
         throw std::invalid_argument("tw_early must be >= 0.");
+
+    if (serviceDuration < 0)
+        throw std::invalid_argument("service_duration must be >= 0.");
 }
 
 ProblemData::Depot::Depot(Depot const &depot)
@@ -301,6 +310,7 @@ ProblemData::Depot::Depot(Depot const &depot)
       y(depot.y),
       twEarly(depot.twEarly),
       twLate(depot.twLate),
+      serviceDuration(depot.serviceDuration),
       name(duplicate(depot.name))
 {
 }
@@ -310,6 +320,7 @@ ProblemData::Depot::Depot(Depot &&depot)
       y(depot.y),
       twEarly(depot.twEarly),
       twLate(depot.twLate),
+      serviceDuration(depot.serviceDuration),
       name(depot.name)  // we can steal
 {
     depot.name = nullptr;  // stolen
@@ -320,10 +331,11 @@ ProblemData::Depot::~Depot() { delete[] name; }
 bool ProblemData::Depot::operator==(Depot const &other) const
 {
     // clang-format off
-    return x == other.x 
+    return x == other.x
         && y == other.y
         && twEarly == other.twEarly
         && twLate == other.twLate
+        && serviceDuration == other.serviceDuration
         && std::strcmp(name, other.name) == 0;
     // clang-format on
 }
@@ -711,7 +723,8 @@ void ProblemData::validate() const
         {
             if (client < numDepots() || client >= numLocations())
             {
-                auto const *msg = "Same-vehicle group references invalid client.";
+                auto const *msg
+                    = "Same-vehicle group references invalid client.";
                 throw std::out_of_range(msg);
             }
         }
@@ -787,14 +800,14 @@ void ProblemData::validate() const
     }
 }
 
-ProblemData
-ProblemData::replace(std::optional<std::vector<Client>> &clients,
-                     std::optional<std::vector<Depot>> &depots,
-                     std::optional<std::vector<VehicleType>> &vehicleTypes,
-                     std::optional<std::vector<Matrix<Distance>>> &distMats,
-                     std::optional<std::vector<Matrix<Duration>>> &durMats,
-                     std::optional<std::vector<ClientGroup>> &groups,
-                     std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups) const
+ProblemData ProblemData::replace(
+    std::optional<std::vector<Client>> &clients,
+    std::optional<std::vector<Depot>> &depots,
+    std::optional<std::vector<VehicleType>> &vehicleTypes,
+    std::optional<std::vector<Matrix<Distance>>> &distMats,
+    std::optional<std::vector<Matrix<Duration>>> &durMats,
+    std::optional<std::vector<ClientGroup>> &groups,
+    std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups) const
 {
     return {clients.value_or(clients_),
             depots.value_or(depots_),

@@ -275,8 +275,13 @@ void Route::update()
         }
         else
         {
+            // Reload depot - apply service time
             ProblemData::Depot const &depot = data.location(node->client());
-            durAt[idx] = {depot};
+            durAt[idx] = DurationSegment(depot.serviceDuration,
+                                         0,
+                                         0,
+                                         std::numeric_limits<Duration>::max(),
+                                         0);
         }
     }
 

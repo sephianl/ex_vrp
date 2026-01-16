@@ -337,6 +337,7 @@ public:
      *    y: float,
      *    tw_early: int = 0,
      *    tw_late: int = np.iinfo(np.int64).max,
+     *    service_duration: int = 0,
      *    *,
      *    name: str = "",
      * )
@@ -357,6 +358,10 @@ public:
      *     Opening time of this depot. Default 0.
      * tw_late
      *     Closing time of this depot. Default unconstrained.
+     * service_duration
+     *     Time required for loading/unloading at this depot during reloads.
+     *     This time is added when a vehicle visits this depot for reloading.
+     *     Default 0.
      * name
      *     Free-form name field for this depot. Default empty.
      *
@@ -370,6 +375,8 @@ public:
      *     Opening time of this depot.
      * tw_late
      *     Closing time of this depot.
+     * service_duration
+     *     Time required for loading/unloading at this depot during reloads.
      * name
      *     Free-form name field for this depot.
      */
@@ -377,14 +384,16 @@ public:
     {
         Coordinate const x;
         Coordinate const y;
-        Duration const twEarly;  // Depot opening time
-        Duration const twLate;   // Depot closing time
-        char const *name;        // Depot name (for reference)
+        Duration const twEarly;          // Depot opening time
+        Duration const twLate;           // Depot closing time
+        Duration const serviceDuration;  // Service time during reloads
+        char const *name;                // Depot name (for reference)
 
         Depot(Coordinate x,
               Coordinate y,
               Duration twEarly = 0,
               Duration twLate = std::numeric_limits<Duration>::max(),
+              Duration serviceDuration = 0,
               std::string name = "");
 
         bool operator==(Depot const &other) const;
@@ -639,7 +648,8 @@ private:
     std::vector<Depot> const depots_;              // Depot information
     std::vector<VehicleType> const vehicleTypes_;  // Vehicle type information
     std::vector<ClientGroup> const groups_;        // Client groups
-    std::vector<SameVehicleGroup> const sameVehicleGroups_;  // Same-vehicle groups
+    std::vector<SameVehicleGroup> const
+        sameVehicleGroups_;  // Same-vehicle groups
 
     size_t const numVehicles_;
     size_t const numLoadDimensions_;
@@ -678,7 +688,8 @@ public:
     /**
      * Returns a list of all same-vehicle groups in the problem instance.
      */
-    [[nodiscard]] std::vector<SameVehicleGroup> const &sameVehicleGroups() const;
+    [[nodiscard]] std::vector<SameVehicleGroup> const &
+    sameVehicleGroups() const;
 
     /**
      * Returns a list of all vehicle types in the problem instance.
@@ -857,13 +868,14 @@ public:
      * ProblemData
      *    A new ProblemData instance with possibly replaced data.
      */
-    ProblemData replace(std::optional<std::vector<Client>> &clients,
-                        std::optional<std::vector<Depot>> &depots,
-                        std::optional<std::vector<VehicleType>> &vehicleTypes,
-                        std::optional<std::vector<Matrix<Distance>>> &distMats,
-                        std::optional<std::vector<Matrix<Duration>>> &durMats,
-                        std::optional<std::vector<ClientGroup>> &groups,
-                        std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups) const;
+    ProblemData replace(
+        std::optional<std::vector<Client>> &clients,
+        std::optional<std::vector<Depot>> &depots,
+        std::optional<std::vector<VehicleType>> &vehicleTypes,
+        std::optional<std::vector<Matrix<Distance>>> &distMats,
+        std::optional<std::vector<Matrix<Duration>>> &durMats,
+        std::optional<std::vector<ClientGroup>> &groups,
+        std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups) const;
 
     ProblemData(std::vector<Client> clients,
                 std::vector<Depot> depots,

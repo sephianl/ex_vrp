@@ -26,10 +26,7 @@ DurationSegment::DurationSegment(ProblemData::Client const &client)
 {
 }
 
-DurationSegment::DurationSegment(ProblemData::Depot const &depot)
-    : startEarly_(depot.twEarly), startLate_(depot.twLate)
-{
-}
+DurationSegment::DurationSegment(ProblemData::Depot const &depot) {}
 
 DurationSegment::DurationSegment(ProblemData::VehicleType const &vehicleType,
                                  Duration const twLate)

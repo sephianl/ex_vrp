@@ -170,7 +170,11 @@ void Route::makeSchedule(ProblemData const &data)
         now += wait;
         now -= tw;
 
-        schedule_.emplace_back(trip.startDepot(), tripIdx, now, now, wait, tw);
+        // Apply depot service time for reload depots (not for the first trip)
+        auto const depotService = tripIdx > 0 ? start.serviceDuration : 0;
+        schedule_.emplace_back(
+            trip.startDepot(), tripIdx, now, now + depotService, wait, tw);
+        now += depotService;
 
         size_t prevClient = trip.startDepot();
         for (auto const client : trip)
@@ -274,7 +278,12 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
 
         auto const edgeDuration = durations(trip->startDepot(), nextClient);
         ProblemData::Depot const &start = data.location(trip->startDepot());
-        DurationSegment const depotDS = {start};
+        // Service time is only applied at reload depots (not the first trip).
+        // In reverse iteration, trip + 1 == rend means this is the first trip.
+        bool const isReloadDepot = (trip + 1) != trips_.rend();
+        Duration const serviceTime = isReloadDepot ? start.serviceDuration : 0;
+        DurationSegment const depotDS(
+            serviceTime, 0, 0, std::numeric_limits<Duration>::max(), 0);
 
         ds = DurationSegment::merge(edgeDuration, depotDS, ds);
     }
