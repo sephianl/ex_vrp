@@ -23,6 +23,8 @@ CXX ?= g++
 CXXFLAGS = -std=c++20 -O3 -flto -Wall -Wextra -fPIC -fvisibility=hidden -DNDEBUG
 # Disable dangling-reference warning from PyVRP's Route.h (false positive in GCC 14)
 CXXFLAGS += -Wno-dangling-reference
+# Disable unused-parameter warnings - common in NIF code where env isn't always used
+CXXFLAGS += -Wno-unused-parameter
 CXXFLAGS += -I$(ERTS_INCLUDE_DIR)
 CXXFLAGS += -Ic_src
 CXXFLAGS += -Ic_src/pyvrp

@@ -49,5 +49,6 @@ in
 
     prettier.enable = !config.devenv.isTesting;
     nixfmt-rfc-style.enable = !config.devenv.isTesting;
+    clang-format.enable = !config.devenv.isTesting;
   };
 }
