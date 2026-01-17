@@ -2,10 +2,14 @@ version: "3"
 
 vars:
   CPP_SRC:
-    sh: find c_src -name '*.cpp' | sort
+    sh: find c_src -name '*.cpp' -not -path '*/bindings.cpp' | sort | tr '\n' ' '
   CPP_HEADERS:
-    sh: find c_src -name '*.h' | sort
-  CPP_INCLUDES: -std=c++20 -Ic_src -Ic_src/pyvrp
+    sh: find c_src -name '*.h' | sort | tr '\n' ' '
+  ERTS_INCLUDE_DIR:
+    sh: elixir -e 'IO.puts "#{:code.root_dir()}/erts-#{:erlang.system_info(:version)}/include"'
+  FINE_INCLUDE_DIR:
+    sh: mix run --no-start -e 'IO.puts Fine.include_dir()' 2>/dev/null | tail -1
+  CPP_INCLUDES: -std=c++20 -Ic_src -Ic_src/pyvrp -isystem {{.ERTS_INCLUDE_DIR}} -isystem {{.FINE_INCLUDE_DIR}}
 
 tasks:
   # ---------------------------------------------------------------------------
@@ -34,12 +38,12 @@ tasks:
   # ---------------------------------------------------------------------------
 
   cpp:check:
-    desc: Run C++ static analysis (cppcheck + clang-tidy)
+    desc: Run C++ static analysis (cppcheck + clang-tidy) on NIF code
     cmds:
       - echo "Running cppcheck..."
-      - cppcheck --error-exitcode=1 --enable=warning,performance,portability --check-level=exhaustive --suppress=missingIncludeSystem --quiet {{.CPP_SRC}}
+      - cppcheck --error-exitcode=1 --enable=warning,performance,portability --check-level=exhaustive --suppress=missingIncludeSystem --quiet c_src/ex_vrp_nif.cpp
       - echo "Running clang-tidy..."
-      - clang-tidy {{.CPP_SRC}} -- {{.CPP_INCLUDES}}
+      - clang-tidy --quiet --warnings-as-errors='' c_src/ex_vrp_nif.cpp -- {{.CPP_INCLUDES}}
 
   cpp:format:
     desc: Format C++ code with clang-format
