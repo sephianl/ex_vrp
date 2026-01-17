@@ -34,7 +34,8 @@
 using namespace pyvrp;
 
 // Forward declarations
-std::string decode_binary_to_string(ErlNifEnv *env, ERL_NIF_TERM term);
+std::string decode_binary_to_string([[maybe_unused]] ErlNifEnv *env,
+                                    ERL_NIF_TERM term);
 
 // -----------------------------------------------------------------------------
 // Resource Types
@@ -369,8 +370,9 @@ FINE_RESOURCE(LocalSearchResource);
 // Forward Declarations: Helper Functions
 // -----------------------------------------------------------------------------
 
-static bool
-get_number_as_double(ErlNifEnv *env, ERL_NIF_TERM term, double *out);
+static bool get_number_as_double([[maybe_unused]] ErlNifEnv *env,
+                                 ERL_NIF_TERM term,
+                                 double *out);
 
 static bool
 prepare_node_transfer(fine::ResourcePtr<SearchRouteResource> &route_resource,
@@ -400,7 +402,8 @@ reconcile_route_ownership(std::shared_ptr<SearchRouteData> &route1_data,
 // -----------------------------------------------------------------------------
 
 // Decode a single client from Elixir map
-ProblemData::Client decode_client(ErlNifEnv *env, ERL_NIF_TERM term)
+ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
+                                  ERL_NIF_TERM term)
 {
     int64_t x = 0, y = 0;
     std::vector<int64_t> delivery_vec, pickup_vec;
@@ -556,7 +559,8 @@ ProblemData::Client decode_client(ErlNifEnv *env, ERL_NIF_TERM term)
 }
 
 // Decode a single depot from Elixir map
-ProblemData::Depot decode_depot(ErlNifEnv *env, ERL_NIF_TERM term)
+ProblemData::Depot decode_depot([[maybe_unused]] ErlNifEnv *env,
+                                ERL_NIF_TERM term)
 {
     int64_t x = 0, y = 0;
     int64_t service_duration = 0;
@@ -601,8 +605,9 @@ ProblemData::Depot decode_depot(ErlNifEnv *env, ERL_NIF_TERM term)
 }
 
 // Decode a single vehicle type from Elixir map
-ProblemData::VehicleType
-decode_vehicle_type(ErlNifEnv *env, ERL_NIF_TERM term, size_t num_dims)
+ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
+                                             ERL_NIF_TERM term,
+                                             size_t num_dims)
 {
     int64_t num_available = 1;
     std::vector<int64_t> capacity_vec;
@@ -839,7 +844,8 @@ decode_vehicle_type(ErlNifEnv *env, ERL_NIF_TERM term, size_t num_dims)
 }
 
 // Decode distance/duration matrix from nested list
-Matrix<Distance> decode_distance_matrix(ErlNifEnv *env, ERL_NIF_TERM term)
+Matrix<Distance> decode_distance_matrix([[maybe_unused]] ErlNifEnv *env,
+                                        ERL_NIF_TERM term)
 {
     unsigned num_rows;
     if (!enif_get_list_length(env, term, &num_rows) || num_rows == 0)
@@ -879,7 +885,8 @@ Matrix<Distance> decode_distance_matrix(ErlNifEnv *env, ERL_NIF_TERM term)
     return Matrix<Distance>(std::move(data), num_rows, num_cols);
 }
 
-Matrix<Duration> decode_duration_matrix(ErlNifEnv *env, ERL_NIF_TERM term)
+Matrix<Duration> decode_duration_matrix([[maybe_unused]] ErlNifEnv *env,
+                                        ERL_NIF_TERM term)
 {
     unsigned num_rows;
     if (!enif_get_list_length(env, term, &num_rows) || num_rows == 0)
@@ -926,7 +933,8 @@ int64_t euclidean_distance(int64_t x1, int64_t y1, int64_t x2, int64_t y2)
 }
 
 // Decode Elixir binary to std::string
-std::string decode_binary_to_string(ErlNifEnv *env, ERL_NIF_TERM term)
+std::string decode_binary_to_string([[maybe_unused]] ErlNifEnv *env,
+                                    ERL_NIF_TERM term)
 {
     ErlNifBinary bin;
     if (enif_inspect_binary(env, term, &bin))
@@ -942,7 +950,8 @@ std::string decode_binary_to_string(ErlNifEnv *env, ERL_NIF_TERM term)
 }
 
 // Decode a ClientGroup from Elixir map
-ProblemData::ClientGroup decode_client_group(ErlNifEnv *env, ERL_NIF_TERM term)
+ProblemData::ClientGroup decode_client_group([[maybe_unused]] ErlNifEnv *env,
+                                             ERL_NIF_TERM term)
 {
     std::vector<size_t> clients;
     bool required = true;
@@ -992,8 +1001,8 @@ ProblemData::ClientGroup decode_client_group(ErlNifEnv *env, ERL_NIF_TERM term)
 }
 
 // Decode a SameVehicleGroup from Elixir map
-ProblemData::SameVehicleGroup decode_same_vehicle_group(ErlNifEnv *env,
-                                                        ERL_NIF_TERM term)
+ProblemData::SameVehicleGroup
+decode_same_vehicle_group([[maybe_unused]] ErlNifEnv *env, ERL_NIF_TERM term)
 {
     std::vector<size_t> clients;
     std::string name = "";
@@ -1037,7 +1046,7 @@ ProblemData::SameVehicleGroup decode_same_vehicle_group(ErlNifEnv *env,
  * Create ProblemData from Elixir Model struct.
  */
 fine::Ok<fine::ResourcePtr<ProblemDataResource>>
-create_problem_data(ErlNifEnv *env, fine::Term model_term)
+create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
 {
     // Decode the model map
     ERL_NIF_TERM clients_term, depots_term, vehicle_types_term;
@@ -1348,7 +1357,7 @@ FINE_NIF(solution_num_clients, 0);
  * Get routes from solution as list of client index lists.
  */
 fine::Term
-solution_routes(ErlNifEnv *env,
+solution_routes([[maybe_unused]] ErlNifEnv *env,
                 fine::ResourcePtr<SolutionResource> solution_resource)
 {
     auto &solution = solution_resource->solution;
@@ -1383,7 +1392,7 @@ FINE_NIF(solution_routes, 0);
  * Get unassigned client indices from solution.
  */
 fine::Term
-solution_unassigned(ErlNifEnv *env,
+solution_unassigned([[maybe_unused]] ErlNifEnv *env,
                     fine::ResourcePtr<SolutionResource> solution_resource)
 {
     auto &solution = solution_resource->solution;
@@ -1457,7 +1466,7 @@ FINE_NIF(solution_route_duration, 0);
  * Get delivery load of a specific route in the solution.
  */
 fine::Term
-solution_route_delivery(ErlNifEnv *env,
+solution_route_delivery([[maybe_unused]] ErlNifEnv *env,
                         fine::ResourcePtr<SolutionResource> solution_resource,
                         int64_t route_idx)
 {
@@ -1488,7 +1497,7 @@ FINE_NIF(solution_route_delivery, 0);
  * Get pickup load of a specific route in the solution.
  */
 fine::Term
-solution_route_pickup(ErlNifEnv *env,
+solution_route_pickup([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<SolutionResource> solution_resource,
                       int64_t route_idx)
 {
@@ -1540,7 +1549,7 @@ FINE_NIF(solution_route_is_feasible, 0);
  * Get excess load of a specific route in the solution.
  */
 fine::Term solution_route_excess_load(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SolutionResource> solution_resource,
     int64_t route_idx)
 {
@@ -1788,7 +1797,7 @@ FINE_NIF(solution_route_num_trips, 0);
  * Get centroid of a specific route.
  */
 fine::Term
-solution_route_centroid(ErlNifEnv *env,
+solution_route_centroid([[maybe_unused]] ErlNifEnv *env,
                         fine::ResourcePtr<SolutionResource> solution_resource,
                         int64_t route_idx)
 {
@@ -2011,7 +2020,7 @@ FINE_NIF(solution_route_prizes, 0);
  * Get visits of a specific route (client indices).
  */
 fine::Term
-solution_route_visits(ErlNifEnv *env,
+solution_route_visits([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<SolutionResource> solution_resource,
                       int64_t route_idx)
 {
@@ -2044,7 +2053,7 @@ FINE_NIF(solution_route_visits, 0);
  * wait_duration, time_warp}
  */
 fine::Term
-solution_route_schedule(ErlNifEnv *env,
+solution_route_schedule([[maybe_unused]] ErlNifEnv *env,
                         fine::ResourcePtr<SolutionResource> solution_resource,
                         int64_t route_idx)
 {
@@ -2085,7 +2094,8 @@ FINE_NIF(solution_route_schedule, 0);
  * Get the total fixed vehicle cost of the solution.
  */
 int64_t solution_fixed_vehicle_cost(
-    ErlNifEnv *env, fine::ResourcePtr<SolutionResource> solution_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SolutionResource> solution_resource)
 {
     auto &solution = solution_resource->solution;
     return static_cast<int64_t>(solution.fixedVehicleCost());
@@ -2101,7 +2111,7 @@ FINE_NIF(solution_fixed_vehicle_cost, 0);
  * Create a CostEvaluator from options (map).
  */
 fine::Ok<fine::ResourcePtr<CostEvaluatorResource>>
-create_cost_evaluator_nif(ErlNifEnv *env, fine::Term opts_term)
+create_cost_evaluator_nif([[maybe_unused]] ErlNifEnv *env, fine::Term opts_term)
 {
     std::vector<double> load_penalties;
     double tw_penalty = 1.0;
@@ -2189,7 +2199,7 @@ FINE_NIF(solution_penalised_cost, 0);
  * Compute cost of solution (max for infeasible).
  */
 fine::Term
-solution_cost(ErlNifEnv *env,
+solution_cost([[maybe_unused]] ErlNifEnv *env,
               fine::ResourcePtr<SolutionResource> solution_resource,
               fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
@@ -2211,7 +2221,7 @@ FINE_NIF(solution_cost, 0);
  * Create a random solution.
  */
 fine::Ok<fine::ResourcePtr<SolutionResource>> create_random_solution_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<ProblemDataResource> problem_resource,
     fine::Term opts_term)
 {
@@ -2244,7 +2254,7 @@ FINE_NIF(create_random_solution_nif, 0);
  * Routes is a list of lists of client IDs (size_t values).
  */
 fine::Ok<fine::ResourcePtr<SolutionResource>> create_solution_from_routes_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<ProblemDataResource> problem_resource,
     fine::Term routes_term)
 {
@@ -2758,7 +2768,7 @@ build_neighbours(ProblemData const &data,
  * Perform local search on a solution.
  */
 fine::Ok<fine::ResourcePtr<SolutionResource>>
-local_search_nif(ErlNifEnv *env,
+local_search_nif([[maybe_unused]] ErlNifEnv *env,
                  fine::ResourcePtr<SolutionResource> solution_resource,
                  fine::ResourcePtr<ProblemDataResource> problem_resource,
                  fine::ResourcePtr<CostEvaluatorResource> evaluator_resource,
@@ -2850,7 +2860,7 @@ FINE_NIF(local_search_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
  * PyVRP: init = ls.search(Solution(data, []), pm.max_cost_evaluator())
  */
 fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SolutionResource> solution_resource,
     fine::ResourcePtr<ProblemDataResource> problem_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource,
@@ -2942,7 +2952,7 @@ FINE_NIF(local_search_search_only_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
  * - :exhaustive - boolean (default false)
  */
 fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SolutionResource> solution_resource,
     fine::ResourcePtr<ProblemDataResource> problem_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource,
@@ -3143,7 +3153,7 @@ FINE_NIF(local_search_with_operators_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
  * Returns a map with operator stats: %{moves: n, improving: n, updates: n}
  */
 fine::Term local_search_stats_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SolutionResource> solution_resource,
     fine::ResourcePtr<ProblemDataResource> problem_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource,
@@ -3465,7 +3475,7 @@ FINE_NIF(local_search_stats_nif, 0);
  * matching PyVRP's behavior where one RNG is created at algorithm start.
  */
 fine::ResourcePtr<LocalSearchResource>
-create_local_search_nif(ErlNifEnv *env,
+create_local_search_nif([[maybe_unused]] ErlNifEnv *env,
                         fine::ResourcePtr<ProblemDataResource> problem_resource,
                         int64_t seed)
 {
@@ -3489,7 +3499,7 @@ FINE_NIF(create_local_search_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
  * Uses the stored RNG which advances across calls (matching PyVRP).
  */
 fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_run_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<LocalSearchResource> ls_resource,
     fine::ResourcePtr<SolutionResource> solution_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
@@ -3517,7 +3527,7 @@ FINE_NIF(local_search_run_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
  * Uses the stored RNG which advances across calls (matching PyVRP).
  */
 fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_run_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<LocalSearchResource> ls_resource,
     fine::ResourcePtr<SolutionResource> solution_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
@@ -3543,7 +3553,7 @@ FINE_NIF(local_search_search_run_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
 
 // Create a new search::Route
 fine::ResourcePtr<SearchRouteResource>
-create_search_route_nif(ErlNifEnv *env,
+create_search_route_nif([[maybe_unused]] ErlNifEnv *env,
                         fine::ResourcePtr<ProblemDataResource> problem_resource,
                         int64_t idx,
                         int64_t vehicle_type)
@@ -3560,7 +3570,7 @@ FINE_NIF(create_search_route_nif, 0);
 
 // Get route index
 int64_t
-search_route_idx_nif(ErlNifEnv *env,
+search_route_idx_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->idx());
@@ -3570,7 +3580,8 @@ FINE_NIF(search_route_idx_nif, 0);
 
 // Get route vehicle type
 int64_t search_route_vehicle_type_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->vehicleType());
 }
@@ -3579,7 +3590,8 @@ FINE_NIF(search_route_vehicle_type_nif, 0);
 
 // Get number of clients
 int64_t search_route_num_clients_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->numClients());
 }
@@ -3588,7 +3600,8 @@ FINE_NIF(search_route_num_clients_nif, 0);
 
 // Get number of depots
 int64_t search_route_num_depots_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->numDepots());
 }
@@ -3597,7 +3610,8 @@ FINE_NIF(search_route_num_depots_nif, 0);
 
 // Get number of trips
 int64_t search_route_num_trips_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->numTrips());
 }
@@ -3606,7 +3620,8 @@ FINE_NIF(search_route_num_trips_nif, 0);
 
 // Get max trips
 int64_t search_route_max_trips_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->maxTrips());
 }
@@ -3615,7 +3630,7 @@ FINE_NIF(search_route_max_trips_nif, 0);
 
 // Get route size (total nodes including depots)
 int64_t
-search_route_size_nif(ErlNifEnv *env,
+search_route_size_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->size());
@@ -3625,7 +3640,8 @@ FINE_NIF(search_route_size_nif, 0);
 
 // Check if route is empty
 bool search_route_empty_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return route_resource->route()->empty();
 }
@@ -3634,7 +3650,8 @@ FINE_NIF(search_route_empty_nif, 0);
 
 // Check if route is feasible
 bool search_route_is_feasible_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return route_resource->route()->isFeasible();
 }
@@ -3643,7 +3660,8 @@ FINE_NIF(search_route_is_feasible_nif, 0);
 
 // Check if route has excess load
 bool search_route_has_excess_load_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return route_resource->route()->hasExcessLoad();
 }
@@ -3652,7 +3670,8 @@ FINE_NIF(search_route_has_excess_load_nif, 0);
 
 // Check if route has excess distance
 bool search_route_has_excess_distance_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return route_resource->route()->hasExcessDistance();
 }
@@ -3661,7 +3680,8 @@ FINE_NIF(search_route_has_excess_distance_nif, 0);
 
 // Check if route has time warp
 bool search_route_has_time_warp_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return route_resource->route()->hasTimeWarp();
 }
@@ -3670,7 +3690,7 @@ FINE_NIF(search_route_has_time_warp_nif, 0);
 
 // Get route distance
 int64_t
-search_route_distance_nif(ErlNifEnv *env,
+search_route_distance_nif([[maybe_unused]] ErlNifEnv *env,
                           fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->distance());
@@ -3680,7 +3700,7 @@ FINE_NIF(search_route_distance_nif, 0);
 
 // Get route duration
 int64_t
-search_route_duration_nif(ErlNifEnv *env,
+search_route_duration_nif([[maybe_unused]] ErlNifEnv *env,
                           fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->duration());
@@ -3690,7 +3710,8 @@ FINE_NIF(search_route_duration_nif, 0);
 
 // Get route time warp
 int64_t search_route_time_warp_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->timeWarp());
 }
@@ -3699,7 +3720,7 @@ FINE_NIF(search_route_time_warp_nif, 0);
 
 // Get route overtime
 int64_t
-search_route_overtime_nif(ErlNifEnv *env,
+search_route_overtime_nif([[maybe_unused]] ErlNifEnv *env,
                           fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->overtime());
@@ -3709,7 +3730,8 @@ FINE_NIF(search_route_overtime_nif, 0);
 
 // Get route excess distance
 int64_t search_route_excess_distance_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->excessDistance());
 }
@@ -3718,7 +3740,7 @@ FINE_NIF(search_route_excess_distance_nif, 0);
 
 // Get route load (as list)
 std::vector<int64_t>
-search_route_load_nif(ErlNifEnv *env,
+search_route_load_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     auto const &load = route_resource->route()->load();
@@ -3730,7 +3752,8 @@ FINE_NIF(search_route_load_nif, 0);
 
 // Get route excess load (as list)
 std::vector<int64_t> search_route_excess_load_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     auto const &excess = route_resource->route()->excessLoad();
     std::vector<int64_t> result(excess.begin(), excess.end());
@@ -3741,7 +3764,7 @@ FINE_NIF(search_route_excess_load_nif, 0);
 
 // Get route capacity (as list)
 std::vector<int64_t>
-search_route_capacity_nif(ErlNifEnv *env,
+search_route_capacity_nif([[maybe_unused]] ErlNifEnv *env,
                           fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     auto const &capacity = route_resource->route()->capacity();
@@ -3753,7 +3776,8 @@ FINE_NIF(search_route_capacity_nif, 0);
 
 // Get route start depot
 int64_t search_route_start_depot_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->startDepot());
 }
@@ -3762,7 +3786,8 @@ FINE_NIF(search_route_start_depot_nif, 0);
 
 // Get route end depot
 int64_t search_route_end_depot_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->endDepot());
 }
@@ -3771,7 +3796,8 @@ FINE_NIF(search_route_end_depot_nif, 0);
 
 // Get fixed vehicle cost
 int64_t search_route_fixed_vehicle_cost_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->fixedVehicleCost());
 }
@@ -3780,7 +3806,8 @@ FINE_NIF(search_route_fixed_vehicle_cost_nif, 0);
 
 // Get distance cost
 int64_t search_route_distance_cost_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->distanceCost());
 }
@@ -3789,7 +3816,8 @@ FINE_NIF(search_route_distance_cost_nif, 0);
 
 // Get duration cost
 int64_t search_route_duration_cost_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->durationCost());
 }
@@ -3798,7 +3826,8 @@ FINE_NIF(search_route_duration_cost_nif, 0);
 
 // Get unit distance cost
 int64_t search_route_unit_distance_cost_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->unitDistanceCost());
 }
@@ -3807,7 +3836,8 @@ FINE_NIF(search_route_unit_distance_cost_nif, 0);
 
 // Get unit duration cost
 int64_t search_route_unit_duration_cost_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->unitDurationCost());
 }
@@ -3816,7 +3846,7 @@ FINE_NIF(search_route_unit_duration_cost_nif, 0);
 
 // Get centroid
 std::tuple<double, double>
-search_route_centroid_nif(ErlNifEnv *env,
+search_route_centroid_nif([[maybe_unused]] ErlNifEnv *env,
                           fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     auto const &centroid = route_resource->route()->centroid();
@@ -3828,7 +3858,7 @@ FINE_NIF(search_route_centroid_nif, 0);
 
 // Get profile
 int64_t
-search_route_profile_nif(ErlNifEnv *env,
+search_route_profile_nif([[maybe_unused]] ErlNifEnv *env,
                          fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->profile());
@@ -3838,7 +3868,7 @@ FINE_NIF(search_route_profile_nif, 0);
 
 // Get node at index
 fine::ResourcePtr<SearchNodeResource>
-search_route_get_node_nif(ErlNifEnv *env,
+search_route_get_node_nif([[maybe_unused]] ErlNifEnv *env,
                           fine::ResourcePtr<SearchRouteResource> route_resource,
                           int64_t idx)
 {
@@ -3851,7 +3881,7 @@ FINE_NIF(search_route_get_node_nif, 0);
 
 // Append node to route
 fine::Atom
-search_route_append_nif(ErlNifEnv *env,
+search_route_append_nif([[maybe_unused]] ErlNifEnv *env,
                         fine::ResourcePtr<SearchRouteResource> route_resource,
                         fine::ResourcePtr<SearchNodeResource> node_resource)
 {
@@ -3865,7 +3895,7 @@ FINE_NIF(search_route_append_nif, 0);
 
 // Insert node at index
 fine::Atom
-search_route_insert_nif(ErlNifEnv *env,
+search_route_insert_nif([[maybe_unused]] ErlNifEnv *env,
                         fine::ResourcePtr<SearchRouteResource> route_resource,
                         int64_t idx,
                         fine::ResourcePtr<SearchNodeResource> node_resource)
@@ -3881,7 +3911,7 @@ FINE_NIF(search_route_insert_nif, 0);
 
 // Remove node at index
 fine::Atom
-search_route_remove_nif(ErlNifEnv *env,
+search_route_remove_nif([[maybe_unused]] ErlNifEnv *env,
                         fine::ResourcePtr<SearchRouteResource> route_resource,
                         int64_t idx)
 {
@@ -3893,7 +3923,7 @@ FINE_NIF(search_route_remove_nif, 0);
 
 // Clear route
 fine::Atom
-search_route_clear_nif(ErlNifEnv *env,
+search_route_clear_nif([[maybe_unused]] ErlNifEnv *env,
                        fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     route_resource->route()->clear();
@@ -3904,7 +3934,7 @@ FINE_NIF(search_route_clear_nif, 0);
 
 // Update route (recompute statistics)
 fine::Atom
-search_route_update_nif(ErlNifEnv *env,
+search_route_update_nif([[maybe_unused]] ErlNifEnv *env,
                         fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     route_resource->route()->update();
@@ -3920,7 +3950,7 @@ FINE_NIF(search_route_update_nif, 0);
 // 3. Both standalone: swap owned flags
 // 4. Same route: no ownership change needed
 fine::Atom
-search_route_swap_nif(ErlNifEnv *env,
+search_route_swap_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<SearchNodeResource> first_resource,
                       fine::ResourcePtr<SearchNodeResource> second_resource)
 {
@@ -4055,7 +4085,7 @@ FINE_NIF(search_route_swap_nif, 0);
 
 // Check if routes overlap with given tolerance
 bool search_route_overlaps_with_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SearchRouteResource> route1_resource,
     fine::ResourcePtr<SearchRouteResource> route2_resource,
     double tolerance)
@@ -4068,7 +4098,8 @@ FINE_NIF(search_route_overlaps_with_nif, 0);
 
 // Get shift duration
 int64_t search_route_shift_duration_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->shiftDuration());
 }
@@ -4077,7 +4108,8 @@ FINE_NIF(search_route_shift_duration_nif, 0);
 
 // Get max overtime
 int64_t search_route_max_overtime_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->maxOvertime());
 }
@@ -4086,7 +4118,8 @@ FINE_NIF(search_route_max_overtime_nif, 0);
 
 // Get max duration (shift_duration + max_overtime)
 int64_t search_route_max_duration_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->maxDuration());
 }
@@ -4095,7 +4128,8 @@ FINE_NIF(search_route_max_duration_nif, 0);
 
 // Get unit overtime cost
 int64_t search_route_unit_overtime_cost_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return static_cast<int64_t>(route_resource->route()->unitOvertimeCost());
 }
@@ -4104,7 +4138,8 @@ FINE_NIF(search_route_unit_overtime_cost_nif, 0);
 
 // Check if route has distance cost
 bool search_route_has_distance_cost_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return route_resource->route()->hasDistanceCost();
 }
@@ -4113,7 +4148,8 @@ FINE_NIF(search_route_has_distance_cost_nif, 0);
 
 // Check if route has duration cost
 bool search_route_has_duration_cost_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchRouteResource> route_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
 {
     return route_resource->route()->hasDurationCost();
 }
@@ -4122,7 +4158,7 @@ FINE_NIF(search_route_has_duration_cost_nif, 0);
 
 // Get distance between two indices (with optional profile)
 int64_t search_route_dist_between_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SearchRouteResource> route_resource,
     int64_t start,
     int64_t end,
@@ -4139,7 +4175,7 @@ FINE_NIF(search_route_dist_between_nif, 0);
 
 // Get distance at specific index
 int64_t
-search_route_dist_at_nif(ErlNifEnv *env,
+search_route_dist_at_nif([[maybe_unused]] ErlNifEnv *env,
                          fine::ResourcePtr<SearchRouteResource> route_resource,
                          int64_t idx,
                          int64_t profile)
@@ -4153,7 +4189,7 @@ FINE_NIF(search_route_dist_at_nif, 0);
 
 // Get distance before index
 int64_t search_route_dist_before_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SearchRouteResource> route_resource,
     int64_t idx)
 {
@@ -4166,7 +4202,7 @@ FINE_NIF(search_route_dist_before_nif, 0);
 
 // Get distance after index
 int64_t search_route_dist_after_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SearchRouteResource> route_resource,
     int64_t idx)
 {
@@ -4183,7 +4219,7 @@ FINE_NIF(search_route_dist_after_nif, 0);
 
 // Create a new Node
 fine::ResourcePtr<SearchNodeResource>
-create_search_node_nif(ErlNifEnv *env,
+create_search_node_nif([[maybe_unused]] ErlNifEnv *env,
                        fine::ResourcePtr<ProblemDataResource> problem_resource,
                        int64_t loc)
 {
@@ -4197,7 +4233,7 @@ FINE_NIF(create_search_node_nif, 0);
 
 // Get node's location (client)
 int64_t
-search_node_client_nif(ErlNifEnv *env,
+search_node_client_nif([[maybe_unused]] ErlNifEnv *env,
                        fine::ResourcePtr<SearchNodeResource> node_resource)
 {
     return static_cast<int64_t>(node_resource->node->client());
@@ -4206,7 +4242,7 @@ search_node_client_nif(ErlNifEnv *env,
 FINE_NIF(search_node_client_nif, 0);
 
 // Get node's index in route
-int64_t search_node_idx_nif(ErlNifEnv *env,
+int64_t search_node_idx_nif([[maybe_unused]] ErlNifEnv *env,
                             fine::ResourcePtr<SearchNodeResource> node_resource)
 {
     return static_cast<int64_t>(node_resource->node->idx());
@@ -4216,7 +4252,7 @@ FINE_NIF(search_node_idx_nif, 0);
 
 // Get node's trip
 int64_t
-search_node_trip_nif(ErlNifEnv *env,
+search_node_trip_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<SearchNodeResource> node_resource)
 {
     return static_cast<int64_t>(node_resource->node->trip());
@@ -4226,7 +4262,8 @@ FINE_NIF(search_node_trip_nif, 0);
 
 // Check if node is a depot
 bool search_node_is_depot_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchNodeResource> node_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchNodeResource> node_resource)
 {
     return node_resource->node->isDepot();
 }
@@ -4235,7 +4272,8 @@ FINE_NIF(search_node_is_depot_nif, 0);
 
 // Check if node is start depot
 bool search_node_is_start_depot_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchNodeResource> node_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchNodeResource> node_resource)
 {
     return node_resource->node->isStartDepot();
 }
@@ -4244,7 +4282,8 @@ FINE_NIF(search_node_is_start_depot_nif, 0);
 
 // Check if node is end depot
 bool search_node_is_end_depot_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchNodeResource> node_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchNodeResource> node_resource)
 {
     return node_resource->node->isEndDepot();
 }
@@ -4253,7 +4292,8 @@ FINE_NIF(search_node_is_end_depot_nif, 0);
 
 // Check if node is reload depot
 bool search_node_is_reload_depot_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchNodeResource> node_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchNodeResource> node_resource)
 {
     return node_resource->node->isReloadDepot();
 }
@@ -4262,7 +4302,8 @@ FINE_NIF(search_node_is_reload_depot_nif, 0);
 
 // Check if node has a route assigned
 bool search_node_has_route_nif(
-    ErlNifEnv *env, fine::ResourcePtr<SearchNodeResource> node_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchNodeResource> node_resource)
 {
     return node_resource->node->route() != nullptr;
 }
@@ -4275,7 +4316,7 @@ FINE_NIF(search_node_has_route_nif, 0);
 
 // Create Exchange10 (relocate) operator
 fine::ResourcePtr<Exchange10Resource>
-create_exchange10_nif(ErlNifEnv *env,
+create_exchange10_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto &data = *problem_resource->data;
@@ -4288,7 +4329,7 @@ FINE_NIF(create_exchange10_nif, 0);
 
 // Create Exchange11 (swap) operator
 fine::ResourcePtr<Exchange11Resource>
-create_exchange11_nif(ErlNifEnv *env,
+create_exchange11_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto &data = *problem_resource->data;
@@ -4301,7 +4342,7 @@ FINE_NIF(create_exchange11_nif, 0);
 
 // Create Exchange20 operator
 fine::ResourcePtr<Exchange20Resource>
-create_exchange20_nif(ErlNifEnv *env,
+create_exchange20_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto &data = *problem_resource->data;
@@ -4314,7 +4355,7 @@ FINE_NIF(create_exchange20_nif, 0);
 
 // Create Exchange21 operator
 fine::ResourcePtr<Exchange21Resource>
-create_exchange21_nif(ErlNifEnv *env,
+create_exchange21_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto &data = *problem_resource->data;
@@ -4327,7 +4368,7 @@ FINE_NIF(create_exchange21_nif, 0);
 
 // Create Exchange22 operator
 fine::ResourcePtr<Exchange22Resource>
-create_exchange22_nif(ErlNifEnv *env,
+create_exchange22_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto &data = *problem_resource->data;
@@ -4340,7 +4381,7 @@ FINE_NIF(create_exchange22_nif, 0);
 
 // Create Exchange30 operator
 fine::ResourcePtr<Exchange30Resource>
-create_exchange30_nif(ErlNifEnv *env,
+create_exchange30_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto &data = *problem_resource->data;
@@ -4353,7 +4394,7 @@ FINE_NIF(create_exchange30_nif, 0);
 
 // Create Exchange31 operator
 fine::ResourcePtr<Exchange31Resource>
-create_exchange31_nif(ErlNifEnv *env,
+create_exchange31_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto &data = *problem_resource->data;
@@ -4366,7 +4407,7 @@ FINE_NIF(create_exchange31_nif, 0);
 
 // Create Exchange32 operator
 fine::ResourcePtr<Exchange32Resource>
-create_exchange32_nif(ErlNifEnv *env,
+create_exchange32_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto &data = *problem_resource->data;
@@ -4379,7 +4420,7 @@ FINE_NIF(create_exchange32_nif, 0);
 
 // Create Exchange33 operator
 fine::ResourcePtr<Exchange33Resource>
-create_exchange33_nif(ErlNifEnv *env,
+create_exchange33_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto &data = *problem_resource->data;
@@ -4392,7 +4433,7 @@ FINE_NIF(create_exchange33_nif, 0);
 
 // Exchange10 evaluate
 int64_t exchange10_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<Exchange10Resource> op_resource,
     fine::ResourcePtr<SearchNodeResource> u_resource,
     fine::ResourcePtr<SearchNodeResource> v_resource,
@@ -4406,7 +4447,7 @@ FINE_NIF(exchange10_evaluate_nif, 0);
 
 // Exchange10 apply
 fine::Atom
-exchange10_apply_nif(ErlNifEnv *env,
+exchange10_apply_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<Exchange10Resource> op_resource,
                      fine::ResourcePtr<SearchNodeResource> u_resource,
                      fine::ResourcePtr<SearchNodeResource> v_resource)
@@ -4424,7 +4465,7 @@ FINE_NIF(exchange10_apply_nif, 0);
 
 // Exchange11 evaluate
 int64_t exchange11_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<Exchange11Resource> op_resource,
     fine::ResourcePtr<SearchNodeResource> u_resource,
     fine::ResourcePtr<SearchNodeResource> v_resource,
@@ -4438,7 +4479,7 @@ FINE_NIF(exchange11_evaluate_nif, 0);
 
 // Exchange11 apply
 fine::Atom
-exchange11_apply_nif(ErlNifEnv *env,
+exchange11_apply_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<Exchange11Resource> op_resource,
                      fine::ResourcePtr<SearchNodeResource> u_resource,
                      fine::ResourcePtr<SearchNodeResource> v_resource)
@@ -4456,7 +4497,7 @@ FINE_NIF(exchange11_apply_nif, 0);
 
 // Exchange20 evaluate
 int64_t exchange20_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<Exchange20Resource> op_resource,
     fine::ResourcePtr<SearchNodeResource> u_resource,
     fine::ResourcePtr<SearchNodeResource> v_resource,
@@ -4470,7 +4511,7 @@ FINE_NIF(exchange20_evaluate_nif, 0);
 
 // Exchange20 apply
 fine::Atom
-exchange20_apply_nif(ErlNifEnv *env,
+exchange20_apply_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<Exchange20Resource> op_resource,
                      fine::ResourcePtr<SearchNodeResource> u_resource,
                      fine::ResourcePtr<SearchNodeResource> v_resource)
@@ -4488,7 +4529,7 @@ FINE_NIF(exchange20_apply_nif, 0);
 
 // Exchange21 evaluate
 int64_t exchange21_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<Exchange21Resource> op_resource,
     fine::ResourcePtr<SearchNodeResource> u_resource,
     fine::ResourcePtr<SearchNodeResource> v_resource,
@@ -4502,7 +4543,7 @@ FINE_NIF(exchange21_evaluate_nif, 0);
 
 // Exchange21 apply
 fine::Atom
-exchange21_apply_nif(ErlNifEnv *env,
+exchange21_apply_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<Exchange21Resource> op_resource,
                      fine::ResourcePtr<SearchNodeResource> u_resource,
                      fine::ResourcePtr<SearchNodeResource> v_resource)
@@ -4520,7 +4561,7 @@ FINE_NIF(exchange21_apply_nif, 0);
 
 // Exchange22 evaluate
 int64_t exchange22_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<Exchange22Resource> op_resource,
     fine::ResourcePtr<SearchNodeResource> u_resource,
     fine::ResourcePtr<SearchNodeResource> v_resource,
@@ -4534,7 +4575,7 @@ FINE_NIF(exchange22_evaluate_nif, 0);
 
 // Exchange22 apply
 fine::Atom
-exchange22_apply_nif(ErlNifEnv *env,
+exchange22_apply_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<Exchange22Resource> op_resource,
                      fine::ResourcePtr<SearchNodeResource> u_resource,
                      fine::ResourcePtr<SearchNodeResource> v_resource)
@@ -4552,7 +4593,7 @@ FINE_NIF(exchange22_apply_nif, 0);
 
 // Exchange30 evaluate
 int64_t exchange30_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<Exchange30Resource> op_resource,
     fine::ResourcePtr<SearchNodeResource> u_resource,
     fine::ResourcePtr<SearchNodeResource> v_resource,
@@ -4566,7 +4607,7 @@ FINE_NIF(exchange30_evaluate_nif, 0);
 
 // Exchange30 apply
 fine::Atom
-exchange30_apply_nif(ErlNifEnv *env,
+exchange30_apply_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<Exchange30Resource> op_resource,
                      fine::ResourcePtr<SearchNodeResource> u_resource,
                      fine::ResourcePtr<SearchNodeResource> v_resource)
@@ -4584,7 +4625,7 @@ FINE_NIF(exchange30_apply_nif, 0);
 
 // Exchange31 evaluate
 int64_t exchange31_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<Exchange31Resource> op_resource,
     fine::ResourcePtr<SearchNodeResource> u_resource,
     fine::ResourcePtr<SearchNodeResource> v_resource,
@@ -4598,7 +4639,7 @@ FINE_NIF(exchange31_evaluate_nif, 0);
 
 // Exchange31 apply
 fine::Atom
-exchange31_apply_nif(ErlNifEnv *env,
+exchange31_apply_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<Exchange31Resource> op_resource,
                      fine::ResourcePtr<SearchNodeResource> u_resource,
                      fine::ResourcePtr<SearchNodeResource> v_resource)
@@ -4616,7 +4657,7 @@ FINE_NIF(exchange31_apply_nif, 0);
 
 // Exchange32 evaluate
 int64_t exchange32_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<Exchange32Resource> op_resource,
     fine::ResourcePtr<SearchNodeResource> u_resource,
     fine::ResourcePtr<SearchNodeResource> v_resource,
@@ -4630,7 +4671,7 @@ FINE_NIF(exchange32_evaluate_nif, 0);
 
 // Exchange32 apply
 fine::Atom
-exchange32_apply_nif(ErlNifEnv *env,
+exchange32_apply_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<Exchange32Resource> op_resource,
                      fine::ResourcePtr<SearchNodeResource> u_resource,
                      fine::ResourcePtr<SearchNodeResource> v_resource)
@@ -4648,7 +4689,7 @@ FINE_NIF(exchange32_apply_nif, 0);
 
 // Exchange33 evaluate
 int64_t exchange33_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<Exchange33Resource> op_resource,
     fine::ResourcePtr<SearchNodeResource> u_resource,
     fine::ResourcePtr<SearchNodeResource> v_resource,
@@ -4662,7 +4703,7 @@ FINE_NIF(exchange33_evaluate_nif, 0);
 
 // Exchange33 apply
 fine::Atom
-exchange33_apply_nif(ErlNifEnv *env,
+exchange33_apply_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<Exchange33Resource> op_resource,
                      fine::ResourcePtr<SearchNodeResource> u_resource,
                      fine::ResourcePtr<SearchNodeResource> v_resource)
@@ -4680,7 +4721,7 @@ FINE_NIF(exchange33_apply_nif, 0);
 
 // Create SwapStar operator with optional overlap_tolerance
 fine::ResourcePtr<SwapStarResource>
-create_swap_star_nif(ErlNifEnv *env,
+create_swap_star_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<ProblemDataResource> problem_resource,
                      double overlap_tolerance)
 {
@@ -4694,7 +4735,7 @@ FINE_NIF(create_swap_star_nif, 0);
 
 // Create SwapRoutes operator
 fine::ResourcePtr<SwapRoutesResource>
-create_swap_routes_nif(ErlNifEnv *env,
+create_swap_routes_nif([[maybe_unused]] ErlNifEnv *env,
                        fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto &data = *problem_resource->data;
@@ -4707,7 +4748,7 @@ FINE_NIF(create_swap_routes_nif, 0);
 
 // SwapStar evaluate (takes two Routes, not Nodes)
 int64_t swap_star_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SwapStarResource> op_resource,
     fine::ResourcePtr<SearchRouteResource> route1_resource,
     fine::ResourcePtr<SearchRouteResource> route2_resource,
@@ -4723,7 +4764,7 @@ FINE_NIF(swap_star_evaluate_nif, 0);
 
 // SwapStar apply (takes two Routes) - reconciles ownership after apply
 fine::Atom
-swap_star_apply_nif(ErlNifEnv *env,
+swap_star_apply_nif([[maybe_unused]] ErlNifEnv *env,
                     fine::ResourcePtr<SwapStarResource> op_resource,
                     fine::ResourcePtr<SearchRouteResource> route1_resource,
                     fine::ResourcePtr<SearchRouteResource> route2_resource)
@@ -4737,7 +4778,7 @@ FINE_NIF(swap_star_apply_nif, 0);
 
 // SwapRoutes evaluate (takes two Routes, not Nodes)
 int64_t swap_routes_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SwapRoutesResource> op_resource,
     fine::ResourcePtr<SearchRouteResource> route1_resource,
     fine::ResourcePtr<SearchRouteResource> route2_resource,
@@ -4753,7 +4794,7 @@ FINE_NIF(swap_routes_evaluate_nif, 0);
 
 // SwapRoutes apply (takes two Routes) - reconciles ownership after apply
 fine::Atom
-swap_routes_apply_nif(ErlNifEnv *env,
+swap_routes_apply_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<SwapRoutesResource> op_resource,
                       fine::ResourcePtr<SearchRouteResource> route1_resource,
                       fine::ResourcePtr<SearchRouteResource> route2_resource)
@@ -4767,7 +4808,7 @@ FINE_NIF(swap_routes_apply_nif, 0);
 
 // Create SwapTails operator
 fine::ResourcePtr<SwapTailsResource>
-create_swap_tails_nif(ErlNifEnv *env,
+create_swap_tails_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto &data = *problem_resource->data;
@@ -4780,7 +4821,8 @@ FINE_NIF(create_swap_tails_nif, 0);
 
 // Create RelocateWithDepot operator
 fine::ResourcePtr<RelocateWithDepotResource> create_relocate_with_depot_nif(
-    ErlNifEnv *env, fine::ResourcePtr<ProblemDataResource> problem_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto &data = *problem_resource->data;
     auto op = std::make_unique<search::RelocateWithDepot>(data);
@@ -4792,7 +4834,7 @@ FINE_NIF(create_relocate_with_depot_nif, 0);
 
 // SwapTails evaluate
 int64_t swap_tails_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SwapTailsResource> op_resource,
     fine::ResourcePtr<SearchNodeResource> u_resource,
     fine::ResourcePtr<SearchNodeResource> v_resource,
@@ -4807,7 +4849,7 @@ FINE_NIF(swap_tails_evaluate_nif, 0);
 // SwapTails apply - reconciles ownership after apply using parent routes from
 // nodes
 fine::Atom
-swap_tails_apply_nif(ErlNifEnv *env,
+swap_tails_apply_nif([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<SwapTailsResource> op_resource,
                      fine::ResourcePtr<SearchNodeResource> u_resource,
                      fine::ResourcePtr<SearchNodeResource> v_resource)
@@ -4827,7 +4869,7 @@ FINE_NIF(swap_tails_apply_nif, 0);
 
 // RelocateWithDepot evaluate
 int64_t relocate_with_depot_evaluate_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<RelocateWithDepotResource> op_resource,
     fine::ResourcePtr<SearchNodeResource> u_resource,
     fine::ResourcePtr<SearchNodeResource> v_resource,
@@ -4841,7 +4883,7 @@ FINE_NIF(relocate_with_depot_evaluate_nif, 0);
 
 // RelocateWithDepot apply
 fine::Atom relocate_with_depot_apply_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<RelocateWithDepotResource> op_resource,
     fine::ResourcePtr<SearchNodeResource> u_resource,
     fine::ResourcePtr<SearchNodeResource> v_resource)
@@ -4854,7 +4896,8 @@ FINE_NIF(relocate_with_depot_apply_nif, 0);
 
 // Check if RelocateWithDepot is supported for the given problem data
 bool relocate_with_depot_supports_nif(
-    ErlNifEnv *env, fine::ResourcePtr<ProblemDataResource> problem_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     return pyvrp::search::supports<pyvrp::search::RelocateWithDepot>(
         *problem_resource->data);
@@ -4864,7 +4907,7 @@ FINE_NIF(relocate_with_depot_supports_nif, 0);
 
 // Helper function to create search route from visits
 fine::ResourcePtr<SearchRouteResource>
-make_search_route_nif(ErlNifEnv *env,
+make_search_route_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<ProblemDataResource> problem_resource,
                       std::vector<int64_t> visits,
                       int64_t idx,
@@ -4898,7 +4941,7 @@ FINE_NIF(make_search_route_nif, 0);
 
 // insert_cost: delta cost of inserting U after V
 int64_t
-insert_cost_nif(ErlNifEnv *env,
+insert_cost_nif([[maybe_unused]] ErlNifEnv *env,
                 fine::ResourcePtr<SearchNodeResource> u_resource,
                 fine::ResourcePtr<SearchNodeResource> v_resource,
                 fine::ResourcePtr<ProblemDataResource> problem_resource,
@@ -4915,7 +4958,7 @@ FINE_NIF(insert_cost_nif, 0);
 
 // remove_cost: delta cost of removing U from its route
 int64_t
-remove_cost_nif(ErlNifEnv *env,
+remove_cost_nif([[maybe_unused]] ErlNifEnv *env,
                 fine::ResourcePtr<SearchNodeResource> u_resource,
                 fine::ResourcePtr<ProblemDataResource> problem_resource,
                 fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
@@ -4930,7 +4973,7 @@ FINE_NIF(remove_cost_nif, 0);
 
 // inplace_cost: delta cost of inserting U in place of V
 int64_t
-inplace_cost_nif(ErlNifEnv *env,
+inplace_cost_nif([[maybe_unused]] ErlNifEnv *env,
                  fine::ResourcePtr<SearchNodeResource> u_resource,
                  fine::ResourcePtr<SearchNodeResource> v_resource,
                  fine::ResourcePtr<ProblemDataResource> problem_resource,
@@ -4950,8 +4993,8 @@ FINE_NIF(inplace_cost_nif, 0);
 // -----------------------------------------------------------------------------
 
 // Create RNG from seed
-fine::ResourcePtr<RNGResource> create_rng_from_seed_nif(ErlNifEnv *env,
-                                                        uint64_t seed)
+fine::ResourcePtr<RNGResource>
+create_rng_from_seed_nif([[maybe_unused]] ErlNifEnv *env, uint64_t seed)
 {
     return fine::make_resource<RNGResource>(static_cast<uint32_t>(seed));
 }
@@ -4960,7 +5003,8 @@ FINE_NIF(create_rng_from_seed_nif, 0);
 
 // Create RNG from state (4-element list)
 fine::Ok<fine::ResourcePtr<RNGResource>>
-create_rng_from_state_nif(ErlNifEnv *env, std::vector<uint64_t> state_vec)
+create_rng_from_state_nif([[maybe_unused]] ErlNifEnv *env,
+                          std::vector<uint64_t> state_vec)
 {
     if (state_vec.size() != 4)
     {
@@ -4976,7 +5020,7 @@ create_rng_from_state_nif(ErlNifEnv *env, std::vector<uint64_t> state_vec)
 FINE_NIF(create_rng_from_state_nif, 0);
 
 // Get min value (static method - returns 0)
-uint64_t rng_min_nif(ErlNifEnv *env)
+uint64_t rng_min_nif([[maybe_unused]] ErlNifEnv *env)
 {
     return static_cast<uint64_t>(RandomNumberGenerator::min());
 }
@@ -4984,7 +5028,7 @@ uint64_t rng_min_nif(ErlNifEnv *env)
 FINE_NIF(rng_min_nif, 0);
 
 // Get max value (static method - returns UINT32_MAX)
-uint64_t rng_max_nif(ErlNifEnv *env)
+uint64_t rng_max_nif([[maybe_unused]] ErlNifEnv *env)
 {
     return static_cast<uint64_t>(RandomNumberGenerator::max());
 }
@@ -4993,7 +5037,8 @@ FINE_NIF(rng_max_nif, 0);
 
 // Call RNG to get next random uint32 - returns {new_rng, value}
 std::tuple<fine::ResourcePtr<RNGResource>, uint64_t>
-rng_call_nif(ErlNifEnv *env, fine::ResourcePtr<RNGResource> rng_resource)
+rng_call_nif([[maybe_unused]] ErlNifEnv *env,
+             fine::ResourcePtr<RNGResource> rng_resource)
 {
     // Create a new RNG resource with copy of state
     auto new_rng = fine::make_resource<RNGResource>(rng_resource->rng.state());
@@ -5005,7 +5050,8 @@ FINE_NIF(rng_call_nif, 0);
 
 // Get random float in [0, 1] - returns {new_rng, value}
 std::tuple<fine::ResourcePtr<RNGResource>, double>
-rng_rand_nif(ErlNifEnv *env, fine::ResourcePtr<RNGResource> rng_resource)
+rng_rand_nif([[maybe_unused]] ErlNifEnv *env,
+             fine::ResourcePtr<RNGResource> rng_resource)
 {
     // Create a new RNG resource with copy of state
     auto new_rng = fine::make_resource<RNGResource>(rng_resource->rng.state());
@@ -5016,8 +5062,10 @@ rng_rand_nif(ErlNifEnv *env, fine::ResourcePtr<RNGResource> rng_resource)
 FINE_NIF(rng_rand_nif, 0);
 
 // Get random int in [0, high) - returns {new_rng, value}
-std::tuple<fine::ResourcePtr<RNGResource>, uint64_t> rng_randint_nif(
-    ErlNifEnv *env, fine::ResourcePtr<RNGResource> rng_resource, uint64_t high)
+std::tuple<fine::ResourcePtr<RNGResource>, uint64_t>
+rng_randint_nif([[maybe_unused]] ErlNifEnv *env,
+                fine::ResourcePtr<RNGResource> rng_resource,
+                uint64_t high)
 {
     // Create a new RNG resource with copy of state
     auto new_rng = fine::make_resource<RNGResource>(rng_resource->rng.state());
@@ -5028,7 +5076,7 @@ std::tuple<fine::ResourcePtr<RNGResource>, uint64_t> rng_randint_nif(
 FINE_NIF(rng_randint_nif, 0);
 
 // Get current state as 4-element list
-std::vector<uint64_t> rng_state_nif(ErlNifEnv *env,
+std::vector<uint64_t> rng_state_nif([[maybe_unused]] ErlNifEnv *env,
                                     fine::ResourcePtr<RNGResource> rng_resource)
 {
     auto &state = rng_resource->rng.state();
@@ -5043,7 +5091,7 @@ FINE_NIF(rng_state_nif, 0);
 
 // Create a new bitset with the given number of bits
 fine::ResourcePtr<DynamicBitsetResource>
-create_dynamic_bitset_nif(ErlNifEnv *env, uint64_t num_bits)
+create_dynamic_bitset_nif([[maybe_unused]] ErlNifEnv *env, uint64_t num_bits)
 {
     return fine::make_resource<DynamicBitsetResource>(
         static_cast<size_t>(num_bits));
@@ -5053,7 +5101,7 @@ FINE_NIF(create_dynamic_bitset_nif, 0);
 
 // Get the size (length) of the bitset
 uint64_t
-dynamic_bitset_len_nif(ErlNifEnv *env,
+dynamic_bitset_len_nif([[maybe_unused]] ErlNifEnv *env,
                        fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
 {
     return static_cast<uint64_t>(bitset_resource->bitset.size());
@@ -5063,7 +5111,7 @@ FINE_NIF(dynamic_bitset_len_nif, 0);
 
 // Get a bit at the given index
 bool dynamic_bitset_get_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<DynamicBitsetResource> bitset_resource,
     uint64_t idx)
 {
@@ -5074,7 +5122,7 @@ FINE_NIF(dynamic_bitset_get_nif, 0);
 
 // Set a bit at the given index - returns new bitset (immutable interface)
 fine::ResourcePtr<DynamicBitsetResource> dynamic_bitset_set_bit_nif(
-    ErlNifEnv *env,
+    [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<DynamicBitsetResource> bitset_resource,
     uint64_t idx,
     bool value)
@@ -5090,7 +5138,8 @@ FINE_NIF(dynamic_bitset_set_bit_nif, 0);
 
 // Check if all bits are set
 bool dynamic_bitset_all_nif(
-    ErlNifEnv *env, fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
 {
     return bitset_resource->bitset.all();
 }
@@ -5099,7 +5148,8 @@ FINE_NIF(dynamic_bitset_all_nif, 0);
 
 // Check if any bit is set
 bool dynamic_bitset_any_nif(
-    ErlNifEnv *env, fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
 {
     return bitset_resource->bitset.any();
 }
@@ -5108,7 +5158,8 @@ FINE_NIF(dynamic_bitset_any_nif, 0);
 
 // Check if no bits are set
 bool dynamic_bitset_none_nif(
-    ErlNifEnv *env, fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
 {
     return bitset_resource->bitset.none();
 }
@@ -5117,7 +5168,8 @@ FINE_NIF(dynamic_bitset_none_nif, 0);
 
 // Count the number of set bits
 uint64_t dynamic_bitset_count_nif(
-    ErlNifEnv *env, fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
 {
     return static_cast<uint64_t>(bitset_resource->bitset.count());
 }
@@ -5126,7 +5178,8 @@ FINE_NIF(dynamic_bitset_count_nif, 0);
 
 // Set all bits to 1 - returns new bitset (immutable interface)
 fine::ResourcePtr<DynamicBitsetResource> dynamic_bitset_set_all_nif(
-    ErlNifEnv *env, fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
 {
     auto new_bitset
         = fine::make_resource<DynamicBitsetResource>(bitset_resource->bitset);
@@ -5138,7 +5191,8 @@ FINE_NIF(dynamic_bitset_set_all_nif, 0);
 
 // Reset all bits to 0 - returns new bitset (immutable interface)
 fine::ResourcePtr<DynamicBitsetResource> dynamic_bitset_reset_all_nif(
-    ErlNifEnv *env, fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
 {
     auto new_bitset
         = fine::make_resource<DynamicBitsetResource>(bitset_resource->bitset);
@@ -5150,7 +5204,7 @@ FINE_NIF(dynamic_bitset_reset_all_nif, 0);
 
 // Bitwise OR - returns new bitset
 fine::ResourcePtr<DynamicBitsetResource>
-dynamic_bitset_or_nif(ErlNifEnv *env,
+dynamic_bitset_or_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<DynamicBitsetResource> a_resource,
                       fine::ResourcePtr<DynamicBitsetResource> b_resource)
 {
@@ -5162,7 +5216,7 @@ FINE_NIF(dynamic_bitset_or_nif, 0);
 
 // Bitwise AND - returns new bitset
 fine::ResourcePtr<DynamicBitsetResource>
-dynamic_bitset_and_nif(ErlNifEnv *env,
+dynamic_bitset_and_nif([[maybe_unused]] ErlNifEnv *env,
                        fine::ResourcePtr<DynamicBitsetResource> a_resource,
                        fine::ResourcePtr<DynamicBitsetResource> b_resource)
 {
@@ -5174,7 +5228,7 @@ FINE_NIF(dynamic_bitset_and_nif, 0);
 
 // Bitwise XOR - returns new bitset
 fine::ResourcePtr<DynamicBitsetResource>
-dynamic_bitset_xor_nif(ErlNifEnv *env,
+dynamic_bitset_xor_nif([[maybe_unused]] ErlNifEnv *env,
                        fine::ResourcePtr<DynamicBitsetResource> a_resource,
                        fine::ResourcePtr<DynamicBitsetResource> b_resource)
 {
@@ -5186,7 +5240,7 @@ FINE_NIF(dynamic_bitset_xor_nif, 0);
 
 // Bitwise NOT - returns new bitset
 fine::ResourcePtr<DynamicBitsetResource>
-dynamic_bitset_not_nif(ErlNifEnv *env,
+dynamic_bitset_not_nif([[maybe_unused]] ErlNifEnv *env,
                        fine::ResourcePtr<DynamicBitsetResource> bitset_resource)
 {
     DynamicBitset result = ~bitset_resource->bitset;
@@ -5196,7 +5250,7 @@ dynamic_bitset_not_nif(ErlNifEnv *env,
 FINE_NIF(dynamic_bitset_not_nif, 0);
 
 // Equality check
-bool dynamic_bitset_eq_nif(ErlNifEnv *env,
+bool dynamic_bitset_eq_nif([[maybe_unused]] ErlNifEnv *env,
                            fine::ResourcePtr<DynamicBitsetResource> a_resource,
                            fine::ResourcePtr<DynamicBitsetResource> b_resource)
 {
@@ -5211,7 +5265,7 @@ FINE_NIF(dynamic_bitset_eq_nif, 0);
 
 // Create a DurationSegment from raw parameters
 fine::ResourcePtr<DurationSegmentResource>
-create_duration_segment_nif(ErlNifEnv *env,
+create_duration_segment_nif([[maybe_unused]] ErlNifEnv *env,
                             int64_t duration,
                             int64_t time_warp,
                             int64_t start_early,
@@ -5236,7 +5290,7 @@ FINE_NIF(create_duration_segment_nif, 0);
 
 // Static merge of two segments with edge duration
 fine::ResourcePtr<DurationSegmentResource>
-duration_segment_merge_nif(ErlNifEnv *env,
+duration_segment_merge_nif([[maybe_unused]] ErlNifEnv *env,
                            int64_t edge_duration,
                            fine::ResourcePtr<DurationSegmentResource> first,
                            fine::ResourcePtr<DurationSegmentResource> second)
@@ -5250,7 +5304,7 @@ FINE_NIF(duration_segment_merge_nif, 0);
 
 // Get the duration
 int64_t
-duration_segment_duration_nif(ErlNifEnv *env,
+duration_segment_duration_nif([[maybe_unused]] ErlNifEnv *env,
                               fine::ResourcePtr<DurationSegmentResource> seg)
 {
     return static_cast<int64_t>(seg->segment.duration());
@@ -5260,7 +5314,7 @@ FINE_NIF(duration_segment_duration_nif, 0);
 
 // Get the time warp (optionally with max_duration constraint)
 int64_t
-duration_segment_time_warp_nif(ErlNifEnv *env,
+duration_segment_time_warp_nif([[maybe_unused]] ErlNifEnv *env,
                                fine::ResourcePtr<DurationSegmentResource> seg,
                                int64_t max_duration)
 {
@@ -5271,7 +5325,7 @@ FINE_NIF(duration_segment_time_warp_nif, 0);
 
 // Get start_early
 int64_t
-duration_segment_start_early_nif(ErlNifEnv *env,
+duration_segment_start_early_nif([[maybe_unused]] ErlNifEnv *env,
                                  fine::ResourcePtr<DurationSegmentResource> seg)
 {
     return static_cast<int64_t>(seg->segment.startEarly());
@@ -5281,7 +5335,7 @@ FINE_NIF(duration_segment_start_early_nif, 0);
 
 // Get start_late
 int64_t
-duration_segment_start_late_nif(ErlNifEnv *env,
+duration_segment_start_late_nif([[maybe_unused]] ErlNifEnv *env,
                                 fine::ResourcePtr<DurationSegmentResource> seg)
 {
     return static_cast<int64_t>(seg->segment.startLate());
@@ -5291,7 +5345,7 @@ FINE_NIF(duration_segment_start_late_nif, 0);
 
 // Get end_early
 int64_t
-duration_segment_end_early_nif(ErlNifEnv *env,
+duration_segment_end_early_nif([[maybe_unused]] ErlNifEnv *env,
                                fine::ResourcePtr<DurationSegmentResource> seg)
 {
     return static_cast<int64_t>(seg->segment.endEarly());
@@ -5301,7 +5355,7 @@ FINE_NIF(duration_segment_end_early_nif, 0);
 
 // Get end_late
 int64_t
-duration_segment_end_late_nif(ErlNifEnv *env,
+duration_segment_end_late_nif([[maybe_unused]] ErlNifEnv *env,
                               fine::ResourcePtr<DurationSegmentResource> seg)
 {
     return static_cast<int64_t>(seg->segment.endLate());
@@ -5311,7 +5365,8 @@ FINE_NIF(duration_segment_end_late_nif, 0);
 
 // Get prev_end_late
 int64_t duration_segment_prev_end_late_nif(
-    ErlNifEnv *env, fine::ResourcePtr<DurationSegmentResource> seg)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<DurationSegmentResource> seg)
 {
     return static_cast<int64_t>(seg->segment.prevEndLate());
 }
@@ -5320,7 +5375,8 @@ FINE_NIF(duration_segment_prev_end_late_nif, 0);
 
 // Get release_time
 int64_t duration_segment_release_time_nif(
-    ErlNifEnv *env, fine::ResourcePtr<DurationSegmentResource> seg)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<DurationSegmentResource> seg)
 {
     return static_cast<int64_t>(seg->segment.releaseTime());
 }
@@ -5329,7 +5385,7 @@ FINE_NIF(duration_segment_release_time_nif, 0);
 
 // Get slack
 int64_t
-duration_segment_slack_nif(ErlNifEnv *env,
+duration_segment_slack_nif([[maybe_unused]] ErlNifEnv *env,
                            fine::ResourcePtr<DurationSegmentResource> seg)
 {
     return static_cast<int64_t>(seg->segment.slack());
@@ -5339,7 +5395,8 @@ FINE_NIF(duration_segment_slack_nif, 0);
 
 // Finalise at the back - returns new segment
 fine::ResourcePtr<DurationSegmentResource> duration_segment_finalise_back_nif(
-    ErlNifEnv *env, fine::ResourcePtr<DurationSegmentResource> seg)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<DurationSegmentResource> seg)
 {
     DurationSegment finalised = seg->segment.finaliseBack();
     return fine::make_resource<DurationSegmentResource>(std::move(finalised));
@@ -5349,7 +5406,8 @@ FINE_NIF(duration_segment_finalise_back_nif, 0);
 
 // Finalise at the front - returns new segment
 fine::ResourcePtr<DurationSegmentResource> duration_segment_finalise_front_nif(
-    ErlNifEnv *env, fine::ResourcePtr<DurationSegmentResource> seg)
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<DurationSegmentResource> seg)
 {
     DurationSegment finalised = seg->segment.finaliseFront();
     return fine::make_resource<DurationSegmentResource>(std::move(finalised));
@@ -5363,7 +5421,7 @@ FINE_NIF(duration_segment_finalise_front_nif, 0);
 
 // Create a LoadSegment from raw parameters
 fine::ResourcePtr<LoadSegmentResource>
-create_load_segment_nif(ErlNifEnv *env,
+create_load_segment_nif([[maybe_unused]] ErlNifEnv *env,
                         int64_t delivery,
                         int64_t pickup,
                         int64_t load,
@@ -5378,7 +5436,7 @@ FINE_NIF(create_load_segment_nif, 0);
 
 // Static merge of two segments
 fine::ResourcePtr<LoadSegmentResource>
-load_segment_merge_nif(ErlNifEnv *env,
+load_segment_merge_nif([[maybe_unused]] ErlNifEnv *env,
                        fine::ResourcePtr<LoadSegmentResource> first,
                        fine::ResourcePtr<LoadSegmentResource> second)
 {
@@ -5390,7 +5448,7 @@ FINE_NIF(load_segment_merge_nif, 0);
 
 // Finalise the segment with a capacity
 fine::ResourcePtr<LoadSegmentResource>
-load_segment_finalise_nif(ErlNifEnv *env,
+load_segment_finalise_nif([[maybe_unused]] ErlNifEnv *env,
                           fine::ResourcePtr<LoadSegmentResource> seg,
                           int64_t capacity)
 {
@@ -5401,7 +5459,7 @@ load_segment_finalise_nif(ErlNifEnv *env,
 FINE_NIF(load_segment_finalise_nif, 0);
 
 // Get delivery amount
-int64_t load_segment_delivery_nif(ErlNifEnv *env,
+int64_t load_segment_delivery_nif([[maybe_unused]] ErlNifEnv *env,
                                   fine::ResourcePtr<LoadSegmentResource> seg)
 {
     return static_cast<int64_t>(seg->segment.delivery());
@@ -5410,7 +5468,7 @@ int64_t load_segment_delivery_nif(ErlNifEnv *env,
 FINE_NIF(load_segment_delivery_nif, 0);
 
 // Get pickup amount
-int64_t load_segment_pickup_nif(ErlNifEnv *env,
+int64_t load_segment_pickup_nif([[maybe_unused]] ErlNifEnv *env,
                                 fine::ResourcePtr<LoadSegmentResource> seg)
 {
     return static_cast<int64_t>(seg->segment.pickup());
@@ -5419,7 +5477,7 @@ int64_t load_segment_pickup_nif(ErlNifEnv *env,
 FINE_NIF(load_segment_pickup_nif, 0);
 
 // Get load
-int64_t load_segment_load_nif(ErlNifEnv *env,
+int64_t load_segment_load_nif([[maybe_unused]] ErlNifEnv *env,
                               fine::ResourcePtr<LoadSegmentResource> seg)
 {
     return static_cast<int64_t>(seg->segment.load());
@@ -5428,7 +5486,7 @@ int64_t load_segment_load_nif(ErlNifEnv *env,
 FINE_NIF(load_segment_load_nif, 0);
 
 // Get excess load with capacity constraint
-int64_t load_segment_excess_load_nif(ErlNifEnv *env,
+int64_t load_segment_excess_load_nif([[maybe_unused]] ErlNifEnv *env,
                                      fine::ResourcePtr<LoadSegmentResource> seg,
                                      int64_t capacity)
 {
@@ -5520,7 +5578,9 @@ FINE_NIF(perturbation_manager_shuffle_nif, 0);
 // -----------------------------------------------------------------------------
 
 // Get a number (double or int) as double
-static bool get_number_as_double(ErlNifEnv *env, ERL_NIF_TERM term, double *out)
+static bool get_number_as_double([[maybe_unused]] ErlNifEnv *env,
+                                 ERL_NIF_TERM term,
+                                 double *out)
 {
     if (enif_get_double(env, term, out))
     {
