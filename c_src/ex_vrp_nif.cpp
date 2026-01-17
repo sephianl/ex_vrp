@@ -80,15 +80,16 @@ struct CostEvaluatorResource
 struct SearchRouteData;
 
 // Shared data for search::Route - allows nodes to keep the route alive
-// Member order matters for destruction: route is destroyed first (calls clear()),
-// then ownedNodes is destroyed (deletes nodes). This ensures nodes are alive
-// when Route::~Route() iterates over them.
+// Member order matters for destruction: route is destroyed first (calls
+// clear()), then ownedNodes is destroyed (deletes nodes). This ensures nodes
+// are alive when Route::~Route() iterates over them.
 struct SearchRouteData
 {
     std::shared_ptr<ProblemData> problemData;  // Keep problem data alive
     std::vector<std::unique_ptr<search::Route::Node>>
-        ownedNodes;                        // Nodes we own
-    std::unique_ptr<search::Route> route;  // Destroyed first (reverse declaration order)
+        ownedNodes;  // Nodes we own
+    std::unique_ptr<search::Route>
+        route;  // Destroyed first (reverse declaration order)
 
     SearchRouteData(std::unique_ptr<search::Route> r,
                     std::shared_ptr<ProblemData> pd)
@@ -369,16 +370,17 @@ FINE_RESOURCE(LocalSearchResource);
 // Forward Declarations: Helper Functions
 // -----------------------------------------------------------------------------
 
-static bool get_number_as_double(ErlNifEnv *env, ERL_NIF_TERM term, double *out);
+static bool
+get_number_as_double(ErlNifEnv *env, ERL_NIF_TERM term, double *out);
 
-static bool prepare_node_transfer(
-    fine::ResourcePtr<SearchRouteResource> &route_resource,
-    fine::ResourcePtr<SearchNodeResource> &node_resource);
+static bool
+prepare_node_transfer(fine::ResourcePtr<SearchRouteResource> &route_resource,
+                      fine::ResourcePtr<SearchNodeResource> &node_resource);
 
-static void complete_node_transfer(
-    fine::ResourcePtr<SearchRouteResource> &route_resource,
-    fine::ResourcePtr<SearchNodeResource> &node_resource,
-    bool transfer_from_old_route);
+static void
+complete_node_transfer(fine::ResourcePtr<SearchRouteResource> &route_resource,
+                       fine::ResourcePtr<SearchNodeResource> &node_resource,
+                       bool transfer_from_old_route);
 
 static void reconcile_route_ownership_impl(
     search::Route *route1,
@@ -390,9 +392,9 @@ static void reconcile_route_ownership(
     fine::ResourcePtr<SearchRouteResource> &route1_resource,
     fine::ResourcePtr<SearchRouteResource> &route2_resource);
 
-static void reconcile_route_ownership(
-    std::shared_ptr<SearchRouteData> &route1_data,
-    std::shared_ptr<SearchRouteData> &route2_data);
+static void
+reconcile_route_ownership(std::shared_ptr<SearchRouteData> &route1_data,
+                          std::shared_ptr<SearchRouteData> &route2_data);
 
 // -----------------------------------------------------------------------------
 // Helper: Decode Elixir structs to C++ types
@@ -3914,7 +3916,8 @@ FINE_NIF(search_route_update_nif, 0);
 
 // Static swap nodes - handles all ownership scenarios:
 // 1. Both in different routes: swap ownership between routes
-// 2. One in route, one standalone: transfer standalone to route, route node becomes standalone
+// 2. One in route, one standalone: transfer standalone to route, route node
+// becomes standalone
 // 3. Both standalone: swap owned flags
 // 4. Same route: no ownership change needed
 fine::Atom
@@ -3928,11 +3931,13 @@ search_route_swap_nif(ErlNifEnv *env,
     bool first_was_owned = first_resource->owned;
     bool second_was_owned = second_resource->owned;
 
-    // Perform the PyVRP swap (swaps nodes in routes' internal vectors and node metadata)
+    // Perform the PyVRP swap (swaps nodes in routes' internal vectors and node
+    // metadata)
     search::Route::swap(first_resource->node, second_resource->node);
 
-    // Now handle ownership transfer based on where nodes came from and are going
-    // After PyVRP swap: first_resource->node is now where second was, second is where first was
+    // Now handle ownership transfer based on where nodes came from and are
+    // going After PyVRP swap: first_resource->node is now where second was,
+    // second is where first was
 
     // Case: same parent (including both null) - no ownership transfer needed
     if (first_parent.get() == second_parent.get())
@@ -4040,8 +4045,9 @@ search_route_swap_nif(ErlNifEnv *env,
         return fine::Atom("ok");
     }
 
-    // Case: both standalone - just swap owned flags (both should be true, no change)
-    // Nothing to do - both remain owned by their respective SearchNodeResources
+    // Case: both standalone - just swap owned flags (both should be true, no
+    // change) Nothing to do - both remain owned by their respective
+    // SearchNodeResources
 
     return fine::Atom("ok");
 }
@@ -4409,7 +4415,8 @@ exchange10_apply_nif(ErlNifEnv *env,
     op_resource->op->apply(u_resource->node, v_resource->node);
     if (u_resource->parentRoute && v_resource->parentRoute)
     {
-        reconcile_route_ownership(u_resource->parentRoute, v_resource->parentRoute);
+        reconcile_route_ownership(u_resource->parentRoute,
+                                  v_resource->parentRoute);
     }
     return fine::Atom("ok");
 }
@@ -4440,7 +4447,8 @@ exchange11_apply_nif(ErlNifEnv *env,
     op_resource->op->apply(u_resource->node, v_resource->node);
     if (u_resource->parentRoute && v_resource->parentRoute)
     {
-        reconcile_route_ownership(u_resource->parentRoute, v_resource->parentRoute);
+        reconcile_route_ownership(u_resource->parentRoute,
+                                  v_resource->parentRoute);
     }
     return fine::Atom("ok");
 }
@@ -4471,7 +4479,8 @@ exchange20_apply_nif(ErlNifEnv *env,
     op_resource->op->apply(u_resource->node, v_resource->node);
     if (u_resource->parentRoute && v_resource->parentRoute)
     {
-        reconcile_route_ownership(u_resource->parentRoute, v_resource->parentRoute);
+        reconcile_route_ownership(u_resource->parentRoute,
+                                  v_resource->parentRoute);
     }
     return fine::Atom("ok");
 }
@@ -4502,7 +4511,8 @@ exchange21_apply_nif(ErlNifEnv *env,
     op_resource->op->apply(u_resource->node, v_resource->node);
     if (u_resource->parentRoute && v_resource->parentRoute)
     {
-        reconcile_route_ownership(u_resource->parentRoute, v_resource->parentRoute);
+        reconcile_route_ownership(u_resource->parentRoute,
+                                  v_resource->parentRoute);
     }
     return fine::Atom("ok");
 }
@@ -4533,7 +4543,8 @@ exchange22_apply_nif(ErlNifEnv *env,
     op_resource->op->apply(u_resource->node, v_resource->node);
     if (u_resource->parentRoute && v_resource->parentRoute)
     {
-        reconcile_route_ownership(u_resource->parentRoute, v_resource->parentRoute);
+        reconcile_route_ownership(u_resource->parentRoute,
+                                  v_resource->parentRoute);
     }
     return fine::Atom("ok");
 }
@@ -4564,7 +4575,8 @@ exchange30_apply_nif(ErlNifEnv *env,
     op_resource->op->apply(u_resource->node, v_resource->node);
     if (u_resource->parentRoute && v_resource->parentRoute)
     {
-        reconcile_route_ownership(u_resource->parentRoute, v_resource->parentRoute);
+        reconcile_route_ownership(u_resource->parentRoute,
+                                  v_resource->parentRoute);
     }
     return fine::Atom("ok");
 }
@@ -4595,7 +4607,8 @@ exchange31_apply_nif(ErlNifEnv *env,
     op_resource->op->apply(u_resource->node, v_resource->node);
     if (u_resource->parentRoute && v_resource->parentRoute)
     {
-        reconcile_route_ownership(u_resource->parentRoute, v_resource->parentRoute);
+        reconcile_route_ownership(u_resource->parentRoute,
+                                  v_resource->parentRoute);
     }
     return fine::Atom("ok");
 }
@@ -4626,7 +4639,8 @@ exchange32_apply_nif(ErlNifEnv *env,
     op_resource->op->apply(u_resource->node, v_resource->node);
     if (u_resource->parentRoute && v_resource->parentRoute)
     {
-        reconcile_route_ownership(u_resource->parentRoute, v_resource->parentRoute);
+        reconcile_route_ownership(u_resource->parentRoute,
+                                  v_resource->parentRoute);
     }
     return fine::Atom("ok");
 }
@@ -4657,7 +4671,8 @@ exchange33_apply_nif(ErlNifEnv *env,
     op_resource->op->apply(u_resource->node, v_resource->node);
     if (u_resource->parentRoute && v_resource->parentRoute)
     {
-        reconcile_route_ownership(u_resource->parentRoute, v_resource->parentRoute);
+        reconcile_route_ownership(u_resource->parentRoute,
+                                  v_resource->parentRoute);
     }
     return fine::Atom("ok");
 }
@@ -4790,7 +4805,8 @@ int64_t swap_tails_evaluate_nif(
 
 FINE_NIF(swap_tails_evaluate_nif, 0);
 
-// SwapTails apply - reconciles ownership after apply using parent routes from nodes
+// SwapTails apply - reconciles ownership after apply using parent routes from
+// nodes
 fine::Atom
 swap_tails_apply_nif(ErlNifEnv *env,
                      fine::ResourcePtr<SwapTailsResource> op_resource,
@@ -4802,7 +4818,8 @@ swap_tails_apply_nif(ErlNifEnv *env,
     // Reconcile ownership if both nodes have parent routes
     if (u_resource->parentRoute && v_resource->parentRoute)
     {
-        reconcile_route_ownership(u_resource->parentRoute, v_resource->parentRoute);
+        reconcile_route_ownership(u_resource->parentRoute,
+                                  v_resource->parentRoute);
     }
     return fine::Atom("ok");
 }
@@ -5522,9 +5539,9 @@ static bool get_number_as_double(ErlNifEnv *env, ERL_NIF_TERM term, double *out)
 // Prepare node for transfer to a new route.
 // Must be called BEFORE adding node to new route.
 // Returns true if ownership transfer from old route is needed.
-static bool prepare_node_transfer(
-    fine::ResourcePtr<SearchRouteResource> &route_resource,
-    fine::ResourcePtr<SearchNodeResource> &node_resource)
+static bool
+prepare_node_transfer(fine::ResourcePtr<SearchRouteResource> &route_resource,
+                      fine::ResourcePtr<SearchNodeResource> &node_resource)
 {
     auto *target_data = route_resource->data.get();
 
@@ -5550,10 +5567,10 @@ static bool prepare_node_transfer(
 }
 
 // Complete node ownership transfer after adding to route.
-static void complete_node_transfer(
-    fine::ResourcePtr<SearchRouteResource> &route_resource,
-    fine::ResourcePtr<SearchNodeResource> &node_resource,
-    bool transfer_from_old_route)
+static void
+complete_node_transfer(fine::ResourcePtr<SearchRouteResource> &route_resource,
+                       fine::ResourcePtr<SearchNodeResource> &node_resource,
+                       bool transfer_from_old_route)
 {
     if (node_resource->owned)
     {
@@ -5661,9 +5678,9 @@ static void reconcile_route_ownership(
 }
 
 // Overload for node-based operations (Exchange, SwapTails)
-static void reconcile_route_ownership(
-    std::shared_ptr<SearchRouteData> &route1_data,
-    std::shared_ptr<SearchRouteData> &route2_data)
+static void
+reconcile_route_ownership(std::shared_ptr<SearchRouteData> &route1_data,
+                          std::shared_ptr<SearchRouteData> &route2_data)
 {
     if (!route1_data || !route2_data)
         return;
