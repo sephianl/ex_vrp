@@ -295,7 +295,12 @@ struct LocalSearchResource
           perturbParams(1, 25),
           perturbManager(perturbParams),
           neighbours(std::move(n)),
-          rng(seed)
+          rng(seed),
+          exchange10(std::make_unique<search::Exchange<1, 0>>(*problemData)),
+          exchange20(std::make_unique<search::Exchange<2, 0>>(*problemData)),
+          exchange11(std::make_unique<search::Exchange<1, 1>>(*problemData)),
+          exchange21(std::make_unique<search::Exchange<2, 1>>(*problemData)),
+          exchange22(std::make_unique<search::Exchange<2, 2>>(*problemData))
     {
         auto &data = *problemData;
 
@@ -303,13 +308,7 @@ struct LocalSearchResource
         ls = std::make_unique<search::LocalSearch>(
             data, neighbours, perturbManager);
 
-        // Create and add default operators matching PyVRP
-        exchange10 = std::make_unique<search::Exchange<1, 0>>(data);
-        exchange20 = std::make_unique<search::Exchange<2, 0>>(data);
-        exchange11 = std::make_unique<search::Exchange<1, 1>>(data);
-        exchange21 = std::make_unique<search::Exchange<2, 1>>(data);
-        exchange22 = std::make_unique<search::Exchange<2, 2>>(data);
-
+        // Add default operators matching PyVRP
         ls->addNodeOperator(*exchange10);
         ls->addNodeOperator(*exchange20);
         ls->addNodeOperator(*exchange11);
