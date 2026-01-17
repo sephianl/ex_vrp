@@ -2962,6 +2962,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
 
     // Parse options
     bool exhaustive = false;
+    int64_t seed = 42;
     std::vector<std::string> node_ops;
     std::vector<std::string> route_ops;
 
@@ -2976,6 +2977,13 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
         {
             exhaustive = (std::string(buf) == "true");
         }
+    }
+
+    // Parse seed option
+    key = enif_make_atom(env, "seed");
+    if (enif_get_map_value(env, opts_term, key, &value))
+    {
+        enif_get_int64(env, value, &seed);
     }
 
     // Parse node_operators list
@@ -3132,6 +3140,10 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
             ls.addRouteOperator(*swap_routes_ops.back());
         }
     }
+
+    // Create RNG and shuffle (like PyVRP's LocalSearch.__call__ does)
+    RandomNumberGenerator rng(static_cast<uint32_t>(seed));
+    ls.shuffle(rng);
 
     // Run local search
     Solution improved
