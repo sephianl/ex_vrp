@@ -47,7 +47,10 @@ else
 CXXFLAGS += -O3 -flto -DNDEBUG
 LDFLAGS += -flto
 # Disable dangling-reference warning from PyVRP's Route.h (false positive in GCC 14)
+# Only add for GCC, Clang doesn't have this warning
+ifneq (,$(findstring g++,$(shell $(CXX) --version)))
 CXXFLAGS += -Wno-dangling-reference
+endif
 endif
 
 # Fine includes (use -isystem for angle-bracket includes like <fine.hpp>)
