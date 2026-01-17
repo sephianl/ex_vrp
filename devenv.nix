@@ -58,27 +58,16 @@ in
     nixfmt-rfc-style.enable = !config.devenv.isTesting;
     clang-format.enable = !config.devenv.isTesting;
 
-    # C++ static analysis (cppcheck) - fast, runs on commit
-    cppcheck = {
+    # C++ static analysis (cppcheck + clang-tidy via task)
+    cpp-check = {
       enable = !config.devenv.isTesting;
-      name = "cppcheck";
-      entry = "cppcheck --error-exitcode=1 --enable=warning,performance,portability --suppress=missingIncludeSystem --quiet";
+      name = "cpp-check";
+      entry = "task cpp:check";
+      pass_filenames = false;
       types_or = [
         "c"
         "c++"
       ];
-    };
-
-    # C++ static analysis (clang-tidy) - thorough, runs on push only
-    clang-tidy = {
-      enable = !config.devenv.isTesting;
-      name = "clang-tidy";
-      entry = "clang-tidy --quiet";
-      types_or = [
-        "c"
-        "c++"
-      ];
-      stages = [ "pre-push" ];
     };
   };
 }
