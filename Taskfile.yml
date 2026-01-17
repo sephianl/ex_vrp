@@ -1,0 +1,66 @@
+version: "3"
+
+vars:
+  CPP_SRC:
+    sh: find c_src -name '*.cpp' | sort
+  CPP_HEADERS:
+    sh: find c_src -name '*.h' | sort
+  CPP_INCLUDES: -std=c++20 -Ic_src -Ic_src/pyvrp
+
+tasks:
+  # ---------------------------------------------------------------------------
+  # Testing with Sanitizers
+  # ---------------------------------------------------------------------------
+
+  test:asan:
+    desc: Run tests with AddressSanitizer + UBSan (cleans before and after)
+    env:
+      MIX_ENV: test
+      SANITIZE: "1"
+      LD_PRELOAD:
+        sh: clang++ -print-file-name=libclang_rt.asan-x86_64.so
+      ASAN_OPTIONS: detect_leaks=0,symbolize=1
+      ASAN_SYMBOLIZER_PATH:
+        sh: which llvm-symbolizer
+    cmds:
+      # Clean before - ensure fresh ASan build
+      - rm -rf _build/test/lib/ex_vrp/priv c_src/obj priv/*.so
+      - mix compile
+      - defer: { task: clean:nif }
+      - mix test {{.CLI_ARGS}}
+
+  # ---------------------------------------------------------------------------
+  # C++ Quality
+  # ---------------------------------------------------------------------------
+
+  cpp:check:
+    desc: Run C++ static analysis (cppcheck + clang-tidy)
+    cmds:
+      - echo "Running cppcheck..."
+      - cppcheck --error-exitcode=1 --enable=warning,performance,portability --check-level=exhaustive --suppress=missingIncludeSystem --quiet {{.CPP_SRC}}
+      - echo "Running clang-tidy..."
+      - clang-tidy {{.CPP_SRC}} -- {{.CPP_INCLUDES}}
+
+  cpp:format:
+    desc: Format C++ code with clang-format
+    cmds:
+      - clang-format -i {{.CPP_SRC}} {{.CPP_HEADERS}}
+
+  cpp:format:check:
+    desc: Check C++ formatting without modifying files
+    cmds:
+      - clang-format --dry-run --Werror {{.CPP_SRC}} {{.CPP_HEADERS}}
+
+  # ---------------------------------------------------------------------------
+  # Build Helpers
+  # ---------------------------------------------------------------------------
+
+  clean:nif:
+    desc: Clean NIF build artifacts (leaves Elixir build intact)
+    cmds:
+      - rm -rf _build/test/lib/ex_vrp/priv c_src/obj priv/*.so
+
+  clean:
+    desc: Clean all build artifacts
+    cmds:
+      - rm -rf _build c_src/obj priv/*.so
