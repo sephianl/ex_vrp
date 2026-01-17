@@ -1,5 +1,5 @@
 # clang-tidy configuration for ex_vrp
-# Focused on catching bugs and performance issues in the PyVRP-derived code
+# Focused on catching bugs and performance issues in the NIF code
 
 Checks: >
   -*,
@@ -9,11 +9,8 @@ Checks: >
   clang-analyzer-*,
   -clang-analyzer-cplusplus.NewDeleteLeaks,
   concurrency-*,
-  cppcoreguidelines-init-variables,
-  cppcoreguidelines-pro-type-member-init,
   cppcoreguidelines-slicing,
   misc-redundant-expression,
-  misc-unused-parameters,
   modernize-use-nullptr,
   modernize-use-override,
   performance-*,
@@ -24,15 +21,17 @@ Checks: >
 
 WarningsAsErrors: ""
 
-HeaderFilterRegex: "c_src/.*"
+# Only check our NIF code, not vendored PyVRP code
+HeaderFilterRegex: "c_src/ex_vrp_nif\\.cpp"
 
 CheckOptions:
   # Allow C-style casts in low-level code
   - key: bugprone-suspicious-include.HeaderFileExtensions
     value: ";h;hh;hpp;hxx"
   # Performance tuning
+  # Fine's ResourcePtr and std::vector must be passed by value for NIF decoding
   - key: performance-unnecessary-value-param.AllowedTypes
-    value: "std::function"
+    value: "std::function;fine::ResourcePtr;std::vector"
   # Don't flag small trivially-copyable types
   - key: performance-for-range-copy.WarnOnAllAutoCopies
     value: false

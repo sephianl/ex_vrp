@@ -9,7 +9,10 @@ vars:
     sh: elixir -e 'IO.puts "#{:code.root_dir()}/erts-#{:erlang.system_info(:version)}/include"'
   FINE_INCLUDE_DIR:
     sh: mix run --no-start -e 'IO.puts Fine.include_dir()' 2>/dev/null | tail -1
-  CPP_INCLUDES: -std=c++20 -Ic_src -Ic_src/pyvrp -isystem {{.ERTS_INCLUDE_DIR}} -isystem {{.FINE_INCLUDE_DIR}}
+  # Extract system include paths from clang++ for clang-tidy (NixOS workaround)
+  CXX_SYSTEM_INCLUDES:
+    sh: clang++ -E -x c++ - -v < /dev/null 2>&1 | sed -n '/<...> search starts here:/,/End of search list/p' | grep '^ ' | sed 's/^ /-isystem /' | tr '\n' ' '
+  CPP_INCLUDES: -std=c++20 -Ic_src -Ic_src/pyvrp -isystem {{.ERTS_INCLUDE_DIR}} -isystem {{.FINE_INCLUDE_DIR}} {{.CXX_SYSTEM_INCLUDES}}
 
 tasks:
   # ---------------------------------------------------------------------------

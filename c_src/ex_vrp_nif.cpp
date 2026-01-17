@@ -250,9 +250,7 @@ struct DurationSegmentResource
     DurationSegment segment;
 
     DurationSegmentResource() : segment() {}
-    explicit DurationSegmentResource(DurationSegment s) : segment(std::move(s))
-    {
-    }
+    explicit DurationSegmentResource(const DurationSegment &s) : segment(s) {}
 };
 
 // Wrap LoadSegment for resource management
@@ -261,7 +259,7 @@ struct LoadSegmentResource
     LoadSegment segment;
 
     LoadSegmentResource() : segment() {}
-    explicit LoadSegmentResource(LoadSegment s) : segment(std::move(s)) {}
+    explicit LoadSegmentResource(const LoadSegment &s) : segment(s) {}
 };
 
 // Wrap LocalSearch for resource management - allows reuse across iterations
@@ -803,22 +801,23 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
 
     // Convert capacity to vector<Load>
     std::vector<Load> capacity_loads;
+    capacity_loads.reserve(std::max(capacity_vec.size(), num_dims));
     for (auto c : capacity_vec)
         capacity_loads.push_back(Load(c));
 
     // Ensure capacity has the right number of dimensions
     while (capacity_loads.size() < num_dims)
-    {
         capacity_loads.push_back(Load(0));
-    }
 
     // Convert initial_load to vector<Load>
     std::vector<Load> initial_loads;
+    initial_loads.reserve(initial_load_vec.size());
     for (auto l : initial_load_vec)
         initial_loads.push_back(Load(l));
 
     // Convert reload_depots to vector<size_t>
     std::vector<size_t> reload_depots;
+    reload_depots.reserve(reload_depots_vec.size());
     for (auto d : reload_depots_vec)
         reload_depots.push_back(static_cast<size_t>(d));
 
@@ -864,7 +863,7 @@ Matrix<Distance> decode_distance_matrix([[maybe_unused]] ErlNifEnv *env,
     }
 
     std::vector<Distance> data;
-    data.reserve(num_rows * num_cols);
+    data.reserve(static_cast<size_t>(num_rows) * num_cols);
 
     // Reset to beginning
     tail = term;
@@ -904,7 +903,7 @@ Matrix<Duration> decode_duration_matrix([[maybe_unused]] ErlNifEnv *env,
     }
 
     std::vector<Duration> data;
-    data.reserve(num_rows * num_cols);
+    data.reserve(static_cast<size_t>(num_rows) * num_cols);
 
     tail = term;
     for (unsigned r = 0; r < num_rows; r++)
@@ -3991,7 +3990,7 @@ search_route_swap_nif([[maybe_unused]] ErlNifEnv *env,
         {
             if (it->get() == first_resource->node)
             {
-                it->release();  // Release without deleting
+                [[maybe_unused]] auto *ptr = it->release();
                 nodes.erase(it);
                 break;
             }
@@ -4018,7 +4017,7 @@ search_route_swap_nif([[maybe_unused]] ErlNifEnv *env,
         {
             if (it->get() == second_resource->node)
             {
-                it->release();  // Release without deleting
+                [[maybe_unused]] auto *ptr = it->release();
                 nodes.erase(it);
                 break;
             }
@@ -5283,7 +5282,7 @@ create_duration_segment_nif([[maybe_unused]] ErlNifEnv *env,
                         Duration{cum_duration},
                         Duration{cum_time_warp},
                         Duration{prev_end_late}};
-    return fine::make_resource<DurationSegmentResource>(std::move(seg));
+    return fine::make_resource<DurationSegmentResource>(seg);
 }
 
 FINE_NIF(create_duration_segment_nif, 0);
@@ -5297,7 +5296,7 @@ duration_segment_merge_nif([[maybe_unused]] ErlNifEnv *env,
 {
     DurationSegment merged = DurationSegment::merge(
         Duration{edge_duration}, first->segment, second->segment);
-    return fine::make_resource<DurationSegmentResource>(std::move(merged));
+    return fine::make_resource<DurationSegmentResource>(merged);
 }
 
 FINE_NIF(duration_segment_merge_nif, 0);
@@ -5399,7 +5398,7 @@ fine::ResourcePtr<DurationSegmentResource> duration_segment_finalise_back_nif(
     fine::ResourcePtr<DurationSegmentResource> seg)
 {
     DurationSegment finalised = seg->segment.finaliseBack();
-    return fine::make_resource<DurationSegmentResource>(std::move(finalised));
+    return fine::make_resource<DurationSegmentResource>(finalised);
 }
 
 FINE_NIF(duration_segment_finalise_back_nif, 0);
@@ -5410,7 +5409,7 @@ fine::ResourcePtr<DurationSegmentResource> duration_segment_finalise_front_nif(
     fine::ResourcePtr<DurationSegmentResource> seg)
 {
     DurationSegment finalised = seg->segment.finaliseFront();
-    return fine::make_resource<DurationSegmentResource>(std::move(finalised));
+    return fine::make_resource<DurationSegmentResource>(finalised);
 }
 
 FINE_NIF(duration_segment_finalise_front_nif, 0);
@@ -5429,7 +5428,7 @@ create_load_segment_nif([[maybe_unused]] ErlNifEnv *env,
 {
     LoadSegment seg{
         Load{delivery}, Load{pickup}, Load{load}, Load{excess_load}};
-    return fine::make_resource<LoadSegmentResource>(std::move(seg));
+    return fine::make_resource<LoadSegmentResource>(seg);
 }
 
 FINE_NIF(create_load_segment_nif, 0);
@@ -5441,7 +5440,7 @@ load_segment_merge_nif([[maybe_unused]] ErlNifEnv *env,
                        fine::ResourcePtr<LoadSegmentResource> second)
 {
     LoadSegment merged = LoadSegment::merge(first->segment, second->segment);
-    return fine::make_resource<LoadSegmentResource>(std::move(merged));
+    return fine::make_resource<LoadSegmentResource>(merged);
 }
 
 FINE_NIF(load_segment_merge_nif, 0);
@@ -5453,7 +5452,7 @@ load_segment_finalise_nif([[maybe_unused]] ErlNifEnv *env,
                           int64_t capacity)
 {
     LoadSegment finalised = seg->segment.finalise(Load{capacity});
-    return fine::make_resource<LoadSegmentResource>(std::move(finalised));
+    return fine::make_resource<LoadSegmentResource>(finalised);
 }
 
 FINE_NIF(load_segment_finalise_nif, 0);
