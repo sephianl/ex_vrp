@@ -140,9 +140,6 @@ bool Solution::insert(Route::Node *U,
 {
     assert(size_t(std::distance(nodes.data(), U)) < nodes.size());
 
-    // Check if U is in any same-vehicle group and find the required route.
-    // If any group member is already in a route, U must go into that same route
-    // (or a route with the same vehicle name for multi-shift scenarios).
     Route *requiredRoute = nullptr;
     char const *requiredVehicleName = nullptr;
 
@@ -151,7 +148,6 @@ bool Solution::insert(Route::Node *U,
     {
         auto const &group = data_.sameVehicleGroup(groupIdx);
 
-        // Check if U is in this group
         bool uInGroup = false;
         for (auto const client : group)
         {
@@ -165,7 +161,6 @@ bool Solution::insert(Route::Node *U,
         if (!uInGroup)
             continue;
 
-        // U is in this group - check if any other member is in a route
         for (auto const otherClient : group)
         {
             if (otherClient == U->client())
@@ -185,16 +180,14 @@ bool Solution::insert(Route::Node *U,
             break;
     }
 
-    // Helper to check if a route is compatible with the required route
     auto isCompatibleRoute = [&](Route const *route) -> bool
     {
         if (!requiredRoute)
-            return true;  // No constraint
+            return true;
 
         if (route == requiredRoute)
-            return true;  // Same route
+            return true;
 
-        // Check if vehicles have the same name (multi-shift scenario)
         if (requiredVehicleName && requiredVehicleName[0] != '\0')
         {
             auto const *routeName
@@ -210,7 +203,6 @@ bool Solution::insert(Route::Node *U,
     Route::Node *UAfter = nullptr;
     auto bestCost = std::numeric_limits<Cost>::max();
 
-    // Initialize fallback to the first compatible route
     for (auto &route : routes)
     {
         if (isCompatibleRoute(&route))
@@ -221,12 +213,9 @@ bool Solution::insert(Route::Node *U,
         }
     }
 
-    // If no compatible route found, we cannot insert
     if (!UAfter)
         return false;
 
-    // First attempt a neighbourhood search to place U into routes that are
-    // already in use.
     for (auto const vClient : searchSpace.neighboursOf(U->client()))
     {
         auto *V = &nodes[vClient];
@@ -242,9 +231,6 @@ bool Solution::insert(Route::Node *U,
         }
     }
 
-    // Next consider all routes (empty and non-empty). For non-empty routes,
-    // try inserting at the start (after depot). This handles the case where
-    // U is not in the neighbourhood of any client in the route.
     for (auto const &[vehType, offset] : searchSpace.vehTypeOrder())
     {
         auto const begin = routes.begin() + offset;
@@ -255,9 +241,6 @@ bool Solution::insert(Route::Node *U,
             if (!isCompatibleRoute(&*it))
                 continue;
 
-            // For non-empty routes, only try if we haven't found something via
-            // neighbourhood (the neighbourhood search is more thorough for
-            // non-empty routes since it evaluates multiple positions).
             if (!it->empty() && UAfter->route() == &*it)
                 continue;
 
@@ -267,32 +250,42 @@ bool Solution::insert(Route::Node *U,
                 bestCost = cost;
                 UAfter = (*it)[0];
 
-                // For empty routes, stop at the first improving one.
                 if (it->empty())
                     break;
             }
         }
     }
 
-    if (required || bestCost < 0)
+    bool hasPrize = false;
+    bool multiTripAvailable = false;
+
+    if (!required && UAfter && UAfter->route())
+    {
+        auto const clientLoc = U->client();
+        if (clientLoc >= data_.numDepots())
+        {
+            ProblemData::Client const &client = data_.location(clientLoc);
+            hasPrize = client.prize > 0;
+        }
+
+        auto const &vehType = data_.vehicleType(UAfter->route()->vehicleType());
+        multiTripAvailable
+            = !vehType.reloadDepots.empty()
+              && UAfter->route()->numTrips() < UAfter->route()->maxTrips();
+    }
+
+    if (required || bestCost < 0 || (hasPrize && multiTripAvailable))
     {
         auto *route = UAfter->route();
-
-        // Check if insertion would exceed capacity
         auto const &vehType = data_.vehicleType(route->vehicleType());
         bool wouldExceedCapacity = false;
 
-        // Only check capacity if we have load dimensions, capacity defined,
-        // reload depots available for multi-trip, and we can still add trips
         if (data_.numLoadDimensions() > 0 && !vehType.capacity.empty()
             && !vehType.reloadDepots.empty()
             && route->numTrips() < route->maxTrips())
         {
-            // U->client() returns location index (which includes depots)
-            // For clients, location index = client index (0-based among
-            // clients) So we need to check if it's actually a client
             auto const clientLoc = U->client();
-            if (clientLoc >= data_.numDepots())  // It's a client, not a depot
+            if (clientLoc >= data_.numDepots())
             {
                 ProblemData::Client const &clientData
                     = data_.location(clientLoc);
@@ -300,42 +293,49 @@ bool Solution::insert(Route::Node *U,
                                    && d < vehType.capacity.size();
                      ++d)
                 {
-                    Load currentLoad = 0;
-                    // Sum load from start of current trip up to insertion point
-                    // Skip depots (start depot is at idx 0, reload depots are
-                    // isReloadDepot()) Don't iterate beyond the last client
-                    // (end depot is at size()-1)
                     auto const lastClientIdx
                         = route->size() > 2 ? route->size() - 2 : 0;
                     auto const maxIdx = std::min(UAfter->idx(), lastClientIdx);
-                    for (size_t i = 1; i <= maxIdx; ++i)
+
+                    size_t tripStartIdx = 1;
+                    for (size_t i = maxIdx; i >= 1; --i)
                     {
                         auto *node = route->operator[](i);
                         if (node->isReloadDepot())
                         {
-                            // Trip boundary - reset load
-                            currentLoad = 0;
-                        }
-                        else if (node->client() >= data_.numDepots())
-                        {
-                            // It's a client
-                            ProblemData::Client const &loc
-                                = data_.location(node->client());
-                            if (d < loc.delivery.size())
-                                currentLoad = currentLoad + loc.delivery[d];
-                            if (d < loc.pickup.size())
-                                currentLoad = currentLoad + loc.pickup[d];
+                            tripStartIdx = i + 1;
+                            break;
                         }
                     }
 
-                    // Add the new client's load
-                    Load clientLoad = 0;
-                    if (d < clientData.delivery.size())
-                        clientLoad = clientLoad + clientData.delivery[d];
-                    if (d < clientData.pickup.size())
-                        clientLoad = clientLoad + clientData.pickup[d];
+                    Load tripDelivery = 0;
+                    Load tripPickup = 0;
+                    for (size_t i = tripStartIdx; i <= maxIdx; ++i)
+                    {
+                        auto *node = route->operator[](i);
+                        if (node->client() >= data_.numDepots())
+                        {
+                            ProblemData::Client const &loc
+                                = data_.location(node->client());
+                            if (d < loc.delivery.size())
+                                tripDelivery = tripDelivery + loc.delivery[d];
+                            if (d < loc.pickup.size())
+                                tripPickup = tripPickup + loc.pickup[d];
+                        }
+                    }
 
-                    if (currentLoad + clientLoad > vehType.capacity[d])
+                    Load newDelivery = 0;
+                    Load newPickup = 0;
+                    if (d < clientData.delivery.size())
+                        newDelivery = clientData.delivery[d];
+                    if (d < clientData.pickup.size())
+                        newPickup = clientData.pickup[d];
+
+                    Load startLoad = tripDelivery + newDelivery;
+                    Load endLoad = tripPickup + newPickup;
+                    Load maxLoad = std::max(startLoad, endLoad);
+
+                    if (maxLoad > vehType.capacity[d])
                     {
                         wouldExceedCapacity = true;
                         break;
@@ -344,13 +344,9 @@ bool Solution::insert(Route::Node *U,
             }
         }
 
-        // If would exceed capacity and multi-trip is available, insert depot
-        // first
         if (wouldExceedCapacity && !vehType.reloadDepots.empty()
             && route->numTrips() < route->maxTrips())
         {
-            // Capture index before insert, as insert may reallocate and
-            // invalidate UAfter pointer
             auto const insertIdx = UAfter->idx() + 1;
             Route::Node depot = {vehType.reloadDepots[0]};
             route->insert(insertIdx, &depot);

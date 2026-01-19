@@ -331,6 +331,225 @@ defmodule ExVrp.MultiTripTest do
     end
   end
 
+  describe "mixed pickup and delivery with multi-trip" do
+    test "mixed pickup and delivery - all clients should be visited with multi-trip" do
+      # This tests the correct handling of mixed pickup/delivery loads.
+      # Setup:
+      # - Vehicle capacity: 1000
+      # - Clients 0, 2: pickup of 600 each (collect from client)
+      # - Clients 1, 3: delivery of 600 each (deliver to client)
+      #
+      # For deliveries: vehicle must START with items loaded
+      # For pickups: vehicle collects items FROM clients
+      #
+      # With capacity 1000 and multi-trip enabled:
+      # - Can deliver to client 1 (load 600, deliver, return)
+      # - Can deliver to client 3 (load 600, deliver, return)
+      # - Can pickup from client 0 (drive, pickup 600, return)
+      # - Can pickup from client 2 (drive, pickup 600, return)
+      #
+      # All 4 clients should be served across multiple trips.
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, service_duration: 60)
+        |> Model.add_client(x: 10, y: 0, pickup: [600], service_duration: 116)
+        |> Model.add_client(x: 20, y: 0, delivery: [600], service_duration: 116)
+        |> Model.add_client(x: 30, y: 0, pickup: [600], service_duration: 116)
+        |> Model.add_client(x: 40, y: 0, delivery: [600], service_duration: 116)
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [1000],
+          reload_depots: [0],
+          max_reloads: :infinity,
+          tw_early: 0,
+          tw_late: 10_000
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+
+      assert result.best
+
+      # All 4 clients should be visited
+      assert Solution.complete?(result.best),
+             "Solution should be complete - all 4 clients should be visited"
+
+      assert Solution.feasible?(result.best),
+             "Solution should be feasible"
+
+      routes = Solution.routes(result.best)
+      assert length(routes) == 1
+
+      [route] = routes
+
+      # Should need at least 2 trips since we can't fit two 600 deliveries
+      # or two 600 pickups in one trip
+      assert Route.num_trips(route) >= 2,
+             "Expected at least 2 trips, got #{Route.num_trips(route)}"
+    end
+
+    test "delivery clients require pre-loading - cannot fit two 600 deliveries in 1000 capacity" do
+      # Two delivery-only clients, each needs 600 delivered.
+      # Vehicle capacity is 1000.
+      # Both require the vehicle to START with items loaded.
+      # 600 + 600 = 1200 > 1000, so cannot do both in one trip.
+      # Must do 2 trips.
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [600])
+        |> Model.add_client(x: 20, y: 0, delivery: [600])
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [1000],
+          reload_depots: [0],
+          max_reloads: :infinity,
+          tw_early: 0,
+          tw_late: 10_000
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
+
+      assert result.best
+      assert Solution.complete?(result.best)
+      assert Solution.feasible?(result.best)
+
+      [route] = Solution.routes(result.best)
+      assert Route.num_trips(route) == 2
+    end
+
+    test "zelo scenario - mixed weight and volume with optional clients" do
+      # This exactly replicates the zelo test scenario that fails.
+      # 4 clients, each with:
+      # - Clients 0, 2: weight pickup of 600 + volume delivery of 250
+      # - Clients 1, 3: weight delivery of 600 + volume delivery of 250
+      #
+      # Vehicle capacity: [1000, 1000, 1000] (weight, space, volume)
+      #
+      # All clients are optional (required=false) with a prize.
+      #
+      # The solver should be able to visit all 4 clients across multiple trips.
+      #
+      # Using the exact same asymmetric duration matrix as zelo test:
+      # Location indices: 0-3 are clients, 4 is depot
+      # ExVRP expects: [depot, clients...] so we need to remap
+      # ExVRP indices: 0=depot, 1-4=clients
+
+      # Original zelo matrix (rows/cols: 0=client0, 1=client1, 2=client2, 3=client3, 4=depot):
+      # [
+      #   [0, 4, 3, 2, 1],  # from client 0
+      #   [4, 0, 4, 1, 1],  # from client 1
+      #   [3, 4, 0, 4, 1],  # from client 2
+      #   [2, 1, 4, 0, 1],  # from client 3
+      #   [1, 2, 1, 1, 0]   # from depot
+      # ]
+      # Reorder to ExVRP format: [depot, client0, client1, client2, client3]
+      duration_matrix = [
+        # to: depot, c0, c1, c2, c3
+        [0, 1, 2, 1, 1],
+        # from depot
+        [1, 0, 4, 3, 2],
+        # from client 0
+        [1, 4, 0, 4, 1],
+        # from client 1
+        [1, 3, 4, 0, 4],
+        # from client 2
+        [1, 2, 1, 4, 0]
+        # from client 3
+      ]
+
+      # Distance matrix includes depot_reload_time (60) for trips TO depot
+      # This affects cost optimization but not timing
+      distance_matrix = [
+        # to: depot, c0, c1, c2, c3
+        [0, 1, 2, 1, 1],
+        # from depot
+        [61, 0, 4, 3, 2],
+        # from client 0 (61 = 1 + 60 reload time)
+        [61, 4, 0, 4, 1],
+        # from client 1
+        [61, 3, 4, 0, 4],
+        # from client 2
+        [61, 2, 1, 4, 0]
+        # from client 3
+      ]
+
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000, service_duration: 60)
+        # Client 0: weight pickup + volume delivery
+        |> Model.add_client(
+          x: 0,
+          y: 0,
+          delivery: [0, 250, 250],
+          pickup: [600, 0, 0],
+          service_duration: 116,
+          tw_early: 0,
+          tw_late: 1000,
+          required: false,
+          prize: 100_000
+        )
+        # Client 1: weight delivery + volume delivery
+        |> Model.add_client(
+          x: 1,
+          y: 0,
+          delivery: [600, 250, 250],
+          pickup: [0, 0, 0],
+          service_duration: 116,
+          tw_early: 0,
+          tw_late: 1000,
+          required: false,
+          prize: 100_000
+        )
+        # Client 2: weight pickup + volume delivery
+        |> Model.add_client(
+          x: 2,
+          y: 0,
+          delivery: [0, 250, 250],
+          pickup: [600, 0, 0],
+          service_duration: 116,
+          tw_early: 0,
+          tw_late: 1000,
+          required: false,
+          prize: 100_000
+        )
+        # Client 3: weight delivery + volume delivery
+        |> Model.add_client(
+          x: 3,
+          y: 0,
+          delivery: [600, 250, 250],
+          pickup: [0, 0, 0],
+          service_duration: 116,
+          tw_early: 0,
+          tw_late: 1000,
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [1000, 1000, 1000],
+          reload_depots: [0],
+          max_reloads: :infinity,
+          tw_early: 0,
+          tw_late: 86_400,
+          shift_duration: 86_400,
+          name: "v0"
+        )
+        |> Model.set_distance_matrices([distance_matrix, distance_matrix])
+        |> Model.set_duration_matrices([duration_matrix, duration_matrix])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(10_000))
+
+      assert result.best
+
+      # All 4 clients should be visited (Solution.complete? checks this)
+      assert Solution.complete?(result.best),
+             "Solution should be complete - all 4 clients should be visited. " <>
+               "Routes: #{inspect(Solution.routes(result.best))}"
+
+      assert Solution.feasible?(result.best)
+    end
+  end
+
   describe "multiple load dimensions" do
     test "multi-trip triggered by second dimension exceeding capacity" do
       # First dimension (volume) has plenty of capacity, second (weight) is constrained
