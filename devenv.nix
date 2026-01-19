@@ -69,5 +69,18 @@ in
         "c++"
       ];
     };
+
+    # AddressSanitizer tests (pre-push only, catches memory bugs)
+    asan-test = {
+      enable = !config.devenv.isTesting;
+      name = "asan-test";
+      entry = "task test:asan";
+      pass_filenames = false;
+      stages = [ "pre-push" ];
+      types_or = [
+        "c"
+        "c++"
+      ];
+    };
   };
 }

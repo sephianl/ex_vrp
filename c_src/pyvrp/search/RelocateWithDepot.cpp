@@ -268,19 +268,19 @@ void RelocateWithDepot::apply(Route::Node *U, Route::Node *V) const
     auto *uRoute = U->route();
     uRoute->remove(U->idx());
 
+    // Capture index before insert, as insert may reallocate and invalidate V
+    auto const insertIdx = V->idx() + 1;
+
     if (move_.type == MoveType::DEPOT_U)
     {
-        vRoute->insert(V->idx() + 1, U);
-        vRoute->insert(V->idx() + 1, &depot);
+        vRoute->insert(insertIdx, U);
+        vRoute->insert(insertIdx, &depot);
     }
 
-    // We need to be careful to insert the depot last, because doing so could
-    // invalidate V (it might trigger an update to the route's internal data
-    // layout, which could invalidate V if V is a depot).
     if (move_.type == MoveType::U_DEPOT)
     {
-        vRoute->insert(V->idx() + 1, U);
-        vRoute->insert(V->idx() + 2, &depot);
+        vRoute->insert(insertIdx, U);
+        vRoute->insert(insertIdx + 1, &depot);
     }
 }
 

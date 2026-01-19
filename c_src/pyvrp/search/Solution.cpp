@@ -349,9 +349,12 @@ bool Solution::insert(Route::Node *U,
         if (wouldExceedCapacity && !vehType.reloadDepots.empty()
             && route->numTrips() < route->maxTrips())
         {
+            // Capture index before insert, as insert may reallocate and
+            // invalidate UAfter pointer
+            auto const insertIdx = UAfter->idx() + 1;
             Route::Node depot = {vehType.reloadDepots[0]};
-            route->insert(UAfter->idx() + 1, &depot);
-            route->insert(UAfter->idx() + 2, U);
+            route->insert(insertIdx, &depot);
+            route->insert(insertIdx + 1, U);
         }
         else
         {
