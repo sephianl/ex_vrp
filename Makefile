@@ -10,28 +10,52 @@ ERL_INTERFACE_LIB_DIR ?= $(shell erl -noshell -eval "io:format(\"~ts\", [code:li
 # Platform detection
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
-	LDFLAGS += -flto -dynamiclib -undefined dynamic_lookup
+	LDFLAGS += -dynamiclib -undefined dynamic_lookup
 	SO_EXT = so
 else
-	LDFLAGS += -flto -shared
+	LDFLAGS += -shared
 	SO_EXT = so
 endif
 
-# Compiler settings
+# Compiler settings - use clang++ for sanitizers, otherwise default to g++
+ifdef SANITIZE
+CXX = clang++
+else
 CXX ?= g++
-# Match PyVRP's release build: disable assertions with NDEBUG
-CXXFLAGS = -std=c++20 -O3 -flto -Wall -Wextra -fPIC -fvisibility=hidden -DNDEBUG
-# Disable dangling-reference warning from PyVRP's Route.h (false positive in GCC 14)
-CXXFLAGS += -Wno-dangling-reference
-# Disable unused-parameter warnings - common in NIF code where env isn't always used
-CXXFLAGS += -Wno-unused-parameter
+endif
+
+# Base compiler flags
+CXXFLAGS = -std=c++20 -Wall -Wextra -fPIC -fvisibility=hidden
 CXXFLAGS += -I$(ERTS_INCLUDE_DIR)
 CXXFLAGS += -Ic_src
 CXXFLAGS += -Ic_src/pyvrp
 
-# Fine includes
+# Sanitizer support (set SANITIZE=1 to enable)
+# Use with: task test:asan
+ifdef SANITIZE
+# Debug build with sanitizers - no LTO, keep frame pointers
+CXXFLAGS += -O1 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls
+CXXFLAGS += -fsanitize=address,undefined
+CXXFLAGS += -fno-sanitize-recover=all
+LDFLAGS += -fsanitize=address,undefined
+# ASan requires shared runtime for NIFs
+ifeq ($(UNAME_S),Linux)
+LDFLAGS += -shared-libasan
+endif
+else
+# Release build: optimized with LTO, disable assertions
+CXXFLAGS += -O3 -flto -DNDEBUG
+LDFLAGS += -flto
+# Disable dangling-reference warning from PyVRP's Route.h (false positive in GCC 14)
+# Only add for GCC, Clang doesn't have this warning
+ifneq (,$(findstring g++,$(shell $(CXX) --version)))
+CXXFLAGS += -Wno-dangling-reference
+endif
+endif
+
+# Fine includes (use -isystem for angle-bracket includes like <fine.hpp>)
 ifdef FINE_INCLUDE_DIR
-CXXFLAGS += -I$(FINE_INCLUDE_DIR)
+CXXFLAGS += -isystem $(FINE_INCLUDE_DIR)
 endif
 
 # Output

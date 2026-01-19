@@ -733,29 +733,37 @@ defmodule ExVrp.LocalSearchTest do
       {:ok, cost_evaluator} = create_cost_evaluator()
       {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
 
+      # exhaustive: false uses perturbation before search (can escape local minima)
       {:ok, result1} =
         Native.local_search_with_operators(
           initial_solution,
           problem_data,
           cost_evaluator,
           node_operators: [:exchange10, :exchange11],
-          exhaustive: false
+          exhaustive: false,
+          seed: 42
         )
 
+      # exhaustive: true skips perturbation (pure local search from current position)
       {:ok, result2} =
         Native.local_search_with_operators(
           initial_solution,
           problem_data,
           cost_evaluator,
           node_operators: [:exchange10, :exchange11],
-          exhaustive: true
+          exhaustive: true,
+          seed: 42
         )
 
       cost1 = Native.solution_penalised_cost(result1, cost_evaluator)
       cost2 = Native.solution_penalised_cost(result2, cost_evaluator)
 
-      # Exhaustive should be at least as good
-      assert cost2 <= cost1
+      # With deterministic seeding, we get exact reproducible results:
+      # - Non-exhaustive: perturbation moves to a different basin → finds local minimum at 478
+      # - Exhaustive: pure local search from initial position → finds local minimum at 390
+      # (perturbation doesn't always help - it depends on the landscape)
+      assert cost1 == 478
+      assert cost2 == 390
     end
 
     test "accepts alternative operator names (relocate, swap11, etc.)" do
@@ -2064,6 +2072,9 @@ defmodule ExVrp.LocalSearchTest do
 
   # Helper to build a CVRP model with n clients
   defp build_cvrp_model(n) do
+    # Seed RNG for deterministic test data
+    :rand.seed(:exsss, {42, 42, 42})
+
     model =
       Model.new()
       |> Model.add_depot(x: 50, y: 50)

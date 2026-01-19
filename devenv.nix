@@ -25,6 +25,13 @@ in
     [
       gnumake
       gcc
+      # C++ linting, formatting, and sanitizer support
+      clang
+      clang-tools # provides clang-format, clang-tidy
+      llvm # provides llvm-symbolizer for ASan stack traces
+      cppcheck
+
+      go-task
     ]
     ++ lib.optionals pkgs.stdenv.isLinux [ inotify-tools ];
 
@@ -50,5 +57,17 @@ in
     prettier.enable = !config.devenv.isTesting;
     nixfmt-rfc-style.enable = !config.devenv.isTesting;
     clang-format.enable = !config.devenv.isTesting;
+
+    # C++ static analysis (cppcheck + clang-tidy via task)
+    cpp-check = {
+      enable = !config.devenv.isTesting;
+      name = "cpp-check";
+      entry = "task cpp:check";
+      pass_filenames = false;
+      types_or = [
+        "c"
+        "c++"
+      ];
+    };
   };
 }
