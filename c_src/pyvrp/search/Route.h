@@ -191,7 +191,7 @@ public:
      */
     class Iterator
     {
-        std::vector<Node *> const *nodes_;
+        std::vector<Node *> const *nodes_ = nullptr;
         size_t idx_ = 0;
 
         // Ensures we skip reload depots.
