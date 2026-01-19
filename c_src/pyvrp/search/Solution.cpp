@@ -175,7 +175,8 @@ bool Solution::insert(Route::Node *U,
             if (otherNode->route())
             {
                 requiredRoute = otherNode->route();
-                requiredVehicleName = data_.vehicleType(requiredRoute->vehicleType()).name;
+                requiredVehicleName
+                    = data_.vehicleType(requiredRoute->vehicleType()).name;
                 break;
             }
         }
@@ -276,7 +277,86 @@ bool Solution::insert(Route::Node *U,
     if (required || bestCost < 0)
     {
         auto *route = UAfter->route();
-        route->insert(UAfter->idx() + 1, U);
+
+        // Check if insertion would exceed capacity
+        auto const &vehType = data_.vehicleType(route->vehicleType());
+        bool wouldExceedCapacity = false;
+
+        // Only check capacity if we have load dimensions, capacity defined,
+        // reload depots available for multi-trip, and we can still add trips
+        if (data_.numLoadDimensions() > 0 && !vehType.capacity.empty()
+            && !vehType.reloadDepots.empty()
+            && route->numTrips() < route->maxTrips())
+        {
+            // U->client() returns location index (which includes depots)
+            // For clients, location index = client index (0-based among
+            // clients) So we need to check if it's actually a client
+            auto const clientLoc = U->client();
+            if (clientLoc >= data_.numDepots())  // It's a client, not a depot
+            {
+                ProblemData::Client const &clientData
+                    = data_.location(clientLoc);
+                for (size_t d = 0; d < data_.numLoadDimensions()
+                                   && d < vehType.capacity.size();
+                     ++d)
+                {
+                    Load currentLoad = 0;
+                    // Sum load from start of current trip up to insertion point
+                    // Skip depots (start depot is at idx 0, reload depots are
+                    // isReloadDepot()) Don't iterate beyond the last client
+                    // (end depot is at size()-1)
+                    auto const lastClientIdx
+                        = route->size() > 2 ? route->size() - 2 : 0;
+                    auto const maxIdx = std::min(UAfter->idx(), lastClientIdx);
+                    for (size_t i = 1; i <= maxIdx; ++i)
+                    {
+                        auto *node = route->operator[](i);
+                        if (node->isReloadDepot())
+                        {
+                            // Trip boundary - reset load
+                            currentLoad = 0;
+                        }
+                        else if (node->client() >= data_.numDepots())
+                        {
+                            // It's a client
+                            ProblemData::Client const &loc
+                                = data_.location(node->client());
+                            if (d < loc.delivery.size())
+                                currentLoad = currentLoad + loc.delivery[d];
+                            if (d < loc.pickup.size())
+                                currentLoad = currentLoad + loc.pickup[d];
+                        }
+                    }
+
+                    // Add the new client's load
+                    Load clientLoad = 0;
+                    if (d < clientData.delivery.size())
+                        clientLoad = clientLoad + clientData.delivery[d];
+                    if (d < clientData.pickup.size())
+                        clientLoad = clientLoad + clientData.pickup[d];
+
+                    if (currentLoad + clientLoad > vehType.capacity[d])
+                    {
+                        wouldExceedCapacity = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // If would exceed capacity and multi-trip is available, insert depot
+        // first
+        if (wouldExceedCapacity && !vehType.reloadDepots.empty()
+            && route->numTrips() < route->maxTrips())
+        {
+            Route::Node depot = {vehType.reloadDepots[0]};
+            route->insert(UAfter->idx() + 1, &depot);
+            route->insert(UAfter->idx() + 2, U);
+        }
+        else
+        {
+            route->insert(UAfter->idx() + 1, U);
+        }
         return true;
     }
 

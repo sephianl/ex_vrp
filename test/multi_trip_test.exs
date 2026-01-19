@@ -136,6 +136,260 @@ defmodule ExVrp.MultiTripTest do
     end
   end
 
+  describe "in-place depot insertion" do
+    test "vehicle makes 4 trips when capacity allows only 1 item per trip" do
+      # Vehicle can only carry 1 item at a time, must make 4 trips for 4 clients
+      # This tests the in-place depot insertion capability
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, service_duration: 50)
+        |> Model.add_client(x: 10, y: 0, delivery: [100], service_duration: 10)
+        |> Model.add_client(x: 20, y: 0, delivery: [100], service_duration: 10)
+        |> Model.add_client(x: 30, y: 0, delivery: [100], service_duration: 10)
+        |> Model.add_client(x: 40, y: 0, delivery: [100], service_duration: 10)
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          reload_depots: [0],
+          max_reloads: :infinity,
+          tw_early: 0,
+          tw_late: 2000
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+
+      assert result.best
+      assert Solution.complete?(result.best)
+
+      # Should have exactly one route
+      routes = Solution.routes(result.best)
+      assert length(routes) == 1
+
+      [route] = routes
+
+      # Should have 4 trips (one client per trip due to capacity)
+      assert Route.num_trips(route) == 4,
+             "Expected 4 trips, got #{Route.num_trips(route)}"
+    end
+
+    test "auto-insert depot when single client exceeds remaining capacity" do
+      # This test specifically exercises the Solution::insert capacity check.
+      # When inserting a client would exceed capacity, it should automatically
+      # insert a reload depot before the client.
+      #
+      # Setup: Vehicle capacity 100, clients each need 60.
+      # After inserting client 1 (60), trying to insert client 2 (60) would
+      # exceed capacity (60 + 60 = 120 > 100), so a depot should be auto-inserted.
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, service_duration: 10)
+        |> Model.add_client(x: 10, y: 0, delivery: [60], service_duration: 5)
+        |> Model.add_client(x: 20, y: 0, delivery: [60], service_duration: 5)
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          reload_depots: [0],
+          max_reloads: 5,
+          tw_early: 0,
+          tw_late: 1000
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
+
+      assert result.best
+      assert Solution.complete?(result.best)
+      assert Solution.feasible?(result.best)
+
+      routes = Solution.routes(result.best)
+      assert length(routes) == 1
+
+      [route] = routes
+      # Should need 2 trips (one client per trip)
+      assert Route.num_trips(route) == 2,
+             "Expected 2 trips (one client per trip), got #{Route.num_trips(route)}"
+    end
+
+    test "auto-insert depot respects max_reloads limit" do
+      # With max_reloads: 1, vehicle can make at most 2 trips.
+      # With 3 clients each needing full capacity, only 2 can be served.
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [100])
+        |> Model.add_client(x: 20, y: 0, delivery: [100])
+        |> Model.add_client(x: 30, y: 0, delivery: [100])
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          reload_depots: [0],
+          max_reloads: 1,
+          tw_early: 0,
+          tw_late: 1000
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
+
+      assert result.best
+      routes = Solution.routes(result.best)
+      assert length(routes) == 1
+
+      [route] = routes
+      # Can make at most 2 trips (max_reloads: 1 means 1 reload = 2 trips)
+      assert Route.num_trips(route) <= 2
+
+      # Solution won't be complete since we can't serve all clients
+      # but shouldn't crash
+    end
+
+    test "vehicle makes 2 trips when capacity allows 2 items per trip" do
+      # Vehicle can carry 2 items, needs 2 trips for 4 clients
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, service_duration: 50)
+        |> Model.add_client(x: 10, y: 0, delivery: [50], service_duration: 10)
+        |> Model.add_client(x: 20, y: 0, delivery: [50], service_duration: 10)
+        |> Model.add_client(x: 30, y: 0, delivery: [50], service_duration: 10)
+        |> Model.add_client(x: 40, y: 0, delivery: [50], service_duration: 10)
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          reload_depots: [0],
+          max_reloads: :infinity,
+          tw_early: 0,
+          tw_late: 2000
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+
+      assert result.best
+      assert Solution.complete?(result.best)
+
+      routes = Solution.routes(result.best)
+      assert length(routes) == 1
+
+      [route] = routes
+
+      # Should have 2 trips (two clients per trip)
+      assert Route.num_trips(route) == 2,
+             "Expected 2 trips, got #{Route.num_trips(route)}"
+    end
+  end
+
+  describe "multiple vehicles with multi-trip" do
+    test "two vehicles each make independent multi-trips" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [100])
+        |> Model.add_client(x: 20, y: 0, delivery: [100])
+        |> Model.add_client(x: -10, y: 0, delivery: [100])
+        |> Model.add_client(x: -20, y: 0, delivery: [100])
+        |> Model.add_vehicle_type(
+          num_available: 2,
+          capacity: [100],
+          reload_depots: [0],
+          max_reloads: :infinity,
+          tw_early: 0,
+          tw_late: 1000
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+
+      assert result.best
+      assert Solution.complete?(result.best)
+
+      routes = Solution.routes(result.best)
+      # Each vehicle should handle 2 clients with 2 trips each
+      total_trips = routes |> Enum.map(&Route.num_trips/1) |> Enum.sum()
+      assert total_trips == 4
+    end
+  end
+
+  describe "pickup loads with multi-trip" do
+    test "pickup loads trigger multi-trip when capacity exceeded" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, pickup: [60])
+        |> Model.add_client(x: 20, y: 0, pickup: [60])
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          reload_depots: [0],
+          max_reloads: 5,
+          tw_early: 0,
+          tw_late: 1000
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
+
+      assert result.best
+      assert Solution.complete?(result.best)
+
+      [route] = Solution.routes(result.best)
+      assert Route.num_trips(route) == 2
+    end
+  end
+
+  describe "multiple load dimensions" do
+    test "multi-trip triggered by second dimension exceeding capacity" do
+      # First dimension (volume) has plenty of capacity, second (weight) is constrained
+      # Vehicle: capacity [1000, 100], clients need [10, 60] each
+      # First dimension: 10+10=20 << 1000, no problem
+      # Second dimension: 60+60=120 > 100, triggers multi-trip
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10, 60], pickup: [0, 0])
+        |> Model.add_client(x: 20, y: 0, delivery: [10, 60], pickup: [0, 0])
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [1000, 100],
+          reload_depots: [0],
+          max_reloads: 5,
+          tw_early: 0,
+          tw_late: 1000
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
+
+      assert result.best
+      assert Solution.complete?(result.best)
+
+      [route] = Solution.routes(result.best)
+      assert Route.num_trips(route) == 2
+    end
+  end
+
+  describe "different reload depot" do
+    test "uses specified reload depot different from start depot" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot(x: 50, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [100])
+        |> Model.add_client(x: 20, y: 0, delivery: [100])
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          start_depot: 0,
+          end_depot: 0,
+          reload_depots: [1],
+          max_reloads: 5,
+          tw_early: 0,
+          tw_late: 2000
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
+
+      assert result.best
+      assert Solution.complete?(result.best)
+
+      [route] = Solution.routes(result.best)
+      assert Route.num_trips(route) == 2
+    end
+  end
+
   describe "Depot service_duration" do
     test "creates depot with service_duration" do
       depot = Depot.new(x: 0, y: 0, service_duration: 30)

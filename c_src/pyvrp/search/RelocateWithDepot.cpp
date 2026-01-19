@@ -173,6 +173,28 @@ void RelocateWithDepot::evalDepotAfter(Cost fixedCost,
     }
 }
 
+void RelocateWithDepot::evalInPlaceDepot(Route::Node *V,
+                                         CostEvaluator const &costEvaluator)
+{
+    // Insert a depot between V and n(V) without moving any client.
+    // Before: ... V -> U ... where U = n(V)
+    // After:  ... V -> depot -> U ...
+    auto const *route = V->route();
+    auto const &vehType = data.vehicleType(route->vehicleType());
+
+    for (auto const depot : vehType.reloadDepots)
+    {
+        Cost deltaCost = 0;
+        costEvaluator.deltaCost(deltaCost,
+                                Route::Proposal(route->before(V->idx()),
+                                                ReloadDepotSegment(data, depot),
+                                                route->after(V->idx() + 1)));
+
+        if (deltaCost < move_.cost)
+            move_ = {deltaCost, MoveType::IN_PLACE, depot};
+    }
+}
+
 pyvrp::Cost RelocateWithDepot::evaluate(Route::Node *U,
                                         Route::Node *V,
                                         CostEvaluator const &costEvaluator)
@@ -183,7 +205,7 @@ pyvrp::Cost RelocateWithDepot::evaluate(Route::Node *U,
     auto const *uRoute = U->route();
     auto const *vRoute = V->route();
 
-    if (U == n(V) || vRoute->empty())  // if V's empty, Exchange<1, 0> suffices
+    if (vRoute->empty())  // if V's empty, Exchange<1, 0> suffices
         return 0;
 
     if (vRoute->numTrips() == vRoute->maxTrips())
@@ -195,6 +217,18 @@ pyvrp::Cost RelocateWithDepot::evaluate(Route::Node *U,
         return 0;
 
     move_ = {};
+
+    // Special case: U is directly after V in the same route. This is an
+    // in-place depot insertion without relocating U.
+    if (U == n(V))
+    {
+        // Insert depot between V and U: ... V U ... -> ... V depot U ...
+        // We only insert a depot, no relocation happens.
+        if (!V->isReloadDepot() && !U->isReloadDepot())
+            evalInPlaceDepot(V, costEvaluator);
+
+        return move_.cost;
+    }
 
     Cost fixedCost = 0;
     if (uRoute != vRoute && uRoute->numClients() == 1)  // empty after move
@@ -219,11 +253,20 @@ void RelocateWithDepot::apply(Route::Node *U, Route::Node *V) const
 {
     stats_.numApplications++;
 
-    auto *uRoute = U->route();
-    uRoute->remove(U->idx());
-
     auto *vRoute = V->route();
     Route::Node depot = {move_.depot};
+
+    // IN_PLACE: just insert depot between V and U (where U = n(V))
+    // No relocation needed.
+    if (move_.type == MoveType::IN_PLACE)
+    {
+        vRoute->insert(V->idx() + 1, &depot);
+        return;
+    }
+
+    // For DEPOT_U and U_DEPOT, we relocate U after V with a depot.
+    auto *uRoute = U->route();
+    uRoute->remove(U->idx());
 
     if (move_.type == MoveType::DEPOT_U)
     {

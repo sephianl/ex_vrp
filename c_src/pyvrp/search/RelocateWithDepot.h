@@ -25,8 +25,9 @@ class RelocateWithDepot : public NodeOperator
 
     enum class MoveType
     {
-        DEPOT_U,  // V -> depot -> U
-        U_DEPOT,  // V -> U -> depot
+        DEPOT_U,   // V -> depot -> U (relocate U after V, depot before U)
+        U_DEPOT,   // V -> U -> depot (relocate U after V, depot after U)
+        IN_PLACE,  // Insert depot between V and n(V) without relocation
     };
 
     struct Move
@@ -51,6 +52,10 @@ class RelocateWithDepot : public NodeOperator
                         Route::Node *U,
                         Route::Node *V,
                         CostEvaluator const &costEvaluator);
+
+    // Evaluates in-place depot insertion between consecutive clients V and
+    // n(V). This is a pure depot insertion without relocating any client.
+    void evalInPlaceDepot(Route::Node *V, CostEvaluator const &costEvaluator);
 
 public:
     Cost evaluate(Route::Node *U,

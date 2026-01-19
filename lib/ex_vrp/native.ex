@@ -427,7 +427,6 @@ defmodule ExVrp.Native do
   end
 
   defp local_search_search_run_nif(_local_search, _solution, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
-
   # ---------------------------------------------------------------------------
   # Route - via Solution reference + route index
   # ---------------------------------------------------------------------------
