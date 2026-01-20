@@ -14,12 +14,12 @@ namespace
  */
 class ReloadDepotSegment
 {
-    pyvrp::ProblemData const &data_;
     size_t depot_;
 
 public:
-    ReloadDepotSegment(pyvrp::ProblemData const &data, size_t depot)
-        : data_(data), depot_(depot)
+    ReloadDepotSegment([[maybe_unused]] pyvrp::ProblemData const &data,
+                       size_t depot)
+        : depot_(depot)
     {
         assert(depot < data.numDepots());  // must be an actual depot
     }
@@ -40,14 +40,10 @@ public:
 
     pyvrp::DurationSegment duration([[maybe_unused]] size_t profile) const
     {
-        pyvrp::ProblemData::Depot const &depot = data_.location(depot_);
-        // Reload depot - apply service time
+        // Empty segment - depot service time is handled by
+        // Proposal::duration().
         return pyvrp::DurationSegment(
-            depot.serviceDuration,
-            0,
-            0,
-            std::numeric_limits<pyvrp::Duration>::max(),
-            0);
+            0, 0, 0, std::numeric_limits<pyvrp::Duration>::max(), 0);
     }
 
     pyvrp::LoadSegment load([[maybe_unused]] size_t dimension) const
