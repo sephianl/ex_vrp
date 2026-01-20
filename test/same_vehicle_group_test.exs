@@ -521,4 +521,130 @@ defmodule ExVrp.SameVehicleGroupTest do
       assert Solution.num_routes(solution) == 2
     end
   end
+
+  describe "equipment constraints (same-vehicle with capacity limiting)" do
+    @doc """
+    These tests verify equipment constraints scenario from zelo where all clients
+    in a same-vehicle group must be served by the same vehicle, but capacity
+    limits may prevent serving all of them.
+    """
+
+    test "drops nodes when equipment constraint limits capacity" do
+      # All 4 clients are in same equipment group, so they must all be served
+      # by the same vehicle. With capacity 2 per vehicle, only 2 clients can
+      # fit on a vehicle's single trip. With multi-trip, all could be served.
+      # Without multi-trip, only 2 can be served.
+      duration_matrix = [
+        [0, 365, 443, 512, 399],
+        [374, 0, 397, 292, 479],
+        [475, 399, 0, 225, 166],
+        [510, 292, 243, 0, 346],
+        [414, 442, 142, 330, 0]
+      ]
+
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 450, tw_late: 6750)
+        # 4 clients with delivery demand of 1000 each - only 1 fits per trip
+        |> Model.add_client(x: 1, y: 0, delivery: [1000], tw_early: 0, tw_late: 7200, required: false, prize: 100_000)
+        |> Model.add_client(x: 2, y: 0, delivery: [1000], tw_early: 0, tw_late: 7200, required: false, prize: 100_000)
+        |> Model.add_client(x: 3, y: 0, delivery: [1000], tw_early: 0, tw_late: 7200, required: false, prize: 100_000)
+        |> Model.add_client(x: 4, y: 0, delivery: [1000], tw_early: 0, tw_late: 7200, required: false, prize: 100_000)
+        # Two vehicles, capacity 2000 allows 2 clients per trip
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [2000],
+          tw_early: 450,
+          tw_late: 6750,
+          name: "v0"
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [2000],
+          tw_early: 450,
+          tw_late: 6750,
+          name: "v1"
+        )
+        |> Model.set_duration_matrices([duration_matrix])
+        |> Model.set_distance_matrices([duration_matrix])
+
+      [c1, c2, c3, c4] = model.clients
+
+      # Equipment constraint: all 4 must be on same vehicle
+      model = Model.add_same_vehicle_group(model, [c1, c2, c3, c4])
+
+      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 1000)
+      solution = result.best
+
+      # The equipment constraint forces all served clients to be on the same vehicle.
+      # Without multi-trip, capacity 2000 with demand 1000 each means max 2 clients.
+      # Check how many clients were actually served
+      total_clients_served = solution.num_clients
+
+      # Verify same-vehicle constraint for those that were served
+      assert Solution.group_feasible?(solution), "Served clients should all be on same vehicle"
+
+      if total_clients_served > 0 do
+        # All served clients should be on the same vehicle
+        routes = Solution.routes(solution)
+        routes_with_clients = Enum.filter(routes, fn r -> r.visits != [] end)
+
+        # Should have at most 1 route with clients (same-vehicle constraint)
+        assert length(routes_with_clients) <= 1 or
+                 (length(routes_with_clients) == 2 and
+                    routes_with_clients |> Enum.map(& &1.vehicle_type) |> Enum.uniq() |> length() <= 1),
+               "All served clients should be on same vehicle or vehicle type"
+      end
+    end
+
+    test "same-vehicle group with multi-trip can serve all clients despite capacity" do
+      # Similar to above but WITH multi-trip enabled
+      duration_matrix = [
+        [0, 365, 443, 512, 399],
+        [374, 0, 397, 292, 479],
+        [475, 399, 0, 225, 166],
+        [510, 292, 243, 0, 346],
+        [414, 442, 142, 330, 0]
+      ]
+
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 28_800, service_duration: 60)
+        # 4 clients with delivery demand of 1000 each
+        |> Model.add_client(x: 1, y: 0, delivery: [1000], tw_early: 0, tw_late: 28_800, required: false, prize: 100_000)
+        |> Model.add_client(x: 2, y: 0, delivery: [1000], tw_early: 0, tw_late: 28_800, required: false, prize: 100_000)
+        |> Model.add_client(x: 3, y: 0, delivery: [1000], tw_early: 0, tw_late: 28_800, required: false, prize: 100_000)
+        |> Model.add_client(x: 4, y: 0, delivery: [1000], tw_early: 0, tw_late: 28_800, required: false, prize: 100_000)
+        # One vehicle with capacity 2000 and multi-trip enabled
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [2000],
+          tw_early: 0,
+          tw_late: 28_800,
+          reload_depots: [0],
+          max_reloads: :infinity,
+          name: "v0"
+        )
+        |> Model.set_duration_matrices([duration_matrix])
+        |> Model.set_distance_matrices([duration_matrix])
+
+      [c1, c2, c3, c4] = model.clients
+
+      # Equipment constraint: all 4 must be on same vehicle
+      model = Model.add_same_vehicle_group(model, [c1, c2, c3, c4])
+
+      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 2000)
+      solution = result.best
+
+      # With multi-trip, all 4 clients should be served
+      assert Solution.complete?(solution), "All clients should be served with multi-trip"
+      assert Solution.group_feasible?(solution), "Same-vehicle constraint should be satisfied"
+      assert Solution.feasible?(solution), "Solution should be feasible"
+
+      # Should have one route with multiple trips
+      assert Solution.num_routes(solution) == 1
+      num_trips = Solution.route_num_trips(solution, 0)
+      assert num_trips >= 2, "Expected multiple trips to serve all clients, got #{num_trips}"
+    end
+  end
 end

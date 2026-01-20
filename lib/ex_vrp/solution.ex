@@ -113,7 +113,14 @@ defmodule ExVrp.Solution do
     raw_routes
     |> Enum.with_index()
     |> Enum.map(fn {visits, idx} ->
-      %ExVrp.Route{visits: visits, solution_ref: ref, route_idx: idx}
+      %ExVrp.Route{
+        visits: visits,
+        solution_ref: ref,
+        route_idx: idx,
+        vehicle_type: ExVrp.Native.solution_route_vehicle_type(ref, idx),
+        start_depot: ExVrp.Native.solution_route_start_depot(ref, idx),
+        end_depot: ExVrp.Native.solution_route_end_depot(ref, idx)
+      }
     end)
   end
 

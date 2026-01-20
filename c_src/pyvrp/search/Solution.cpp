@@ -258,6 +258,7 @@ bool Solution::insert(Route::Node *U,
 
     bool hasPrize = false;
     bool multiTripAvailable = false;
+    bool multiTripFeasible = true;
 
     if (!required && UAfter && UAfter->route())
     {
@@ -272,9 +273,81 @@ bool Solution::insert(Route::Node *U,
         multiTripAvailable
             = !vehType.reloadDepots.empty()
               && UAfter->route()->numTrips() < UAfter->route()->maxTrips();
+
+        if (multiTripAvailable && !vehType.reloadDepots.empty())
+        {
+            auto const depotLoc = vehType.reloadDepots[0];
+            Duration depotServiceDur = 0;
+            auto const effectiveShiftDur
+                = vehType.shiftDuration < std::numeric_limits<Duration>::max()
+                      ? vehType.shiftDuration
+                      : vehType.twLate - vehType.twEarly;
+
+            if (depotLoc < data_.numDepots())
+            {
+                ProblemData::Depot const &depot = data_.location(depotLoc);
+                depotServiceDur = depot.serviceDuration;
+                if (depotServiceDur > effectiveShiftDur)
+                    multiTripFeasible = false;
+            }
+
+            if (multiTripFeasible && clientLoc >= data_.numDepots())
+            {
+                ProblemData::Client const &clientData
+                    = data_.location(clientLoc);
+                for (size_t d = 0; d < data_.numLoadDimensions()
+                                   && d < vehType.capacity.size();
+                     ++d)
+                {
+                    Load clientDemand = 0;
+                    if (d < clientData.delivery.size())
+                        clientDemand
+                            = std::max(clientDemand, clientData.delivery[d]);
+                    if (d < clientData.pickup.size())
+                        clientDemand
+                            = std::max(clientDemand, clientData.pickup[d]);
+
+                    if (clientDemand > vehType.capacity[d])
+                    {
+                        multiTripFeasible = false;
+                        break;
+                    }
+                }
+
+                if (multiTripFeasible)
+                {
+                    auto const clientServiceDur = clientData.serviceDuration;
+                    auto const combinedTime
+                        = clientServiceDur + depotServiceDur;
+                    // 90% threshold: if service + reload uses most of shift,
+                    // reject
+                    if (combinedTime.get() * 10 >= effectiveShiftDur.get() * 9)
+                        multiTripFeasible = false;
+                }
+
+                if (multiTripFeasible)
+                {
+                    auto const startDepot = vehType.startDepot;
+                    auto const profile = vehType.profile;
+                    auto const &durMatrix = data_.durationMatrix(profile);
+                    auto const travelTo = durMatrix(startDepot, clientLoc);
+                    auto const travelBack = durMatrix(clientLoc, startDepot);
+                    auto const clientServiceDur = clientData.serviceDuration;
+                    auto const minVisitTime
+                        = travelTo + clientServiceDur + travelBack;
+                    if (minVisitTime > effectiveShiftDur)
+                        multiTripFeasible = false;
+                }
+            }
+        }
     }
 
-    if (required || bestCost < 0 || (hasPrize && multiTripAvailable))
+    // Prevent infinite insert/remove loops: only allow prize-based insertion
+    // when multi-trip can actually make the client feasible.
+    auto const prizeJustifiesInsertion
+        = hasPrize && multiTripAvailable && multiTripFeasible;
+
+    if (required || bestCost < 0 || prizeJustifiesInsertion)
     {
         auto *route = UAfter->route();
         auto const &vehType = data_.vehicleType(route->vehicleType());

@@ -784,4 +784,427 @@ defmodule ExVrp.MultiTripTest do
       end
     end
   end
+
+  describe "infeasible insertion scenarios - must not hang" do
+    @moduletag timeout: 10_000
+
+    test "client demand exceeds vehicle capacity - drops client without hanging" do
+      # Scenario from zelo: weight_demands: [-125], capacity: 100
+      # Client demand (125) > vehicle capacity (100), so client can never be served
+      # Multi-trip won't help - even with empty vehicle, can't fit this client
+      # Should drop the client and complete without hanging
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 130, service_duration: 60)
+        |> Model.add_client(
+          x: 0,
+          y: 0,
+          tw_early: 0,
+          tw_late: 130,
+          service_duration: 116,
+          delivery: [125],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          tw_early: 0,
+          tw_late: 130,
+          shift_duration: 130,
+          reload_depots: [0],
+          max_reloads: :infinity
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+
+      # Should complete without hanging
+      assert result.best
+      assert Solution.feasible?(result.best)
+
+      # Client should be dropped since demand > capacity
+      assert Solution.num_clients(result.best) == 0
+    end
+
+    test "time window too tight with depot reload - drops client without hanging" do
+      # Scenario from zelo: tw_end=130, service_duration=116, depot_reload=60
+      # Client service (116) + depot reload (60) = 176 > 130 (time window)
+      # Key: demand (100) > capacity (50) forces multi-trip consideration
+      # But multi-trip is infeasible because service + depot reload > shift
+      # Should drop the client and complete without hanging
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 130, service_duration: 60)
+        |> Model.add_client(
+          x: 0,
+          y: 0,
+          tw_early: 0,
+          tw_late: 130,
+          service_duration: 116,
+          # Demand exceeds capacity to force multi-trip consideration
+          delivery: [100],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          # Capacity (50) < demand (100), so multi-trip would be needed
+          capacity: [50],
+          tw_early: 0,
+          tw_late: 130,
+          shift_duration: 130,
+          reload_depots: [0],
+          max_reloads: :infinity
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+
+      # Should complete without hanging
+      assert result.best
+      assert Solution.feasible?(result.best)
+
+      # Client should be dropped since demand (100) > capacity (50)
+      assert Solution.num_clients(result.best) == 0
+    end
+
+    test "max shift length exceeded - drops client without hanging" do
+      # Scenario from zelo: max_shift_length=130, but travel + service > 130
+      # Using shift_duration field instead of just tw_late - tw_early
+      # Key: capacity is 50, demand is 100, so multi-trip IS required
+      # But shift_duration (130) < service (116) + depot reload (60) = 176
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000, service_duration: 60)
+        |> Model.add_client(
+          x: 0,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1000,
+          service_duration: 116,
+          # Demand exceeds capacity to force multi-trip consideration
+          delivery: [100],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          # Capacity is less than demand, so multi-trip would be needed
+          # But this client can never be served even with multi-trip
+          # because demand (100) > capacity (50)
+          capacity: [50],
+          tw_early: 0,
+          tw_late: 1000,
+          # This is the key - shift_duration limits the route duration
+          shift_duration: 130,
+          reload_depots: [0],
+          max_reloads: :infinity
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+
+      # Should complete without hanging
+      assert result.best
+      assert Solution.feasible?(result.best)
+
+      # Client should be dropped since demand (100) > capacity (50)
+      assert Solution.num_clients(result.best) == 0
+    end
+
+    test "travel time alone exceeds shift duration - drops client without hanging" do
+      # Scenario from zelo: "only bicycle matrix provided" test
+      # Travel time to client (3600) + service (116) + travel back (3600) = 7316
+      # But shift duration is only 3600
+      # Even without depot reload consideration, travel alone makes it impossible
+      duration_matrix = [
+        [0, 3600],
+        [3600, 0]
+      ]
+
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 3600, service_duration: 60)
+        |> Model.add_client(
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 3600,
+          service_duration: 116,
+          delivery: [1],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [1000],
+          tw_early: 0,
+          tw_late: 3600,
+          shift_duration: 3600,
+          reload_depots: [0],
+          max_reloads: :infinity
+        )
+        |> Model.set_duration_matrices([duration_matrix])
+        |> Model.set_distance_matrices([duration_matrix])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+
+      # Should complete without hanging
+      assert result.best
+      assert Solution.feasible?(result.best)
+
+      # Client should be dropped since travel time alone exceeds shift
+      assert Solution.num_clients(result.best) == 0
+    end
+
+    test "multiple infeasible clients - all dropped without hanging" do
+      # Multiple clients, each with different infeasibility reasons
+      # Both require multi-trip (demand > capacity) but multi-trip is infeasible
+      # None should hang the solver
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 130, service_duration: 60)
+        # Client 0: demand (150) exceeds capacity (100) - even multi-trip can't help
+        |> Model.add_client(
+          x: 0,
+          y: 0,
+          tw_early: 0,
+          tw_late: 130,
+          service_duration: 10,
+          delivery: [150],
+          required: false,
+          prize: 100_000
+        )
+        # Client 1: demand (150) exceeds capacity (100) - even multi-trip can't help
+        |> Model.add_client(
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 130,
+          service_duration: 10,
+          delivery: [150],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          tw_early: 0,
+          tw_late: 130,
+          shift_duration: 130,
+          reload_depots: [0],
+          max_reloads: :infinity
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+
+      # Should complete without hanging
+      assert result.best
+      assert Solution.feasible?(result.best)
+
+      # Both clients should be dropped (demand > capacity)
+      assert Solution.num_clients(result.best) == 0
+    end
+
+    test "mix of feasible and infeasible clients - serves only feasible ones" do
+      # One feasible client (small demand, quick service)
+      # One infeasible client (demand > capacity)
+      # Should serve the feasible one, drop the infeasible one
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000, service_duration: 60)
+        # Client 0: feasible - small demand, quick service
+        |> Model.add_client(
+          x: 0,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1000,
+          service_duration: 10,
+          delivery: [50],
+          required: false,
+          prize: 100_000
+        )
+        # Client 1: infeasible - demand exceeds capacity
+        |> Model.add_client(
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1000,
+          service_duration: 10,
+          delivery: [150],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          tw_early: 0,
+          tw_late: 1000,
+          shift_duration: 1000,
+          reload_depots: [0],
+          max_reloads: :infinity
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+
+      # Should complete without hanging
+      assert result.best
+      assert Solution.feasible?(result.best)
+
+      # Only 1 client should be served (the feasible one)
+      assert Solution.num_clients(result.best) == 1
+    end
+  end
+
+  describe "large depot reload time scenarios" do
+    test "large reload time prevents multi-trip within small time window" do
+      # Scenario: depot_reload_time=500 exceeds shift time window=200
+      # 4 clients each requiring full capacity, so multi-trip would be needed
+      # But with reload time > shift window, multi-trip is impossible
+      # Solver should serve 1 client and complete (not hang)
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 200, service_duration: 500)
+        |> Model.add_client(
+          x: 0,
+          y: 0,
+          tw_early: 0,
+          tw_late: 200,
+          service_duration: 10,
+          delivery: [100],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_client(
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 200,
+          service_duration: 10,
+          delivery: [100],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_client(
+          x: 2,
+          y: 0,
+          tw_early: 0,
+          tw_late: 200,
+          service_duration: 10,
+          delivery: [100],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_client(
+          x: 3,
+          y: 0,
+          tw_early: 0,
+          tw_late: 200,
+          service_duration: 10,
+          delivery: [100],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          tw_early: 0,
+          tw_late: 200,
+          shift_duration: 200,
+          reload_depots: [0],
+          max_reloads: :infinity
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+
+      # Should complete without hanging
+      assert result.best
+      assert Solution.feasible?(result.best)
+
+      # Can only serve 1 client since:
+      # - Each client needs 100 capacity (full)
+      # - Multi-trip requires returning to depot (reload time 500)
+      # - But time window only allows 200, so no time for reload
+      assert Solution.num_clients(result.best) == 1
+    end
+
+    test "two shifts with large reload time - serves one client per shift" do
+      # Two shifts: 0-500 and 600-1000
+      # depot_reload_time=800 exceeds each shift duration
+      # 4 clients each requiring full capacity
+      # Should serve 1 client per shift (2 total)
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000, service_duration: 800)
+        |> Model.add_client(
+          x: 0,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1000,
+          service_duration: 10,
+          delivery: [100],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_client(
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1000,
+          service_duration: 10,
+          delivery: [100],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_client(
+          x: 2,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1000,
+          service_duration: 10,
+          delivery: [100],
+          required: false,
+          prize: 100_000
+        )
+        |> Model.add_client(
+          x: 3,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1000,
+          service_duration: 10,
+          delivery: [100],
+          required: false,
+          prize: 100_000
+        )
+        # First shift: 0-500
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          tw_early: 0,
+          tw_late: 500,
+          shift_duration: 500,
+          name: "v0",
+          reload_depots: [0],
+          max_reloads: :infinity
+        )
+        # Second shift: 600-1000
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          tw_early: 600,
+          tw_late: 1000,
+          shift_duration: 400,
+          name: "v0",
+          reload_depots: [0],
+          max_reloads: :infinity
+        )
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+
+      # Should complete without hanging
+      assert result.best
+      assert Solution.feasible?(result.best)
+
+      # Should serve 2 clients total (one per shift)
+      assert Solution.num_clients(result.best) == 2
+    end
+  end
 end
