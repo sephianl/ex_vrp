@@ -256,108 +256,48 @@ bool Solution::insert(Route::Node *U,
         }
     }
 
+    // Compute wouldExceedCapacity BEFORE the insertion decision.
+    // This determines if multi-trip could help resolve the capacity issue.
+    bool wouldExceedCapacity = false;
+    bool canUseMultiTrip = false;
     bool hasPrize = false;
-    bool multiTripAvailable = false;
-    bool multiTripFeasible = true;
+    bool clientFitsAlone = true;  // Does client fit in a single trip by itself?
 
-    if (!required && UAfter && UAfter->route())
+    if (UAfter && UAfter->route())
     {
+        auto *route = UAfter->route();
+        auto const &vehType = data_.vehicleType(route->vehicleType());
+        canUseMultiTrip = !vehType.reloadDepots.empty()
+                          && route->numTrips() < route->maxTrips();
+
         auto const clientLoc = U->client();
         if (clientLoc >= data_.numDepots())
         {
             ProblemData::Client const &client = data_.location(clientLoc);
             hasPrize = client.prize > 0;
-        }
 
-        auto const &vehType = data_.vehicleType(UAfter->route()->vehicleType());
-        multiTripAvailable
-            = !vehType.reloadDepots.empty()
-              && UAfter->route()->numTrips() < UAfter->route()->maxTrips();
-
-        if (multiTripAvailable && !vehType.reloadDepots.empty())
-        {
-            auto const depotLoc = vehType.reloadDepots[0];
-            Duration depotServiceDur = 0;
-            auto const effectiveShiftDur
-                = vehType.shiftDuration < std::numeric_limits<Duration>::max()
-                      ? vehType.shiftDuration
-                      : vehType.twLate - vehType.twEarly;
-
-            if (depotLoc < data_.numDepots())
+            // Check if client fits alone in a trip
+            for (size_t d = 0;
+                 d < data_.numLoadDimensions() && d < vehType.capacity.size();
+                 ++d)
             {
-                ProblemData::Depot const &depot = data_.location(depotLoc);
-                depotServiceDur = depot.serviceDuration;
-                if (depotServiceDur > effectiveShiftDur)
-                    multiTripFeasible = false;
-            }
+                Load clientDemand = 0;
+                if (d < client.delivery.size())
+                    clientDemand = std::max(clientDemand, client.delivery[d]);
+                if (d < client.pickup.size())
+                    clientDemand = std::max(clientDemand, client.pickup[d]);
 
-            if (multiTripFeasible && clientLoc >= data_.numDepots())
-            {
-                ProblemData::Client const &clientData
-                    = data_.location(clientLoc);
-                for (size_t d = 0; d < data_.numLoadDimensions()
-                                   && d < vehType.capacity.size();
-                     ++d)
+                if (clientDemand > vehType.capacity[d])
                 {
-                    Load clientDemand = 0;
-                    if (d < clientData.delivery.size())
-                        clientDemand
-                            = std::max(clientDemand, clientData.delivery[d]);
-                    if (d < clientData.pickup.size())
-                        clientDemand
-                            = std::max(clientDemand, clientData.pickup[d]);
-
-                    if (clientDemand > vehType.capacity[d])
-                    {
-                        multiTripFeasible = false;
-                        break;
-                    }
-                }
-
-                if (multiTripFeasible)
-                {
-                    auto const clientServiceDur = clientData.serviceDuration;
-                    auto const combinedTime
-                        = clientServiceDur + depotServiceDur;
-                    // 90% threshold: if service + reload uses most of shift,
-                    // reject
-                    if (combinedTime.get() * 10 >= effectiveShiftDur.get() * 9)
-                        multiTripFeasible = false;
-                }
-
-                if (multiTripFeasible)
-                {
-                    auto const startDepot = vehType.startDepot;
-                    auto const profile = vehType.profile;
-                    auto const &durMatrix = data_.durationMatrix(profile);
-                    auto const travelTo = durMatrix(startDepot, clientLoc);
-                    auto const travelBack = durMatrix(clientLoc, startDepot);
-                    auto const clientServiceDur = clientData.serviceDuration;
-                    auto const minVisitTime
-                        = travelTo + clientServiceDur + travelBack;
-                    if (minVisitTime > effectiveShiftDur)
-                        multiTripFeasible = false;
+                    clientFitsAlone = false;
+                    break;
                 }
             }
         }
-    }
-
-    // Prevent infinite insert/remove loops: only allow prize-based insertion
-    // when multi-trip can actually make the client feasible.
-    auto const prizeJustifiesInsertion
-        = hasPrize && multiTripAvailable && multiTripFeasible;
-
-    if (required || bestCost < 0 || prizeJustifiesInsertion)
-    {
-        auto *route = UAfter->route();
-        auto const &vehType = data_.vehicleType(route->vehicleType());
-        bool wouldExceedCapacity = false;
 
         if (data_.numLoadDimensions() > 0 && !vehType.capacity.empty()
-            && !vehType.reloadDepots.empty()
-            && route->numTrips() < route->maxTrips())
+            && canUseMultiTrip)
         {
-            auto const clientLoc = U->client();
             if (clientLoc >= data_.numDepots())
             {
                 ProblemData::Client const &clientData
@@ -416,9 +356,37 @@ bool Solution::insert(Route::Node *U,
                 }
             }
         }
+    }
 
-        if (wouldExceedCapacity && !vehType.reloadDepots.empty()
-            && route->numTrips() < route->maxTrips())
+    // DISABLED: Multi-trip insertion override
+    //
+    // The original intent was to allow inserting clients into a new trip when:
+    // 1. The client has a prize (optional client)
+    // 2. Multi-trip is available
+    // 3. The client would exceed capacity if added to current trip
+    //
+    // However, this causes infinite loops because:
+    // 1. We insert the client with depot split
+    // 2. Route becomes infeasible due to TIME constraints (not just capacity)
+    // 3. Local search removes the client to improve feasibility
+    // 4. Route becomes feasible, we insert again
+    //
+    // A proper fix would need to:
+    // 1. Compute the actual cost INCLUDING time penalties
+    // 2. Or perform trial insertion and check feasibility
+    // 3. Or track which clients have been tried this iteration
+    //
+    // For now, multi-trip insertion only happens when bestCost < 0 (i.e., when
+    // the standard cost calculation already shows improvement).
+    (void)hasPrize;
+    (void)clientFitsAlone;
+
+    if (required || bestCost < 0)
+    {
+        auto *route = UAfter->route();
+        auto const &vehType = data_.vehicleType(route->vehicleType());
+
+        if (wouldExceedCapacity && canUseMultiTrip)
         {
             auto const insertIdx = UAfter->idx() + 1;
             Route::Node depot = {vehType.reloadDepots[0]};

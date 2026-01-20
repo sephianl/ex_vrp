@@ -44,6 +44,11 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
 {
     loadSolution(solution);
     search(costEvaluator);
+
+    // After the main search, try to insert unassigned clients via multi-trip.
+    // This is a one-time pass (not iterative) so it won't cause loops.
+    improveWithMultiTrip(costEvaluator);
+
     return solution_.unload();
 }
 
@@ -503,6 +508,134 @@ void LocalSearch::markRequiredMissingAsPromising()
     }
 }
 
+void LocalSearch::improveWithMultiTrip(
+    [[maybe_unused]] CostEvaluator const &costEvaluator)
+{
+    // This function tries to insert unassigned clients with prizes by creating
+    // new trips. Unlike the main local search insert logic, this is a one-time
+    // pass that won't cause infinite loops.
+    //
+    // For each unassigned client with a prize:
+    // 1. Check if the client fits alone in a trip (capacity check)
+    // 2. Find a route with multi-trip capability
+    // 3. Estimate if adding a new trip is beneficial (prize vs travel cost)
+    // 4. If yes, insert the client as a new trip
+
+    for (auto client = data.numDepots(); client != data.numLocations();
+         ++client)
+    {
+        auto *U = &solution_.nodes[client];
+        if (U->route())  // already assigned
+            continue;
+
+        ProblemData::Client const &clientData = data.location(client);
+        if (clientData.prize <= 0)  // no prize, skip
+            continue;
+
+        // Find the best route to add a new trip
+        Route *bestRoute = nullptr;
+        Cost bestCost = 0;  // Must be negative to be worth inserting
+
+        for (auto &route : solution_.routes)
+        {
+            if (route.empty())
+                continue;
+
+            auto const &vehType = data.vehicleType(route.vehicleType());
+
+            // Check if multi-trip is available
+            if (vehType.reloadDepots.empty())
+                continue;
+            if (route.numTrips() >= route.maxTrips())
+                continue;
+
+            // Check if route is currently feasible (avoid making bad routes
+            // worse)
+            if (!route.isFeasible())
+                continue;
+
+            // Check if client fits alone in a trip
+            bool clientFits = true;
+            for (size_t d = 0;
+                 d < data.numLoadDimensions() && d < vehType.capacity.size();
+                 ++d)
+            {
+                Load clientDemand = 0;
+                if (d < clientData.delivery.size())
+                    clientDemand
+                        = std::max(clientDemand, clientData.delivery[d]);
+                if (d < clientData.pickup.size())
+                    clientDemand = std::max(clientDemand, clientData.pickup[d]);
+
+                if (clientDemand > vehType.capacity[d])
+                {
+                    clientFits = false;
+                    break;
+                }
+            }
+
+            if (!clientFits)
+                continue;
+
+            // Estimate the cost of adding a new trip
+            auto const reloadDepot = vehType.reloadDepots[0];
+            auto const profile = vehType.profile;
+            auto const &distMatrix = data.distanceMatrix(profile);
+            auto const &durMatrix = data.durationMatrix(profile);
+
+            auto const dist = distMatrix(reloadDepot, client)
+                              + distMatrix(client, reloadDepot);
+            auto const dur = durMatrix(reloadDepot, client)
+                             + durMatrix(client, reloadDepot)
+                             + clientData.serviceDuration;
+
+            // Check if adding this trip would exceed shift duration
+            auto const shiftDuration = vehType.shiftDuration;
+            auto const currentDuration = route.duration();
+            if (shiftDuration < std::numeric_limits<Duration>::max())
+            {
+                Duration reloadTime = 0;
+                if (reloadDepot < data.numDepots())
+                {
+                    ProblemData::Depot const &depot
+                        = data.location(reloadDepot);
+                    reloadTime = depot.serviceDuration;
+                }
+
+                if (currentDuration + dur + reloadTime > shiftDuration)
+                    continue;  // Would exceed shift duration
+            }
+
+            // Calculate cost: prize gained minus travel cost
+            Cost tripCost = -static_cast<Cost>(clientData.prize)
+                            + static_cast<Cost>(dist.get());
+
+            if (tripCost < bestCost)
+            {
+                bestCost = tripCost;
+                bestRoute = &route;
+            }
+        }
+
+        // If we found a beneficial route, insert the client
+        if (bestRoute && bestCost < 0)
+        {
+            auto const &vehType = data.vehicleType(bestRoute->vehicleType());
+            auto const reloadDepot = vehType.reloadDepots[0];
+
+            // Insert at the end of the route as a new trip
+            auto const insertIdx = bestRoute->size() - 1;  // Before end depot
+            Route::Node depot = {reloadDepot};
+            bestRoute->insert(insertIdx, &depot);
+            bestRoute->insert(insertIdx + 1, U);
+            bestRoute->update();
+
+            // Mark as promising for future iterations
+            searchSpace_.markPromising(U);
+        }
+    }
+}
+
 void LocalSearch::update(Route *U, Route *V)
 {
     numUpdates_++;
@@ -604,7 +737,8 @@ LocalSearch::LocalSearch(ProblemData const &data,
 {
     // Build client-to-same-vehicle-groups lookup for efficient constraint
     // checking during local search.
-    for (size_t groupIdx = 0; groupIdx != data.numSameVehicleGroups(); ++groupIdx)
+    for (size_t groupIdx = 0; groupIdx != data.numSameVehicleGroups();
+         ++groupIdx)
         for (auto const client : data.sameVehicleGroup(groupIdx))
             clientToSameVehicleGroups_[client].push_back(groupIdx);
 }

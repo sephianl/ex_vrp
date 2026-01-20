@@ -87,6 +87,10 @@ class LocalSearch
     // they get inserted.
     void markRequiredMissingAsPromising();
 
+    // Tries to insert unassigned clients with prizes by creating new trips.
+    // This is a one-time pass after the main search, not iterative.
+    void improveWithMultiTrip(CostEvaluator const &costEvaluator);
+
 public:
     /**
      * Simple data structure that tracks statistics about the number of local
