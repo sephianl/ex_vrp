@@ -9,6 +9,7 @@ defmodule ExVrp.MixProject do
       app: :ex_vrp,
       version: @version,
       elixir: "~> 1.15",
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       compilers: [:elixir_make] ++ Mix.compilers(),
@@ -52,6 +53,10 @@ defmodule ExVrp.MixProject do
       mod: {ExVrp.Application, []}
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "dev"]
+  defp elixirc_paths(:dev), do: ["lib", "dev"]
+  defp elixirc_paths(_), do: ["lib"]
 
   defp deps do
     [
