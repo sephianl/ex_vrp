@@ -13,6 +13,8 @@ defmodule ExVrp.Solver do
   alias ExVrp.PenaltyManager
   alias ExVrp.StoppingCriteria
 
+  require Logger
+
   @type solve_opts :: [
           max_iterations: pos_integer(),
           max_runtime: pos_integer(),
@@ -78,12 +80,16 @@ defmodule ExVrp.Solver do
   @dialyzer {:nowarn_function, solve: 2}
   @spec solve(Model.t(), solve_opts()) :: {:ok, IteratedLocalSearch.Result.t()} | {:error, term()}
   def solve(%Model{} = model, opts \\ []) do
+    solve_start = System.monotonic_time(:millisecond)
     opts = Keyword.merge(@default_opts, opts)
 
     seed = opts[:seed] || :rand.uniform(1_000_000)
     :rand.seed(:exsplus, {seed, seed, seed})
 
     with {:ok, problem_data} <- Model.to_problem_data(model) do
+      problem_data_time = System.monotonic_time(:millisecond) - solve_start
+      Logger.info("Problem data created in #{problem_data_time}ms")
+
       # Initialize penalty manager
       penalty_params = opts[:penalty_params] || %PenaltyManager.Params{}
       penalty_manager = PenaltyManager.init_from(problem_data, penalty_params)
@@ -92,19 +98,31 @@ defmodule ExVrp.Solver do
       # This matches PyVRP's behavior where LocalSearch is created once in solve()
       # and reused for all iterations. The seed initializes the RNG stored in
       # the resource, which advances across calls.
+      local_search_start = System.monotonic_time(:millisecond)
       local_search = Native.create_local_search(problem_data, seed)
+      local_search_time = System.monotonic_time(:millisecond) - local_search_start
+      Logger.info("LocalSearch created (neighbours computed) in #{local_search_time}ms")
 
       # Create initial solution from empty (matches PyVRP behavior)
       # PyVRP: init = ls.search(Solution(data, []), pm.max_cost_evaluator())
+      initial_solution_start = System.monotonic_time(:millisecond)
       {:ok, max_cost_eval} = PenaltyManager.max_cost_evaluator(penalty_manager)
       {:ok, empty_solution} = Native.create_solution_from_routes(problem_data, [])
       {:ok, initial_solution} = Native.local_search_search_run(local_search, empty_solution, max_cost_eval)
+      initial_solution_time = System.monotonic_time(:millisecond) - initial_solution_start
+      Logger.info("Initial solution generated in #{initial_solution_time}ms")
+
+      total_setup_time = System.monotonic_time(:millisecond) - solve_start
+      Logger.info("Total setup time before ILS: #{total_setup_time}ms")
 
       # Build stopping criterion
       stop_fn = build_stop_fn(opts)
 
       # Run ILS
       ils_params = opts[:ils_params] || %IteratedLocalSearch.Params{}
+
+      Logger.info("Starting ILS iterations")
+      ils_start = System.monotonic_time(:millisecond)
 
       result =
         IteratedLocalSearch.run(
@@ -116,6 +134,11 @@ defmodule ExVrp.Solver do
           ils_params,
           seed: seed
         )
+
+      ils_time = System.monotonic_time(:millisecond) - ils_start
+      total_time = System.monotonic_time(:millisecond) - solve_start
+      Logger.info("ILS completed in #{ils_time}ms (#{result.num_iterations} iterations)")
+      Logger.info("Total solve time: #{total_time}ms (setup: #{total_setup_time}ms, ILS: #{ils_time}ms)")
 
       {:ok, result}
     end
