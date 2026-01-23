@@ -1117,17 +1117,24 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
                 // finalise the current segment. We first travel there. We need
                 // to end the segment within the depot's time windows to
                 // properly account for any release time on our segment.
-                ProblemData::Depot const &depot = data.location(other.last());
-                DurationSegment const depotDS(
-                    depot.serviceDuration,
-                    0,
-                    0,
-                    std::numeric_limits<Duration>::max(),
-                    0);
-                ds = DurationSegment::merge(edgeDur, depotDS, ds);
+                //
+                // If the segment comes from a route (other.route() != nullptr),
+                // its duration() already includes the depot's service time.
+                // If not (e.g., ReloadDepotSegment), we need to add it here.
+                if (other.route() == nullptr)
+                {
+                    ProblemData::Depot const &depot
+                        = data.location(other.last());
+                    DurationSegment const depotDS(
+                        depot.serviceDuration,
+                        0,
+                        0,
+                        std::numeric_limits<Duration>::max(),
+                        0);
+                    ds = DurationSegment::merge(edgeDur, depotDS, ds);
+                    edgeDur = 0;  // we are already there!
+                }
                 ds = ds.finaliseFront();
-
-                edgeDur = 0;  // we are already there!
             }
 
             ds = DurationSegment::merge(edgeDur, other.duration(profile), ds);
