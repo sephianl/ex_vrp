@@ -74,7 +74,7 @@ public:
      */
     OperatorStatistics const &statistics() const { return stats_; }
 
-    LocalSearchOperator(ProblemData const &data) : data(data){};
+    LocalSearchOperator(ProblemData const &data) : data(data) {};
     virtual ~LocalSearchOperator() = default;
 };
 

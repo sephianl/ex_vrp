@@ -148,6 +148,52 @@ defmodule ExVrp.SolveTest do
     end
   end
 
+  describe "prize-collecting problems" do
+    test "finds feasible solution quickly for high-prize optional clients" do
+      # Regression test: without prize-aware tw_penalty, this took 25+ seconds
+      # because the solver preferred keeping clients with time warp violations
+      # (low penalty) over removing them (losing high prize).
+
+      prize = 100_000
+      shift_duration = 8 * 3600
+
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: shift_duration)
+        |> Model.add_vehicle_type(
+          num_available: 5,
+          capacity: [1000],
+          tw_early: 0,
+          tw_late: shift_duration
+        )
+
+      # Add 20 optional clients with high prizes and tight time windows
+      model =
+        Enum.reduce(1..20, model, fn i, acc ->
+          angle = 2 * :math.pi() * i / 20
+          tw_start = div(i * shift_duration, 21)
+
+          Model.add_client(acc,
+            x: round(1000 * :math.cos(angle)),
+            y: round(1000 * :math.sin(angle)),
+            delivery: [10],
+            required: false,
+            prize: prize,
+            tw_early: tw_start,
+            tw_late: min(tw_start + 2 * 3600, shift_duration),
+            service_duration: 1800
+          )
+        end)
+
+      start = System.monotonic_time(:millisecond)
+      {:ok, result} = Solver.solve(model, max_iterations: 100)
+      elapsed = System.monotonic_time(:millisecond) - start
+
+      assert result.best.is_feasible == true
+      assert elapsed < 2000
+    end
+  end
+
   # Helper functions
 
   defp build_ok_small_model do

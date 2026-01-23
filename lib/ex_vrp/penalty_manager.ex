@@ -94,6 +94,27 @@ defmodule ExVrp.PenaltyManager do
     init_tw = avg_cost / max(avg_duration, 1.0)
     init_dist = avg_cost / max(avg_distance, 1.0)
 
+    # For prize-collecting problems, ensure tw_penalty is high enough relative
+    # to prizes. Otherwise the solver may prefer keeping clients with time warp
+    # violations over removing them.
+    # We want: tw_penalty * typical_time_warp > avg_prize
+    # Assuming typical time warp is ~1 hour (3600s), we need:
+    # tw_penalty > avg_prize / 3600
+    clients = Native.problem_data_clients_nif(problem_data)
+    prizes = Enum.map(clients, fn {_, _, _, prize} -> prize end)
+    max_prize = if Enum.empty?(prizes), do: 0, else: Enum.max(prizes)
+
+    init_tw =
+      if max_prize > 0 do
+        # Set tw_penalty so that even small time warps are heavily penalized.
+        # We want 1 minute (60s) of time warp to cost as much as one prize.
+        # This strongly discourages any time warp violations.
+        prize_based_tw = max_prize / 60.0
+        max(init_tw, prize_based_tw)
+      else
+        init_tw
+      end
+
     new(init_load, init_tw, init_dist, params)
   end
 

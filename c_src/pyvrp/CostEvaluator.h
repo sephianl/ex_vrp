@@ -172,8 +172,7 @@ public:
     template <bool exact = false,
               bool skipLoad = false,
               typename... Args,
-              template <typename...>
-              class T>
+              template <typename...> class T>
         requires(DeltaCostEvaluatable<T<Args...>>)
     bool deltaCost(Cost &out, T<Args...> const &proposal) const;
 
@@ -190,8 +189,7 @@ public:
               bool skipLoad = false,
               typename... uArgs,
               typename... vArgs,
-              template <typename...>
-              class T>
+              template <typename...> class T>
         requires(DeltaCostEvaluatable<T<uArgs...>>
                  && DeltaCostEvaluatable<T<vArgs...>>)
     bool deltaCost(Cost &out,
@@ -269,8 +267,7 @@ template <CostEvaluatable T> Cost CostEvaluator::cost(T const &arg) const
 template <bool exact,
           bool skipLoad,
           typename... Args,
-          template <typename...>
-          class T>
+          template <typename...> class T>
     requires(DeltaCostEvaluatable<T<Args...>>)
 bool CostEvaluator::deltaCost(Cost &out, T<Args...> const &proposal) const
 {
@@ -321,8 +318,7 @@ template <bool exact,
           bool skipLoad,
           typename... uArgs,
           typename... vArgs,
-          template <typename...>
-          class T>
+          template <typename...> class T>
     requires(DeltaCostEvaluatable<T<uArgs...>>
              && DeltaCostEvaluatable<T<vArgs...>>)
 bool CostEvaluator::deltaCost(Cost &out,

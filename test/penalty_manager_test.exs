@@ -317,6 +317,47 @@ defmodule ExVrp.PenaltyManagerTest do
       assert pm.dist_penalty <= pm.params.max_penalty
     end
 
+    test "computes prize-aware tw_penalty for optional clients" do
+      # When clients have high prizes, tw_penalty should be high enough
+      # that the solver prefers feasibility over collecting prizes
+      prize = 100_000
+
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 100, y: 0, delivery: [10], required: false, prize: prize)
+        |> Model.add_client(x: 0, y: 100, delivery: [10], required: false, prize: prize)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      pm = PenaltyManager.init_from(problem_data)
+
+      # tw_penalty should be at least prize / 60 so that 1 minute of time warp
+      # costs as much as one client's prize
+      min_expected_tw_penalty = prize / 60.0
+      assert pm.tw_penalty >= min_expected_tw_penalty
+    end
+
+    test "tw_penalty is not affected when clients have no prizes" do
+      # For required clients (no prizes), tw_penalty should be computed
+      # from distance/duration only, not inflated
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 100, y: 0, delivery: [10])
+        |> Model.add_client(x: 0, y: 100, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      pm = PenaltyManager.init_from(problem_data)
+
+      # tw_penalty should be reasonable (not inflated by prizes)
+      # For a simple model without prizes, it should be relatively small
+      assert pm.tw_penalty < 100
+    end
+
     test "handles multi-profile problems" do
       # Model with allowed_clients creates multiple profiles
       model =
