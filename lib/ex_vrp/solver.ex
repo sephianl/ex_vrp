@@ -109,6 +109,7 @@ defmodule ExVrp.Solver do
       {:ok, max_cost_eval} = PenaltyManager.max_cost_evaluator(penalty_manager)
       {:ok, empty_solution} = Native.create_solution_from_routes(problem_data, [])
       {:ok, initial_solution} = Native.local_search_search_run(local_search, empty_solution, max_cost_eval)
+
       initial_solution_time = System.monotonic_time(:millisecond) - initial_solution_start
       Logger.info("Initial solution generated in #{initial_solution_time}ms")
 

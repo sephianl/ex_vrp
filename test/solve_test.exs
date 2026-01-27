@@ -194,6 +194,203 @@ defmodule ExVrp.SolveTest do
     end
   end
 
+  describe "tight time window prize-collecting" do
+    test "finds all 4 clients with tight shift durations" do
+      # Regression test for prize-collecting problem where only one valid
+      # client-to-vehicle assignment exists. Previously failed ~58% of the time.
+      #
+      # Model: 4 optional clients with high prizes (100k each), 2 vehicle types
+      # with tight 900-second shifts. Only one assignment is feasible:
+      # VT0 (shift 0-900): clients 2,3
+      # VT1 (shift 10800-11700): clients 1,4
+      # Non-uniform distances - some clients far from each other (1000)
+      matrix = [
+        [0, 60, 120, 180, 240],
+        [60, 0, 120, 1000, 1000],
+        [120, 1000, 0, 180, 1000],
+        [180, 1000, 1000, 0, 240],
+        [240, 1000, 1000, 1000, 0]
+      ]
+
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 28_800, service_duration: 0)
+        |> Model.add_client(
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 28_800,
+          service_duration: 60,
+          required: false,
+          prize: 100_000,
+          delivery: [1000, 50, 1, 0],
+          pickup: [0, 0, 0, 0]
+        )
+        |> Model.add_client(
+          x: 2,
+          y: 0,
+          tw_early: 0,
+          tw_late: 28_800,
+          service_duration: 120,
+          required: false,
+          prize: 100_000,
+          delivery: [1000, 50, 1, 0],
+          pickup: [0, 0, 0, 0]
+        )
+        |> Model.add_client(
+          x: 3,
+          y: 0,
+          tw_early: 0,
+          tw_late: 28_800,
+          service_duration: 180,
+          required: false,
+          prize: 100_000,
+          delivery: [1000, 50, 1, 0],
+          pickup: [0, 0, 0, 0]
+        )
+        |> Model.add_client(
+          x: 4,
+          y: 0,
+          tw_early: 0,
+          tw_late: 28_800,
+          service_duration: 240,
+          required: false,
+          prize: 100_000,
+          delivery: [1000, 50, 1, 0],
+          pickup: [0, 0, 0, 0]
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          tw_early: 0,
+          tw_late: 900,
+          shift_duration: 900,
+          capacity: [100_000, 50, 1, 50],
+          reload_depots: [0]
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          tw_early: 10_800,
+          tw_late: 11_700,
+          shift_duration: 900,
+          capacity: [100_000, 50, 1, 50],
+          reload_depots: [0]
+        )
+        |> Model.set_distance_matrices([matrix])
+        |> Model.set_duration_matrices([matrix])
+
+      # Test multiple seeds to ensure stability
+      for seed <- [1, 42, 123, 456, 789] do
+        {:ok, result} = Solver.solve(model, max_iterations: 1000, seed: seed)
+
+        assert result.best.num_clients == 4,
+               "Seed #{seed} only found #{result.best.num_clients} clients"
+
+        assert result.best.is_feasible == true,
+               "Seed #{seed} solution not feasible"
+      end
+    end
+
+    test "finds all 4 clients with disjoint vehicle time windows" do
+      # Regression test for prize-collecting problem where clients must be
+      # assigned to specific vehicle types based on time windows.
+      #
+      # Model: 4 optional clients with high prizes (100k each), 2 vehicle types
+      # VT0: tw=[0, 400], can serve clients 1,2 (tw=[0,100], [300,400])
+      # VT1: tw=[400, 1000], can serve clients 3,4 (tw=[400,810], [820,1500])
+      distance_matrix = [
+        [0, 1, 2, 1, 1],
+        [61, 0, 4, 3, 2],
+        [61, 4, 0, 4, 1],
+        [61, 3, 4, 0, 4],
+        [61, 2, 1, 4, 0]
+      ]
+
+      duration_matrix = [
+        [0, 1, 2, 1, 1],
+        [1, 0, 4, 3, 2],
+        [1, 4, 0, 4, 1],
+        [1, 3, 4, 0, 4],
+        [1, 2, 1, 4, 0]
+      ]
+
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 86_400, service_duration: 60)
+        |> Model.add_client(
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 100,
+          service_duration: 15,
+          required: false,
+          prize: 100_000,
+          delivery: [0, 0, 0],
+          pickup: [10, 100, 100]
+        )
+        |> Model.add_client(
+          x: 2,
+          y: 0,
+          tw_early: 300,
+          tw_late: 400,
+          service_duration: 15,
+          required: false,
+          prize: 100_000,
+          delivery: [0, 0, 0],
+          pickup: [10, 100, 100]
+        )
+        |> Model.add_client(
+          x: 3,
+          y: 0,
+          tw_early: 400,
+          tw_late: 810,
+          service_duration: 15,
+          required: false,
+          prize: 100_000,
+          delivery: [0, 0, 0],
+          pickup: [10, 100, 100]
+        )
+        |> Model.add_client(
+          x: 4,
+          y: 0,
+          tw_early: 820,
+          tw_late: 1500,
+          service_duration: 15,
+          required: false,
+          prize: 100_000,
+          delivery: [0, 0, 0],
+          pickup: [10, 100, 100]
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          tw_early: 0,
+          tw_late: 400,
+          shift_duration: 400,
+          capacity: [100, 100, 100],
+          reload_depots: [0]
+        )
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          tw_early: 400,
+          tw_late: 1000,
+          shift_duration: 600,
+          capacity: [100, 100, 100],
+          reload_depots: [0]
+        )
+        |> Model.set_distance_matrices([distance_matrix])
+        |> Model.set_duration_matrices([duration_matrix])
+
+      for seed <- [1, 42, 123, 456, 789] do
+        {:ok, result} = Solver.solve(model, max_iterations: 100, seed: seed)
+
+        assert result.best.num_clients == 4,
+               "Seed #{seed} only found #{result.best.num_clients} clients"
+
+        assert result.best.is_feasible == true,
+               "Seed #{seed} solution not feasible"
+      end
+    end
+  end
+
   # Helper functions
 
   defp build_ok_small_model do

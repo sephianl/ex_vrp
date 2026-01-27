@@ -283,6 +283,7 @@ struct LocalSearchResource
     std::unique_ptr<search::Exchange<2, 2>> exchange22;
     std::unique_ptr<search::SwapTails> swapTails;
     std::unique_ptr<search::RelocateWithDepot> relocateDepot;
+    std::unique_ptr<search::SwapRoutes> swapRoutes;
 
     // The local search object (must be last - uses references to above)
     std::unique_ptr<search::LocalSearch> ls;
@@ -324,6 +325,15 @@ struct LocalSearchResource
         {
             relocateDepot = std::make_unique<search::RelocateWithDepot>(data);
             ls->addNodeOperator(*relocateDepot);
+        }
+
+        // Add route operators for better exploration of solution space
+        // SwapRoutes can help escape local optima in prize-collecting problems
+        // by swapping visits between vehicles
+        if (search::supports<search::SwapRoutes>(data))
+        {
+            swapRoutes = std::make_unique<search::SwapRoutes>(data);
+            ls->addRouteOperator(*swapRoutes);
         }
     }
 };
