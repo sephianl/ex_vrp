@@ -57,7 +57,6 @@ defmodule ExVrp do
       {:ok, solution} = ExVrp.solve(model, max_iterations: 5000)
 
   """
-  # Suppress dialyzer warning - the error case is valid but dialyzer infers it won't happen
   @dialyzer {:nowarn_function, solve: 1}
   @dialyzer {:nowarn_function, solve: 2}
   @spec solve(Model.t(), keyword()) :: {:ok, Solution.t()} | {:error, term()}
@@ -70,7 +69,6 @@ defmodule ExVrp do
 
   See `solve/2` for options.
   """
-  # Suppress dialyzer warning - NIF stubs appear as no_return but work at runtime
   @dialyzer {:nowarn_function, solve!: 1}
   @dialyzer {:nowarn_function, solve!: 2}
   @spec solve!(Model.t(), keyword()) :: Solution.t()

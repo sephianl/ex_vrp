@@ -75,7 +75,6 @@ defmodule ExVrp.Solver do
       {:ok, result} = Solver.solve(model, max_runtime: 60.0)
 
   """
-  # Suppress dialyzer warning - errors are possible but dialyzer infers they won't happen
   @dialyzer {:nowarn_function, solve: 1}
   @dialyzer {:nowarn_function, solve: 2}
   @spec solve(Model.t(), solve_opts()) :: {:ok, IteratedLocalSearch.Result.t()} | {:error, term()}
