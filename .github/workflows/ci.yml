@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DEVENV_NO_GIT_HOOKS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Install devenv
+        run: |
+          nix profile install --accept-flake-config github:cachix/devenv/latest
+
+      - name: Cache Mix dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Get dependencies
+        run: |
+          devenv shell mix deps.get
+
+      - name: Check Elixir formatting
+        run: |
+          devenv shell mix format --check-formatted
+
+      - name: Run Elixir checks
+        run: |
+          devenv shell mix check
+
+      - name: Check C++ formatting
+        run: |
+          devenv shell task cpp:format:check
+
+      - name: Run C++ static analysis
+        run: |
+          devenv shell task cpp:check
+
+      - name: Compile
+        run: |
+          devenv shell mix compile --warnings-as-errors
+
+      - name: Run tests
+        run: |
+          devenv shell mix test
+
+      - name: Run AddressSanitizer tests
+        run: |
+          devenv shell task test:asan
