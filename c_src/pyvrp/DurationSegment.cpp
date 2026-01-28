@@ -26,7 +26,7 @@ DurationSegment::DurationSegment(ProblemData::Client const &client)
 {
 }
 
-DurationSegment::DurationSegment(ProblemData::Depot const &depot) {}
+DurationSegment::DurationSegment(ProblemData::Depot const & /* depot */) {}
 
 DurationSegment::DurationSegment(ProblemData::VehicleType const &vehicleType,
                                  Duration const twLate)
