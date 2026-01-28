@@ -283,30 +283,60 @@ defmodule ExVrp.Neighbourhood do
     end
   end
 
-  defp extract_top_k(proximity, num_depots, num_locs, k) do
-    # Get sorted indices for each row (ascending by proximity)
-    sorted_indices = Nx.argsort(proximity, axis: 1)
+  defp extract_top_k(_proximity, num_depots, _num_locs, k) when k <= 0 do
+    for _ <- 0..(num_depots - 1), do: []
+  end
 
-    # Build neighbour lists
+  defp extract_top_k(proximity, num_depots, num_locs, k) do
     depot_neighbours = for _ <- 0..(num_depots - 1), do: []
 
     client_neighbours =
       if num_depots < num_locs do
         for i <- num_depots..(num_locs - 1) do
-          # Get sorted indices for row i
-          row_indices = Nx.slice(sorted_indices, [i, 0], [1, num_locs])
-
-          # Convert to list and take first k valid clients (excluding depots and self)
-          row_indices
-          |> Nx.to_flat_list()
-          |> Enum.filter(fn j -> j >= num_depots and j != i end)
-          |> Enum.take(k)
+          proximity
+          |> extract_row_candidates(i, num_locs, num_depots)
+          |> k_smallest(k)
+          |> Enum.map(fn {_prox, idx} -> idx end)
         end
       else
         []
       end
 
     depot_neighbours ++ client_neighbours
+  end
+
+  defp extract_row_candidates(proximity, row_idx, num_locs, num_depots) do
+    proximity
+    |> Nx.slice([row_idx, 0], [1, num_locs])
+    |> Nx.to_flat_list()
+    |> Enum.with_index()
+    |> Enum.filter(fn {_prox, j} -> j >= num_depots and j != row_idx end)
+  end
+
+  # Returns the k elements with smallest first-tuple values, sorted ascending.
+  # Uses a bounded gb_set (balanced tree) for O(n log k) complexity.
+  defp k_smallest(_candidates, k) when k <= 0, do: []
+
+  defp k_smallest(candidates, k) do
+    candidates
+    |> Enum.reduce({:gb_sets.new(), 0}, &accumulate_smallest(&1, &2, k))
+    |> elem(0)
+    |> :gb_sets.to_list()
+  end
+
+  defp accumulate_smallest(candidate, {set, count}, k) when count < k do
+    {:gb_sets.add(candidate, set), count + 1}
+  end
+
+  defp accumulate_smallest({prox, _} = candidate, {set, count}, _k) do
+    {max_prox, _} = max_elem = :gb_sets.largest(set)
+
+    if prox < max_prox do
+      set = :gb_sets.delete(max_elem, set)
+      {:gb_sets.add(candidate, set), count}
+    else
+      {set, count}
+    end
   end
 
   defp symmetrize_neighbours(neighbours, num_locs, num_depots) do
