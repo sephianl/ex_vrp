@@ -80,7 +80,7 @@ defmodule ExVrp.PenaltyManager do
     num_dims = Native.problem_data_num_load_dims(problem_data)
     num_locs = Native.problem_data_num_locations(problem_data)
 
-    edge_costs = compute_min_edge_costs(problem_data, num_locs)
+    edge_costs = compute_min_edge_costs(problem_data)
     min_distances = compute_min_matrix(problem_data, &Native.problem_data_distance_matrix_nif/2)
     min_durations = compute_min_matrix(problem_data, &Native.problem_data_duration_matrix_nif/2)
 
@@ -118,28 +118,25 @@ defmodule ExVrp.PenaltyManager do
     new(init_load, init_tw, init_dist, params)
   end
 
-  defp compute_min_edge_costs(problem_data, num_locs) do
+  defp compute_min_edge_costs(problem_data) do
     problem_data
     |> Native.problem_data_vehicle_types_nif()
     |> Enum.uniq()
     |> Enum.map(fn {unit_dist, unit_dur, profile} ->
-      compute_edge_cost_matrix(problem_data, profile, unit_dist, unit_dur, num_locs)
+      compute_edge_cost_matrix(problem_data, profile, unit_dist, unit_dur)
     end)
     |> elementwise_min_matrices()
   end
 
-  defp compute_edge_cost_matrix(problem_data, profile, unit_dist, unit_dur, num_locs) do
+  defp compute_edge_cost_matrix(problem_data, profile, unit_dist, unit_dur) do
     dist_mat = Native.problem_data_distance_matrix_nif(problem_data, profile)
     dur_mat = Native.problem_data_duration_matrix_nif(problem_data, profile)
 
-    for i <- 0..(num_locs - 1) do
-      row_dist = Enum.at(dist_mat, i)
-      row_dur = Enum.at(dur_mat, i)
-
-      for j <- 0..(num_locs - 1) do
-        unit_dist * Enum.at(row_dist, j) + unit_dur * Enum.at(row_dur, j)
-      end
-    end
+    Enum.zip_with(dist_mat, dur_mat, fn row_dist, row_dur ->
+      Enum.zip_with(row_dist, row_dur, fn d, t ->
+        unit_dist * d + unit_dur * t
+      end)
+    end)
   end
 
   defp compute_min_matrix(problem_data, matrix_fn) do
