@@ -247,8 +247,8 @@ Cost CostEvaluator::penalisedCost(T const &arg) const
     // Standard objective plus infeasibility-related penalty terms.
     auto const cost
         = arg.distanceCost() + arg.durationCost() + arg.fixedVehicleCost()
-          + excessLoadPenalties(arg.excessLoad()) + twPenalty(arg.timeWarp())
-          + distPenalty(arg.excessDistance(), 0);
+          + arg.reloadCost() + excessLoadPenalties(arg.excessLoad())
+          + twPenalty(arg.timeWarp()) + distPenalty(arg.excessDistance(), 0);
 
     if constexpr (PrizeCostEvaluatable<T>)
         return cost + arg.uncollectedPrizes();

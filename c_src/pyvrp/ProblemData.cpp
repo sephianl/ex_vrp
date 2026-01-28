@@ -287,12 +287,14 @@ ProblemData::Depot::Depot(Coordinate x,
                           Duration twEarly,
                           Duration twLate,
                           Duration serviceDuration,
+                          Cost reloadCost,
                           std::string name)
     : x(x),
       y(y),
       twEarly(twEarly),
       twLate(twLate),
       serviceDuration(serviceDuration),
+      reloadCost(reloadCost),
       name(duplicate(name.data()))
 {
     if (twEarly > twLate)
@@ -303,6 +305,9 @@ ProblemData::Depot::Depot(Coordinate x,
 
     if (serviceDuration < 0)
         throw std::invalid_argument("service_duration must be >= 0.");
+
+    if (reloadCost < 0)
+        throw std::invalid_argument("reload_cost must be >= 0.");
 }
 
 ProblemData::Depot::Depot(Depot const &depot)
@@ -311,6 +316,7 @@ ProblemData::Depot::Depot(Depot const &depot)
       twEarly(depot.twEarly),
       twLate(depot.twLate),
       serviceDuration(depot.serviceDuration),
+      reloadCost(depot.reloadCost),
       name(duplicate(depot.name))
 {
 }
@@ -321,6 +327,7 @@ ProblemData::Depot::Depot(Depot &&depot)
       twEarly(depot.twEarly),
       twLate(depot.twLate),
       serviceDuration(depot.serviceDuration),
+      reloadCost(depot.reloadCost),
       name(depot.name)  // we can steal
 {
     depot.name = nullptr;  // stolen
@@ -336,6 +343,7 @@ bool ProblemData::Depot::operator==(Depot const &other) const
         && twEarly == other.twEarly
         && twLate == other.twLate
         && serviceDuration == other.serviceDuration
+        && reloadCost == other.reloadCost
         && std::strcmp(name, other.name) == 0;
     // clang-format on
 }

@@ -69,7 +69,8 @@ void RelocateWithDepot::evalDepotBefore(Cost fixedCost,
 
         for (auto const depot : vehType.reloadDepots)
         {
-            auto deltaCost = fixedCost;
+            ProblemData::Depot const &depotData = data.location(depot);
+            auto deltaCost = fixedCost + depotData.reloadCost;
             costEvaluator.deltaCost(
                 deltaCost,
                 uProposal,
@@ -87,7 +88,8 @@ void RelocateWithDepot::evalDepotBefore(Cost fixedCost,
         auto const *route = vRoute;
         for (auto const depot : vehType.reloadDepots)
         {
-            auto deltaCost = fixedCost;
+            ProblemData::Depot const &depotData = data.location(depot);
+            auto deltaCost = fixedCost + depotData.reloadCost;
             if (U->idx() < V->idx())
                 costEvaluator.deltaCost(
                     deltaCost,
@@ -127,7 +129,8 @@ void RelocateWithDepot::evalDepotAfter(Cost fixedCost,
 
         for (auto const depot : vehType.reloadDepots)
         {
-            Cost deltaCost = fixedCost;
+            ProblemData::Depot const &depotData = data.location(depot);
+            Cost deltaCost = fixedCost + depotData.reloadCost;
             costEvaluator.deltaCost(
                 deltaCost,
                 uProposal,
@@ -145,7 +148,8 @@ void RelocateWithDepot::evalDepotAfter(Cost fixedCost,
         auto const *route = vRoute;
         for (auto const depot : vehType.reloadDepots)
         {
-            Cost deltaCost = fixedCost;
+            ProblemData::Depot const &depotData = data.location(depot);
+            Cost deltaCost = fixedCost + depotData.reloadCost;
             if (U->idx() < V->idx())
                 costEvaluator.deltaCost(
                     deltaCost,
@@ -180,7 +184,8 @@ void RelocateWithDepot::evalInPlaceDepot(Route::Node *V,
 
     for (auto const depot : vehType.reloadDepots)
     {
-        Cost deltaCost = 0;
+        ProblemData::Depot const &depotData = data.location(depot);
+        Cost deltaCost = depotData.reloadCost;
         costEvaluator.deltaCost(deltaCost,
                                 Route::Proposal(route->before(V->idx()),
                                                 ReloadDepotSegment(data, depot),

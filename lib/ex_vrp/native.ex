@@ -81,6 +81,7 @@ defmodule ExVrp.Native do
     solution_route_wait_duration: 2,
     solution_route_distance_cost: 2,
     solution_route_duration_cost: 2,
+    solution_route_reload_cost: 2,
     solution_route_prizes: 2,
     solution_route_visits: 2,
     solution_route_schedule: 2,
@@ -815,6 +816,12 @@ defmodule ExVrp.Native do
   """
   @spec solution_route_duration_cost(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_duration_cost(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Gets the reload cost of a specific route.
+  """
+  @spec solution_route_reload_cost(reference(), non_neg_integer()) :: non_neg_integer()
+  def solution_route_reload_cost(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Gets the prizes collected on a specific route.

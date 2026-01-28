@@ -11,6 +11,7 @@ defmodule ExVrp.Depot do
           tw_early: non_neg_integer(),
           tw_late: non_neg_integer(),
           service_duration: non_neg_integer(),
+          reload_cost: non_neg_integer(),
           name: String.t()
         }
 
@@ -21,6 +22,7 @@ defmodule ExVrp.Depot do
     tw_early: 0,
     tw_late: :infinity,
     service_duration: 0,
+    reload_cost: 0,
     name: ""
   ]
 
@@ -37,6 +39,7 @@ defmodule ExVrp.Depot do
   - `:tw_early` - Earliest departure time (default: `0`)
   - `:tw_late` - Latest return time (default: `:infinity`)
   - `:service_duration` - Time required for loading/unloading at this depot during reloads (default: `0`)
+  - `:reload_cost` - Cost incurred when a vehicle reloads at this depot (default: `0`)
   - `:name` - Depot name for identification (default: `""`)
 
   ## Examples

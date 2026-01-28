@@ -572,6 +572,7 @@ ProblemData::Depot decode_depot([[maybe_unused]] ErlNifEnv *env,
 {
     int64_t x = 0, y = 0;
     int64_t service_duration = 0;
+    int64_t reload_cost = 0;
 
     ERL_NIF_TERM key, value;
     ErlNifMapIterator iter;
@@ -600,6 +601,10 @@ ProblemData::Depot decode_depot([[maybe_unused]] ErlNifEnv *env,
             {
                 enif_get_int64(env, value, &service_duration);
             }
+            else if (key_str == "reload_cost")
+            {
+                enif_get_int64(env, value, &reload_cost);
+            }
         }
         enif_map_iterator_next(env, &iter);
     }
@@ -609,7 +614,8 @@ ProblemData::Depot decode_depot([[maybe_unused]] ErlNifEnv *env,
                               Coordinate(y),
                               Duration(0),
                               std::numeric_limits<Duration>::max(),
-                              Duration(service_duration));
+                              Duration(service_duration),
+                              Cost(reload_cost));
 }
 
 // Decode a single vehicle type from Elixir map
@@ -2002,6 +2008,28 @@ int64_t solution_route_duration_cost(
 }
 
 FINE_NIF(solution_route_duration_cost, 0);
+
+/**
+ * Get reload cost of a specific route.
+ */
+int64_t solution_route_reload_cost(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SolutionResource> solution_resource,
+    int64_t route_idx)
+{
+    auto &solution = solution_resource->solution;
+    auto const &routes = solution.routes();
+
+    if (route_idx < 0 || static_cast<size_t>(route_idx) >= routes.size())
+    {
+        return 0;
+    }
+
+    return static_cast<int64_t>(
+        routes[static_cast<size_t>(route_idx)].reloadCost());
+}
+
+FINE_NIF(solution_route_reload_cost, 0);
 
 /**
  * Get prizes collected on a specific route.

@@ -124,6 +124,7 @@ private:
     Duration startTime_ = 0;        // (earliest) start time of this route
     Duration slack_ = 0;            // Total time slack on this route
     Cost prizes_ = 0;               // Total value of prizes on this route
+    Cost reloadCost_ = 0;           // Total reload cost on this route
 
     std::pair<Coordinate, Coordinate> centroid_;  // Route center
     VehicleType vehicleType_;                     // Type of vehicle
@@ -285,6 +286,11 @@ public:
     [[nodiscard]] Cost prizes() const;
 
     /**
+     * Total reload cost incurred on this route.
+     */
+    [[nodiscard]] Cost reloadCost() const;
+
+    /**
      * Center point of the client locations on this route.
      */
     [[nodiscard]] std::pair<Coordinate, Coordinate> const &centroid() const;
@@ -356,6 +362,7 @@ public:
           Duration startTime,
           Duration slack,
           Cost prizes,
+          Cost reloadCost,
           std::pair<Coordinate, Coordinate> centroid,
           VehicleType vehicleType,
           Depot startDepot,

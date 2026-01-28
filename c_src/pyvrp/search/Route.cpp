@@ -64,6 +64,7 @@ Route::Route(ProblemData const &data, size_t idx, size_t vehicleType)
     : data(data),
       vehicleType_(data.vehicleType(vehicleType)),
       idx_(idx),
+      reloadCost_(0),
       loadAt(data.numLoadDimensions()),
       loadAfter(data.numLoadDimensions()),
       loadBefore(data.numLoadDimensions()),
@@ -373,6 +374,18 @@ void Route::update()
     auto const overtime = std::max<Duration>(duration_ - shiftDuration(), 0);
     durationCost_ = unitDurationCost() * static_cast<Cost>(duration_)
                     + unitOvertimeCost() * static_cast<Cost>(overtime);
+
+    // Calculate reload cost from all reload depots (excludes start/end depots)
+    reloadCost_ = 0;
+    for (size_t idx = 1; idx != nodes.size() - 1; ++idx)
+    {
+        if (nodes[idx]->isReloadDepot())
+        {
+            ProblemData::Depot const &depot
+                = data.location(nodes[idx]->client());
+            reloadCost_ += depot.reloadCost;
+        }
+    }
 
 #ifndef NDEBUG
     dirty = false;

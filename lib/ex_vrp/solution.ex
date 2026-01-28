@@ -235,6 +235,14 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
+  Returns the total reload cost of the solution.
+  """
+  @spec reload_cost(t()) :: non_neg_integer()
+  def reload_cost(%__MODULE__{} = sol) do
+    sum_over_routes(sol, &route_reload_cost/2)
+  end
+
+  @doc """
   Returns true if the solution has any excess load.
   """
   @spec has_excess_load?(t()) :: boolean()
@@ -467,6 +475,14 @@ defmodule ExVrp.Solution do
   @spec route_duration_cost(t(), non_neg_integer()) :: non_neg_integer()
   def route_duration_cost(%__MODULE__{solution_ref: solution_ref}, route_idx) do
     ExVrp.Native.solution_route_duration_cost(solution_ref, route_idx)
+  end
+
+  @doc """
+  Returns the reload cost of a specific route.
+  """
+  @spec route_reload_cost(t(), non_neg_integer()) :: non_neg_integer()
+  def route_reload_cost(%__MODULE__{solution_ref: solution_ref}, route_idx) do
+    ExVrp.Native.solution_route_reload_cost(solution_ref, route_idx)
   end
 
   @doc """

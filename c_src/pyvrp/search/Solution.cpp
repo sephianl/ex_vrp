@@ -402,11 +402,13 @@ bool Solution::insert(Route::Node *U,
                                + client.serviceDuration
                                + durMatrix(clientLoc, reloadDepot);
 
-            // Add reload depot service time
+            // Add reload depot service time and get reload cost
+            Cost reloadCost = 0;
             if (reloadDepot < data_.numDepots())
             {
                 ProblemData::Depot const &depot = data_.location(reloadDepot);
                 tripDur = tripDur + depot.serviceDuration;
+                reloadCost = depot.reloadCost;
             }
 
             // Check if route can accommodate the new trip duration
@@ -437,8 +439,8 @@ bool Solution::insert(Route::Node *U,
             if (returnToDepot > vehType.twLate)
                 continue;  // Would return after vehicle's time window ends
 
-            // Prize minus distance cost
-            Cost newTripCost = static_cast<Cost>(tripDist.get())
+            // Distance cost plus reload cost minus prize
+            Cost newTripCost = static_cast<Cost>(tripDist.get()) + reloadCost
                                - static_cast<Cost>(client.prize);
 
             if (newTripCost < bestCost)

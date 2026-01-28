@@ -310,6 +310,7 @@ private:
     Duration duration_;
     Cost durationCost_;
     Duration timeWarp_;
+    Cost reloadCost_;
 
     std::vector<Node> depots_;  // start, end, and reload depots (in that order)
 
@@ -456,6 +457,11 @@ public:
      * @return Cost of this route's duration, including overtime.
      */
     [[nodiscard]] inline Cost durationCost() const;
+
+    /**
+     * @return Total reload cost incurred on this route.
+     */
+    [[nodiscard]] inline Cost reloadCost() const;
 
     /**
      * @return Cost per unit of duration travelled on this route.
@@ -946,6 +952,12 @@ Cost Route::durationCost() const
 {
     assert(!dirty);
     return durationCost_;
+}
+
+Cost Route::reloadCost() const
+{
+    assert(!dirty);
+    return reloadCost_;
 }
 
 Cost Route::unitDurationCost() const { return vehicleType_.unitDurationCost; }

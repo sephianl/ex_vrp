@@ -55,6 +55,7 @@ class Solution
     Distance excessDistance_ = 0;   // Total excess distance over all routes
     std::vector<Load> excessLoad_;  // Total excess load over all routes
     Cost fixedVehicleCost_ = 0;     // Fixed cost of all used vehicles
+    Cost reloadCost_ = 0;           // Total reload cost over all routes
     Cost prizes_ = 0;               // Total collected prize value
     Cost uncollectedPrizes_ = 0;    // Total uncollected prize value
     Duration timeWarp_ = 0;         // Total time warp over all routes
@@ -209,6 +210,11 @@ public:
      * Returns the fixed vehicle cost of all vehicles used in this solution.
      */
     [[nodiscard]] Cost fixedVehicleCost() const;
+
+    /**
+     * Returns the total reload cost over all routes.
+     */
+    [[nodiscard]] Cost reloadCost() const;
 
     /**
      * Returns the total collected prize value over all routes.

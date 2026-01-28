@@ -39,6 +39,7 @@ void Solution::evaluate(ProblemData const &data)
         excessDistance_ += route.excessDistance();
         timeWarp_ += route.timeWarp();
         fixedVehicleCost_ += data.vehicleType(route.vehicleType()).fixedCost;
+        reloadCost_ += route.reloadCost();
 
         auto const &excessLoad = route.excessLoad();
         for (size_t dim = 0; dim != data.numLoadDimensions(); ++dim)
@@ -110,6 +111,8 @@ std::vector<Load> const &Solution::excessLoad() const { return excessLoad_; }
 Distance Solution::excessDistance() const { return excessDistance_; }
 
 Cost Solution::fixedVehicleCost() const { return fixedVehicleCost_; }
+
+Cost Solution::reloadCost() const { return reloadCost_; }
 
 Cost Solution::prizes() const { return prizes_; }
 

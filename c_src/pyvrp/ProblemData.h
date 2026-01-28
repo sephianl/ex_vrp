@@ -338,6 +338,7 @@ public:
      *    tw_early: int = 0,
      *    tw_late: int = np.iinfo(np.int64).max,
      *    service_duration: int = 0,
+     *    reload_cost: int = 0,
      *    *,
      *    name: str = "",
      * )
@@ -362,6 +363,10 @@ public:
      *     Time required for loading/unloading at this depot during reloads.
      *     This time is added when a vehicle visits this depot for reloading.
      *     Default 0.
+     * reload_cost
+     *     Cost incurred when a vehicle reloads at this depot. Only applies
+     *     when the depot is used as a reload depot (not for start/end).
+     *     Default 0.
      * name
      *     Free-form name field for this depot. Default empty.
      *
@@ -377,6 +382,8 @@ public:
      *     Closing time of this depot.
      * service_duration
      *     Time required for loading/unloading at this depot during reloads.
+     * reload_cost
+     *     Cost incurred when reloading at this depot.
      * name
      *     Free-form name field for this depot.
      */
@@ -387,13 +394,15 @@ public:
         Duration const twEarly;          // Depot opening time
         Duration const twLate;           // Depot closing time
         Duration const serviceDuration;  // Service time during reloads
-        char const *name;                // Depot name (for reference)
+        Cost const reloadCost;  // Cost incurred when reloading at depot
+        char const *name;       // Depot name (for reference)
 
         Depot(Coordinate x,
               Coordinate y,
               Duration twEarly = 0,
               Duration twLate = std::numeric_limits<Duration>::max(),
               Duration serviceDuration = 0,
+              Cost reloadCost = 0,
               std::string name = "");
 
         bool operator==(Depot const &other) const;

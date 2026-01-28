@@ -204,6 +204,7 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
       delivery_(data.numLoadDimensions(), 0),
       pickup_(data.numLoadDimensions(), 0),
       excessLoad_(data.numLoadDimensions(), 0),
+      reloadCost_(0),
       vehicleType_(vehType)
 {
     if (trips_.empty())  // then we insert a dummy trip for ease.
@@ -278,10 +279,13 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
 
         auto const edgeDuration = durations(trip->startDepot(), nextClient);
         ProblemData::Depot const &start = data.location(trip->startDepot());
-        // Service time is only applied at reload depots (not the first trip).
-        // In reverse iteration, trip + 1 == rend means this is the first trip.
+        // Service time and reload cost are only applied at reload depots (not
+        // the first trip). In reverse iteration, trip + 1 == rend means this is
+        // the first trip.
         bool const isReloadDepot = (trip + 1) != trips_.rend();
         Duration const serviceTime = isReloadDepot ? start.serviceDuration : 0;
+        if (isReloadDepot)
+            reloadCost_ += start.reloadCost;
         DurationSegment const depotDS(
             serviceTime, 0, 0, std::numeric_limits<Duration>::max(), 0);
 
@@ -317,6 +321,7 @@ Route::Route(Trips trips,
              Duration startTime,
              Duration slack,
              Cost prizes,
+             Cost reloadCost,
              std::pair<Coordinate, Coordinate> centroid,
              size_t vehicleType,
              size_t startDepot,
@@ -339,6 +344,7 @@ Route::Route(Trips trips,
       startTime_(startTime),
       slack_(slack),
       prizes_(prizes),
+      reloadCost_(reloadCost),
       centroid_(centroid),
       vehicleType_(vehicleType),
       startDepot_(startDepot),
@@ -424,6 +430,8 @@ Duration Route::slack() const { return slack_; }
 Duration Route::releaseTime() const { return trips_[0].releaseTime(); }
 
 Cost Route::prizes() const { return prizes_; }
+
+Cost Route::reloadCost() const { return reloadCost_; }
 
 std::pair<Coordinate, Coordinate> const &Route::centroid() const
 {
