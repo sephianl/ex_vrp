@@ -2761,12 +2761,20 @@ build_neighbours(ProblemData const &data,
                 proximities.emplace_back(edgeCosts[i][j], j);
             }
         }
-        // Stable sort to match PyVRP's numpy argsort behavior
-        std::stable_sort(proximities.begin(), proximities.end());
 
-        for (size_t n = 0; n < std::min(k, proximities.size()); ++n)
+        // Partial sort: only sort the first k elements - O(n log k) instead of
+        // O(n log n)
+        if (!proximities.empty())
         {
-            neighbours[i].push_back(proximities[n].second);
+            size_t k_actual = std::min(k, proximities.size());
+            std::partial_sort(proximities.begin(),
+                              proximities.begin() + k_actual,
+                              proximities.end());
+
+            for (size_t n = 0; n < k_actual; ++n)
+            {
+                neighbours[i].push_back(proximities[n].second);
+            }
         }
     }
 
