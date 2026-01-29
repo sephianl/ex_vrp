@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstring>
 #include <numeric>
 
@@ -17,19 +18,46 @@ using pyvrp::search::SearchSpace;
 
 pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
                                         CostEvaluator const &costEvaluator,
-                                        bool exhaustive)
+                                        bool exhaustive,
+                                        int64_t timeout_ms)
 {
     loadSolution(solution);
 
     if (!exhaustive)
         perturbationManager_.perturb(solution_, searchSpace_, costEvaluator);
 
+    markRequiredMissingAsPromising();
+
+    // Set up timeout tracking
+    if (timeout_ms > 0)
+    {
+        has_timeout_ = true;
+        timeout_deadline_ = std::chrono::steady_clock::now()
+                            + std::chrono::milliseconds(timeout_ms);
+    }
+    else
+    {
+        has_timeout_ = false;
+    }
+
     while (true)
     {
         search(costEvaluator);
-        auto const numUpdates = numUpdates_;  // after node search
+
+        // Check timeout after search
+        if (has_timeout_
+            && std::chrono::steady_clock::now() >= timeout_deadline_)
+            break;
+
+        auto const numUpdates = numUpdates_;
 
         intensify(costEvaluator);
+
+        // Check timeout after intensify
+        if (has_timeout_
+            && std::chrono::steady_clock::now() >= timeout_deadline_)
+            break;
+
         if (numUpdates_ == numUpdates)
             // Then intensify (route search) did not do any additional
             // updates, so the solution is locally optimal.
@@ -70,6 +98,11 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
     searchCompleted_ = false;
     for (int step = 0; !searchCompleted_; ++step)
     {
+        // Check timeout
+        if (has_timeout_
+            && std::chrono::steady_clock::now() >= timeout_deadline_)
+            return;
+
         searchCompleted_ = true;
 
         // Node operators are evaluated for neighbouring (U, V) pairs.
@@ -144,6 +177,11 @@ void LocalSearch::intensify(CostEvaluator const &costEvaluator)
     searchCompleted_ = false;
     while (!searchCompleted_)
     {
+        // Check timeout
+        if (has_timeout_
+            && std::chrono::steady_clock::now() >= timeout_deadline_)
+            return;
+
         searchCompleted_ = true;
 
         for (auto const rU : searchSpace_.routeOrder())
