@@ -31,6 +31,11 @@ class Solution
 {
     ProblemData const &data_;
 
+    // Track empty routes per vehicle type for fast lookup
+    std::vector<std::vector<size_t>>
+        emptyRoutesByType_;  // [vehType][route indices]
+    bool emptyRoutesCacheDirty_ = true;
+
 public:
     std::vector<Route::Node> nodes;  // size numLocations()
     std::vector<Route> routes;       // size numVehicles(), ordered by type
@@ -51,6 +56,12 @@ public:
                 SearchSpace const &searchSpace,
                 CostEvaluator const &costEvaluator,
                 bool required);
+
+    // Update empty routes cache
+    void updateEmptyRoutesCache();
+
+    // Mark cache as dirty
+    void markEmptyRoutesCacheDirty() { emptyRoutesCacheDirty_ = true; }
 };
 }  // namespace pyvrp::search
 

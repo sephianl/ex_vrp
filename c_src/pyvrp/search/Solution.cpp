@@ -85,6 +85,9 @@ void Solution::load(pyvrp::Solution const &solution)
 
         firstOfType = firstOfNextType;
     }
+
+    // Routes have been modified, invalidate cache
+    markEmptyRoutesCacheDirty();
 }
 
 pyvrp::Solution Solution::unload() const
@@ -131,6 +134,24 @@ pyvrp::Solution Solution::unload() const
     }
 
     return {data_, std::move(solRoutes)};
+}
+
+void Solution::updateEmptyRoutesCache()
+{
+    if (!emptyRoutesCacheDirty_)
+        return;
+
+    emptyRoutesByType_.clear();
+    emptyRoutesByType_.resize(data_.numVehicleTypes());
+
+    for (size_t rIdx = 0; rIdx < routes.size(); ++rIdx)
+    {
+        auto const &route = routes[rIdx];
+        if (route.empty())
+            emptyRoutesByType_[route.vehicleType()].push_back(rIdx);
+    }
+
+    emptyRoutesCacheDirty_ = false;
 }
 
 bool Solution::insert(Route::Node *U,
@@ -231,8 +252,53 @@ bool Solution::insert(Route::Node *U,
         }
     }
 
+    // Phase 2: Check other routes for insertion, prioritized by depot distance
+    updateEmptyRoutesCache();
+
+    // Build prioritized list of vehicle types by distance from depot to client
+    std::vector<std::pair<Distance, std::pair<size_t, size_t>>>
+        prioritizedTypes;
     for (auto const &[vehType, offset] : searchSpace.vehTypeOrder())
     {
+        auto const &vehTypeData = data_.vehicleType(vehType);
+        auto const depot = vehTypeData.startDepot;
+        auto const profile = vehTypeData.profile;
+        Distance distToClient
+            = data_.distanceMatrix(profile)(depot, U->client());
+        prioritizedTypes.emplace_back(distToClient,
+                                      std::make_pair(vehType, offset));
+    }
+    std::sort(prioritizedTypes.begin(), prioritizedTypes.end());
+
+    // Check routes in order of proximity, checking empty routes first
+    for (auto const &[dist, typeInfo] : prioritizedTypes)
+    {
+        auto const vehType = typeInfo.first;
+        auto const offset = typeInfo.second;
+
+        // First, check cached empty routes for this vehicle type
+        if (vehType < emptyRoutesByType_.size())
+        {
+            for (auto const rIdx : emptyRoutesByType_[vehType])
+            {
+                auto &route = routes[rIdx];
+                if (!isCompatibleRoute(&route))
+                    continue;
+
+                auto const cost = insertCost(U, route[0], data_, costEvaluator);
+                if (cost < bestCost)
+                {
+                    bestCost = cost;
+                    UAfter = route[0];
+
+                    // Early exit: found improving empty route insertion
+                    if (cost < 0)
+                        goto phase2_done;
+                }
+            }
+        }
+
+        // Then check non-empty routes for this vehicle type
         auto const begin = routes.begin() + offset;
         auto const end = begin + data_.vehicleType(vehType).numAvailable;
 
@@ -241,20 +307,26 @@ bool Solution::insert(Route::Node *U,
             if (!isCompatibleRoute(&*it))
                 continue;
 
-            if (!it->empty() && UAfter->route() == &*it)
-                continue;
+            if (it->empty())
+                continue;  // Already checked empty routes above
+
+            if (UAfter->route() == &*it)
+                continue;  // Already have best position in this route
 
             auto const cost = insertCost(U, (*it)[0], data_, costEvaluator);
             if (cost < bestCost)
             {
                 bestCost = cost;
                 UAfter = (*it)[0];
-
-                if (it->empty())
-                    break;
             }
         }
+
+        // Early exit: if we found an improving insertion, stop checking distant
+        // types
+        if (bestCost < 0)
+            break;
     }
+phase2_done:
 
     // Compute wouldExceedCapacity BEFORE the insertion decision.
     // This determines if multi-trip could help resolve the capacity issue.
@@ -370,85 +442,105 @@ bool Solution::insert(Route::Node *U,
     {
         // The regular insertion didn't find an improving move (bestCost >= 0).
         // Try inserting as a new trip on a route that supports multi-trip.
+        // Check vehicle types in prioritized order (nearest depots first).
         auto const clientLoc = U->client();
         ProblemData::Client const &client = data_.location(clientLoc);
 
-        for (auto &route : routes)
+        for (auto const &[dist, typeInfo] : prioritizedTypes)
         {
-            if (route.empty())
-                continue;
+            auto const vehType = typeInfo.first;
+            auto const offset = typeInfo.second;
 
-            auto const &vehType = data_.vehicleType(route.vehicleType());
-            if (vehType.reloadDepots.empty())
-                continue;
-            if (route.numTrips() >= route.maxTrips())
-                continue;
+            auto const &vehTypeData = data_.vehicleType(vehType);
+            if (vehTypeData.reloadDepots.empty())
+                continue;  // This vehicle type doesn't support multi-trip
 
-            // Skip routes that already have time warp
-            if (route.timeWarp() > 0)
-                continue;
+            auto const begin = routes.begin() + offset;
+            auto const end = begin + vehTypeData.numAvailable;
 
-            auto const reloadDepot = vehType.reloadDepots[0];
-            auto const profile = vehType.profile;
-            auto const &distMatrix = data_.distanceMatrix(profile);
-            auto const &durMatrix = data_.durationMatrix(profile);
-
-            // Calculate distance cost of the new trip
-            auto const tripDist = distMatrix(reloadDepot, clientLoc)
-                                  + distMatrix(clientLoc, reloadDepot);
-
-            // Calculate duration of the new trip (including depot service)
-            Duration tripDur = durMatrix(reloadDepot, clientLoc)
-                               + client.serviceDuration
-                               + durMatrix(clientLoc, reloadDepot);
-
-            // Add reload depot service time and get reload cost
-            Cost reloadCost = 0;
-            if (reloadDepot < data_.numDepots())
+            for (auto it = begin; it != end; ++it)
             {
-                ProblemData::Depot const &depot = data_.location(reloadDepot);
-                tripDur = tripDur + depot.serviceDuration;
-                reloadCost = depot.reloadCost;
+                auto &route = *it;
+                if (route.empty())
+                    continue;
+
+                if (route.numTrips() >= route.maxTrips())
+                    continue;
+
+                // Skip routes that already have time warp
+                if (route.timeWarp() > 0)
+                    continue;
+
+                auto const reloadDepot = vehTypeData.reloadDepots[0];
+                auto const profile = vehTypeData.profile;
+                auto const &distMatrix = data_.distanceMatrix(profile);
+                auto const &durMatrix = data_.durationMatrix(profile);
+
+                // Calculate distance cost of the new trip
+                auto const tripDist = distMatrix(reloadDepot, clientLoc)
+                                      + distMatrix(clientLoc, reloadDepot);
+
+                // Calculate duration of the new trip (including depot service)
+                Duration tripDur = durMatrix(reloadDepot, clientLoc)
+                                   + client.serviceDuration
+                                   + durMatrix(clientLoc, reloadDepot);
+
+                // Add reload depot service time and get reload cost
+                Cost reloadCost = 0;
+                if (reloadDepot < data_.numDepots())
+                {
+                    ProblemData::Depot const &depot
+                        = data_.location(reloadDepot);
+                    tripDur = tripDur + depot.serviceDuration;
+                    reloadCost = depot.reloadCost;
+                }
+
+                // Check if route can accommodate the new trip duration
+                Duration currentDuration = route.duration();
+                Duration maxDuration = vehTypeData.shiftDuration;
+                if (maxDuration < std::numeric_limits<Duration>::max()
+                    && currentDuration + tripDur > maxDuration)
+                    continue;  // New trip would exceed shift duration
+
+                // Check if the client's time window can be satisfied
+                // The new trip starts after the current route ends (at
+                // earliest)
+                Duration routeEndEarly
+                    = vehTypeData.twEarly + route.duration() - route.timeWarp();
+
+                // We depart for the new trip at routeEndEarly, arrive at client
+                Duration arriveAtClient
+                    = routeEndEarly + durMatrix(reloadDepot, clientLoc);
+
+                // Check client time window
+                if (arriveAtClient > client.twLate)
+                    continue;  // Would arrive too late for client
+
+                // Check vehicle time window
+                Duration finishService
+                    = std::max(arriveAtClient, client.twEarly)
+                      + client.serviceDuration;
+                Duration returnToDepot
+                    = finishService + durMatrix(clientLoc, reloadDepot);
+                if (returnToDepot > vehTypeData.twLate)
+                    continue;  // Would return after vehicle's time window ends
+
+                // Distance cost plus reload cost minus prize
+                Cost newTripCost = static_cast<Cost>(tripDist.get())
+                                   + reloadCost
+                                   - static_cast<Cost>(client.prize);
+
+                if (newTripCost < bestCost)
+                {
+                    bestCost = newTripCost;
+                    insertAsNewTrip = true;
+                    newTripRoute = &route;
+                }
             }
 
-            // Check if route can accommodate the new trip duration
-            Duration currentDuration = route.duration();
-            Duration maxDuration = vehType.shiftDuration;
-            if (maxDuration < std::numeric_limits<Duration>::max()
-                && currentDuration + tripDur > maxDuration)
-                continue;  // New trip would exceed shift duration
-
-            // Check if the client's time window can be satisfied
-            // The new trip starts after the current route ends (at earliest)
-            Duration routeEndEarly
-                = vehType.twEarly + route.duration() - route.timeWarp();
-
-            // We depart for the new trip at routeEndEarly, arrive at client
-            Duration arriveAtClient
-                = routeEndEarly + durMatrix(reloadDepot, clientLoc);
-
-            // Check client time window
-            if (arriveAtClient > client.twLate)
-                continue;  // Would arrive too late for client
-
-            // Check vehicle time window
-            Duration finishService = std::max(arriveAtClient, client.twEarly)
-                                     + client.serviceDuration;
-            Duration returnToDepot
-                = finishService + durMatrix(clientLoc, reloadDepot);
-            if (returnToDepot > vehType.twLate)
-                continue;  // Would return after vehicle's time window ends
-
-            // Distance cost plus reload cost minus prize
-            Cost newTripCost = static_cast<Cost>(tripDist.get()) + reloadCost
-                               - static_cast<Cost>(client.prize);
-
-            if (newTripCost < bestCost)
-            {
-                bestCost = newTripCost;
-                insertAsNewTrip = true;
-                newTripRoute = &route;
-            }
+            // Early exit: if we found an improving multi-trip insertion, stop
+            if (insertAsNewTrip && bestCost < 0)
+                break;
         }
     }
 
@@ -464,6 +556,7 @@ bool Solution::insert(Route::Node *U,
             Route::Node depot = {vehType.reloadDepots[0]};
             newTripRoute->insert(insertIdx, &depot);
             newTripRoute->insert(insertIdx + 1, U);
+            markEmptyRoutesCacheDirty();
             return true;
         }
 
@@ -481,6 +574,7 @@ bool Solution::insert(Route::Node *U,
         {
             route->insert(UAfter->idx() + 1, U);
         }
+        markEmptyRoutesCacheDirty();
         return true;
     }
 
