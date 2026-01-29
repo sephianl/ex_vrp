@@ -102,46 +102,50 @@ defmodule ExVrp.Solver do
       local_search_time = System.monotonic_time(:millisecond) - local_search_start
       Logger.info("LocalSearch created (neighbours computed) in #{local_search_time}ms")
 
-      # Create initial solution from empty (matches PyVRP behavior)
-      # PyVRP: init = ls.search(Solution(data, []), pm.max_cost_evaluator())
+      # Create initial solution using greedy insertion with local search
+      # This matches PyVRP's: init = ls.search(Solution(data, []), pm.max_cost_evaluator())
+      Logger.info("Creating initial solution...")
       initial_solution_start = System.monotonic_time(:millisecond)
-      {:ok, max_cost_eval} = PenaltyManager.max_cost_evaluator(penalty_manager)
       {:ok, empty_solution} = Native.create_solution_from_routes(problem_data, [])
-      {:ok, initial_solution} = Native.local_search_search_run(local_search, empty_solution, max_cost_eval)
-
+      {:ok, cost_evaluator} = PenaltyManager.max_cost_evaluator(penalty_manager)
+      {:ok, initial_solution} = Native.local_search_search_run(local_search, empty_solution, cost_evaluator)
       initial_solution_time = System.monotonic_time(:millisecond) - initial_solution_start
       Logger.info("Initial solution generated in #{initial_solution_time}ms")
 
       total_setup_time = System.monotonic_time(:millisecond) - solve_start
       Logger.info("Total setup time before ILS: #{total_setup_time}ms")
 
-      # Build stopping criterion
-      stop_fn = build_stop_fn(opts)
-
-      # Run ILS
-      ils_params = opts[:ils_params] || %IteratedLocalSearch.Params{}
-
-      Logger.info("Starting ILS iterations")
-      ils_start = System.monotonic_time(:millisecond)
-
-      result =
-        IteratedLocalSearch.run(
-          problem_data,
-          penalty_manager,
-          local_search,
-          initial_solution,
-          stop_fn,
-          ils_params,
-          seed: seed
-        )
-
-      ils_time = System.monotonic_time(:millisecond) - ils_start
-      total_time = System.monotonic_time(:millisecond) - solve_start
-      Logger.info("ILS completed in #{ils_time}ms (#{result.num_iterations} iterations)")
-      Logger.info("Total solve time: #{total_time}ms (setup: #{total_setup_time}ms, ILS: #{ils_time}ms)")
-
-      {:ok, result}
+      run_ils(problem_data, penalty_manager, local_search, initial_solution, opts, solve_start, total_setup_time, seed)
     end
+  end
+
+  defp run_ils(problem_data, penalty_manager, local_search, initial_solution, opts, solve_start, total_setup_time, seed) do
+    # Build stopping criterion
+    stop_fn = build_stop_fn(opts)
+
+    # Run ILS
+    ils_params = opts[:ils_params] || %IteratedLocalSearch.Params{}
+
+    Logger.info("Starting ILS iterations")
+    ils_start = System.monotonic_time(:millisecond)
+
+    result =
+      IteratedLocalSearch.run(
+        problem_data,
+        penalty_manager,
+        local_search,
+        initial_solution,
+        stop_fn,
+        ils_params,
+        seed: seed
+      )
+
+    ils_time = System.monotonic_time(:millisecond) - ils_start
+    total_time = System.monotonic_time(:millisecond) - solve_start
+    Logger.info("ILS completed in #{ils_time}ms (#{result.num_iterations} iterations)")
+    Logger.info("Total solve time: #{total_time}ms (setup: #{total_setup_time}ms, ILS: #{ils_time}ms)")
+
+    {:ok, result}
   end
 
   # Build stop function from options
