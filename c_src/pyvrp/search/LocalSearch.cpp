@@ -85,7 +85,17 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
 
             // First test removing or inserting U. Particularly relevant if not
             // all clients are required (e.g., when prize collecting).
-            applyOptionalClientMoves(U, costEvaluator);
+            // Only test if solution changed since last test (prevents
+            // oscillation)
+            bool shouldTest = (lastTested == -1);  // First time
+            if (!shouldTest && U->route())
+            {
+                // For routed clients, check if route was updated
+                shouldTest = (lastUpdated[U->route()->idx()] > lastTested);
+            }
+
+            if (shouldTest)
+                applyOptionalClientMoves(U, costEvaluator);
 
             // Evaluate moves involving the client's group, if it is in any.
             applyGroupMoves(U, costEvaluator);
