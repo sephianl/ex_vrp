@@ -124,6 +124,16 @@ defmodule ExVrp.Solver do
       Logger.info("Starting ILS iterations")
       ils_start = System.monotonic_time(:millisecond)
 
+      # Pass max_runtime_ms to ILS so it can calculate per-iteration timeouts for C++ local search
+      ils_opts = [seed: seed]
+
+      ils_opts =
+        if opts[:max_runtime] do
+          Keyword.put(ils_opts, :max_runtime_ms, opts[:max_runtime])
+        else
+          ils_opts
+        end
+
       result =
         IteratedLocalSearch.run(
           problem_data,
@@ -132,7 +142,7 @@ defmodule ExVrp.Solver do
           initial_solution,
           stop_fn,
           ils_params,
-          seed: seed
+          ils_opts
         )
 
       ils_time = System.monotonic_time(:millisecond) - ils_start
@@ -152,9 +162,10 @@ defmodule ExVrp.Solver do
           opts[:stop]
 
         opts[:max_runtime] != nil ->
+          # max_runtime is in milliseconds, convert to seconds for StoppingCriteria
           StoppingCriteria.any([
             StoppingCriteria.max_iterations(opts[:max_iterations]),
-            StoppingCriteria.max_runtime(opts[:max_runtime])
+            StoppingCriteria.max_runtime(opts[:max_runtime] / 1000.0)
           ])
 
         true ->
