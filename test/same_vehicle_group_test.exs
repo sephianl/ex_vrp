@@ -179,7 +179,7 @@ defmodule ExVrp.SameVehicleGroupTest do
       # Clients c1 and c2 must be on same vehicle
       model = Model.add_same_vehicle_group(model, [c1, c2])
 
-      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 100)
+      {:ok, result} = ExVrp.solve(model, max_iterations: 100)
 
       # Check that solution is feasible
       # Note: The solver should respect the same-vehicle constraint
@@ -202,7 +202,7 @@ defmodule ExVrp.SameVehicleGroupTest do
       # All three must be on same vehicle IF visited
       model = Model.add_same_vehicle_group(model, [c1, c2, c3])
 
-      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 100)
+      {:ok, result} = ExVrp.solve(model, max_iterations: 100)
 
       # Solution should be feasible
       assert Solution.feasible?(result.best)
@@ -220,7 +220,7 @@ defmodule ExVrp.SameVehicleGroupTest do
       [c1, c2, _c3] = model.clients
       model = Model.add_same_vehicle_group(model, [c1, c2])
 
-      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 100)
+      {:ok, result} = ExVrp.solve(model, max_iterations: 100)
 
       assert Solution.group_feasible?(result.best)
     end
@@ -256,7 +256,7 @@ defmodule ExVrp.SameVehicleGroupTest do
       # All 4 clients must be served by the same vehicle
       model = Model.add_same_vehicle_group(model, [c1, c2, c3, c4])
 
-      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 500)
+      {:ok, result} = ExVrp.solve(model, max_iterations: 500)
       solution = result.best
 
       # Solution should be feasible - same-vehicle constraint is satisfied
@@ -291,7 +291,7 @@ defmodule ExVrp.SameVehicleGroupTest do
       # All clients must be on same vehicle
       model = Model.add_same_vehicle_group(model, [c1, c2, c3])
 
-      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 200)
+      {:ok, result} = ExVrp.solve(model, max_iterations: 200)
       solution = result.best
 
       # Should be feasible - solver must put all on one vehicle
@@ -347,7 +347,7 @@ defmodule ExVrp.SameVehicleGroupTest do
       # Group 2: clients 3 and 4 must be on same vehicle
       model = Model.add_same_vehicle_group(model, [c3, c4], name: "group2")
 
-      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 300)
+      {:ok, result} = ExVrp.solve(model, max_iterations: 300)
       solution = result.best
 
       assert Solution.feasible?(solution)
@@ -378,7 +378,7 @@ defmodule ExVrp.SameVehicleGroupTest do
       [c1, c2] = model.clients
       model = Model.add_same_vehicle_group(model, [c1, c2])
 
-      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 300)
+      {:ok, result} = ExVrp.solve(model, max_iterations: 300)
       solution = result.best
 
       # Should be feasible - both clients on same vehicle (different trips OK)
@@ -445,7 +445,7 @@ defmodule ExVrp.SameVehicleGroupTest do
       # same vehicle name.
       model = Model.add_same_vehicle_group(model, [c1, c2, c3, c4])
 
-      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 1000)
+      {:ok, result} = ExVrp.solve(model, max_iterations: 1000)
       solution = result.best
 
       # Should be feasible and group feasible
@@ -510,7 +510,7 @@ defmodule ExVrp.SameVehicleGroupTest do
 
       # NO same-vehicle group constraint
 
-      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 1000)
+      {:ok, result} = ExVrp.solve(model, max_iterations: 1000)
       solution = result.best
 
       # Should be feasible
@@ -573,7 +573,7 @@ defmodule ExVrp.SameVehicleGroupTest do
       # Equipment constraint: all 4 must be on same vehicle
       model = Model.add_same_vehicle_group(model, [c1, c2, c3, c4])
 
-      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 1000)
+      {:ok, result} = ExVrp.solve(model, max_iterations: 1000)
       solution = result.best
 
       # The equipment constraint forces all served clients to be on the same vehicle.
@@ -633,7 +633,7 @@ defmodule ExVrp.SameVehicleGroupTest do
       # Equipment constraint: all 4 must be on same vehicle
       model = Model.add_same_vehicle_group(model, [c1, c2, c3, c4])
 
-      {:ok, result} = ExVrp.solve(model, seed: 42, max_iterations: 2000)
+      {:ok, result} = ExVrp.solve(model, max_iterations: 2000)
       solution = result.best
 
       # With multi-trip, all 4 clients should be served

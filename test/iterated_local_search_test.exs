@@ -109,7 +109,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
   describe "IteratedLocalSearch.Result methods" do
     test "cost returns distance for feasible solution" do
       model = build_cvrp_model(5)
-      {:ok, result} = Solver.solve(model, max_iterations: 50, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 50)
 
       assert result.best.is_feasible
       assert IteratedLocalSearch.Result.cost(result) == result.best.distance
@@ -124,7 +124,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         |> Model.add_client(x: 10, y: 0, delivery: [100])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 10, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 10)
 
       # Solution should be infeasible
       refute result.best.is_feasible
@@ -133,14 +133,14 @@ defmodule ExVrp.IteratedLocalSearchTest do
 
     test "feasible? returns correct boolean" do
       model = build_cvrp_model(5)
-      {:ok, result} = Solver.solve(model, max_iterations: 50, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 50)
 
       assert IteratedLocalSearch.Result.feasible?(result) == result.best.is_feasible
     end
 
     test "summary returns formatted string" do
       model = build_cvrp_model(5)
-      {:ok, result} = Solver.solve(model, max_iterations: 20, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 20)
 
       summary = IteratedLocalSearch.Result.summary(result)
 
@@ -159,7 +159,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "solves a simple CVRP and returns Result" do
       model = build_cvrp_model(10)
 
-      {:ok, result} = Solver.solve(model, max_iterations: 100, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 100)
 
       assert %IteratedLocalSearch.Result{} = result
       assert result.best.is_feasible
@@ -214,8 +214,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         Solver.solve(model,
           # 100ms in seconds (PyVRP uses seconds)
           max_runtime: 0.1,
-          max_iterations: 100_000,
-          seed: 42
+          max_iterations: 100_000
         )
 
       elapsed = System.monotonic_time(:millisecond) - start
@@ -230,7 +229,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
       # Stop after 20 iterations
       stop_criteria = StoppingCriteria.max_iterations(20)
 
-      {:ok, result} = Solver.solve(model, stop: stop_criteria, seed: 42)
+      {:ok, result} = Solver.solve(model, stop: stop_criteria)
 
       assert result.num_iterations <= 20
     end
@@ -238,7 +237,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "tracks statistics" do
       model = build_cvrp_model(10)
 
-      {:ok, result} = Solver.solve(model, max_iterations: 100, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 100)
 
       assert result.stats.initial_cost > 0
       assert result.stats.final_cost > 0
@@ -257,7 +256,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 50, tw_late: 200)
         |> Model.add_client(x: 30, y: 0, delivery: [10], tw_early: 100, tw_late: 300)
 
-      {:ok, result} = Solver.solve(model, max_iterations: 200, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 200)
 
       assert result.best.is_feasible
       assert result.best.is_complete
@@ -275,7 +274,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         |> Model.add_client(x: 30, y: 0, delivery: [20])
         |> Model.add_client(x: 40, y: 0, delivery: [20])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 200, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 200)
 
       # Should find a feasible solution with proper vehicle allocation
       assert result.best.is_feasible
@@ -286,7 +285,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "improves solution over iterations" do
       model = build_cvrp_model(15)
 
-      {:ok, result} = Solver.solve(model, max_iterations: 500, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 500)
 
       # Final cost should be at least as good as initial
       assert result.stats.final_cost <= result.stats.initial_cost
@@ -303,8 +302,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
       {:ok, result} =
         Solver.solve(model,
           max_iterations: 200,
-          ils_params: ils_params,
-          seed: 42
+          ils_params: ils_params
         )
 
       assert result.best.stats.improvements >= 0
@@ -324,8 +322,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
       {:ok, result} =
         Solver.solve(model,
           max_iterations: 100,
-          ils_params: ils_params,
-          seed: 42
+          ils_params: ils_params
         )
 
       # With 100 iterations and max_no_improvement=5,
@@ -354,15 +351,13 @@ defmodule ExVrp.IteratedLocalSearchTest do
       {:ok, result_small} =
         Solver.solve(model,
           max_iterations: 50,
-          ils_params: ils_small_history,
-          seed: 42
+          ils_params: ils_small_history
         )
 
       {:ok, result_large} =
         Solver.solve(model,
           max_iterations: 50,
-          ils_params: ils_large_history,
-          seed: 42
+          ils_params: ils_large_history
         )
 
       # Both should produce valid solutions
@@ -384,8 +379,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
       {:ok, result} =
         Solver.solve(model,
           max_iterations: 100,
-          penalty_params: penalty_params,
-          seed: 42
+          penalty_params: penalty_params
         )
 
       assert result.best.is_complete
@@ -400,7 +394,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 10, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 10)
 
       assert result.best.is_feasible
       assert result.best.is_complete
@@ -416,7 +410,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         |> Model.add_client(x: 20, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 50, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 50)
 
       assert result.best.is_feasible
       assert result.best.is_complete
@@ -432,7 +426,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         # Each client needs 30, capacity is 50, need 2 routes
         |> Model.add_vehicle_type(num_available: 3, capacity: [50])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 100, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 100)
 
       assert result.best.is_feasible
       assert result.best.is_complete
@@ -448,7 +442,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         # Client needs 100, vehicle has 50 - infeasible
         |> Model.add_vehicle_type(num_available: 1, capacity: [50])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 50, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 50)
 
       # Should still return a solution (possibly infeasible)
       assert result.best.is_complete
@@ -465,7 +459,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         |> Model.add_client(x: 30, y: 0, delivery: [10], tw_early: 100, tw_late: 300)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100], tw_early: 0, tw_late: 400)
 
-      {:ok, result} = Solver.solve(model, max_iterations: 200, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 200)
 
       assert result.best.is_complete
     end
@@ -478,7 +472,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         |> Model.add_client(x: 20, y: 0, delivery: [10], service_duration: 50)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 100, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 100)
 
       assert result.best.is_feasible
       # Duration should include service times
@@ -494,7 +488,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         |> Model.add_client(x: 90, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 100, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 100)
 
       assert result.best.is_feasible
       assert result.best.is_complete
@@ -509,7 +503,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         |> Model.add_vehicle_type(num_available: 1, capacity: [30])
         |> Model.add_vehicle_type(num_available: 1, capacity: [50])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 100, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 100)
 
       assert result.best.is_feasible
     end
@@ -522,7 +516,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         |> Model.add_client(x: 20, y: 0, delivery: [15, 15], pickup: [0, 0])
         |> Model.add_vehicle_type(num_available: 2, capacity: [50, 30])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 100, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 100)
 
       assert result.best.is_complete
     end
@@ -532,7 +526,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "result contains all expected fields" do
       model = build_cvrp_model(5)
 
-      {:ok, result} = Solver.solve(model, max_iterations: 20, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 20)
 
       assert %IteratedLocalSearch.Result{} = result
       assert Map.has_key?(result, :best)
@@ -544,7 +538,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "result stats are populated" do
       model = build_cvrp_model(5)
 
-      {:ok, result} = Solver.solve(model, max_iterations: 50, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 50)
 
       assert result.stats.initial_cost > 0
       assert result.stats.final_cost > 0
@@ -553,7 +547,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "runtime is non-negative" do
       model = build_cvrp_model(5)
 
-      {:ok, result} = Solver.solve(model, max_iterations: 10, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 10)
 
       assert result.runtime >= 0
     end
@@ -561,7 +555,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "num_iterations matches requested" do
       model = build_cvrp_model(5)
 
-      {:ok, result} = Solver.solve(model, max_iterations: 15, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 15)
 
       # Should run approximately the requested iterations
       assert result.num_iterations > 0
@@ -583,7 +577,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "final cost is at most initial cost" do
       model = build_cvrp_model(10)
 
-      {:ok, result} = Solver.solve(model, max_iterations: 100, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 100)
 
       assert result.stats.final_cost <= result.stats.initial_cost
     end

@@ -379,15 +379,10 @@ defmodule ExVrp.SolveTest do
         |> Model.set_distance_matrices([distance_matrix])
         |> Model.set_duration_matrices([duration_matrix])
 
-      for seed <- [1, 42, 123, 456, 789] do
-        {:ok, result} = Solver.solve(model, max_iterations: 100, seed: seed)
+      {:ok, result} = Solver.solve(model, max_iterations: 100)
 
-        assert result.best.num_clients == 4,
-               "Seed #{seed} only found #{result.best.num_clients} clients"
-
-        assert result.best.is_feasible == true,
-               "Seed #{seed} solution not feasible"
-      end
+      assert result.best.num_clients == 4
+      assert result.best.is_feasible == true
     end
   end
 

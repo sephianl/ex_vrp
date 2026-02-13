@@ -45,7 +45,7 @@ defmodule ExVrp.EndAtLocationTest do
         |> Model.set_distance_matrices([duration_matrix])
         |> Model.set_duration_matrices([duration_matrix])
 
-      {:ok, result} = Solver.solve(model, stop: StoppingCriteria.max_iterations(1000), seed: 42)
+      {:ok, result} = Solver.solve(model, stop: StoppingCriteria.max_iterations(1000))
 
       assert result.best
       assert Solution.complete?(result.best)
@@ -90,7 +90,7 @@ defmodule ExVrp.EndAtLocationTest do
         |> Model.set_distance_matrices([duration_matrix])
         |> Model.set_duration_matrices([duration_matrix])
 
-      {:ok, result} = Solver.solve(model, stop: StoppingCriteria.max_iterations(1000), seed: 42)
+      {:ok, result} = Solver.solve(model, stop: StoppingCriteria.max_iterations(1000))
 
       assert result.best
       assert Solution.complete?(result.best)
@@ -149,7 +149,7 @@ defmodule ExVrp.EndAtLocationTest do
         |> Model.set_distance_matrices([duration_matrix])
         |> Model.set_duration_matrices([duration_matrix])
 
-      {:ok, result} = Solver.solve(model, stop: StoppingCriteria.max_iterations(1000), seed: 42)
+      {:ok, result} = Solver.solve(model, stop: StoppingCriteria.max_iterations(1000))
 
       assert result.best
       assert Solution.complete?(result.best)
@@ -195,7 +195,7 @@ defmodule ExVrp.EndAtLocationTest do
         |> Model.set_distance_matrices([duration_matrix])
         |> Model.set_duration_matrices([duration_matrix])
 
-      {:ok, result} = Solver.solve(model, stop: StoppingCriteria.max_iterations(1000), seed: 42)
+      {:ok, result} = Solver.solve(model, stop: StoppingCriteria.max_iterations(1000))
 
       assert result.best
       assert Solution.complete?(result.best)
@@ -250,7 +250,7 @@ defmodule ExVrp.EndAtLocationTest do
         |> Model.set_distance_matrices([duration_matrix])
         |> Model.set_duration_matrices([duration_matrix])
 
-      {:ok, result} = Solver.solve(model, stop: StoppingCriteria.max_iterations(1000), seed: 42)
+      {:ok, result} = Solver.solve(model, stop: StoppingCriteria.max_iterations(1000))
 
       assert result.best
       assert Solution.complete?(result.best)

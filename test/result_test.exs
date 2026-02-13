@@ -19,7 +19,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 10, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 10)
 
       assert Map.has_key?(result, :best)
       assert Map.has_key?(result, :stats)
@@ -36,7 +36,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 10, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 10)
 
       if result.best.is_feasible do
         assert Result.cost(result) == result.best.distance
@@ -73,7 +73,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 50, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 50)
 
       # Simple problem should be feasible
       assert Result.feasible?(result) == result.best.is_feasible
@@ -108,7 +108,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 10, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 10)
 
       summary = Result.summary(result)
 
@@ -131,7 +131,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 20, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 50, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 50)
 
       assert result.stats.initial_cost > 0
     end
@@ -143,7 +143,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 50, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 50)
 
       assert result.stats.final_cost > 0
     end
@@ -156,7 +156,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 20, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 100, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 100)
 
       assert result.stats.final_cost <= result.stats.initial_cost
     end
@@ -170,7 +170,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 10, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 10)
 
       assert %Solution{} = result.best
     end
@@ -182,7 +182,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 10, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 10)
 
       assert is_list(result.best.routes)
       assert result.best.routes != []
@@ -195,7 +195,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 20, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 20)
 
       assert result.best.stats.iterations >= 0
       assert result.best.stats.improvements >= 0
@@ -211,7 +211,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 10, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 10)
 
       assert result.num_iterations >= 0
     end
@@ -223,7 +223,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 5, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 5)
 
       # Should be within a reasonable bound of max_iterations
       assert result.num_iterations <= 10
@@ -238,7 +238,7 @@ defmodule ExVrp.ResultTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      {:ok, result} = Solver.solve(model, max_iterations: 10, seed: 42)
+      {:ok, result} = Solver.solve(model, max_iterations: 10)
 
       assert result.runtime >= 0
     end

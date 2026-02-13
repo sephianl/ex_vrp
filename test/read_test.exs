@@ -173,8 +173,7 @@ defmodule ExVrp.ReadTest do
       # Solve and verify result is reasonable
       {:ok, result} =
         ExVrp.Solver.solve(model,
-          stop: ExVrp.StoppingCriteria.max_iterations(100),
-          seed: 42
+          stop: ExVrp.StoppingCriteria.max_iterations(100)
         )
 
       # Must be feasible (was broken before overflow fix)
@@ -370,7 +369,7 @@ defmodule ExVrp.ReadTest do
         |> Model.add_vehicle_type(num_available: 3, capacity: [100])
 
       # Solve with minimal iterations to focus on initial solution quality
-      {:ok, result} = ExVrp.Solver.solve(model, max_iterations: 1, seed: 42)
+      {:ok, result} = ExVrp.Solver.solve(model, max_iterations: 1)
 
       # Initial solution should be complete (all clients visited)
       assert result.best.is_complete

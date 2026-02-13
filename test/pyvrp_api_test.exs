@@ -55,8 +55,7 @@ defmodule ExVrp.PyVRPApiTest do
       {:ok, result} =
         Solver.solve(model,
           stop: StoppingCriteria.max_iterations(50),
-          ils_params: ils_params,
-          seed: 42
+          ils_params: ils_params
         )
 
       assert Result.feasible?(result)
@@ -73,8 +72,7 @@ defmodule ExVrp.PyVRPApiTest do
 
       {:ok, result} =
         Solver.solve(model,
-          stop: StoppingCriteria.max_iterations(10),
-          seed: 42
+          stop: StoppingCriteria.max_iterations(10)
         )
 
       # Check all expected properties exist
@@ -95,8 +93,7 @@ defmodule ExVrp.PyVRPApiTest do
 
       {:ok, result} =
         Solver.solve(model,
-          stop: StoppingCriteria.max_iterations(10),
-          seed: 42
+          stop: StoppingCriteria.max_iterations(10)
         )
 
       # If infeasible, cost should be infinity
@@ -110,8 +107,7 @@ defmodule ExVrp.PyVRPApiTest do
 
       {:ok, result} =
         Solver.solve(model,
-          stop: StoppingCriteria.max_iterations(10),
-          seed: 42
+          stop: StoppingCriteria.max_iterations(10)
         )
 
       summary = Result.summary(result)
@@ -355,8 +351,7 @@ defmodule ExVrp.PyVRPApiTest do
 
       {:ok, result} =
         Solver.solve(model,
-          stop: StoppingCriteria.max_iterations(50),
-          seed: 42
+          stop: StoppingCriteria.max_iterations(50)
         )
 
       assert result.num_iterations >= 0
