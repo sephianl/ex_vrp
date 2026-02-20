@@ -53,7 +53,7 @@ defmodule ExVrp.Native do
     local_search_stats_nif: 4,
     # LocalSearch (persistent resource)
     create_local_search_nif: 2,
-    local_search_run_nif: 3,
+    local_search_run_nif: 4,
     local_search_search_run_nif: 3,
     # Route stats via Solution
     solution_route_distance: 2,
@@ -630,13 +630,14 @@ defmodule ExVrp.Native do
 
   `{:ok, improved_solution}` or `{:error, reason}`
   """
-  @spec local_search_run(reference(), reference(), reference()) ::
+  @spec local_search_run(reference(), reference(), reference(), non_neg_integer()) ::
           {:ok, reference()} | {:error, term()}
-  def local_search_run(local_search, solution, cost_evaluator) do
-    local_search_run_nif(local_search, solution, cost_evaluator)
+  def local_search_run(local_search, solution, cost_evaluator, timeout_ms \\ 0) do
+    local_search_run_nif(local_search, solution, cost_evaluator, timeout_ms)
   end
 
-  defp local_search_run_nif(_local_search, _solution, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
+  defp local_search_run_nif(_local_search, _solution, _cost_evaluator, _timeout_ms),
+    do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Runs search-only (no perturbation) using a persistent LocalSearch resource.

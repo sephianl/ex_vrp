@@ -154,6 +154,9 @@ defmodule ExVrp.IteratedLocalSearch do
     # Get seed from options, default to random
     seed = Keyword.get(opts, :seed, :rand.uniform(1_000_000))
 
+    # Get max_runtime_ms from options for per-iteration timeout calculation
+    max_runtime_ms = Keyword.get(opts, :max_runtime_ms, nil)
+
     {:ok, cost_eval} = PenaltyManager.cost_evaluator(penalty_manager)
 
     initial_penalised_cost = Native.solution_penalised_cost(initial_solution, cost_eval)
@@ -179,6 +182,8 @@ defmodule ExVrp.IteratedLocalSearch do
       initial_cost: initial_penalised_cost,
       # Use seed for reproducible RNG in local search
       rng_seed: seed,
+      start_time: start_time,
+      max_runtime_ms: max_runtime_ms,
       stats: %{
         improvements: 0,
         restarts: 0
@@ -203,6 +208,15 @@ defmodule ExVrp.IteratedLocalSearch do
 
   # Main iteration loop
   defp iterate(state, stop_fn) do
+    # Log progress every 100 iterations
+    if rem(state.iteration, 100) == 0 and state.iteration > 0 do
+      require Logger
+
+      Logger.info(
+        "ILS iteration #{state.iteration}, best_cost=#{state.best_cost}, iters_no_improvement=#{state.iters_no_improvement}"
+      )
+    end
+
     # Use best_cost for stopping criterion - this is cost() which returns infinity
     # for infeasible solutions, matching PyVRP's behavior
     if stop_fn.(state.best_cost) do
@@ -239,6 +253,17 @@ defmodule ExVrp.IteratedLocalSearch do
 
   # Apply local search to generate candidate
   defp search_step(state) do
+    # Calculate remaining timeout for C++ local search (in milliseconds)
+    timeout_ms =
+      if state.max_runtime_ms do
+        elapsed_ms = System.monotonic_time(:millisecond) - state.start_time
+        # Pass remaining time, minimum 100ms to allow some work
+        max(state.max_runtime_ms - elapsed_ms, 100)
+      else
+        # No timeout
+        0
+      end
+
     # Use persistent LocalSearch for performance
     # RNG is stored in the LocalSearch resource and advances across calls,
     # matching PyVRP's behavior
@@ -246,7 +271,8 @@ defmodule ExVrp.IteratedLocalSearch do
       Native.local_search_run(
         state.local_search,
         state.current,
-        state.cost_eval
+        state.cost_eval,
+        timeout_ms
       )
 
     candidate_cost = Native.solution_penalised_cost(candidate, state.cost_eval)

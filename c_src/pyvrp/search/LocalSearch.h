@@ -10,6 +10,7 @@
 #include "SearchSpace.h"
 #include "Solution.h"  // pyvrp::search::Solution
 
+#include <chrono>
 #include <functional>
 #include <stdexcept>
 #include <vector>
@@ -43,6 +44,10 @@ class LocalSearch
 
     size_t numUpdates_ = 0;         // modification counter
     bool searchCompleted_ = false;  // No further improving move found?
+
+    // Timeout tracking
+    std::chrono::steady_clock::time_point timeout_deadline_;
+    bool has_timeout_ = false;
 
     // Load an initial solution that we will attempt to improve.
     void loadSolution(pyvrp::Solution const &solution);
@@ -165,7 +170,8 @@ public:
      */
     pyvrp::Solution operator()(pyvrp::Solution const &solution,
                                CostEvaluator const &costEvaluator,
-                               bool exhaustive = false);
+                               bool exhaustive = false,
+                               int64_t timeout_ms = 0);
 
     /**
      * Performs regular (node-based) local search around the given solution,
