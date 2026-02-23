@@ -18,6 +18,8 @@ defmodule ExVrp.IteratedLocalSearch do
   alias ExVrp.PenaltyManager
   alias ExVrp.Solution
 
+  require Logger
+
   defmodule Params do
     @moduledoc """
     Parameters for Iterated Local Search.
@@ -153,6 +155,7 @@ defmodule ExVrp.IteratedLocalSearch do
 
     # Get seed from options, default to random
     seed = Keyword.get(opts, :seed, :rand.uniform(1_000_000))
+    on_progress = Keyword.get(opts, :on_progress)
 
     # Get max_runtime_ms from options for per-iteration timeout calculation
     max_runtime_ms = Keyword.get(opts, :max_runtime_ms, nil)
@@ -187,7 +190,9 @@ defmodule ExVrp.IteratedLocalSearch do
       stats: %{
         improvements: 0,
         restarts: 0
-      }
+      },
+      on_progress: on_progress,
+      last_progress_time: start_time
     }
 
     final_state = iterate(state, stop_fn)
@@ -210,8 +215,6 @@ defmodule ExVrp.IteratedLocalSearch do
   defp iterate(state, stop_fn) do
     # Log progress every 100 iterations
     if rem(state.iteration, 100) == 0 and state.iteration > 0 do
-      require Logger
-
       Logger.info(
         "ILS iteration #{state.iteration}, best_cost=#{state.best_cost}, iters_no_improvement=#{state.iters_no_improvement}"
       )
@@ -228,6 +231,7 @@ defmodule ExVrp.IteratedLocalSearch do
       |> accept_step()
       |> update_penalty_manager()
       |> Map.update!(:iteration, &(&1 + 1))
+      |> maybe_report_progress()
       |> iterate(stop_fn)
     end
   end
@@ -363,6 +367,37 @@ defmodule ExVrp.IteratedLocalSearch do
     else
       {:ok, new_cost_eval} = PenaltyManager.cost_evaluator(new_pm)
       %{state | penalty_manager: new_pm, cost_eval: new_cost_eval}
+    end
+  end
+
+  defp maybe_report_progress(%{on_progress: nil} = state), do: state
+
+  defp maybe_report_progress(state) do
+    now = System.monotonic_time(:millisecond)
+
+    if now - state.last_progress_time >= 1000 do
+      routes = Native.solution_routes(state.best)
+      distance = Native.solution_distance(state.best)
+      duration = Native.solution_duration(state.best)
+      num_clients = Native.solution_num_clients(state.best)
+
+      state.on_progress.(%{
+        iteration: state.iteration,
+        best_cost: state.best_cost,
+        current_cost: state.current_cost,
+        is_feasible: Native.solution_is_feasible(state.best),
+        improvements: state.stats.improvements,
+        restarts: state.stats.restarts,
+        elapsed_ms: now - state.start_time,
+        num_routes: length(routes),
+        total_duration: duration,
+        num_clients: num_clients,
+        best_distance: distance
+      })
+
+      %{state | last_progress_time: now}
+    else
+      state
     end
   end
 

@@ -21,7 +21,8 @@ defmodule ExVrp.Solver do
           stop: StoppingCriteria.t(),
           seed: non_neg_integer(),
           penalty_params: PenaltyManager.Params.t(),
-          ils_params: IteratedLocalSearch.Params.t()
+          ils_params: IteratedLocalSearch.Params.t(),
+          on_progress: (map() -> any()) | nil
         ]
 
   @default_opts [
@@ -30,7 +31,8 @@ defmodule ExVrp.Solver do
     stop: nil,
     seed: nil,
     penalty_params: nil,
-    ils_params: nil
+    ils_params: nil,
+    on_progress: nil
   ]
 
   @doc """
@@ -50,6 +52,7 @@ defmodule ExVrp.Solver do
   - `:seed` - Random seed for reproducibility (default: random)
   - `:penalty_params` - PenaltyManager.Params for penalty adjustment
   - `:ils_params` - IteratedLocalSearch.Params for ILS behavior
+  - `:on_progress` - Optional callback function receiving progress maps during ILS iterations (time-gated at ~1s intervals)
 
   ## Returns
 
@@ -112,6 +115,15 @@ defmodule ExVrp.Solver do
       initial_solution_time = System.monotonic_time(:millisecond) - initial_solution_start
       Logger.info("Initial solution generated in #{initial_solution_time}ms")
 
+      notify_progress(opts[:on_progress], %{
+        stage: :initial_solution,
+        num_routes: length(Native.solution_routes(initial_solution)),
+        total_duration: Native.solution_duration(initial_solution),
+        num_clients: Native.solution_num_clients(initial_solution),
+        is_feasible: Native.solution_is_feasible(initial_solution),
+        best_distance: Native.solution_distance(initial_solution)
+      })
+
       total_setup_time = System.monotonic_time(:millisecond) - solve_start
       Logger.info("Total setup time before ILS: #{total_setup_time}ms")
 
@@ -125,7 +137,7 @@ defmodule ExVrp.Solver do
       ils_start = System.monotonic_time(:millisecond)
 
       # Pass max_runtime_ms to ILS so it can calculate per-iteration timeouts for C++ local search
-      ils_opts = [seed: seed]
+      ils_opts = [seed: seed, on_progress: opts[:on_progress]]
 
       ils_opts =
         if opts[:max_runtime] do
@@ -153,6 +165,9 @@ defmodule ExVrp.Solver do
       {:ok, result}
     end
   end
+
+  defp notify_progress(nil, _info), do: :ok
+  defp notify_progress(callback, info), do: callback.(info)
 
   # Build stop function from options
   defp build_stop_fn(opts) do

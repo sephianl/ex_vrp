@@ -275,7 +275,7 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       {:ok, result} = Solver.solve(model, max_iterations: 100)
 
       # Low prize, high distance + vehicle cost = skip the client
-      routes = ExVrp.Solution.routes(result.best)
+      _routes = ExVrp.Solution.routes(result.best)
 
       # Either visits (collects prize) or doesn't (saves vehicle cost)
       # Both are valid, solver chooses based on cost

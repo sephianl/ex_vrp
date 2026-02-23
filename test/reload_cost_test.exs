@@ -9,7 +9,6 @@ defmodule ExVrp.ReloadCostTest do
 
   alias ExVrp.Depot
   alias ExVrp.Model
-  alias ExVrp.Route
   alias ExVrp.Solution
   alias ExVrp.Solver
 

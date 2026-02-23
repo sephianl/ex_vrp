@@ -124,7 +124,7 @@ defmodule ExVrp.OscillationPreventionTest do
       |> Model.add_vehicle_type(num_available: 3, capacity: [100])
 
     model =
-      Enum.reduce(1..20, model, fn i, acc ->
+      Enum.reduce(1..20, model, fn _i, acc ->
         Model.add_client(acc,
           x: :rand.uniform() * 100,
           y: :rand.uniform() * 100,
