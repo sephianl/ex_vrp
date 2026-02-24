@@ -2,3 +2,6 @@
 # Run with `mix test --include nif_required` to include them.
 ExUnit.configure([])
 ExUnit.start()
+
+# Suppress info-level solver logs during tests to keep CI output clean.
+Logger.configure(level: :warning)

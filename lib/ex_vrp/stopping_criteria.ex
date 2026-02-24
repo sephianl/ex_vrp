@@ -217,12 +217,14 @@ defmodule ExVrp.StoppingCriteria do
   """
   @spec to_stop_fn(t()) :: stop_fn()
   def to_stop_fn(%__MODULE__{} = criteria) do
+    # Eagerly initialize start_time so max_runtime covers total solve time
+    # (including setup), not just ILS iteration time.
+    criteria = maybe_init_start_time(criteria)
     {:ok, agent} = Agent.start_link(fn -> {criteria, nil, true} end)
     fn best_cost -> Agent.get_and_update(agent, &check_stop(&1, best_cost)) end
   end
 
   defp check_stop({crit, prev_cost, is_first_call}, best_cost) do
-    crit = maybe_init_start_time(crit)
     # First call establishes baseline - not counted as "no improvement"
     # This matches PyVRP's behavior
     improved = is_first_call or best_cost < prev_cost

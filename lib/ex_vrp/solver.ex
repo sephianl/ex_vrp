@@ -88,6 +88,10 @@ defmodule ExVrp.Solver do
     seed = opts[:seed] || :rand.uniform(1_000_000)
     :rand.seed(:exsplus, {seed, seed, seed})
 
+    # Build stopping criterion early so max_runtime covers total solve time
+    # (including setup), not just ILS iteration time.
+    stop_fn = build_stop_fn(opts)
+
     with {:ok, problem_data} <- Model.to_problem_data(model) do
       problem_data_time = System.monotonic_time(:millisecond) - solve_start
       Logger.info("Problem data created in #{problem_data_time}ms")
@@ -110,7 +114,18 @@ defmodule ExVrp.Solver do
       initial_solution_start = System.monotonic_time(:millisecond)
       {:ok, max_cost_eval} = PenaltyManager.max_cost_evaluator(penalty_manager)
       {:ok, empty_solution} = Native.create_solution_from_routes(problem_data, [])
-      {:ok, initial_solution} = Native.local_search_search_run(local_search, empty_solution, max_cost_eval)
+
+      # Pass remaining budget as timeout so the initial search doesn't consume it all
+      init_timeout_ms =
+        if opts[:max_runtime] do
+          elapsed = System.monotonic_time(:millisecond) - solve_start
+          max(round(opts[:max_runtime]) - elapsed, 1)
+        else
+          0
+        end
+
+      {:ok, initial_solution} =
+        Native.local_search_search_run(local_search, empty_solution, max_cost_eval, init_timeout_ms)
 
       initial_solution_time = System.monotonic_time(:millisecond) - initial_solution_start
       Logger.info("Initial solution generated in #{initial_solution_time}ms")
@@ -127,21 +142,21 @@ defmodule ExVrp.Solver do
       total_setup_time = System.monotonic_time(:millisecond) - solve_start
       Logger.info("Total setup time before ILS: #{total_setup_time}ms")
 
-      # Build stopping criterion
-      stop_fn = build_stop_fn(opts)
-
       # Run ILS
       ils_params = opts[:ils_params] || %IteratedLocalSearch.Params{}
 
       Logger.info("Starting ILS iterations")
       ils_start = System.monotonic_time(:millisecond)
 
-      # Pass max_runtime_ms to ILS so it can calculate per-iteration timeouts for C++ local search
+      # Pass remaining runtime to ILS so it can calculate per-iteration timeouts for C++ local search.
+      # Deduct setup time from the budget so the total solve time stays within max_runtime.
       ils_opts = [seed: seed, on_progress: opts[:on_progress]]
 
       ils_opts =
         if opts[:max_runtime] do
-          Keyword.put(ils_opts, :max_runtime_ms, opts[:max_runtime])
+          setup_elapsed = System.monotonic_time(:millisecond) - solve_start
+          remaining_ms = max(opts[:max_runtime] - setup_elapsed, 0)
+          Keyword.put(ils_opts, :max_runtime_ms, remaining_ms)
         else
           ils_opts
         end
@@ -167,7 +182,8 @@ defmodule ExVrp.Solver do
   end
 
   defp notify_progress(nil, _info), do: :ok
-  defp notify_progress(callback, info), do: callback.(info)
+  defp notify_progress(callback, info) when is_function(callback, 1), do: callback.(info)
+  defp notify_progress(_, _info), do: :ok
 
   # Build stop function from options
   defp build_stop_fn(opts) do

@@ -178,7 +178,8 @@ public:
      * and returns a new, hopefully improved solution.
      */
     pyvrp::Solution search(pyvrp::Solution const &solution,
-                           CostEvaluator const &costEvaluator);
+                           CostEvaluator const &costEvaluator,
+                           int64_t timeout_ms = 0);
 
     /**
      * Performs a more intensive route-based local search around the given

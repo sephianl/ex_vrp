@@ -3588,16 +3588,17 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_run_nif(
     [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<LocalSearchResource> ls_resource,
     fine::ResourcePtr<SolutionResource> solution_resource,
-    fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
+    fine::ResourcePtr<CostEvaluatorResource> evaluator_resource,
+    int64_t timeout_ms)
 {
     auto &cost_evaluator = evaluator_resource->evaluator;
 
     // Shuffle using stored RNG
     ls_resource->ls->shuffle(ls_resource->rng);
 
-    // Run search only (no perturbation)
-    Solution improved
-        = ls_resource->ls->search(solution_resource->solution, cost_evaluator);
+    // Run search only (no perturbation), with optional timeout
+    Solution improved = ls_resource->ls->search(
+        solution_resource->solution, cost_evaluator, timeout_ms);
 
     return fine::Ok(fine::make_resource<SolutionResource>(
         std::move(improved), ls_resource->problemData));

@@ -68,9 +68,23 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
 }
 
 pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
-                                    CostEvaluator const &costEvaluator)
+                                    CostEvaluator const &costEvaluator,
+                                    int64_t timeout_ms)
 {
     loadSolution(solution);
+
+    // Set up timeout tracking (same as operator())
+    if (timeout_ms > 0)
+    {
+        has_timeout_ = true;
+        timeout_deadline_ = std::chrono::steady_clock::now()
+                            + std::chrono::milliseconds(timeout_ms);
+    }
+    else
+    {
+        has_timeout_ = false;
+    }
+
     search(costEvaluator);
 
     // After the main search, try to insert unassigned clients via multi-trip.

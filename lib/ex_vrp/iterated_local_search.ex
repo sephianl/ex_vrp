@@ -261,8 +261,9 @@ defmodule ExVrp.IteratedLocalSearch do
     timeout_ms =
       if state.max_runtime_ms do
         elapsed_ms = System.monotonic_time(:millisecond) - state.start_time
-        # Pass remaining time, minimum 100ms to allow some work
-        max(state.max_runtime_ms - elapsed_ms, 100)
+        # Pass remaining time, minimum 1ms (0 means "no timeout" in C++)
+        # round/1 ensures integer for NIF when max_runtime_ms is a float
+        max(round(state.max_runtime_ms) - elapsed_ms, 1)
       else
         # No timeout
         0
@@ -371,6 +372,7 @@ defmodule ExVrp.IteratedLocalSearch do
   end
 
   defp maybe_report_progress(%{on_progress: nil} = state), do: state
+  defp maybe_report_progress(%{on_progress: f} = state) when not is_function(f, 1), do: state
 
   defp maybe_report_progress(state) do
     now = System.monotonic_time(:millisecond)
