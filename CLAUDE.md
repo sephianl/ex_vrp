@@ -45,10 +45,32 @@ Requires C++20 compiler (gcc 11+ or clang 14+). Set `SANITIZE=1` for AddressSani
 
 ### Code Style
 
+#### Elixir
+
 - No inline comments on code — explain via function names and moduledoc
 - Pattern match on function heads, not `case` in body
 - Shallow nesting — extract helpers early
 - No `opts` maps; use keyword lists or explicit parameters
+- Delegate style review to `elixir-reviewer` subagent — it has the full ruleset
+- Apply the same rules when writing code yourself — the reviewer is a safety net, not a crutch
+
+#### C++
+
+- Follow upstream PyVRP conventions — match naming, file structure, and patterns in `c_src/pyvrp/`
+- No inline comments — use descriptive names for variables, functions, and types
+- Prefer RAII and smart pointers — no raw `new`/`delete`
+- Keep NIF functions thin — logic belongs in the C++ classes, NIFs just bridge to Elixir
+- Use `const` and `const &` by default — only mutable when needed
+- No `using namespace` in headers
+
+### Verification Before Done
+
+- Never mark a task complete without proving it works
+- Self-review your own diff before presenting — fix minor issues (unused params, scattered logic, naming) before they stack up
+- Delegate test running to `test-runner` subagent — don't pollute main context with test output
+- **Run `elixir-reviewer` on your changes AND fix the issues it finds** before presenting to the user — don't just report them
+- **Run `elixir-perf-reviewer` on non-trivial changes** to catch sequential I/O, redundant computation, and hot-loop anti-patterns
+- Ask yourself: "Would a staff engineer approve this?"
 
 ### Adding New Features
 
@@ -70,11 +92,11 @@ When a Zelo planner change requires ExVRP changes:
 
 ## Subagent Delegation
 
-| Trigger                          | Subagent               | Why                                                       |
-| -------------------------------- | ---------------------- | --------------------------------------------------------- |
-| Run/debug tests                  | `test-runner`          | Verbose output isolation. **Read-only: never edit files** |
-| Understand PyVRP C++ internals   | `exvrp-researcher`     | Deep research stays isolated                              |
-| Clean up code after feature work | `elixir-refactor`      | Self-contained, behavior-preserving                       |
-| Self-review before presenting    | `elixir-reviewer`      | Enforces style rules                                      |
-| Review for performance issues    | `elixir-perf-reviewer` | Spots hot-loop anti-patterns                              |
-| Explore unfamiliar areas         | `Explore` (built-in)   | Fast read-only search                                     |
+| Trigger                          | Subagent               | Why                                                                                    |
+| -------------------------------- | ---------------------- | -------------------------------------------------------------------------------------- |
+| Run/debug tests                  | `test-runner`          | Verbose output isolation. **Read-only: never edit files**                              |
+| Understand PyVRP C++ internals   | `exvrp-researcher`     | Deep research stays isolated                                                           |
+| Clean up code after feature work | `elixir-refactor`      | Self-contained, behavior-preserving                                                    |
+| Self-review before presenting    | `elixir-reviewer`      | Enforces style rules objectively — **mandatory before presenting changes to the user** |
+| Review for runtime/perf issues   | `elixir-perf-reviewer` | Spots sequential I/O, redundant computation, hot-loop anti-patterns                    |
+| Explore unfamiliar areas         | `Explore` (built-in)   | Fast read-only search                                                                  |
