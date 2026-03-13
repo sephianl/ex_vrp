@@ -31,38 +31,34 @@ Phase 6 (Island ILS — pure Elixir)
 
 ---
 
-## Phase 1: Operator Interface Modernization — Size: L
+## Phase 1: Operator Interface Modernization — Size: L ✅ DONE
 
 **Goal**: Align operator base classes and evaluate() return type with upstream. This unblocks all subsequent phases.
 
-**What changes**:
+**What changed**:
 
 - `NodeOperator`/`RouteOperator` → `UnaryOperator`/`BinaryOperator` (variadic template on `Route::Node *`)
-- `evaluate()` returns `std::pair<Cost, bool>` instead of just `Cost`
+- `evaluate()` returns `std::pair<Cost, bool>` internally; NIFs extract `.first` and keep returning `int64_t`
 - `init()` takes `Solution &` (non-const search::Solution) instead of `pyvrp::Solution const &`
-- `addNodeOperator()`/`addRouteOperator()` → `addOperator()` overloads
+- `addNodeOperator()` → `addOperator()`, kept `addRouteOperator()` for SwapRoutes/SwapStar
+- `NodeOperator` kept as backward-compat alias for `BinaryOperator`
+- `routeOps` kept as separate `vector<BinaryOperator *>` — merging into `binaryOps` would break RelocateWithDepot's `assert(!U->isDepot())`
 
-**C++ files to modify**:
+**Files modified**:
 | File | Change |
 |------|--------|
-| `c_src/pyvrp/search/LocalSearchOperator.h` | Replace with upstream's variadic template. Define `UnaryOperator` and `BinaryOperator` aliases |
-| `c_src/pyvrp/search/Exchange.h` | Change base to `BinaryOperator`, update evaluate return type |
-| `c_src/pyvrp/search/SwapTails.{h,cpp}` | Change base to `BinaryOperator`, update evaluate return type |
-| `c_src/pyvrp/search/RelocateWithDepot.{h,cpp}` | Change base to `BinaryOperator`, update evaluate return type |
-| `c_src/pyvrp/search/SwapRoutes.{h,cpp}` | Temporarily convert to `BinaryOperator` (removed in Phase 3) |
-| `c_src/pyvrp/search/SwapStar.{h,cpp}` | Temporarily convert to `BinaryOperator` (removed in Phase 3) |
-| `c_src/pyvrp/search/LocalSearch.{h,cpp}` | Replace nodeOps/routeOps vectors with unaryOps/binaryOps. Add `applyUnaryOps()`, rename `applyNodeOps()` → `applyBinaryOps()`. Keep ex_vrp-specific logic inline (timeout, same-vehicle check, multi-trip) |
-| `c_src/ex_vrp_nif.cpp` | Update operator resource types, update evaluate NIF return from `int64_t` to `{int64_t, bool}` tuple, update `LocalSearchResource` operator registration |
+| `c_src/pyvrp/search/LocalSearchOperator.h` | Variadic template, `UnaryOperator`/`BinaryOperator` aliases, `NodeOperator` compat alias, removed `RouteOperator` |
+| `c_src/pyvrp/search/Exchange.h` | Base → `BinaryOperator`, evaluate returns `pair<Cost, bool>` |
+| `c_src/pyvrp/search/SwapTails.{h,cpp}` | Base → `BinaryOperator`, evaluate returns pair |
+| `c_src/pyvrp/search/RelocateWithDepot.{h,cpp}` | Base → `BinaryOperator`, evaluate returns pair |
+| `c_src/pyvrp/search/SwapRoutes.{h,cpp}` | Base → `BinaryOperator`, takes `Route::Node *` args, extracts routes via `->route()` |
+| `c_src/pyvrp/search/SwapStar.{h,cpp}` | Base → `BinaryOperator`, takes `Route::Node *` args, renamed loop vars to avoid shadowing |
+| `c_src/pyvrp/search/LocalSearch.{h,cpp}` | `nodeOps` → `binaryOps`, added `unaryOps`, `applyNodeOps` → `applyBinaryOps`, destructures `auto [deltaCost, applied]` |
+| `c_src/ex_vrp_nif.cpp` | Updated operator types, `addNodeOperator` → `addOperator`, evaluate NIFs extract `.first` from pair |
 
-**Elixir changes**:
+**Elixir changes**: None needed.
 
-- `lib/ex_vrp/native.ex`: Update evaluate NIF return specs
-
-**Strategy for ex_vrp custom logic**: Keep `wouldViolateSameVehicle`, timeout support, `applyOptionalClientMoves`, `applyGroupMoves`, `applyDepotRemovalMove` inline in LocalSearch.cpp for now — they become proper operators in Phase 2.
-
-**Tests**: All existing tests must pass. Run `mix benchmark` for regression check.
-
-**Risk**: HIGH — touches nearly every search file. Mitigated by keeping custom logic inline initially.
+**Verified**: 960/960 tests pass, benchmarks show no quality regression.
 
 ---
 
