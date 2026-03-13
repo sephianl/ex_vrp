@@ -20,9 +20,9 @@ namespace pyvrp::search
  * The :math:`(N, M)`-exchange class uses C++ templates for different :math:`N`
  * and :math:`M` to efficiently evaluate these moves.
  */
-template <size_t N, size_t M> class Exchange : public NodeOperator
+template <size_t N, size_t M> class Exchange : public BinaryOperator
 {
-    using NodeOperator::NodeOperator;
+    using BinaryOperator::BinaryOperator;
 
     static_assert(N >= M && N > 0, "N < M or N == 0 does not make sense");
 
@@ -46,9 +46,9 @@ template <size_t N, size_t M> class Exchange : public NodeOperator
                       CostEvaluator const &costEvaluator) const;
 
 public:
-    Cost evaluate(Route::Node *U,
-                  Route::Node *V,
-                  CostEvaluator const &costEvaluator) override;
+    std::pair<Cost, bool> evaluate(Route::Node *U,
+                                   Route::Node *V,
+                                   CostEvaluator const &costEvaluator) override;
 
     void apply(Route::Node *U, Route::Node *V) const override;
 };
@@ -190,40 +190,39 @@ Cost Exchange<N, M>::evalSwapMove(Route::Node *U,
 }
 
 template <size_t N, size_t M>
-Cost Exchange<N, M>::evaluate(Route::Node *U,
-                              Route::Node *V,
-                              CostEvaluator const &costEvaluator)
+std::pair<Cost, bool> Exchange<N, M>::evaluate(
+    Route::Node *U, Route::Node *V, CostEvaluator const &costEvaluator)
 {
     stats_.numEvaluations++;
 
     if (containsDepot(U, N) || overlap(U, V))
-        return 0;
+        return {0, false};
 
     if constexpr (M > 0)
         if (containsDepot(V, M))
-            return 0;
+            return {0, false};
 
     // We cannot easily evaluate across trips, so we cannot determine this move.
     if (U->route() == V->route() && U->trip() != V->trip())
-        return 0;
+        return {0, false};
 
     if constexpr (M == 0)  // special case where nothing in V is moved
     {
         if (U == n(V))
-            return 0;
+            return {0, false};
 
-        return evalRelocateMove(U, V, costEvaluator);
+        return {evalRelocateMove(U, V, costEvaluator), false};
     }
     else
     {
         if constexpr (N == M)  // symmetric, so only have to evaluate this once
             if (U->client() >= V->client())
-                return 0;
+                return {0, false};
 
         if (adjacent(U, V))
-            return 0;
+            return {0, false};
 
-        return evalSwapMove(U, V, costEvaluator);
+        return {evalSwapMove(U, V, costEvaluator), false};
     }
 }
 

@@ -10,17 +10,18 @@ namespace pyvrp::search
  * SwapRoutes(data: ProblemData)
  *
  * This operator evaluates exchanging the visits of two routes :math:`U` and
- * :math:`V`.
+ * :math:`V`. Takes the start depot nodes of each route as arguments.
  */
-class SwapRoutes : public RouteOperator
+class SwapRoutes : public BinaryOperator
 {
     SwapTails op;
 
 public:
-    Cost
-    evaluate(Route *U, Route *V, CostEvaluator const &costEvaluator) override;
+    std::pair<Cost, bool> evaluate(Route::Node *U,
+                                   Route::Node *V,
+                                   CostEvaluator const &costEvaluator) override;
 
-    void apply(Route *U, Route *V) const override;
+    void apply(Route::Node *U, Route::Node *V) const override;
 
     explicit SwapRoutes(ProblemData const &data);
 };

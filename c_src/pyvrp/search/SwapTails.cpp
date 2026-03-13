@@ -15,9 +15,8 @@ bool onLastTrip(pyvrp::search::Route::Node *node)
 }
 }  // namespace
 
-pyvrp::Cost SwapTails::evaluate(Route::Node *U,
-                                Route::Node *V,
-                                CostEvaluator const &costEvaluator)
+std::pair<pyvrp::Cost, bool> SwapTails::evaluate(
+    Route::Node *U, Route::Node *V, CostEvaluator const &costEvaluator)
 {
     stats_.numEvaluations++;
     assert(!U->isEndDepot() && !U->isReloadDepot());
@@ -27,27 +26,22 @@ pyvrp::Cost SwapTails::evaluate(Route::Node *U,
     auto const *vRoute = V->route();
 
     if (uRoute == vRoute)
-        return 0;  // same route
+        return {0, false};  // same route
 
     if (uRoute->idx() > vRoute->idx() && !uRoute->empty() && !vRoute->empty())
-        return 0;  // move will be tackled in a later iteration
+        return {0, false};  // move will be tackled in a later iteration
 
     if (!onLastTrip(U) || !onLastTrip(V))
-        // We cannot move reload depots, so we only evaluate a move if it does
-        // not include a reload depot.
-        return 0;
+        return {0, false};
 
     Cost deltaCost = 0;
 
-    // We're going to incur fixed cost if a route is currently empty but
-    // becomes non-empty due to the proposed move.
     if (uRoute->empty() && !n(V)->isEndDepot())
         deltaCost += uRoute->fixedVehicleCost();
 
     if (vRoute->empty() && !n(U)->isEndDepot())
         deltaCost += vRoute->fixedVehicleCost();
 
-    // We lose fixed cost if a route becomes empty due to the proposed move.
     if (!uRoute->empty() && U->isStartDepot() && n(V)->isEndDepot())
         deltaCost -= uRoute->fixedVehicleCost();
 
@@ -93,7 +87,7 @@ pyvrp::Cost SwapTails::evaluate(Route::Node *U,
         costEvaluator.deltaCost(deltaCost, uProposal, vProposal);
     }
 
-    return deltaCost;
+    return {deltaCost, false};
 }
 
 void SwapTails::apply(Route::Node *U, Route::Node *V) const

@@ -308,28 +308,24 @@ struct LocalSearchResource
         ls = std::make_unique<search::LocalSearch>(
             data, neighbours, perturbManager);
 
-        // Add default operators matching PyVRP
-        ls->addNodeOperator(*exchange10);
-        ls->addNodeOperator(*exchange20);
-        ls->addNodeOperator(*exchange11);
-        ls->addNodeOperator(*exchange21);
-        ls->addNodeOperator(*exchange22);
+        ls->addOperator(*exchange10);
+        ls->addOperator(*exchange20);
+        ls->addOperator(*exchange11);
+        ls->addOperator(*exchange21);
+        ls->addOperator(*exchange22);
 
         if (search::supports<search::SwapTails>(data))
         {
             swapTails = std::make_unique<search::SwapTails>(data);
-            ls->addNodeOperator(*swapTails);
+            ls->addOperator(*swapTails);
         }
 
         if (search::supports<search::RelocateWithDepot>(data))
         {
             relocateDepot = std::make_unique<search::RelocateWithDepot>(data);
-            ls->addNodeOperator(*relocateDepot);
+            ls->addOperator(*relocateDepot);
         }
 
-        // Add route operators for better exploration of solution space
-        // SwapRoutes can help escape local optima in prize-collecting problems
-        // by swapping visits between vehicles
         if (search::supports<search::SwapRoutes>(data))
         {
             swapRoutes = std::make_unique<search::SwapRoutes>(data);
@@ -2860,14 +2856,14 @@ local_search_nif([[maybe_unused]] ErlNifEnv *env,
     pyvrp::search::Exchange<2, 2> swap22(problem_data);     // SWAP(2,2)
     pyvrp::search::SwapTails swapTails(problem_data);       // SWAP-TAILS
 
-    ls.addNodeOperator(relocate);
-    ls.addNodeOperator(relocate2);
-    ls.addNodeOperator(swap11);
-    ls.addNodeOperator(swap21);
-    ls.addNodeOperator(swap22);
+    ls.addOperator(relocate);
+    ls.addOperator(relocate2);
+    ls.addOperator(swap11);
+    ls.addOperator(swap21);
+    ls.addOperator(swap22);
     if (pyvrp::search::supports<pyvrp::search::SwapTails>(problem_data))
     {
-        ls.addNodeOperator(swapTails);
+        ls.addOperator(swapTails);
     }
 
     // RelocateWithDepot only if supported (needs reload depots)
@@ -2876,7 +2872,7 @@ local_search_nif([[maybe_unused]] ErlNifEnv *env,
     {
         relocateDepot
             = std::make_unique<pyvrp::search::RelocateWithDepot>(problem_data);
-        ls.addNodeOperator(*relocateDepot);
+        ls.addOperator(*relocateDepot);
     }
 
     // Note: PyVRP's default ROUTE_OPERATORS is empty
@@ -2946,15 +2942,15 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
     pyvrp::search::Exchange<2, 2> swap22(problem_data);     // SWAP(2,2)
     pyvrp::search::SwapTails swapTails(problem_data);       // SWAP-TAILS
 
-    ls.addNodeOperator(relocate);
-    ls.addNodeOperator(relocate2);
-    ls.addNodeOperator(swap11);
-    ls.addNodeOperator(swap21);
-    ls.addNodeOperator(swap22);
+    ls.addOperator(relocate);
+    ls.addOperator(relocate2);
+    ls.addOperator(swap11);
+    ls.addOperator(swap21);
+    ls.addOperator(swap22);
     // SwapTails.supports() returns true if numVehicles > 1
     if (pyvrp::search::supports<pyvrp::search::SwapTails>(problem_data))
     {
-        ls.addNodeOperator(swapTails);
+        ls.addOperator(swapTails);
     }
 
     // RelocateWithDepot only if supported (needs reload depots)
@@ -2963,7 +2959,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
     {
         relocateDepot
             = std::make_unique<pyvrp::search::RelocateWithDepot>(problem_data);
-        ls.addNodeOperator(*relocateDepot);
+        ls.addOperator(*relocateDepot);
     }
 
     // Note: PyVRP's default ROUTE_OPERATORS is empty - don't add
@@ -3105,68 +3101,68 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
         {
             exchange10_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<1, 0>>(problem_data));
-            ls.addNodeOperator(*exchange10_ops.back());
+            ls.addOperator(*exchange10_ops.back());
         }
         else if (op_name == "exchange11" || op_name == "swap11")
         {
             exchange11_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<1, 1>>(problem_data));
-            ls.addNodeOperator(*exchange11_ops.back());
+            ls.addOperator(*exchange11_ops.back());
         }
         else if (op_name == "exchange20" || op_name == "relocate2")
         {
             exchange20_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<2, 0>>(problem_data));
-            ls.addNodeOperator(*exchange20_ops.back());
+            ls.addOperator(*exchange20_ops.back());
         }
         else if (op_name == "exchange21" || op_name == "swap21")
         {
             exchange21_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<2, 1>>(problem_data));
-            ls.addNodeOperator(*exchange21_ops.back());
+            ls.addOperator(*exchange21_ops.back());
         }
         else if (op_name == "exchange22" || op_name == "swap22")
         {
             exchange22_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<2, 2>>(problem_data));
-            ls.addNodeOperator(*exchange22_ops.back());
+            ls.addOperator(*exchange22_ops.back());
         }
         else if (op_name == "exchange30" || op_name == "relocate3")
         {
             exchange30_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<3, 0>>(problem_data));
-            ls.addNodeOperator(*exchange30_ops.back());
+            ls.addOperator(*exchange30_ops.back());
         }
         else if (op_name == "exchange31" || op_name == "swap31")
         {
             exchange31_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<3, 1>>(problem_data));
-            ls.addNodeOperator(*exchange31_ops.back());
+            ls.addOperator(*exchange31_ops.back());
         }
         else if (op_name == "exchange32" || op_name == "swap32")
         {
             exchange32_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<3, 2>>(problem_data));
-            ls.addNodeOperator(*exchange32_ops.back());
+            ls.addOperator(*exchange32_ops.back());
         }
         else if (op_name == "exchange33" || op_name == "swap33")
         {
             exchange33_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<3, 3>>(problem_data));
-            ls.addNodeOperator(*exchange33_ops.back());
+            ls.addOperator(*exchange33_ops.back());
         }
         else if (op_name == "swap_tails")
         {
             swap_tails_ops.push_back(
                 std::make_unique<pyvrp::search::SwapTails>(problem_data));
-            ls.addNodeOperator(*swap_tails_ops.back());
+            ls.addOperator(*swap_tails_ops.back());
         }
         else if (op_name == "relocate_with_depot")
         {
             relocate_depot_ops.push_back(
                 std::make_unique<pyvrp::search::RelocateWithDepot>(
                     problem_data));
-            ls.addNodeOperator(*relocate_depot_ops.back());
+            ls.addOperator(*relocate_depot_ops.back());
         }
     }
 
@@ -3285,9 +3281,9 @@ fine::Term local_search_stats_nif(
     pyvrp::search::LocalSearch ls(problem_data, neighbours, perturbManager);
 
     // Track operators for stats collection
-    std::vector<std::pair<std::string, pyvrp::search::NodeOperator *>>
+    std::vector<std::pair<std::string, pyvrp::search::BinaryOperator *>>
         node_operator_ptrs;
-    std::vector<std::pair<std::string, pyvrp::search::RouteOperator *>>
+    std::vector<std::pair<std::string, pyvrp::search::BinaryOperator *>>
         route_operator_ptrs;
 
     // Create and add operators
@@ -3312,7 +3308,7 @@ fine::Term local_search_stats_nif(
         {
             exchange10_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<1, 0>>(problem_data));
-            ls.addNodeOperator(*exchange10_ops.back());
+            ls.addOperator(*exchange10_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange10_ops.back().get()});
         }
@@ -3320,7 +3316,7 @@ fine::Term local_search_stats_nif(
         {
             exchange11_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<1, 1>>(problem_data));
-            ls.addNodeOperator(*exchange11_ops.back());
+            ls.addOperator(*exchange11_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange11_ops.back().get()});
         }
@@ -3328,7 +3324,7 @@ fine::Term local_search_stats_nif(
         {
             exchange20_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<2, 0>>(problem_data));
-            ls.addNodeOperator(*exchange20_ops.back());
+            ls.addOperator(*exchange20_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange20_ops.back().get()});
         }
@@ -3336,7 +3332,7 @@ fine::Term local_search_stats_nif(
         {
             exchange21_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<2, 1>>(problem_data));
-            ls.addNodeOperator(*exchange21_ops.back());
+            ls.addOperator(*exchange21_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange21_ops.back().get()});
         }
@@ -3344,7 +3340,7 @@ fine::Term local_search_stats_nif(
         {
             exchange22_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<2, 2>>(problem_data));
-            ls.addNodeOperator(*exchange22_ops.back());
+            ls.addOperator(*exchange22_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange22_ops.back().get()});
         }
@@ -3352,7 +3348,7 @@ fine::Term local_search_stats_nif(
         {
             exchange30_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<3, 0>>(problem_data));
-            ls.addNodeOperator(*exchange30_ops.back());
+            ls.addOperator(*exchange30_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange30_ops.back().get()});
         }
@@ -3360,7 +3356,7 @@ fine::Term local_search_stats_nif(
         {
             exchange31_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<3, 1>>(problem_data));
-            ls.addNodeOperator(*exchange31_ops.back());
+            ls.addOperator(*exchange31_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange31_ops.back().get()});
         }
@@ -3368,7 +3364,7 @@ fine::Term local_search_stats_nif(
         {
             exchange32_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<3, 2>>(problem_data));
-            ls.addNodeOperator(*exchange32_ops.back());
+            ls.addOperator(*exchange32_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange32_ops.back().get()});
         }
@@ -3376,7 +3372,7 @@ fine::Term local_search_stats_nif(
         {
             exchange33_ops.push_back(
                 std::make_unique<pyvrp::search::Exchange<3, 3>>(problem_data));
-            ls.addNodeOperator(*exchange33_ops.back());
+            ls.addOperator(*exchange33_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange33_ops.back().get()});
         }
@@ -3384,7 +3380,7 @@ fine::Term local_search_stats_nif(
         {
             swap_tails_ops.push_back(
                 std::make_unique<pyvrp::search::SwapTails>(problem_data));
-            ls.addNodeOperator(*swap_tails_ops.back());
+            ls.addOperator(*swap_tails_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, swap_tails_ops.back().get()});
         }
@@ -3393,7 +3389,7 @@ fine::Term local_search_stats_nif(
             relocate_depot_ops.push_back(
                 std::make_unique<pyvrp::search::RelocateWithDepot>(
                     problem_data));
-            ls.addNodeOperator(*relocate_depot_ops.back());
+            ls.addOperator(*relocate_depot_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, relocate_depot_ops.back().get()});
         }
@@ -4498,8 +4494,9 @@ int64_t exchange10_evaluate_nif(
     fine::ResourcePtr<SearchNodeResource> v_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(op_resource->op->evaluate(
-        u_resource->node, v_resource->node, evaluator_resource->evaluator));
+    auto [cost, applied] = op_resource->op->evaluate(
+        u_resource->node, v_resource->node, evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(exchange10_evaluate_nif, 0);
@@ -4530,8 +4527,9 @@ int64_t exchange11_evaluate_nif(
     fine::ResourcePtr<SearchNodeResource> v_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(op_resource->op->evaluate(
-        u_resource->node, v_resource->node, evaluator_resource->evaluator));
+    auto [cost, applied] = op_resource->op->evaluate(
+        u_resource->node, v_resource->node, evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(exchange11_evaluate_nif, 0);
@@ -4562,8 +4560,9 @@ int64_t exchange20_evaluate_nif(
     fine::ResourcePtr<SearchNodeResource> v_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(op_resource->op->evaluate(
-        u_resource->node, v_resource->node, evaluator_resource->evaluator));
+    auto [cost, applied] = op_resource->op->evaluate(
+        u_resource->node, v_resource->node, evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(exchange20_evaluate_nif, 0);
@@ -4594,8 +4593,9 @@ int64_t exchange21_evaluate_nif(
     fine::ResourcePtr<SearchNodeResource> v_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(op_resource->op->evaluate(
-        u_resource->node, v_resource->node, evaluator_resource->evaluator));
+    auto [cost, applied] = op_resource->op->evaluate(
+        u_resource->node, v_resource->node, evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(exchange21_evaluate_nif, 0);
@@ -4626,8 +4626,9 @@ int64_t exchange22_evaluate_nif(
     fine::ResourcePtr<SearchNodeResource> v_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(op_resource->op->evaluate(
-        u_resource->node, v_resource->node, evaluator_resource->evaluator));
+    auto [cost, applied] = op_resource->op->evaluate(
+        u_resource->node, v_resource->node, evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(exchange22_evaluate_nif, 0);
@@ -4658,8 +4659,9 @@ int64_t exchange30_evaluate_nif(
     fine::ResourcePtr<SearchNodeResource> v_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(op_resource->op->evaluate(
-        u_resource->node, v_resource->node, evaluator_resource->evaluator));
+    auto [cost, applied] = op_resource->op->evaluate(
+        u_resource->node, v_resource->node, evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(exchange30_evaluate_nif, 0);
@@ -4690,8 +4692,9 @@ int64_t exchange31_evaluate_nif(
     fine::ResourcePtr<SearchNodeResource> v_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(op_resource->op->evaluate(
-        u_resource->node, v_resource->node, evaluator_resource->evaluator));
+    auto [cost, applied] = op_resource->op->evaluate(
+        u_resource->node, v_resource->node, evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(exchange31_evaluate_nif, 0);
@@ -4722,8 +4725,9 @@ int64_t exchange32_evaluate_nif(
     fine::ResourcePtr<SearchNodeResource> v_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(op_resource->op->evaluate(
-        u_resource->node, v_resource->node, evaluator_resource->evaluator));
+    auto [cost, applied] = op_resource->op->evaluate(
+        u_resource->node, v_resource->node, evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(exchange32_evaluate_nif, 0);
@@ -4754,8 +4758,9 @@ int64_t exchange33_evaluate_nif(
     fine::ResourcePtr<SearchNodeResource> v_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(op_resource->op->evaluate(
-        u_resource->node, v_resource->node, evaluator_resource->evaluator));
+    auto [cost, applied] = op_resource->op->evaluate(
+        u_resource->node, v_resource->node, evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(exchange33_evaluate_nif, 0);
@@ -4805,7 +4810,7 @@ create_swap_routes_nif([[maybe_unused]] ErlNifEnv *env,
 
 FINE_NIF(create_swap_routes_nif, 0);
 
-// SwapStar evaluate (takes two Routes, not Nodes)
+// SwapStar evaluate (takes two Routes, passes start depot nodes)
 int64_t swap_star_evaluate_nif(
     [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SwapStarResource> op_resource,
@@ -4813,10 +4818,11 @@ int64_t swap_star_evaluate_nif(
     fine::ResourcePtr<SearchRouteResource> route2_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(
-        op_resource->op->evaluate(route1_resource->route(),
-                                  route2_resource->route(),
-                                  evaluator_resource->evaluator));
+    auto [cost, applied]
+        = op_resource->op->evaluate((*route1_resource->route())[0],
+                                    (*route2_resource->route())[0],
+                                    evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(swap_star_evaluate_nif, 0);
@@ -4828,14 +4834,15 @@ swap_star_apply_nif([[maybe_unused]] ErlNifEnv *env,
                     fine::ResourcePtr<SearchRouteResource> route1_resource,
                     fine::ResourcePtr<SearchRouteResource> route2_resource)
 {
-    op_resource->op->apply(route1_resource->route(), route2_resource->route());
+    op_resource->op->apply((*route1_resource->route())[0],
+                           (*route2_resource->route())[0]);
     reconcile_route_ownership(route1_resource, route2_resource);
     return fine::Atom("ok");
 }
 
 FINE_NIF(swap_star_apply_nif, 0);
 
-// SwapRoutes evaluate (takes two Routes, not Nodes)
+// SwapRoutes evaluate (takes two Routes, passes start depot nodes)
 int64_t swap_routes_evaluate_nif(
     [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SwapRoutesResource> op_resource,
@@ -4843,10 +4850,11 @@ int64_t swap_routes_evaluate_nif(
     fine::ResourcePtr<SearchRouteResource> route2_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(
-        op_resource->op->evaluate(route1_resource->route(),
-                                  route2_resource->route(),
-                                  evaluator_resource->evaluator));
+    auto [cost, applied]
+        = op_resource->op->evaluate((*route1_resource->route())[0],
+                                    (*route2_resource->route())[0],
+                                    evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(swap_routes_evaluate_nif, 0);
@@ -4858,7 +4866,8 @@ swap_routes_apply_nif([[maybe_unused]] ErlNifEnv *env,
                       fine::ResourcePtr<SearchRouteResource> route1_resource,
                       fine::ResourcePtr<SearchRouteResource> route2_resource)
 {
-    op_resource->op->apply(route1_resource->route(), route2_resource->route());
+    op_resource->op->apply((*route1_resource->route())[0],
+                           (*route2_resource->route())[0]);
     reconcile_route_ownership(route1_resource, route2_resource);
     return fine::Atom("ok");
 }
@@ -4899,8 +4908,9 @@ int64_t swap_tails_evaluate_nif(
     fine::ResourcePtr<SearchNodeResource> v_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(op_resource->op->evaluate(
-        u_resource->node, v_resource->node, evaluator_resource->evaluator));
+    auto [cost, applied] = op_resource->op->evaluate(
+        u_resource->node, v_resource->node, evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(swap_tails_evaluate_nif, 0);
@@ -4934,8 +4944,9 @@ int64_t relocate_with_depot_evaluate_nif(
     fine::ResourcePtr<SearchNodeResource> v_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
 {
-    return static_cast<int64_t>(op_resource->op->evaluate(
-        u_resource->node, v_resource->node, evaluator_resource->evaluator));
+    auto [cost, applied] = op_resource->op->evaluate(
+        u_resource->node, v_resource->node, evaluator_resource->evaluator);
+    return static_cast<int64_t>(cost);
 }
 
 FINE_NIF(relocate_with_depot_evaluate_nif, 0);

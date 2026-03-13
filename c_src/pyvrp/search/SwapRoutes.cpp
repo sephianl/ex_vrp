@@ -3,31 +3,32 @@
 using pyvrp::Cost;
 using pyvrp::search::SwapRoutes;
 
-Cost SwapRoutes::evaluate(Route *U,
-                          Route *V,
-                          CostEvaluator const &costEvaluator)
+std::pair<Cost, bool> SwapRoutes::evaluate(Route::Node *U,
+                                           Route::Node *V,
+                                           CostEvaluator const &costEvaluator)
 {
     stats_.numEvaluations++;
 
-    if (U == V || U->vehicleType() == V->vehicleType())
-        return 0;
+    auto *routeU = U->route();
+    auto *routeV = V->route();
 
-    // Evaluate swapping the routes after the two depots.
-    return op.evaluate((*U)[0], (*V)[0], costEvaluator);
+    if (routeU == routeV || routeU->vehicleType() == routeV->vehicleType())
+        return {0, false};
+
+    return op.evaluate(U, V, costEvaluator);
 }
 
-void SwapRoutes::apply(Route *U, Route *V) const
+void SwapRoutes::apply(Route::Node *U, Route::Node *V) const
 {
     stats_.numApplications++;
-    op.apply((*U)[0], (*V)[0]);
+    op.apply(U, V);
 }
 
-SwapRoutes::SwapRoutes(ProblemData const &data) : RouteOperator(data), op(data)
+SwapRoutes::SwapRoutes(ProblemData const &data) : BinaryOperator(data), op(data)
 {
 }
 
 template <> bool pyvrp::search::supports<SwapRoutes>(ProblemData const &data)
 {
-    // Swapping routes has no benefit if all vehicles are the same.
     return data.numVehicleTypes() > 1;
 }

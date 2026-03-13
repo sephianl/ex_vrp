@@ -11,10 +11,10 @@
 #include <numeric>
 
 using pyvrp::Solution;
+using pyvrp::search::BinaryOperator;
 using pyvrp::search::LocalSearch;
-using pyvrp::search::NodeOperator;
-using pyvrp::search::RouteOperator;
 using pyvrp::search::SearchSpace;
+using pyvrp::search::UnaryOperator;
 
 pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
                                         CostEvaluator const &costEvaluator,
@@ -28,7 +28,6 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
 
     markRequiredMissingAsPromising();
 
-    // Set up timeout tracking
     if (timeout_ms > 0)
     {
         has_timeout_ = true;
@@ -44,7 +43,6 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
     {
         search(costEvaluator);
 
-        // Check timeout after search
         if (has_timeout_
             && std::chrono::steady_clock::now() >= timeout_deadline_)
             break;
@@ -53,14 +51,11 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
 
         intensify(costEvaluator);
 
-        // Check timeout after intensify
         if (has_timeout_
             && std::chrono::steady_clock::now() >= timeout_deadline_)
             break;
 
         if (numUpdates_ == numUpdates)
-            // Then intensify (route search) did not do any additional
-            // updates, so the solution is locally optimal.
             break;
     }
 
@@ -73,7 +68,6 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
 {
     loadSolution(solution);
 
-    // Set up timeout tracking (same as operator())
     if (timeout_ms > 0)
     {
         has_timeout_ = true;
@@ -87,8 +81,6 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
 
     search(costEvaluator);
 
-    // After the main search, try to insert unassigned clients via multi-trip.
-    // This is a one-time pass (not iterative) so it won't cause loops.
     improveWithMultiTrip(costEvaluator);
 
     return solution_.unload();
@@ -104,7 +96,7 @@ pyvrp::Solution LocalSearch::intensify(pyvrp::Solution const &solution,
 
 void LocalSearch::search(CostEvaluator const &costEvaluator)
 {
-    if (nodeOps.empty())
+    if (binaryOps.empty())
         return;
 
     markRequiredMissingAsPromising();
@@ -112,14 +104,12 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
     searchCompleted_ = false;
     for (int step = 0; !searchCompleted_; ++step)
     {
-        // Check timeout
         if (has_timeout_
             && std::chrono::steady_clock::now() >= timeout_deadline_)
             return;
 
         searchCompleted_ = true;
 
-        // Node operators are evaluated for neighbouring (U, V) pairs.
         for (auto const uClient : searchSpace_.clientOrder())
         {
             if (!searchSpace_.isPromising(uClient))
@@ -130,32 +120,23 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
             auto const lastTested = lastTestedNodes[U->client()];
             lastTestedNodes[U->client()] = numUpdates_;
 
-            // First test removing or inserting U. Particularly relevant if not
-            // all clients are required (e.g., when prize collecting).
-            // Only test if solution changed since last test (prevents
-            // oscillation)
-            bool shouldTest = (lastTested == -1);  // First time
+            bool shouldTest = (lastTested == -1);
             if (!shouldTest && U->route())
             {
-                // For routed clients, check if route was updated
                 shouldTest = (lastUpdated[U->route()->idx()] > lastTested);
             }
 
             if (shouldTest)
                 applyOptionalClientMoves(U, costEvaluator);
 
-            // Evaluate moves involving the client's group, if it is in any.
             applyGroupMoves(U, costEvaluator);
 
-            if (!U->route())  // we already evaluated inserting U, so there is
-                continue;     // nothing left to be done for this client.
+            if (!U->route())
+                continue;
 
-            // If U borders a reload depot, try removing it.
             applyDepotRemovalMove(p(U), costEvaluator);
             applyDepotRemovalMove(n(U), costEvaluator);
 
-            // We next apply the regular operators that work on pairs of nodes
-            // (U, V), where both U and V are in the solution.
             for (auto const vClient : searchSpace_.neighboursOf(U->client()))
             {
                 auto *V = &solution_.nodes[vClient];
@@ -166,17 +147,15 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
                 if (lastUpdated[U->route()->idx()] > lastTested
                     || lastUpdated[V->route()->idx()] > lastTested)
                 {
-                    if (applyNodeOps(U, V, costEvaluator))
+                    if (applyBinaryOps(U, V, costEvaluator))
                         continue;
 
                     if (p(V)->isStartDepot()
-                        && applyNodeOps(U, p(V), costEvaluator))
+                        && applyBinaryOps(U, p(V), costEvaluator))
                         continue;
                 }
             }
 
-            // Moves involving empty routes are not tested in the first
-            // iteration to avoid using too many routes.
             if (step > 0)
                 applyEmptyRouteMoves(U, costEvaluator);
         }
@@ -191,7 +170,6 @@ void LocalSearch::intensify(CostEvaluator const &costEvaluator)
     searchCompleted_ = false;
     while (!searchCompleted_)
     {
-        // Check timeout
         if (has_timeout_
             && std::chrono::steady_clock::now() >= timeout_deadline_)
             return;
@@ -230,27 +208,22 @@ void LocalSearch::shuffle(RandomNumberGenerator &rng)
     perturbationManager_.shuffle(rng);
     searchSpace_.shuffle(rng);
 
-    rng.shuffle(nodeOps.begin(), nodeOps.end());
+    rng.shuffle(binaryOps.begin(), binaryOps.end());
     rng.shuffle(routeOps.begin(), routeOps.end());
 }
 
 bool LocalSearch::wouldViolateSameVehicle(Route::Node const *U,
                                           Route const *targetRoute) const
 {
-    // If U is not in any same-vehicle group, moving it is always allowed.
     auto const &groups = clientToSameVehicleGroups_[U->client()];
     if (groups.empty())
         return false;
 
     auto const *currentRoute = U->route();
 
-    // If U is not currently in a route, or moving to the same route, no
-    // violation is possible.
     if (!currentRoute || currentRoute == targetRoute)
         return false;
 
-    // If the target route exists and has the same vehicle name as the current
-    // route, moving is allowed (same vehicle with different shifts).
     if (targetRoute)
     {
         auto const *currentName
@@ -258,20 +231,15 @@ bool LocalSearch::wouldViolateSameVehicle(Route::Node const *U,
         auto const *targetName
             = data.vehicleType(targetRoute->vehicleType()).name;
 
-        // If both have the same non-empty name, they represent the same
-        // vehicle (possibly with different shifts), so moving is allowed.
         if (currentName && targetName && currentName[0] != '\0'
             && std::strcmp(currentName, targetName) == 0)
             return false;
     }
 
-    // Check each same-vehicle group U belongs to.
     for (auto const groupIdx : groups)
     {
         auto const &group = data.sameVehicleGroup(groupIdx);
 
-        // Check if any other group member is in the current route.
-        // If so, moving U would split them.
         for (auto const otherClient : group)
         {
             if (otherClient == U->client())
@@ -279,32 +247,29 @@ bool LocalSearch::wouldViolateSameVehicle(Route::Node const *U,
 
             auto const *otherNode = &solution_.nodes[otherClient];
             if (otherNode->route() == currentRoute)
-                return true;  // Would leave behind a group member
+                return true;
         }
     }
 
     return false;
 }
 
-bool LocalSearch::applyNodeOps(Route::Node *U,
-                               Route::Node *V,
-                               CostEvaluator const &costEvaluator)
+bool LocalSearch::applyBinaryOps(Route::Node *U,
+                                 Route::Node *V,
+                                 CostEvaluator const &costEvaluator)
 {
     auto *rU = U->route();
     auto *rV = V->route();
 
-    // Skip if moving U to V's route (or vice versa) would violate same-vehicle
-    // constraints. We check both directions since different operators may move
-    // clients in different ways.
     if (rU != rV)
     {
         if (wouldViolateSameVehicle(U, rV) || wouldViolateSameVehicle(V, rU))
             return false;
     }
 
-    for (auto *nodeOp : nodeOps)
+    for (auto *op : binaryOps)
     {
-        auto const deltaCost = nodeOp->evaluate(U, V, costEvaluator);
+        auto [deltaCost, applied] = op->evaluate(U, V, costEvaluator);
         if (deltaCost < 0)
         {
             [[maybe_unused]] auto const costBefore
@@ -314,16 +279,14 @@ bool LocalSearch::applyNodeOps(Route::Node *U,
             searchSpace_.markPromising(U);
             searchSpace_.markPromising(V);
 
-            nodeOp->apply(U, V);
+            if (!applied)
+                op->apply(U, V);
             update(rU, rV);
 
             [[maybe_unused]] auto const costAfter
                 = costEvaluator.penalisedCost(*rU)
                   + Cost(rU != rV) * costEvaluator.penalisedCost(*rV);
 
-            // When there is an improving move, the delta cost evaluation must
-            // be exact. The resulting cost is then the sum of the cost before
-            // the move, plus the delta cost.
             assert(costAfter == costBefore + deltaCost);
 
             return true;
@@ -339,23 +302,22 @@ bool LocalSearch::applyRouteOps(Route *U,
 {
     for (auto *routeOp : routeOps)
     {
-        auto const deltaCost = routeOp->evaluate(U, V, costEvaluator);
+        auto [deltaCost, applied]
+            = routeOp->evaluate((*U)[0], (*V)[0], costEvaluator);
         if (deltaCost < 0)
         {
             [[maybe_unused]] auto const costBefore
                 = costEvaluator.penalisedCost(*U)
                   + Cost(U != V) * costEvaluator.penalisedCost(*V);
 
-            routeOp->apply(U, V);
+            if (!applied)
+                routeOp->apply((*U)[0], (*V)[0]);
             update(U, V);
 
             [[maybe_unused]] auto const costAfter
                 = costEvaluator.penalisedCost(*U)
                   + Cost(U != V) * costEvaluator.penalisedCost(*V);
 
-            // When there is an improving move, the delta cost evaluation must
-            // be exact. The resulting cost is then the sum of the cost before
-            // the move, plus the delta cost.
             assert(costAfter == costBefore + deltaCost);
 
             return true;
@@ -371,12 +333,9 @@ void LocalSearch::applyDepotRemovalMove(Route::Node *U,
     if (!U->isReloadDepot())
         return;
 
-    // We remove the depot when that's either better, or neutral. It can be
-    // neutral if for example it's the same depot visited consecutively, but
-    // that's then unnecessary.
     if (removeCost(U, data, costEvaluator) <= 0)
     {
-        searchSpace_.markPromising(U);  // U's neighbours might not be depots
+        searchSpace_.markPromising(U);
         auto *route = U->route();
         route->remove(U->idx());
         update(route, route);
@@ -388,10 +347,6 @@ void LocalSearch::applyEmptyRouteMoves(Route::Node *U,
 {
     assert(U->route());
 
-    // We apply moves involving empty routes in the (randomised) order of
-    // orderVehTypes. This helps because empty vehicle moves incur fixed cost,
-    // and a purely greedy approach over-prioritises vehicles with low fixed
-    // costs but possibly high variable costs.
     for (auto const &[vehType, offset] : searchSpace_.vehTypeOrder())
     {
         auto const begin = solution_.routes.begin() + offset;
@@ -399,7 +354,7 @@ void LocalSearch::applyEmptyRouteMoves(Route::Node *U,
         auto const pred = [](auto const &route) { return route.empty(); };
         auto empty = std::find_if(begin, end, pred);
 
-        if (empty != end && applyNodeOps(U, (*empty)[0], costEvaluator))
+        if (empty != end && applyBinaryOps(U, (*empty)[0], costEvaluator))
             break;
     }
 }
@@ -409,23 +364,18 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
 {
     ProblemData::Client const &uData = data.location(U->client());
 
-    if (uData.required && !U->route())  // then we must insert U
+    if (uData.required && !U->route())
     {
         solution_.insert(U, searchSpace_, costEvaluator, true);
         update(U->route(), U->route());
         searchSpace_.markPromising(U);
     }
 
-    // Required clients are not optional, and have just been inserted above
-    // if not already in the solution. Groups have their own operator and are
-    // not processed here.
     if (uData.required || uData.group)
         return;
 
-    // Don't remove U if it would violate same-vehicle constraints (i.e., if
-    // U is in a same-vehicle group with other clients on the same route).
     if (!wouldViolateSameVehicle(U, nullptr)
-        && removeCost(U, data, costEvaluator) < 0)  // remove if improving
+        && removeCost(U, data, costEvaluator) < 0)
     {
         searchSpace_.markPromising(U);
         auto *route = U->route();
@@ -436,9 +386,6 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
     if (U->route())
         return;
 
-    // Attempt to insert U into the solution. This considers both existing
-    // routes (via neighbourhood search) and empty routes, inserting U if doing
-    // so improves the objective.
     if (solution_.insert(U, searchSpace_, costEvaluator, false))
     {
         update(U->route(), U->route());
@@ -446,8 +393,6 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
         return;
     }
 
-    // If neighbourhood-based insertion failed, try replacing another optional
-    // client with U if that would be improving.
     for (auto const vClient : searchSpace_.neighboursOf(U->client()))
     {
         auto *V = &solution_.nodes[vClient];
@@ -458,7 +403,6 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
 
         ProblemData::Client const &vData = data.location(V->client());
 
-        // Check same-vehicle constraint for V before removing it.
         if (!vData.required && !wouldViolateSameVehicle(V, nullptr)
             && inplaceCost(U, V, data, costEvaluator) < 0)
         {
@@ -501,8 +445,6 @@ void LocalSearch::applyGroupMoves(Route::Node *U,
         return;
     }
 
-    // We remove clients in order of increasing cost delta (biggest improvement
-    // first), and evaluate swapping the last client with U.
     std::vector<Cost> costs;
     for (auto const client : inSol)
     {
@@ -510,7 +452,6 @@ void LocalSearch::applyGroupMoves(Route::Node *U,
         costs.push_back(cost);
     }
 
-    // Sort clients in order of increasing removal costs.
     std::vector<size_t> range(inSol.size());
     std::iota(range.begin(), range.end(), 0);
     std::sort(range.begin(),
@@ -518,7 +459,6 @@ void LocalSearch::applyGroupMoves(Route::Node *U,
               [&costs](auto idx1, auto idx2)
               { return costs[idx1] < costs[idx2]; });
 
-    // Remove all but the last client, whose removal is the least valuable.
     for (auto idx = range.begin(); idx != range.end() - 1; ++idx)
     {
         auto const client = inSol[*idx];
@@ -530,7 +470,6 @@ void LocalSearch::applyGroupMoves(Route::Node *U,
         update(route, route);
     }
 
-    // Test swapping U and V, and do so if U is better to have than V.
     auto *V = &solution_.nodes[inSol[range.back()]];
     if (U != V && inplaceCost(U, V, data, costEvaluator) < 0)
     {
@@ -548,8 +487,8 @@ void LocalSearch::markRequiredMissingAsPromising()
     for (auto client = data.numDepots(); client != data.numLocations();
          ++client)
     {
-        if (solution_.nodes[client].route())  // then it's not missing, so
-            continue;                         // nothing to do
+        if (solution_.nodes[client].route())
+            continue;
 
         ProblemData::Client const &clientData = data.location(client);
         if (clientData.required)
@@ -558,8 +497,8 @@ void LocalSearch::markRequiredMissingAsPromising()
             continue;
         }
 
-        if (clientData.group)  // mark the group's first client as promising so
-        {                      // the group at least gets inserted if needed
+        if (clientData.group)
+        {
             auto const &group = data.group(clientData.group.value());
             if (group.required && group.clients().front() == client)
             {
@@ -573,30 +512,19 @@ void LocalSearch::markRequiredMissingAsPromising()
 void LocalSearch::improveWithMultiTrip(
     [[maybe_unused]] CostEvaluator const &costEvaluator)
 {
-    // This function tries to insert unassigned clients with prizes by creating
-    // new trips. Unlike the main local search insert logic, this is a one-time
-    // pass that won't cause infinite loops.
-    //
-    // For each unassigned client with a prize:
-    // 1. Check if the client fits alone in a trip (capacity check)
-    // 2. Find a route with multi-trip capability
-    // 3. Estimate if adding a new trip is beneficial (prize vs travel cost)
-    // 4. If yes, insert the client as a new trip
-
     for (auto client = data.numDepots(); client != data.numLocations();
          ++client)
     {
         auto *U = &solution_.nodes[client];
-        if (U->route())  // already assigned
+        if (U->route())
             continue;
 
         ProblemData::Client const &clientData = data.location(client);
-        if (clientData.prize <= 0)  // no prize, skip
+        if (clientData.prize <= 0)
             continue;
 
-        // Find the best route to add a new trip
         Route *bestRoute = nullptr;
-        Cost bestCost = 0;  // Must be negative to be worth inserting
+        Cost bestCost = 0;
 
         for (auto &route : solution_.routes)
         {
@@ -605,18 +533,14 @@ void LocalSearch::improveWithMultiTrip(
 
             auto const &vehType = data.vehicleType(route.vehicleType());
 
-            // Check if multi-trip is available
             if (vehType.reloadDepots.empty())
                 continue;
             if (route.numTrips() >= route.maxTrips())
                 continue;
 
-            // Check if route is currently feasible (avoid making bad routes
-            // worse)
             if (!route.isFeasible())
                 continue;
 
-            // Check if client fits alone in a trip
             bool clientFits = true;
             for (size_t d = 0;
                  d < data.numLoadDimensions() && d < vehType.capacity.size();
@@ -639,7 +563,6 @@ void LocalSearch::improveWithMultiTrip(
             if (!clientFits)
                 continue;
 
-            // Estimate the cost of adding a new trip
             auto const reloadDepot = vehType.reloadDepots[0];
             auto const profile = vehType.profile;
             auto const &distMatrix = data.distanceMatrix(profile);
@@ -651,7 +574,6 @@ void LocalSearch::improveWithMultiTrip(
                              + durMatrix(client, reloadDepot)
                              + clientData.serviceDuration;
 
-            // Check if adding this trip would exceed shift duration
             auto const shiftDuration = vehType.shiftDuration;
             auto const currentDuration = route.duration();
             if (shiftDuration < std::numeric_limits<Duration>::max())
@@ -665,10 +587,9 @@ void LocalSearch::improveWithMultiTrip(
                 }
 
                 if (currentDuration + dur + reloadTime > shiftDuration)
-                    continue;  // Would exceed shift duration
+                    continue;
             }
 
-            // Calculate cost: prize gained minus travel cost
             Cost tripCost = -static_cast<Cost>(clientData.prize)
                             + static_cast<Cost>(dist.get());
 
@@ -679,20 +600,17 @@ void LocalSearch::improveWithMultiTrip(
             }
         }
 
-        // If we found a beneficial route, insert the client
         if (bestRoute && bestCost < 0)
         {
             auto const &vehType = data.vehicleType(bestRoute->vehicleType());
             auto const reloadDepot = vehType.reloadDepots[0];
 
-            // Insert at the end of the route as a new trip
-            auto const insertIdx = bestRoute->size() - 1;  // Before end depot
+            auto const insertIdx = bestRoute->size() - 1;
             Route::Node depot = {reloadDepot};
             bestRoute->insert(insertIdx, &depot);
             bestRoute->insert(insertIdx + 1, U);
             bestRoute->update();
 
-            // Mark as promising for future iterations
             searchSpace_.markPromising(U);
         }
     }
@@ -706,16 +624,22 @@ void LocalSearch::update(Route *U, Route *V)
     U->update();
     lastUpdated[U->idx()] = numUpdates_;
 
-    for (auto *op : routeOps)  // this is used by some route operators
-        op->update(U);         // to keep caches in sync.
+    for (auto *op : binaryOps)
+        op->update(U);
+
+    for (auto *op : routeOps)
+        op->update(U);
 
     if (U != V)
     {
         V->update();
         lastUpdated[V->idx()] = numUpdates_;
 
-        for (auto *op : routeOps)  // this is used by some route operators
-            op->update(V);         // to keep caches in sync.
+        for (auto *op : binaryOps)
+            op->update(V);
+
+        for (auto *op : routeOps)
+            op->update(V);
     }
 }
 
@@ -729,29 +653,34 @@ void LocalSearch::loadSolution(pyvrp::Solution const &solution)
 
     solution_.load(solution);
 
-    for (auto *nodeOp : nodeOps)
-        nodeOp->init(solution);
+    for (auto *op : unaryOps)
+        op->init(solution_);
 
-    for (auto *routeOp : routeOps)
-        routeOp->init(solution);
+    for (auto *op : binaryOps)
+        op->init(solution_);
+
+    for (auto *op : routeOps)
+        op->init(solution_);
 }
 
-void LocalSearch::addNodeOperator(NodeOperator &op)
+void LocalSearch::addOperator(BinaryOperator &op)
 {
-    nodeOps.emplace_back(&op);
+    binaryOps.emplace_back(&op);
 }
 
-void LocalSearch::addRouteOperator(RouteOperator &op)
+void LocalSearch::addRouteOperator(BinaryOperator &op)
 {
     routeOps.emplace_back(&op);
 }
 
-std::vector<NodeOperator *> const &LocalSearch::nodeOperators() const
+void LocalSearch::addOperator(UnaryOperator &op) { unaryOps.emplace_back(&op); }
+
+std::vector<BinaryOperator *> const &LocalSearch::operators() const
 {
-    return nodeOps;
+    return binaryOps;
 }
 
-std::vector<RouteOperator *> const &LocalSearch::routeOperators() const
+std::vector<BinaryOperator *> const &LocalSearch::routeOperators() const
 {
     return routeOps;
 }
@@ -778,7 +707,7 @@ LocalSearch::Statistics LocalSearch::statistics() const
         numImproving += stats.numApplications;
     };
 
-    std::for_each(nodeOps.begin(), nodeOps.end(), count);
+    std::for_each(binaryOps.begin(), binaryOps.end(), count);
     std::for_each(routeOps.begin(), routeOps.end(), count);
 
     assert(numImproving <= numUpdates_);
@@ -797,8 +726,6 @@ LocalSearch::LocalSearch(ProblemData const &data,
       lastUpdated(data.numVehicles()),
       clientToSameVehicleGroups_(data.numLocations())
 {
-    // Build client-to-same-vehicle-groups lookup for efficient constraint
-    // checking during local search.
     for (size_t groupIdx = 0; groupIdx != data.numSameVehicleGroups();
          ++groupIdx)
         for (auto const client : data.sameVehicleGroup(groupIdx))

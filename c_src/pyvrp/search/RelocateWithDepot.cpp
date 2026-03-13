@@ -196,9 +196,8 @@ void RelocateWithDepot::evalInPlaceDepot(Route::Node *V,
     }
 }
 
-pyvrp::Cost RelocateWithDepot::evaluate(Route::Node *U,
-                                        Route::Node *V,
-                                        CostEvaluator const &costEvaluator)
+std::pair<pyvrp::Cost, bool> RelocateWithDepot::evaluate(
+    Route::Node *U, Route::Node *V, CostEvaluator const &costEvaluator)
 {
     assert(!U->isDepot() && !V->isEndDepot());
     stats_.numEvaluations++;
@@ -206,48 +205,36 @@ pyvrp::Cost RelocateWithDepot::evaluate(Route::Node *U,
     auto const *uRoute = U->route();
     auto const *vRoute = V->route();
 
-    if (vRoute->empty())  // if V's empty, Exchange<1, 0> suffices
-        return 0;
+    if (vRoute->empty())
+        return {0, false};
 
     if (vRoute->numTrips() == vRoute->maxTrips())
-        return 0;
+        return {0, false};
 
-    // Cannot evaluate this move because it requires a load segment to contain
-    // a reload depot in the middle, which makes concatenation far more complex.
     if (uRoute == vRoute && U->trip() != V->trip())
-        return 0;
+        return {0, false};
 
     move_ = {};
 
-    // Special case: U is directly after V in the same route. This is an
-    // in-place depot insertion without relocating U.
     if (U == n(V))
     {
-        // Insert depot between V and U: ... V U ... -> ... V depot U ...
-        // We only insert a depot, no relocation happens.
         if (!V->isReloadDepot() && !U->isReloadDepot())
             evalInPlaceDepot(V, costEvaluator);
 
-        return move_.cost;
+        return {move_.cost, false};
     }
 
     Cost fixedCost = 0;
-    if (uRoute != vRoute && uRoute->numClients() == 1)  // empty after move
+    if (uRoute != vRoute && uRoute->numClients() == 1)
         fixedCost -= uRoute->fixedVehicleCost();
 
     if (!V->isReloadDepot())
-        // If V is already a reload depot, there is no point inserting another
-        // reload depot directly after it. If V is a start depot, however, that
-        // might be OK to deal with initial vehicle load.
         evalDepotBefore(fixedCost, U, V, costEvaluator);
 
     if (!n(V)->isReloadDepot())
-        // If n(V) is a reload depot, there is no point inserting another reload
-        // depot directly before it. If n(V) is the end depot, however, that
-        // might be OK to ensure the vehicle returns empty.
         evalDepotAfter(fixedCost, U, V, costEvaluator);
 
-    return move_.cost;
+    return {move_.cost, false};
 }
 
 void RelocateWithDepot::apply(Route::Node *U, Route::Node *V) const
