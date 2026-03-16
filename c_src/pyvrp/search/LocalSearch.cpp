@@ -202,7 +202,8 @@ void LocalSearch::applyUnaryOps(Route::Node *U,
 
     if (!U->route())
     {
-        ProblemData::Client const &uData = data.location(U->client());
+        ProblemData::Client const &uData
+            = data.client(U->client() - data.numDepots());
         if (!uData.required && !uData.group
             && solution_.insert(U, searchSpace_, costEvaluator, false))
         {
@@ -282,7 +283,8 @@ void LocalSearch::ensureStructuralFeasibility(
         if (solution_.nodes[client].route())
             continue;
 
-        ProblemData::Client const &clientData = data.location(client);
+        ProblemData::Client const &clientData
+            = data.client(client - data.numDepots());
 
         if (clientData.required)
         {
@@ -346,7 +348,8 @@ void LocalSearch::ensureStructuralFeasibility(
             auto *U = &solution_.nodes[client];
             auto *route = U->route();
             Cost deltaCost = 0;
-            ProblemData::Client const &cData = data.location(client);
+            ProblemData::Client const &cData
+                = data.client(client - data.numDepots());
             deltaCost
                 = cData.prize
                   - Cost(route->numClients() == 1) * route->fixedVehicleCost();
@@ -383,7 +386,8 @@ void LocalSearch::improveWithMultiTrip(
         if (U->route())
             continue;
 
-        ProblemData::Client const &clientData = data.location(client);
+        ProblemData::Client const &clientData
+            = data.client(client - data.numDepots());
         if (clientData.prize <= 0)
             continue;
 
@@ -445,8 +449,7 @@ void LocalSearch::improveWithMultiTrip(
                 Duration reloadTime = 0;
                 if (reloadDepot < data.numDepots())
                 {
-                    ProblemData::Depot const &depot
-                        = data.location(reloadDepot);
+                    ProblemData::Depot const &depot = data.depot(reloadDepot);
                     reloadTime = depot.serviceDuration;
                 }
 

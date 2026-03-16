@@ -155,7 +155,7 @@ void Route::makeSchedule(ProblemData const &data)
     for (size_t tripIdx = 0; tripIdx != trips_.size(); ++tripIdx)
     {
         auto const &trip = trips_[tripIdx];
-        ProblemData::Depot const &start = data.location(trip.startDepot());
+        ProblemData::Depot const &start = data.depot(trip.startDepot());
 
         auto const earliestStart = std::max(
             start.twEarly, std::min(trip.releaseTime(), start.twLate));
@@ -181,7 +181,8 @@ void Route::makeSchedule(ProblemData const &data)
         {
             now += durations(prevClient, client);
 
-            ProblemData::Client const &clientData = data.location(client);
+            ProblemData::Client const &clientData
+                = data.client(client - data.numDepots());
             handle(clientData, client, tripIdx, clientData.serviceDuration);
 
             prevClient = client;
@@ -190,7 +191,7 @@ void Route::makeSchedule(ProblemData const &data)
         now += durations(prevClient, trip.endDepot());
     }
 
-    ProblemData::Depot const &end = data.location(endDepot_);
+    ProblemData::Depot const &end = data.depot(endDepot_);
     handle(end, endDepot_, numTrips(), 0);
 }
 
@@ -263,7 +264,7 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         if (trip != trips_.rbegin())  // need to finalise before next trip,
             ds = ds.finaliseFront();  // unless this is the first one
 
-        ProblemData::Depot const &end = data.location(trip->endDepot());
+        ProblemData::Depot const &end = data.depot(trip->endDepot());
         ds = DurationSegment::merge(0, {end}, ds);
 
         size_t nextClient = trip->endDepot();
@@ -271,14 +272,15 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         {
             auto const client = *it;
             auto const edgeDuration = durations(client, nextClient);
-            ProblemData::Client const &clientData = data.location(client);
+            ProblemData::Client const &clientData
+                = data.client(client - data.numDepots());
 
             ds = DurationSegment::merge(edgeDuration, {clientData}, ds);
             nextClient = client;
         }
 
         auto const edgeDuration = durations(trip->startDepot(), nextClient);
-        ProblemData::Depot const &start = data.location(trip->startDepot());
+        ProblemData::Depot const &start = data.depot(trip->startDepot());
         // Service time and reload cost are only applied at reload depots (not
         // the first trip). In reverse iteration, trip + 1 == rend means this is
         // the first trip.

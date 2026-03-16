@@ -147,59 +147,79 @@ Phase 6 (Island ILS — pure Elixir)
 
 ---
 
-## Phase 4: Move Neighbourhood to C++ — Size: M
+## Phase 4: Move Neighbourhood to C++ — Size: M ✅ DONE
 
-**Goal**: Replace Elixir Nx neighbourhood computation with upstream's C++ implementation.
+**Goal**: Replace inline `build_neighbours()` in NIF file with proper C++ files matching upstream structure.
 
-_Can run in parallel with Phase 5 after Phase 3._
+**What changed**:
 
-**New C++ files** (copy from upstream):
+- Extracted ~200-line `build_neighbours()` from `ex_vrp_nif.cpp` into `neighbourhood.{h,cpp}` under `pyvrp::search` namespace
+- Added `NeighbourhoodParams` struct with `weightWaitTime` (default 0.2), `numNeighbours` (default 60), `symmetricProximity` (default true)
+- `weightTimeWarp` hardcoded to 1.0 inside implementation (matches upstream — not a param)
+- Replaced all 5 `build_neighbours(problem_data)` call sites with `pyvrp::search::computeNeighbours(problem_data)`
 
-- `c_src/pyvrp/search/neighbourhood.{h,cpp}`
+**New files created**:
+| File | Purpose |
+|------|---------|
+| `c_src/pyvrp/search/neighbourhood.h` | `NeighbourhoodParams` struct + `computeNeighbours()` declaration |
+| `c_src/pyvrp/search/neighbourhood.cpp` | Algorithm moved from `ex_vrp_nif.cpp` |
 
-**C++ files to modify**:
+**Files modified**:
 | File | Change |
 |------|--------|
-| `c_src/ex_vrp_nif.cpp` | Replace existing `build_neighbours()` with call to `pyvrp::search::computeNeighbours()`. Optionally expose as NIF |
-| `Makefile` | Add `neighbourhood.cpp` |
+| `c_src/ex_vrp_nif.cpp` | Removed `build_neighbours()`, added `#include`, replaced 5 call sites |
+| `Makefile` | Added `neighbourhood.cpp` to `PYVRP_SEARCH_SRC` |
 
-**Elixir changes**:
+**Divergences from upstream**: Our default `numNeighbours` is 60 (upstream uses 50) to maintain backward compatibility. Elixir `neighbourhood.ex` kept as reference implementation.
 
-- `lib/ex_vrp/neighbourhood.ex`: Simplify to delegate to C++ NIF, or keep as reference implementation
-- `lib/ex_vrp/neighbourhood_params.ex`: Verify parity with upstream's `NeighbourhoodParams`
-
-**Tests**: Compare outputs between Nx and C++ implementations. Benchmark speedup.
-
-**Risk**: LOW — well-defined algorithm, testable.
+**Verified**: 923/923 tests pass, benchmarks show no quality regression.
 
 ---
 
-## Phase 5: Data Model Modernization — Size: M
+## Phase 5: Data Model Modernization — Size: M ✅ DONE
 
-**Goal**: Activity type system, remove centroid, remove `location()` accessor, logging stub.
+**Goal**: Activity type system, remove centroid, remove `location()` accessor, add `client()`/`depot()` accessors, logging stub.
 
-_Can run in parallel with Phase 4 after Phase 3._
+**What changed**:
 
-**New C++ files**:
+- Added `client(size_t)` and `depot(size_t)` inline accessors to `ProblemData.h` matching upstream API
+- Removed `Location` union, `location()` method, `centroid_` member, `centroid()` method from ProblemData
+- Replaced all ~40 `data.location(idx)` call sites across 14 C++ files with `data.client(idx - data.numDepots())` or `data.depot(idx)` as appropriate
+- Removed `problem_data_centroid_nif` from C++ and Elixir
+- Created Activity type system, PiecewiseLinearFunction, and logging stub
 
-- `c_src/pyvrp/Activity.{h,cpp}` — copy from upstream
-- `c_src/pyvrp/PiecewiseLinearFunction.h` — copy from upstream (header-only)
-- `c_src/pyvrp/logging.h` — create stub with no-op macros (avoid spdlog dependency in NIF context)
+**New files created**:
+| File | Purpose |
+|------|---------|
+| `c_src/pyvrp/Activity.{h,cpp}` | Activity type system with DEPOT/CLIENT enum |
+| `c_src/pyvrp/PiecewiseLinearFunction.h` | Header-only template class (from upstream) |
+| `c_src/pyvrp/logging.h` | No-op logging macros stub (avoids spdlog dependency) |
 
-**C++ files to modify**:
+**Files modified**:
 | File | Change |
 |------|--------|
-| `c_src/pyvrp/ProblemData.{h,cpp}` | Remove `centroid_`, `centroid()`, `Location` union, `location()` method. Add `client()`/`depot()` accessors matching upstream |
-| `c_src/pyvrp/Solution.{h,cpp}` | Update if ScheduledVisit changed to class |
-| `c_src/ex_vrp_nif.cpp` | Remove `problem_data_centroid_nif`. Update all `data.location()` calls to `data.client()` / `data.depot()` (mechanical but widespread) |
-| `Makefile` | Add `Activity.cpp` |
+| `c_src/pyvrp/ProblemData.{h,cpp}` | Added `client()`/`depot()` accessors, removed `Location` union, `location()`, `centroid_`, `centroid()` |
+| `c_src/pyvrp/Route.cpp` | `location()` → `client()`/`depot()` |
+| `c_src/pyvrp/Trip.cpp` | `location()` → `client()` |
+| `c_src/pyvrp/Solution.cpp` | `location()` → `client()` |
+| `c_src/pyvrp/bindings.cpp` | Removed ProblemData centroid binding |
+| `c_src/pyvrp/search/LocalSearch.cpp` | `location()` → `client()`/`depot()` (6 sites) |
+| `c_src/pyvrp/search/Route.{h,cpp}` | `location()` → `client()`/`depot()`, inline centroid computation replacing `data.centroid()` |
+| `c_src/pyvrp/search/Solution.cpp` | `location()` → `client()`/`depot()` (6 sites) |
+| `c_src/pyvrp/search/RelocateWithDepot.cpp` | `location()` → `depot()` (5 sites) |
+| `c_src/pyvrp/search/RemoveOptional.cpp` | `location()` → `client()` (2 sites) |
+| `c_src/pyvrp/search/ReplaceOptional.cpp` | `location()` → `client()` (3 sites) |
+| `c_src/pyvrp/search/ReplaceGroup.cpp` | `location()` → `client()` (3 sites) |
+| `c_src/pyvrp/search/RemoveAdjacentDepot.cpp` | `location()` → `client()` (1 site) |
+| `c_src/pyvrp/search/ClientSegment.h` | `location()` → `client()` (2 sites) |
+| `c_src/ex_vrp_nif.cpp` | Removed `problem_data_centroid_nif` |
+| `lib/ex_vrp/native.ex` | Removed `problem_data_centroid_nif` from `@nifs` and function stub |
+| `Makefile` | Added `Activity.cpp` to `PYVRP_CORE_SRC` |
+| `test/problem_data_test.exs` | Removed centroid test |
 
-**Elixir changes**:
+**Divergences from upstream**: Trip/Route/search::Route centroids kept (they compute route-level centroids, not ProblemData-level). `solution_route_centroid` and `search_route_centroid_nif` NIFs kept. `route_centroid/2` in `solution.ex` kept (Zelo dependency — uses route centroid, not ProblemData centroid).
 
-- `lib/ex_vrp/native.ex`: Remove `problem_data_centroid_nif`
-- `lib/ex_vrp/solution.ex`: Remove or stub `route_centroid/2` (Zelo uses this — check usage before removing)
-
-**Risk**: MEDIUM — `location()` removal is widespread. Grep all call sites first. Centroid removal may need Zelo-side migration.
+**Verified**: 923/923 tests pass, zero compilation warnings.
 
 ---
 

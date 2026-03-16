@@ -48,7 +48,8 @@ ReplaceOptional::evaluate(Route::Node *U, CostEvaluator const &costEvaluator)
     if (U->route())
         return {0, false};
 
-    ProblemData::Client const &uData = data.location(U->client());
+    ProblemData::Client const &uData
+        = data.client(U->client() - data.numDepots());
     if (uData.required || uData.group)
         return {0, false};
 
@@ -63,7 +64,8 @@ ReplaceOptional::evaluate(Route::Node *U, CostEvaluator const &costEvaluator)
         if (!route)
             continue;
 
-        ProblemData::Client const &vData = data.location(V->client());
+        ProblemData::Client const &vData
+            = data.client(V->client() - data.numDepots());
         if (vData.required)
             continue;
 
@@ -104,7 +106,7 @@ bool pyvrp::search::supports<ReplaceOptional>(ProblemData const &data)
 {
     for (size_t idx = data.numDepots(); idx != data.numLocations(); ++idx)
     {
-        ProblemData::Client const &client = data.location(idx);
+        ProblemData::Client const &client = data.client(idx - data.numDepots());
         if (!client.required && !client.group)
             return true;
     }

@@ -96,7 +96,15 @@ bool Route::overlapsWith(Route const &other, double tolerance) const
 {
     assert(!dirty && !other.dirty);
 
-    auto const [dX, dY] = data.centroid();
+    std::pair<Coordinate, Coordinate> dataCentroid = {0, 0};
+    for (auto const &client : data.clients())
+    {
+        dataCentroid.first += static_cast<double>(client.x) / data.numClients();
+        dataCentroid.second
+            += static_cast<double>(client.y) / data.numClients();
+    }
+
+    auto const [dX, dY] = dataCentroid;
     auto const [tX, tY] = this->centroid_;
     auto const [oX, oY] = other.centroid_;
 
@@ -239,7 +247,8 @@ void Route::update()
         if (node->isDepot())
             continue;
 
-        ProblemData::Client const &clientData = data.location(node->client());
+        ProblemData::Client const &clientData
+            = data.client(node->client() - data.numDepots());
         centroid_.first += static_cast<double>(clientData.x) / numClients();
         centroid_.second += static_cast<double>(clientData.y) / numClients();
     }
@@ -255,12 +264,12 @@ void Route::update()
     // Duration.
     durAt.resize(nodes.size());
 
-    ProblemData::Depot const &start = data.location(startDepot());
+    ProblemData::Depot const &start = data.depot(startDepot());
     DurationSegment const vehStart(vehicleType_, vehicleType_.startLate);
     DurationSegment const depotStart(start);
     durAt[0] = DurationSegment::merge(0, vehStart, depotStart);
 
-    ProblemData::Depot const &end = data.location(endDepot());
+    ProblemData::Depot const &end = data.depot(endDepot());
     DurationSegment const depotEnd(end);
     DurationSegment const vehEnd(vehicleType_, vehicleType_.twLate);
     durAt[nodes.size() - 1] = DurationSegment::merge(0, depotEnd, vehEnd);
@@ -271,13 +280,14 @@ void Route::update()
 
         if (!node->isReloadDepot())
         {
-            ProblemData::Client const &client = data.location(node->client());
+            ProblemData::Client const &client
+                = data.client(node->client() - data.numDepots());
             durAt[idx] = {client};
         }
         else
         {
             // Reload depot - apply service time
-            ProblemData::Depot const &depot = data.location(node->client());
+            ProblemData::Depot const &depot = data.depot(node->client());
             durAt[idx] = DurationSegment(depot.serviceDuration,
                                          0,
                                          0,
@@ -327,7 +337,8 @@ void Route::update()
             loadAt[dim][idx]
                 = nodes[idx]->isReloadDepot()
                       ? LoadSegment{}
-                      : LoadSegment{data.location(visits[idx]), dim};
+                      : LoadSegment{data.client(visits[idx] - data.numDepots()),
+                                    dim};
 
         loadBefore[dim].resize(nodes.size());
         loadBefore[dim][0] = loadAt[dim][0];
@@ -381,8 +392,7 @@ void Route::update()
     {
         if (nodes[idx]->isReloadDepot())
         {
-            ProblemData::Depot const &depot
-                = data.location(nodes[idx]->client());
+            ProblemData::Depot const &depot = data.depot(nodes[idx]->client());
             reloadCost_ += depot.reloadCost;
         }
     }

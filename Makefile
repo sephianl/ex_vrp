@@ -67,6 +67,7 @@ NIF_SRC = c_src/ex_vrp_nif.cpp
 
 # PyVRP core sources (from latest main branch)
 PYVRP_CORE_SRC = \
+	c_src/pyvrp/Activity.cpp \
 	c_src/pyvrp/CostEvaluator.cpp \
 	c_src/pyvrp/DurationSegment.cpp \
 	c_src/pyvrp/DynamicBitset.cpp \
@@ -80,6 +81,7 @@ PYVRP_CORE_SRC = \
 # PyVRP search sources
 PYVRP_SEARCH_SRC = \
 	c_src/pyvrp/search/LocalSearch.cpp \
+	c_src/pyvrp/search/neighbourhood.cpp \
 	c_src/pyvrp/search/PerturbationManager.cpp \
 	c_src/pyvrp/search/RelocateWithDepot.cpp \
 	c_src/pyvrp/search/RemoveAdjacentDepot.cpp \

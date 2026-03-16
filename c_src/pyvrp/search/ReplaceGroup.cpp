@@ -18,7 +18,8 @@ std::pair<Cost, bool> ReplaceGroup::evaluate(Route::Node *U,
 {
     stats_.numEvaluations++;
 
-    ProblemData::Client const &uData = data.location(U->client());
+    ProblemData::Client const &uData
+        = data.client(U->client() - data.numDepots());
     if (!uData.group)
         return {0, false};
 
@@ -38,8 +39,10 @@ std::pair<Cost, bool> ReplaceGroup::evaluate(Route::Node *U,
     if (numInSol != 1 || !activeV || activeV == U)
         return {0, false};
 
-    ProblemData::Client const &uClient = data.location(U->client());
-    ProblemData::Client const &vClient = data.location(activeV->client());
+    ProblemData::Client const &uClient
+        = data.client(U->client() - data.numDepots());
+    ProblemData::Client const &vClient
+        = data.client(activeV->client() - data.numDepots());
 
     auto const *route = activeV->route();
     Cost deltaCost = vClient.prize - uClient.prize;

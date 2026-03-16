@@ -21,6 +21,7 @@
 #include "pyvrp/search/ReplaceGroup.h"
 #include "pyvrp/search/ReplaceOptional.h"
 #include "pyvrp/search/SwapTails.h"
+#include "pyvrp/search/neighbourhood.h"
 
 #include <algorithm>
 #include <cmath>
@@ -2427,18 +2428,6 @@ bool problem_data_has_time_windows_nif(
 
 FINE_NIF(problem_data_has_time_windows_nif, 0);
 
-// Get centroid of all client locations
-std::tuple<double, double> problem_data_centroid_nif(
-    [[maybe_unused]] ErlNifEnv *env,
-    fine::ResourcePtr<ProblemDataResource> problem_resource)
-{
-    auto const &centroid = problem_resource->data->centroid();
-    return std::make_tuple(static_cast<double>(centroid.first),
-                           static_cast<double>(centroid.second));
-}
-
-FINE_NIF(problem_data_centroid_nif, 0);
-
 // Get number of profiles (distance/duration matrices)
 int64_t problem_data_num_profiles_nif(
     [[maybe_unused]] ErlNifEnv *env,
@@ -2595,210 +2584,6 @@ FINE_NIF(problem_data_groups_nif, 0);
 // LocalSearch
 // -----------------------------------------------------------------------------
 
-/**
- * Compute proximity-based neighbours matching PyVRP's compute_neighbours.
- *
- * Proximity is based on Vidal et al. (2013) hybrid genetic algorithm paper.
- * This considers edge costs, time window penalties, and prizes.
- */
-pyvrp::search::SearchSpace::Neighbours
-build_neighbours(ProblemData const &data,
-                 size_t numNeighbours = 60,
-                 double weightWaitTime = 0.2,
-                 double weightTimeWarp = 1.0,
-                 bool symmetricProximity = true)
-{
-    size_t const numLocs = data.numLocations();
-    size_t const numDepots = data.numDepots();
-    size_t const numClients = data.numClients();
-    pyvrp::search::SearchSpace::Neighbours neighbours(numLocs);
-
-    // Step 1: Collect unique (unitDistCost, unitDurCost, profile) combinations
-    std::set<std::tuple<Cost, Cost, size_t>> uniqueEdgeCosts;
-    for (auto const &vt : data.vehicleTypes())
-    {
-        uniqueEdgeCosts.insert(
-            {vt.unitDistanceCost, vt.unitDurationCost, vt.profile});
-    }
-
-    // Step 2: Compute minimum edge cost matrix across all vehicle types
-    std::vector<std::vector<double>> edgeCosts(
-        numLocs, std::vector<double>(numLocs, 0.0));
-    bool first = true;
-    for (auto const &[unitDist, unitDur, profile] : uniqueEdgeCosts)
-    {
-        auto const &distMat = data.distanceMatrix(profile);
-        auto const &durMat = data.durationMatrix(profile);
-        for (size_t i = 0; i < numLocs; ++i)
-        {
-            for (size_t j = 0; j < numLocs; ++j)
-            {
-                double cost = static_cast<double>(unitDist.get())
-                                  * static_cast<double>(distMat(i, j).get())
-                              + static_cast<double>(unitDur.get())
-                                    * static_cast<double>(durMat(i, j).get());
-                if (first)
-                {
-                    edgeCosts[i][j] = cost;
-                }
-                else
-                {
-                    edgeCosts[i][j] = std::min(edgeCosts[i][j], cost);
-                }
-            }
-        }
-        first = false;
-    }
-
-    // Step 3: Compute minimum duration matrix across all profiles (store as
-    // double)
-    std::vector<std::vector<double>> minDuration(numLocs,
-                                                 std::vector<double>(numLocs));
-    for (size_t i = 0; i < numLocs; ++i)
-    {
-        for (size_t j = 0; j < numLocs; ++j)
-        {
-            double minDur
-                = static_cast<double>(data.durationMatrix(0)(i, j).get());
-            for (size_t p = 1; p < data.numProfiles(); ++p)
-            {
-                minDur = std::min(
-                    minDur,
-                    static_cast<double>(data.durationMatrix(p)(i, j).get()));
-            }
-            minDuration[i][j] = minDur;
-        }
-    }
-
-    // Step 4: Extract client time windows and service durations (store as
-    // double) Clients start at index numDepots in location array
-    std::vector<double> early(numLocs, 0.0);
-    std::vector<double> late(numLocs, 0.0);
-    std::vector<double> service(numLocs, 0.0);
-    std::vector<double> prize(numLocs, 0.0);
-
-    auto const &clients = data.clients();
-    for (size_t c = 0; c < numClients; ++c)
-    {
-        size_t loc = numDepots + c;
-        early[loc] = static_cast<double>(clients[c].twEarly.get());
-        late[loc] = static_cast<double>(clients[c].twLate.get());
-        service[loc] = static_cast<double>(clients[c].serviceDuration.get());
-        prize[loc] = static_cast<double>(clients[c].prize.get());
-    }
-
-    // Step 5: Add time window penalties and subtract prizes
-    // min_wait[i][j] = early[j] - minDuration[i][j] - service[i] - late[i]
-    // min_tw[i][j] = early[i] + service[i] + minDuration[i][j] - late[j]
-    for (size_t i = 0; i < numLocs; ++i)
-    {
-        for (size_t j = 0; j < numLocs; ++j)
-        {
-            // Subtract prize for visiting j
-            edgeCosts[i][j] -= prize[j];
-
-            // Wait time penalty (arriving too early at j)
-            double minWait
-                = early[j] - minDuration[i][j] - service[i] - late[i];
-            if (minWait > 0)
-            {
-                edgeCosts[i][j] += weightWaitTime * minWait;
-            }
-
-            // Time warp penalty (arriving too late at j)
-            double minTw = early[i] + service[i] + minDuration[i][j] - late[j];
-            if (minTw > 0)
-            {
-                edgeCosts[i][j] += weightTimeWarp * minTw;
-            }
-        }
-    }
-
-    // Step 6: Symmetrize proximity if requested
-    if (symmetricProximity)
-    {
-        for (size_t i = 0; i < numLocs; ++i)
-        {
-            for (size_t j = i + 1; j < numLocs; ++j)
-            {
-                double minVal = std::min(edgeCosts[i][j], edgeCosts[j][i]);
-                edgeCosts[i][j] = minVal;
-                edgeCosts[j][i] = minVal;
-            }
-        }
-    }
-
-    // Step 7: Handle mutually exclusive groups - high proximity for same-group
-    // clients
-    for (auto const &group : data.groups())
-    {
-        if (group.mutuallyExclusive)
-        {
-            auto const &groupClients = group.clients();
-            for (size_t ci : groupClients)
-            {
-                for (size_t cj : groupClients)
-                {
-                    if (ci != cj)
-                    {
-                        // Use max double (not infinity) to order before depots
-                        edgeCosts[ci][cj] = std::numeric_limits<double>::max();
-                    }
-                }
-            }
-        }
-    }
-
-    // Step 8: Set diagonal and depot entries to infinity
-    for (size_t i = 0; i < numLocs; ++i)
-    {
-        edgeCosts[i][i] = std::numeric_limits<double>::infinity();  // Self
-    }
-    for (size_t d = 0; d < numDepots; ++d)
-    {
-        for (size_t j = 0; j < numLocs; ++j)
-        {
-            edgeCosts[d][j]
-                = std::numeric_limits<double>::infinity();  // Depots have no
-                                                            // neighbours
-            edgeCosts[j][d]
-                = std::numeric_limits<double>::infinity();  // Clients don't
-                                                            // neighbour depots
-        }
-    }
-
-    // Step 9: For each client, find k nearest by proximity
-    size_t k = std::min(numNeighbours, numClients - 1);
-    for (size_t i = numDepots; i < numLocs; ++i)
-    {
-        std::vector<std::pair<double, size_t>> proximities;
-        for (size_t j = numDepots; j < numLocs; ++j)
-        {
-            if (i != j)
-            {
-                proximities.emplace_back(edgeCosts[i][j], j);
-            }
-        }
-
-        // Partial sort: only sort the first k elements - O(n log k) instead of
-        // O(n log n)
-        if (!proximities.empty())
-        {
-            size_t k_actual = std::min(k, proximities.size());
-            std::partial_sort(proximities.begin(),
-                              proximities.begin() + k_actual,
-                              proximities.end());
-
-            for (size_t n = 0; n < k_actual; ++n)
-            {
-                neighbours[i].push_back(proximities[n].second);
-            }
-        }
-    }
-
-    return neighbours;
-}
-
 namespace
 {
 struct OwnedUnaryOperators
@@ -2880,7 +2665,7 @@ local_search_nif([[maybe_unused]] ErlNifEnv *env,
     }
 
     // Build neighbourhood
-    auto neighbours = build_neighbours(problem_data);
+    auto neighbours = pyvrp::search::computeNeighbours(problem_data);
 
     // Create perturbation manager with default params
     pyvrp::search::PerturbationParams perturbParams(1, 25);
@@ -2964,7 +2749,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
     }
 
     // Build neighbourhood
-    auto neighbours = build_neighbours(problem_data);
+    auto neighbours = pyvrp::search::computeNeighbours(problem_data);
 
     // Create perturbation manager (won't be used but required for LocalSearch
     // constructor)
@@ -3088,7 +2873,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
     }
 
     // Build neighbourhood
-    auto neighbours = build_neighbours(problem_data);
+    auto neighbours = pyvrp::search::computeNeighbours(problem_data);
 
     // Create perturbation manager with default params
     pyvrp::search::PerturbationParams perturbParams(1, 25);
@@ -3253,7 +3038,7 @@ fine::Term local_search_stats_nif(
     }
 
     // Build neighbourhood
-    auto neighbours = build_neighbours(problem_data);
+    auto neighbours = pyvrp::search::computeNeighbours(problem_data);
 
     // Create perturbation manager with default params
     pyvrp::search::PerturbationParams perturbParams(1, 25);
@@ -3471,7 +3256,7 @@ create_local_search_nif([[maybe_unused]] ErlNifEnv *env,
     auto &problem_data = *problem_resource->data;
 
     // Build neighbours (the expensive O(n²) computation)
-    auto neighbours = build_neighbours(problem_data);
+    auto neighbours = pyvrp::search::computeNeighbours(problem_data);
 
     return fine::make_resource<LocalSearchResource>(
         problem_resource->data,

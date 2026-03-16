@@ -21,7 +21,8 @@ pyvrp::Cost insertCost(pyvrp::search::Route::Node *U,
         return 0;
 
     auto *route = V->route();
-    pyvrp::ProblemData::Client const &client = data.location(U->client());
+    pyvrp::ProblemData::Client const &client
+        = data.client(U->client() - data.numDepots());
 
     pyvrp::Cost deltaCost
         = pyvrp::Cost(route->empty()) * route->fixedVehicleCost()
@@ -301,7 +302,8 @@ bool Solution::insert(Route::Node *U,
         auto const clientLoc = U->client();
         if (clientLoc >= data_.numDepots())
         {
-            ProblemData::Client const &client = data_.location(clientLoc);
+            ProblemData::Client const &client
+                = data_.client(clientLoc - data_.numDepots());
             hasPrize = client.prize > 0;
 
             // Check if client fits alone in a trip
@@ -329,7 +331,7 @@ bool Solution::insert(Route::Node *U,
             if (clientLoc >= data_.numDepots())
             {
                 ProblemData::Client const &clientData
-                    = data_.location(clientLoc);
+                    = data_.client(clientLoc - data_.numDepots());
                 for (size_t d = 0; d < data_.numLoadDimensions()
                                    && d < vehType.capacity.size();
                      ++d)
@@ -356,8 +358,8 @@ bool Solution::insert(Route::Node *U,
                         auto *node = route->operator[](i);
                         if (node->client() >= data_.numDepots())
                         {
-                            ProblemData::Client const &loc
-                                = data_.location(node->client());
+                            ProblemData::Client const &loc = data_.client(
+                                node->client() - data_.numDepots());
                             if (d < loc.delivery.size())
                                 tripDelivery = tripDelivery + loc.delivery[d];
                             if (d < loc.pickup.size())
@@ -399,7 +401,8 @@ bool Solution::insert(Route::Node *U,
         // The regular insertion didn't find an improving move (bestCost >= 0).
         // Try inserting as a new trip on a route that supports multi-trip.
         auto const clientLoc = U->client();
-        ProblemData::Client const &client = data_.location(clientLoc);
+        ProblemData::Client const &client
+            = data_.client(clientLoc - data_.numDepots());
 
         for (auto &route : routes)
         {
@@ -434,7 +437,7 @@ bool Solution::insert(Route::Node *U,
             Cost reloadCost = 0;
             if (reloadDepot < data_.numDepots())
             {
-                ProblemData::Depot const &depot = data_.location(reloadDepot);
+                ProblemData::Depot const &depot = data_.depot(reloadDepot);
                 tripDur = tripDur + depot.serviceDuration;
                 reloadCost = depot.reloadCost;
             }

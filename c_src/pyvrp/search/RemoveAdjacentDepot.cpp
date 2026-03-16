@@ -21,7 +21,8 @@ pyvrp::Cost evalRemoveCost(pyvrp::search::Route::Node *U,
 
     if (!U->isDepot())
     {
-        pyvrp::ProblemData::Client const &client = data.location(U->client());
+        pyvrp::ProblemData::Client const &client
+            = data.client(U->client() - data.numDepots());
         deltaCost = client.prize
                     - pyvrp::Cost(route->numClients() == 1)
                           * route->fixedVehicleCost();

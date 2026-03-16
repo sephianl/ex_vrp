@@ -1135,8 +1135,7 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
                 // If not (e.g., ReloadDepotSegment), we need to add it here.
                 if (other.route() == nullptr)
                 {
-                    ProblemData::Depot const &depot
-                        = data.location(other.last());
+                    ProblemData::Depot const &depot = data.depot(other.last());
                     DurationSegment const depotDS(
                         depot.serviceDuration,
                         0,

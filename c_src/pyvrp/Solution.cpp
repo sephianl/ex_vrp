@@ -175,7 +175,8 @@ Solution::Solution(ProblemData const &data, RandomNumberGenerator &rng)
     clients.reserve(data.numClients());
     for (size_t idx = data.numDepots(); idx != data.numLocations(); ++idx)
     {
-        ProblemData::Client const &clientData = data.location(idx);
+        ProblemData::Client const &clientData
+            = data.client(idx - data.numDepots());
         if (clientData.required || rng.rand() < 0.5)
             clients.push_back(idx);
     }
@@ -265,7 +266,8 @@ Solution::Solution(ProblemData const &data, std::vector<Route> routes)
          ++client)
         if (!isVisited[client])  // we need to check if the client visit
         {                        // is required if this is true
-            ProblemData::Client const &clientData = data.location(client);
+            ProblemData::Client const &clientData
+                = data.client(client - data.numDepots());
             numMissingClients_ += clientData.required;
         }
 

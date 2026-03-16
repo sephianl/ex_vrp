@@ -30,8 +30,7 @@ namespace pyvrp
  *
  *    The matrices in the ``distance_matrices`` and ``duration_matrices``
  *    arguments should have all depots in the lower indices, starting from
- *    index ``0``. See also the :meth:`~pyvrp._pyvrp.ProblemData.location`
- *    method for details.
+ *    index ``0``.
  *
  * Parameters
  * ----------
@@ -638,19 +637,6 @@ public:
     };
 
 private:
-    /**
-     * Simple union type that distinguishes between client and depot locations.
-     */
-    union Location
-    {
-        Client const *client;
-        Depot const *depot;
-
-        inline operator Client const &() const;
-        inline operator Depot const &() const;
-    };
-
-    std::pair<Coordinate, Coordinate> centroid_;   // Center of client locations
     std::vector<Matrix<Distance>> const dists_;    // Distance matrices
     std::vector<Matrix<Duration>> const durs_;     // Duration matrices
     std::vector<Client> const clients_;            // Client information
@@ -667,17 +653,8 @@ private:
 public:
     bool operator==(ProblemData const &other) const = default;
 
-    /**
-     * Returns location data for the location at the given index. This can
-     * be a depot or a client: a depot if the ``idx`` argument is smaller than
-     * :py:attr:`~num_depots`, and a client if the ``idx`` is bigger than that.
-     *
-     * Parameters
-     * ----------
-     * idx
-     *     Location index whose information to retrieve.
-     */
-    [[nodiscard]] inline Location location(size_t idx) const;
+    [[nodiscard]] inline Client const &client(size_t client) const;
+    [[nodiscard]] inline Depot const &depot(size_t depot) const;
 
     /**
      * Returns a list of all clients in the problem instance.
@@ -726,11 +703,6 @@ public:
      *    way!
      */
     [[nodiscard]] std::vector<Matrix<Duration>> const &durationMatrices() const;
-
-    /**
-     * Center point of all client locations (excluding depots).
-     */
-    [[nodiscard]] std::pair<Coordinate, Coordinate> const &centroid() const;
 
     /**
      * Returns the client group at the given index.
@@ -897,16 +869,16 @@ public:
     ProblemData() = delete;
 };
 
-ProblemData::Location::operator Client const &() const { return *client; }
-
-ProblemData::Location::operator Depot const &() const { return *depot; }
-
-ProblemData::Location ProblemData::location(size_t idx) const
+ProblemData::Client const &ProblemData::client(size_t client) const
 {
-    assert(idx < numLocations());
-    return idx < depots_.size()
-               ? Location{.depot = &depots_[idx]}
-               : Location{.client = &clients_[idx - depots_.size()]};
+    assert(client < numClients());
+    return clients_[client];
+}
+
+ProblemData::Depot const &ProblemData::depot(size_t depot) const
+{
+    assert(depot < numDepots());
+    return depots_[depot];
 }
 
 Matrix<Distance> const &ProblemData::distanceMatrix(size_t profile) const

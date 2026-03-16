@@ -38,7 +38,6 @@ defmodule ExVrp.Native do
     problem_data_num_vehicle_types: 1,
     problem_data_num_vehicles: 1,
     problem_data_has_time_windows_nif: 1,
-    problem_data_centroid_nif: 1,
     problem_data_num_profiles_nif: 1,
     # ProblemData extraction
     problem_data_clients_nif: 1,
@@ -399,12 +398,6 @@ defmodule ExVrp.Native do
   """
   @spec problem_data_has_time_windows_nif(reference()) :: boolean()
   def problem_data_has_time_windows_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc """
-  Gets the centroid (average x, y) of all client locations.
-  """
-  @spec problem_data_centroid_nif(reference()) :: {float(), float()}
-  def problem_data_centroid_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Gets the number of profiles (distance/duration matrix sets).
