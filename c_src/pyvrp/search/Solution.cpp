@@ -1,6 +1,6 @@
 #include "Solution.h"
 
-#include "primitives.h"
+#include "ClientSegment.h"
 
 #include <algorithm>
 #include <cassert>
@@ -9,6 +9,34 @@
 #include <limits>
 
 using pyvrp::search::Solution;
+
+namespace
+{
+pyvrp::Cost insertCost(pyvrp::search::Route::Node *U,
+                       pyvrp::search::Route::Node *V,
+                       pyvrp::ProblemData const &data,
+                       pyvrp::CostEvaluator const &costEvaluator)
+{
+    if (!V->route() || U->isDepot())
+        return 0;
+
+    auto *route = V->route();
+    pyvrp::ProblemData::Client const &client = data.location(U->client());
+
+    pyvrp::Cost deltaCost
+        = pyvrp::Cost(route->empty()) * route->fixedVehicleCost()
+          - client.prize;
+
+    costEvaluator.deltaCost<true>(
+        deltaCost,
+        pyvrp::search::Route::Proposal(
+            route->before(V->idx()),
+            pyvrp::search::ClientSegment(data, U->client()),
+            route->after(V->idx() + 1)));
+
+    return deltaCost;
+}
+}  // namespace
 
 Solution::Solution(ProblemData const &data) : data_(data)
 {

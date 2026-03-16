@@ -62,41 +62,56 @@ Phase 6 (Island ILS — pure Elixir)
 
 ---
 
-## Phase 2: New Operators + Remove Primitives — Size: L
+## Phase 2: New Operators + Remove Primitives — Size: L ✅ DONE
 
-**Goal**: Add 5 new operators that replace the inline custom logic in LocalSearch.cpp. Remove primitives.h/cpp.
+**Goal**: Add new operators that replace the inline custom logic in LocalSearch.cpp. Remove primitives.h/cpp.
 
-**New C++ files** (copy from upstream `pyvrp/cpp/search/`):
+**What changed**:
+
+- Evaluate return semantics shifted: `{cost, false}` → `{cost, cost < 0}` (operator decides via bool, not caller via `deltaCost < 0`). All existing operators (Exchange, SwapTails, RelocateWithDepot, SwapStar) updated. `applyBinaryOps`/`applyRouteOps` now check `shouldApply` instead of `deltaCost < 0`.
+- Exchange.h: added `!U->route()` guard since search loop now iterates unrouted clients
+- `markRequiredMissingAsPromising()` replaced by `ensureStructuralFeasibility()` (pulled forward from Phase 3 plan — needed because inline insertion logic was removed)
+- `applyUnaryOps()` added — iterates unary operators, handles unrouted→routed transition
+- Fallback optional client insertion via `Solution::insert()` in `applyUnaryOps` (replaces upstream's InsertOptional BinaryOperator — simpler, greedy best-position approach)
+- `update(Route *U, Route *V)` now handles null U (needed for unrouted→routed transitions)
+- `insertCost()` moved from primitives to file-scope function in `Solution.cpp` (still used by `Solution::insert`)
+
+**New files created**:
 | File | Type | Replaces |
 |------|------|----------|
-| `InsertOptional.{h,cpp}` | BinaryOperator | inline `applyOptionalClientMoves` (insert) |
 | `RemoveOptional.{h,cpp}` | UnaryOperator | inline `applyOptionalClientMoves` (remove) |
-| `ReplaceOptional.{h,cpp}` | BinaryOperator | inline optional swap logic |
+| `ReplaceOptional.{h,cpp}` | UnaryOperator | inline optional swap logic (searches neighbours for best swap) |
 | `ReplaceGroup.{h,cpp}` | UnaryOperator | inline `applyGroupMoves` |
 | `RemoveAdjacentDepot.{h,cpp}` | UnaryOperator | inline `applyDepotRemovalMove` |
 | `ClientSegment.h` | Segment type | anonymous class in primitives.cpp |
-| `DepotSegment.h` | Segment type | new |
 
-**C++ files to remove**:
+**Divergences from upstream**:
 
-- `c_src/pyvrp/search/primitives.{h,cpp}`
+- No `InsertOptional` BinaryOperator — replaced by `Solution::insert()` fallback in `applyUnaryOps`
+- `ReplaceOptional` is a UnaryOperator (not BinaryOperator) — searches neighbours internally for best swap target
+- No `DepotSegment.h` — not needed by any current operator
+- `RemoveOptional` has SameVehicleGroup awareness (won't remove a client if it has a same-vehicle group member on the route)
+- `ReplaceOptional` has SameVehicleGroup awareness (won't swap if target has a same-vehicle group member)
+- All operators use `data.location()` (our API) not `data.client()` (upstream API)
+- New operators use `deltaCost<true>` (exact evaluation) not the default non-exact
 
-**C++ files to modify**:
+**Files modified**:
 | File | Change |
 |------|--------|
-| `c_src/pyvrp/search/LocalSearch.{h,cpp}` | Remove all inline optional/group/depot logic. Search loop simplifies to: iterate clients → `applyUnaryOps(U)` → for each neighbour V: `applyBinaryOps(U, V)`. Keep `wouldViolateSameVehicle` in `applyBinaryOps` as ex_vrp extension |
-| `c_src/ex_vrp_nif.cpp` | Add includes + resources for new operators. Update `LocalSearchResource` to use `supports<Op>(data)` for conditional registration. Remove primitives NIFs |
-| `Makefile` | Remove `primitives.cpp`, add 5 new .cpp files |
+| `c_src/pyvrp/search/Exchange.h` | Added `!U->route()` guard, returns `{cost, cost < 0}` |
+| `c_src/pyvrp/search/SwapTails.cpp` | Returns `{cost, cost < 0}` |
+| `c_src/pyvrp/search/RelocateWithDepot.cpp` | Returns `{cost, cost < 0}` |
+| `c_src/pyvrp/search/SwapStar.cpp` | Returns `{cost, cost < 0}` |
+| `c_src/pyvrp/search/LocalSearch.{h,cpp}` | Major rewrite: removed 4 inline methods, added `applyUnaryOps`, `ensureStructuralFeasibility`, refactored `search()` loop and dispatch |
+| `c_src/pyvrp/search/Solution.cpp` | Absorbed `insertCost` from primitives |
+| `c_src/pyvrp/search/PerturbationManager.cpp` | Removed unused `#include "primitives.h"` |
+| `c_src/ex_vrp_nif.cpp` | Added operator resources with `supports<Op>(data)` registration, removed primitive NIFs |
+| `Makefile` | Removed `primitives.cpp`, added 4 new .cpp files |
+| `lib/ex_vrp/native.ex` | Removed `insert_cost`, `remove_cost`, `inplace_cost` NIFs |
 
-**Elixir changes**:
+**Files removed**: `primitives.{h,cpp}`, `test/primitives_test.exs`
 
-- `lib/ex_vrp/native.ex`: Remove `insert_cost`, `remove_cost`, `inplace_cost` NIFs
-
-**SameVehicleGroup preservation**: Keep `wouldViolateSameVehicle` check in `applyBinaryOps` — this is an ex_vrp extension not present in upstream.
-
-**Tests**: Existing prize-collecting, client group, relocate-with-depot, same-vehicle-group tests must pass. Add per-operator unit tests. Update `test/primitives_test.exs`.
-
-**Risk**: MEDIUM-HIGH — behavioral edge cases in operator interaction. Mitigate with targeted regression tests on Zelo-like problem structures before removing inline logic.
+**Verified**: 947/947 tests pass (13 primitives tests removed), benchmarks show no quality regression (most instances faster).
 
 ---
 

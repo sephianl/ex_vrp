@@ -2,12 +2,12 @@
 #include "DynamicBitset.h"
 #include "Measure.h"
 #include "Trip.h"
-#include "primitives.h"
 
 #include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <limits>
 #include <numeric>
 
 using pyvrp::Solution;
@@ -26,7 +26,7 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
     if (!exhaustive)
         perturbationManager_.perturb(solution_, searchSpace_, costEvaluator);
 
-    markRequiredMissingAsPromising();
+    ensureStructuralFeasibility(costEvaluator);
 
     if (timeout_ms > 0)
     {
@@ -96,10 +96,10 @@ pyvrp::Solution LocalSearch::intensify(pyvrp::Solution const &solution,
 
 void LocalSearch::search(CostEvaluator const &costEvaluator)
 {
-    if (binaryOps.empty())
+    if (binaryOps.empty() && unaryOps.empty())
         return;
 
-    markRequiredMissingAsPromising();
+    ensureStructuralFeasibility(costEvaluator);
 
     searchCompleted_ = false;
     for (int step = 0; !searchCompleted_; ++step)
@@ -120,22 +120,10 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
             auto const lastTested = lastTestedNodes[U->client()];
             lastTestedNodes[U->client()] = numUpdates_;
 
-            bool shouldTest = (lastTested == -1);
-            if (!shouldTest && U->route())
-            {
-                shouldTest = (lastUpdated[U->route()->idx()] > lastTested);
-            }
-
-            if (shouldTest)
-                applyOptionalClientMoves(U, costEvaluator);
-
-            applyGroupMoves(U, costEvaluator);
+            applyUnaryOps(U, costEvaluator);
 
             if (!U->route())
                 continue;
-
-            applyDepotRemovalMove(p(U), costEvaluator);
-            applyDepotRemovalMove(n(U), costEvaluator);
 
             for (auto const vClient : searchSpace_.neighboursOf(U->client()))
             {
@@ -208,6 +196,7 @@ void LocalSearch::shuffle(RandomNumberGenerator &rng)
     perturbationManager_.shuffle(rng);
     searchSpace_.shuffle(rng);
 
+    rng.shuffle(unaryOps.begin(), unaryOps.end());
     rng.shuffle(binaryOps.begin(), binaryOps.end());
     rng.shuffle(routeOps.begin(), routeOps.end());
 }
@@ -254,6 +243,43 @@ bool LocalSearch::wouldViolateSameVehicle(Route::Node const *U,
     return false;
 }
 
+void LocalSearch::applyUnaryOps(Route::Node *U,
+                                CostEvaluator const &costEvaluator)
+{
+    for (auto *op : unaryOps)
+    {
+        auto [deltaCost, shouldApply] = op->evaluate(U, costEvaluator);
+        if (shouldApply)
+        {
+            auto *rBefore = U->route();
+            if (rBefore)
+                searchSpace_.markPromising(U);
+
+            op->apply(U);
+
+            auto *rAfter = U->route();
+            if (rBefore)
+                update(rBefore, rAfter ? rAfter : rBefore);
+            else if (rAfter)
+            {
+                update(rAfter, rAfter);
+                searchSpace_.markPromising(U);
+            }
+        }
+    }
+
+    if (!U->route())
+    {
+        ProblemData::Client const &uData = data.location(U->client());
+        if (!uData.required && !uData.group
+            && solution_.insert(U, searchSpace_, costEvaluator, false))
+        {
+            update(U->route(), U->route());
+            searchSpace_.markPromising(U);
+        }
+    }
+}
+
 bool LocalSearch::applyBinaryOps(Route::Node *U,
                                  Route::Node *V,
                                  CostEvaluator const &costEvaluator)
@@ -261,7 +287,7 @@ bool LocalSearch::applyBinaryOps(Route::Node *U,
     auto *rU = U->route();
     auto *rV = V->route();
 
-    if (rU != rV)
+    if (rU && rU != rV)
     {
         if (wouldViolateSameVehicle(U, rV) || wouldViolateSameVehicle(V, rU))
             return false;
@@ -269,23 +295,25 @@ bool LocalSearch::applyBinaryOps(Route::Node *U,
 
     for (auto *op : binaryOps)
     {
-        auto [deltaCost, applied] = op->evaluate(U, V, costEvaluator);
-        if (deltaCost < 0)
+        auto [deltaCost, shouldApply] = op->evaluate(U, V, costEvaluator);
+        if (shouldApply)
         {
             [[maybe_unused]] auto const costBefore
-                = costEvaluator.penalisedCost(*rU)
-                  + Cost(rU != rV) * costEvaluator.penalisedCost(*rV);
+                = rU ? costEvaluator.penalisedCost(*rU)
+                           + Cost(rU != rV) * costEvaluator.penalisedCost(*rV)
+                     : costEvaluator.penalisedCost(*rV);
 
-            searchSpace_.markPromising(U);
+            if (rU)
+                searchSpace_.markPromising(U);
             searchSpace_.markPromising(V);
 
-            if (!applied)
-                op->apply(U, V);
+            op->apply(U, V);
             update(rU, rV);
 
             [[maybe_unused]] auto const costAfter
-                = costEvaluator.penalisedCost(*rU)
-                  + Cost(rU != rV) * costEvaluator.penalisedCost(*rV);
+                = rU ? costEvaluator.penalisedCost(*rU)
+                           + Cost(rU != rV) * costEvaluator.penalisedCost(*rV)
+                     : costEvaluator.penalisedCost(*rV);
 
             assert(costAfter == costBefore + deltaCost);
 
@@ -302,16 +330,15 @@ bool LocalSearch::applyRouteOps(Route *U,
 {
     for (auto *routeOp : routeOps)
     {
-        auto [deltaCost, applied]
+        auto [deltaCost, shouldApply]
             = routeOp->evaluate((*U)[0], (*V)[0], costEvaluator);
-        if (deltaCost < 0)
+        if (shouldApply)
         {
             [[maybe_unused]] auto const costBefore
                 = costEvaluator.penalisedCost(*U)
                   + Cost(U != V) * costEvaluator.penalisedCost(*V);
 
-            if (!applied)
-                routeOp->apply((*U)[0], (*V)[0]);
+            routeOp->apply((*U)[0], (*V)[0]);
             update(U, V);
 
             [[maybe_unused]] auto const costAfter
@@ -325,21 +352,6 @@ bool LocalSearch::applyRouteOps(Route *U,
     }
 
     return false;
-}
-
-void LocalSearch::applyDepotRemovalMove(Route::Node *U,
-                                        CostEvaluator const &costEvaluator)
-{
-    if (!U->isReloadDepot())
-        return;
-
-    if (removeCost(U, data, costEvaluator) <= 0)
-    {
-        searchSpace_.markPromising(U);
-        auto *route = U->route();
-        route->remove(U->idx());
-        update(route, route);
-    }
 }
 
 void LocalSearch::applyEmptyRouteMoves(Route::Node *U,
@@ -359,130 +371,8 @@ void LocalSearch::applyEmptyRouteMoves(Route::Node *U,
     }
 }
 
-void LocalSearch::applyOptionalClientMoves(Route::Node *U,
-                                           CostEvaluator const &costEvaluator)
-{
-    ProblemData::Client const &uData = data.location(U->client());
-
-    if (uData.required && !U->route())
-    {
-        solution_.insert(U, searchSpace_, costEvaluator, true);
-        update(U->route(), U->route());
-        searchSpace_.markPromising(U);
-    }
-
-    if (uData.required || uData.group)
-        return;
-
-    if (!wouldViolateSameVehicle(U, nullptr)
-        && removeCost(U, data, costEvaluator) < 0)
-    {
-        searchSpace_.markPromising(U);
-        auto *route = U->route();
-        route->remove(U->idx());
-        update(route, route);
-    }
-
-    if (U->route())
-        return;
-
-    if (solution_.insert(U, searchSpace_, costEvaluator, false))
-    {
-        update(U->route(), U->route());
-        searchSpace_.markPromising(U);
-        return;
-    }
-
-    for (auto const vClient : searchSpace_.neighboursOf(U->client()))
-    {
-        auto *V = &solution_.nodes[vClient];
-        auto *route = V->route();
-
-        if (!route)
-            continue;
-
-        ProblemData::Client const &vData = data.location(V->client());
-
-        if (!vData.required && !wouldViolateSameVehicle(V, nullptr)
-            && inplaceCost(U, V, data, costEvaluator) < 0)
-        {
-            searchSpace_.markPromising(V);
-            auto const idx = V->idx();
-            route->remove(idx);
-            route->insert(idx, U);
-            update(route, route);
-            searchSpace_.markPromising(U);
-            return;
-        }
-    }
-}
-
-void LocalSearch::applyGroupMoves(Route::Node *U,
-                                  CostEvaluator const &costEvaluator)
-{
-    ProblemData::Client const &uData = data.location(U->client());
-
-    if (!uData.group)
-        return;
-
-    auto const &group = data.group(*uData.group);
-    assert(group.mutuallyExclusive);
-
-    std::vector<size_t> inSol;
-    auto const pred
-        = [&](auto client) { return solution_.nodes[client].route(); };
-    std::copy_if(group.begin(), group.end(), std::back_inserter(inSol), pred);
-
-    if (inSol.empty())
-    {
-        auto const required = group.required;
-        if (solution_.insert(U, searchSpace_, costEvaluator, required))
-        {
-            update(U->route(), U->route());
-            searchSpace_.markPromising(U);
-        }
-
-        return;
-    }
-
-    std::vector<Cost> costs;
-    for (auto const client : inSol)
-    {
-        auto cost = removeCost(&solution_.nodes[client], data, costEvaluator);
-        costs.push_back(cost);
-    }
-
-    std::vector<size_t> range(inSol.size());
-    std::iota(range.begin(), range.end(), 0);
-    std::sort(range.begin(),
-              range.end(),
-              [&costs](auto idx1, auto idx2)
-              { return costs[idx1] < costs[idx2]; });
-
-    for (auto idx = range.begin(); idx != range.end() - 1; ++idx)
-    {
-        auto const client = inSol[*idx];
-        auto const &node = solution_.nodes[client];
-        auto *route = node.route();
-
-        searchSpace_.markPromising(&node);
-        route->remove(node.idx());
-        update(route, route);
-    }
-
-    auto *V = &solution_.nodes[inSol[range.back()]];
-    if (U != V && inplaceCost(U, V, data, costEvaluator) < 0)
-    {
-        auto *route = V->route();
-        auto const idx = V->idx();
-        route->remove(idx);
-        route->insert(idx, U);
-        update(route, route);
-        searchSpace_.markPromising(U);
-    }
-}
-
-void LocalSearch::markRequiredMissingAsPromising()
+void LocalSearch::ensureStructuralFeasibility(
+    CostEvaluator const &costEvaluator)
 {
     for (auto client = data.numDepots(); client != data.numLocations();
          ++client)
@@ -491,20 +381,92 @@ void LocalSearch::markRequiredMissingAsPromising()
             continue;
 
         ProblemData::Client const &clientData = data.location(client);
+
         if (clientData.required)
         {
-            searchSpace_.markPromising(client);
+            auto *U = &solution_.nodes[client];
+            solution_.insert(U, searchSpace_, costEvaluator, true);
+            if (U->route())
+            {
+                update(U->route(), U->route());
+                searchSpace_.markPromising(U);
+            }
             continue;
         }
 
         if (clientData.group)
         {
             auto const &group = data.group(clientData.group.value());
-            if (group.required && group.clients().front() == client)
-            {
-                searchSpace_.markPromising(client);
+            if (!group.required)
                 continue;
+
+            bool anyInSol = false;
+            for (auto const member : group)
+            {
+                if (solution_.nodes[member].route())
+                {
+                    anyInSol = true;
+                    break;
+                }
             }
+
+            if (!anyInSol && group.clients().front() == client)
+            {
+                auto *U = &solution_.nodes[client];
+                solution_.insert(U, searchSpace_, costEvaluator, true);
+                if (U->route())
+                {
+                    update(U->route(), U->route());
+                    searchSpace_.markPromising(U);
+                }
+            }
+            continue;
+        }
+    }
+
+    std::vector<std::pair<Cost, size_t>> costs;
+    for (auto const &group : data.groups())
+    {
+        size_t numInSol = 0;
+        for (auto const client : group)
+            if (solution_.nodes[client].route())
+                numInSol++;
+
+        if (numInSol <= 1)
+            continue;
+
+        costs.clear();
+        for (auto const client : group)
+        {
+            if (!solution_.nodes[client].route())
+                continue;
+
+            auto *U = &solution_.nodes[client];
+            auto *route = U->route();
+            Cost deltaCost = 0;
+            ProblemData::Client const &cData = data.location(client);
+            deltaCost
+                = cData.prize
+                  - Cost(route->numClients() == 1) * route->fixedVehicleCost();
+            costEvaluator.deltaCost<true>(
+                deltaCost,
+                Route::Proposal(route->before(U->idx() - 1),
+                                route->after(U->idx() + 1)));
+            costs.emplace_back(deltaCost, client);
+        }
+
+        std::sort(costs.begin(),
+                  costs.end(),
+                  [](auto const &a, auto const &b)
+                  { return a.first < b.first; });
+
+        for (size_t i = 0; i + 1 < costs.size(); ++i)
+        {
+            auto *U = &solution_.nodes[costs[i].second];
+            auto *route = U->route();
+            searchSpace_.markPromising(U);
+            route->remove(U->idx());
+            update(route, route);
         }
     }
 }
@@ -621,16 +583,19 @@ void LocalSearch::update(Route *U, Route *V)
     numUpdates_++;
     searchCompleted_ = false;
 
-    U->update();
-    lastUpdated[U->idx()] = numUpdates_;
+    if (U)
+    {
+        U->update();
+        lastUpdated[U->idx()] = numUpdates_;
 
-    for (auto *op : binaryOps)
-        op->update(U);
+        for (auto *op : binaryOps)
+            op->update(U);
 
-    for (auto *op : routeOps)
-        op->update(U);
+        for (auto *op : routeOps)
+            op->update(U);
+    }
 
-    if (U != V)
+    if (V && U != V)
     {
         V->update();
         lastUpdated[V->idx()] = numUpdates_;
@@ -695,6 +660,8 @@ SearchSpace::Neighbours const &LocalSearch::neighbours() const
     return searchSpace_.neighbours();
 }
 
+SearchSpace const &LocalSearch::searchSpace() const { return searchSpace_; }
+
 LocalSearch::Statistics LocalSearch::statistics() const
 {
     size_t numMoves = 0;
@@ -707,6 +674,7 @@ LocalSearch::Statistics LocalSearch::statistics() const
         numImproving += stats.numApplications;
     };
 
+    std::for_each(unaryOps.begin(), unaryOps.end(), count);
     std::for_each(binaryOps.begin(), binaryOps.end(), count);
     std::for_each(routeOps.begin(), routeOps.end(), count);
 

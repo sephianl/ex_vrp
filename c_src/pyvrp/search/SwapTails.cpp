@@ -26,10 +26,10 @@ std::pair<pyvrp::Cost, bool> SwapTails::evaluate(
     auto const *vRoute = V->route();
 
     if (uRoute == vRoute)
-        return {0, false};  // same route
+        return {0, false};
 
     if (uRoute->idx() > vRoute->idx() && !uRoute->empty() && !vRoute->empty())
-        return {0, false};  // move will be tackled in a later iteration
+        return {0, false};
 
     if (!onLastTrip(U) || !onLastTrip(V))
         return {0, false};
@@ -87,7 +87,7 @@ std::pair<pyvrp::Cost, bool> SwapTails::evaluate(
         costEvaluator.deltaCost(deltaCost, uProposal, vProposal);
     }
 
-    return {deltaCost, false};
+    return {deltaCost, deltaCost < 0};
 }
 
 void SwapTails::apply(Route::Node *U, Route::Node *V) const

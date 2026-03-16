@@ -221,7 +221,7 @@ std::pair<pyvrp::Cost, bool> RelocateWithDepot::evaluate(
         if (!V->isReloadDepot() && !U->isReloadDepot())
             evalInPlaceDepot(V, costEvaluator);
 
-        return {move_.cost, false};
+        return {move_.cost, move_.cost < 0};
     }
 
     Cost fixedCost = 0;
@@ -234,7 +234,7 @@ std::pair<pyvrp::Cost, bool> RelocateWithDepot::evaluate(
     if (!n(V)->isReloadDepot())
         evalDepotAfter(fixedCost, U, V, costEvaluator);
 
-    return {move_.cost, false};
+    return {move_.cost, move_.cost < 0};
 }
 
 void RelocateWithDepot::apply(Route::Node *U, Route::Node *V) const

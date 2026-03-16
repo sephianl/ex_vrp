@@ -16,10 +16,13 @@
 #include "pyvrp/search/LocalSearch.h"
 #include "pyvrp/search/PerturbationManager.h"
 #include "pyvrp/search/RelocateWithDepot.h"
+#include "pyvrp/search/RemoveAdjacentDepot.h"
+#include "pyvrp/search/RemoveOptional.h"
+#include "pyvrp/search/ReplaceGroup.h"
+#include "pyvrp/search/ReplaceOptional.h"
 #include "pyvrp/search/SwapRoutes.h"
 #include "pyvrp/search/SwapStar.h"
 #include "pyvrp/search/SwapTails.h"
-#include "pyvrp/search/primitives.h"
 
 #include <algorithm>
 #include <cmath>
@@ -275,7 +278,6 @@ struct LocalSearchResource
     // Persistent RNG - reused across all calls like PyVRP does
     RandomNumberGenerator rng;
 
-    // Owned operators (keep them alive)
     std::unique_ptr<search::Exchange<1, 0>> exchange10;
     std::unique_ptr<search::Exchange<2, 0>> exchange20;
     std::unique_ptr<search::Exchange<1, 1>> exchange11;
@@ -284,6 +286,11 @@ struct LocalSearchResource
     std::unique_ptr<search::SwapTails> swapTails;
     std::unique_ptr<search::RelocateWithDepot> relocateDepot;
     std::unique_ptr<search::SwapRoutes> swapRoutes;
+
+    std::unique_ptr<search::RemoveOptional> removeOptional;
+    std::unique_ptr<search::ReplaceOptional> replaceOptional;
+    std::unique_ptr<search::ReplaceGroup> replaceGroup;
+    std::unique_ptr<search::RemoveAdjacentDepot> removeAdjacentDepot;
 
     // The local search object (must be last - uses references to above)
     std::unique_ptr<search::LocalSearch> ls;
@@ -330,6 +337,34 @@ struct LocalSearchResource
         {
             swapRoutes = std::make_unique<search::SwapRoutes>(data);
             ls->addRouteOperator(*swapRoutes);
+        }
+
+        auto const &ss = ls->searchSpace();
+
+        if (search::supports<search::RemoveOptional>(data))
+        {
+            removeOptional = std::make_unique<search::RemoveOptional>(data);
+            ls->addOperator(*removeOptional);
+        }
+
+        if (search::supports<search::ReplaceOptional>(data))
+        {
+            replaceOptional
+                = std::make_unique<search::ReplaceOptional>(data, ss);
+            ls->addOperator(*replaceOptional);
+        }
+
+        if (search::supports<search::ReplaceGroup>(data))
+        {
+            replaceGroup = std::make_unique<search::ReplaceGroup>(data);
+            ls->addOperator(*replaceGroup);
+        }
+
+        if (search::supports<search::RemoveAdjacentDepot>(data))
+        {
+            removeAdjacentDepot
+                = std::make_unique<search::RemoveAdjacentDepot>(data);
+            ls->addOperator(*removeAdjacentDepot);
         }
     }
 };
@@ -2805,6 +2840,53 @@ build_neighbours(ProblemData const &data,
     return neighbours;
 }
 
+namespace
+{
+struct OwnedUnaryOperators
+{
+    std::unique_ptr<pyvrp::search::RemoveOptional> removeOptional;
+    std::unique_ptr<pyvrp::search::ReplaceOptional> replaceOptional;
+    std::unique_ptr<pyvrp::search::ReplaceGroup> replaceGroup;
+    std::unique_ptr<pyvrp::search::RemoveAdjacentDepot> removeAdjacentDepot;
+};
+
+OwnedUnaryOperators registerUnaryOperators(pyvrp::search::LocalSearch &ls,
+                                           pyvrp::ProblemData const &data)
+{
+    OwnedUnaryOperators ops;
+    auto const &ss = ls.searchSpace();
+
+    if (pyvrp::search::supports<pyvrp::search::RemoveOptional>(data))
+    {
+        ops.removeOptional
+            = std::make_unique<pyvrp::search::RemoveOptional>(data);
+        ls.addOperator(*ops.removeOptional);
+    }
+
+    if (pyvrp::search::supports<pyvrp::search::ReplaceOptional>(data))
+    {
+        ops.replaceOptional
+            = std::make_unique<pyvrp::search::ReplaceOptional>(data, ss);
+        ls.addOperator(*ops.replaceOptional);
+    }
+
+    if (pyvrp::search::supports<pyvrp::search::ReplaceGroup>(data))
+    {
+        ops.replaceGroup = std::make_unique<pyvrp::search::ReplaceGroup>(data);
+        ls.addOperator(*ops.replaceGroup);
+    }
+
+    if (pyvrp::search::supports<pyvrp::search::RemoveAdjacentDepot>(data))
+    {
+        ops.removeAdjacentDepot
+            = std::make_unique<pyvrp::search::RemoveAdjacentDepot>(data);
+        ls.addOperator(*ops.removeAdjacentDepot);
+    }
+
+    return ops;
+}
+}  // namespace
+
 /**
  * Perform local search on a solution.
  */
@@ -2876,6 +2958,8 @@ local_search_nif([[maybe_unused]] ErlNifEnv *env,
     }
 
     // Note: PyVRP's default ROUTE_OPERATORS is empty
+
+    auto unaryOps = registerUnaryOperators(ls, problem_data);
 
     // Create RNG and shuffle (like Python's __call__ does)
     RandomNumberGenerator rng(static_cast<uint32_t>(seed));
@@ -2964,6 +3048,8 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
 
     // Note: PyVRP's default ROUTE_OPERATORS is empty - don't add
     // SwapStar/SwapRoutes
+
+    auto unaryOps = registerUnaryOperators(ls, problem_data);
 
     // Create RNG and shuffle (like Python's ls.search() does)
     RandomNumberGenerator rng(static_cast<uint32_t>(seed));
@@ -3182,6 +3268,8 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
             ls.addRouteOperator(*swap_routes_ops.back());
         }
     }
+
+    auto unaryOps = registerUnaryOperators(ls, problem_data);
 
     // Create RNG and shuffle (like PyVRP's LocalSearch.__call__ does)
     RandomNumberGenerator rng(static_cast<uint32_t>(seed));
@@ -3414,6 +3502,8 @@ fine::Term local_search_stats_nif(
                 {op_name, swap_routes_ops.back().get()});
         }
     }
+
+    auto unaryOps = registerUnaryOperators(ls, problem_data);
 
     // Run local search
     ls(solution_resource->solution, cost_evaluator, exhaustive);
@@ -5008,55 +5098,6 @@ FINE_NIF(make_search_route_nif, 0);
 // -----------------------------------------------------------------------------
 // Primitive Cost Functions
 // -----------------------------------------------------------------------------
-
-// insert_cost: delta cost of inserting U after V
-int64_t
-insert_cost_nif([[maybe_unused]] ErlNifEnv *env,
-                fine::ResourcePtr<SearchNodeResource> u_resource,
-                fine::ResourcePtr<SearchNodeResource> v_resource,
-                fine::ResourcePtr<ProblemDataResource> problem_resource,
-                fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
-{
-    return static_cast<int64_t>(
-        search::insertCost(u_resource->node,
-                           v_resource->node,
-                           *problem_resource->data,
-                           evaluator_resource->evaluator));
-}
-
-FINE_NIF(insert_cost_nif, 0);
-
-// remove_cost: delta cost of removing U from its route
-int64_t
-remove_cost_nif([[maybe_unused]] ErlNifEnv *env,
-                fine::ResourcePtr<SearchNodeResource> u_resource,
-                fine::ResourcePtr<ProblemDataResource> problem_resource,
-                fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
-{
-    return static_cast<int64_t>(
-        search::removeCost(u_resource->node,
-                           *problem_resource->data,
-                           evaluator_resource->evaluator));
-}
-
-FINE_NIF(remove_cost_nif, 0);
-
-// inplace_cost: delta cost of inserting U in place of V
-int64_t
-inplace_cost_nif([[maybe_unused]] ErlNifEnv *env,
-                 fine::ResourcePtr<SearchNodeResource> u_resource,
-                 fine::ResourcePtr<SearchNodeResource> v_resource,
-                 fine::ResourcePtr<ProblemDataResource> problem_resource,
-                 fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
-{
-    return static_cast<int64_t>(
-        search::inplaceCost(u_resource->node,
-                            v_resource->node,
-                            *problem_resource->data,
-                            evaluator_resource->evaluator));
-}
-
-FINE_NIF(inplace_cost_nif, 0);
 
 // -----------------------------------------------------------------------------
 // RandomNumberGenerator NIFs

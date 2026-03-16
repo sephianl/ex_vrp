@@ -188,10 +188,6 @@ defmodule ExVrp.Native do
     relocate_with_depot_evaluate_nif: 4,
     relocate_with_depot_apply_nif: 3,
     relocate_with_depot_supports_nif: 1,
-    # Primitive cost functions
-    insert_cost_nif: 4,
-    remove_cost_nif: 3,
-    inplace_cost_nif: 4,
     # RNG
     create_rng_from_seed_nif: 1,
     create_rng_from_state_nif: 1,
@@ -1166,32 +1162,6 @@ defmodule ExVrp.Native do
   @doc "Checks if RelocateWithDepot is supported for the given problem data."
   @spec relocate_with_depot_supports_nif(reference()) :: boolean()
   def relocate_with_depot_supports_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
-
-  # ---------------------------------------------------------------------------
-  # Primitive Cost Functions
-  # ---------------------------------------------------------------------------
-
-  @doc """
-  Computes the delta cost of inserting node U after node V in V's route.
-
-  Returns 0 if the move is not possible (e.g., inserting a depot).
-  """
-  def insert_cost_nif(_u_node, _v_node, _problem_data, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc """
-  Computes the delta cost of removing node U from its route.
-
-  Returns 0 if the move is not possible (e.g., removing a depot, node not in route).
-  """
-  def remove_cost_nif(_u_node, _problem_data, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc """
-  Computes the delta cost of inserting node U in place of node V.
-
-  U must not be in a route, V must be in a route.
-  Returns 0 if the move is not possible.
-  """
-  def inplace_cost_nif(_u_node, _v_node, _problem_data, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
   # RandomNumberGenerator NIFs

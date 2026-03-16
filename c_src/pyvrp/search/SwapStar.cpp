@@ -216,9 +216,10 @@ std::pair<Cost, bool> SwapStar::evaluate(Route::Node *U,
     if (best.cost >= 0)
         return {best.cost, false};
 
-    return {evaluateMove(best.V, best.VAfter, best.U, costEvaluator)
-                + evaluateMove(best.U, best.UAfter, best.V, costEvaluator),
-            false};
+    auto const exactCost
+        = evaluateMove(best.V, best.VAfter, best.U, costEvaluator)
+          + evaluateMove(best.U, best.UAfter, best.V, costEvaluator);
+    return {exactCost, exactCost < 0};
 }
 
 void SwapStar::apply(Route::Node *U, Route::Node *V) const

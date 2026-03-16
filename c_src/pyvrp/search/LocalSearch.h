@@ -45,22 +45,16 @@ class LocalSearch
 
     void loadSolution(pyvrp::Solution const &solution);
 
+    void applyUnaryOps(Route::Node *U, CostEvaluator const &costEvaluator);
+
     bool applyBinaryOps(Route::Node *U,
                         Route::Node *V,
                         CostEvaluator const &costEvaluator);
 
     bool applyRouteOps(Route *U, Route *V, CostEvaluator const &costEvaluator);
 
-    void applyDepotRemovalMove(Route::Node *U,
-                               CostEvaluator const &costEvaluator);
-
     void applyEmptyRouteMoves(Route::Node *U,
                               CostEvaluator const &costEvaluator);
-
-    void applyOptionalClientMoves(Route::Node *U,
-                                  CostEvaluator const &costEvaluator);
-
-    void applyGroupMoves(Route::Node *U, CostEvaluator const &costEvaluator);
 
     bool wouldViolateSameVehicle(Route::Node const *U,
                                  Route const *targetRoute) const;
@@ -71,7 +65,7 @@ class LocalSearch
 
     void intensify(CostEvaluator const &costEvaluator);
 
-    void markRequiredMissingAsPromising();
+    void ensureStructuralFeasibility(CostEvaluator const &costEvaluator);
 
     void improveWithMultiTrip(CostEvaluator const &costEvaluator);
 
@@ -96,6 +90,8 @@ public:
     void setNeighbours(SearchSpace::Neighbours neighbours);
 
     SearchSpace::Neighbours const &neighbours() const;
+
+    SearchSpace const &searchSpace() const;
 
     Statistics statistics() const;
 

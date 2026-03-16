@@ -3,7 +3,6 @@
 
 #include "LocalSearchOperator.h"
 #include "Route.h"
-#include "primitives.h"
 
 #include <cassert>
 
@@ -195,6 +194,9 @@ std::pair<Cost, bool> Exchange<N, M>::evaluate(
 {
     stats_.numEvaluations++;
 
+    if (!U->route())
+        return {0, false};
+
     if (containsDepot(U, N) || overlap(U, V))
         return {0, false};
 
@@ -211,7 +213,8 @@ std::pair<Cost, bool> Exchange<N, M>::evaluate(
         if (U == n(V))
             return {0, false};
 
-        return {evalRelocateMove(U, V, costEvaluator), false};
+        auto const cost = evalRelocateMove(U, V, costEvaluator);
+        return {cost, cost < 0};
     }
     else
     {
@@ -222,7 +225,8 @@ std::pair<Cost, bool> Exchange<N, M>::evaluate(
         if (adjacent(U, V))
             return {0, false};
 
-        return {evalSwapMove(U, V, costEvaluator), false};
+        auto const cost = evalSwapMove(U, V, costEvaluator);
+        return {cost, cost < 0};
     }
 }
 
