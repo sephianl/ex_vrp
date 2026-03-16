@@ -174,13 +174,6 @@ defmodule ExVrp.Native do
     exchange32_apply_nif: 3,
     exchange33_evaluate_nif: 4,
     exchange33_apply_nif: 3,
-    # Route operators
-    create_swap_star_nif: 2,
-    swap_star_evaluate_nif: 4,
-    swap_star_apply_nif: 3,
-    create_swap_routes_nif: 1,
-    swap_routes_evaluate_nif: 4,
-    swap_routes_apply_nif: 3,
     create_swap_tails_nif: 1,
     create_relocate_with_depot_nif: 1,
     swap_tails_evaluate_nif: 4,
@@ -535,10 +528,6 @@ defmodule ExVrp.Native do
     - `:exchange33` / `:swap33` - Exchange 3 nodes for 3
     - `:swap_tails` - Swap route tails
     - `:relocate_with_depot` - Relocate with depot reload (multi-trip)
-
-  - `:route_operators` - List of route operator names:
-    - `:swap_star` - SWAP* operator (Vidal et al.)
-    - `:swap_routes` - Swap entire routes
 
   - `:exhaustive` - Whether to run exhaustive search (default: false)
   """
@@ -1120,26 +1109,8 @@ defmodule ExVrp.Native do
   def exchange33_apply_nif(_op, _u, _v), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
-  # Route Operator NIFs (SwapStar, SwapRoutes, SwapTails, RelocateWithDepot)
+  # Route Operator NIFs (SwapTails, RelocateWithDepot)
   # ---------------------------------------------------------------------------
-
-  @doc "Creates a SwapStar operator with overlap_tolerance (0.0 to 1.0, use 1.0 to check all route pairs)."
-  def create_swap_star_nif(_problem_data, _overlap_tolerance), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Evaluates SwapStar move cost between two routes."
-  def swap_star_evaluate_nif(_op, _route1, _route2, _evaluator), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Applies SwapStar move between two routes."
-  def swap_star_apply_nif(_op, _route1, _route2), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Creates a SwapRoutes operator."
-  def create_swap_routes_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Evaluates SwapRoutes move cost between two routes."
-  def swap_routes_evaluate_nif(_op, _route1, _route2, _evaluator), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Applies SwapRoutes move between two routes."
-  def swap_routes_apply_nif(_op, _route1, _route2), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Creates a SwapTails operator."
   def create_swap_tails_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)

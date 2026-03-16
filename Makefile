@@ -89,8 +89,6 @@ PYVRP_SEARCH_SRC = \
 	c_src/pyvrp/search/Route.cpp \
 	c_src/pyvrp/search/SearchSpace.cpp \
 	c_src/pyvrp/search/Solution.cpp \
-	c_src/pyvrp/search/SwapRoutes.cpp \
-	c_src/pyvrp/search/SwapStar.cpp \
 	c_src/pyvrp/search/SwapTails.cpp
 
 ALL_SRC = $(NIF_SRC) $(PYVRP_CORE_SRC) $(PYVRP_SEARCH_SRC)

@@ -29,10 +29,8 @@ class LocalSearch
 
     std::vector<UnaryOperator *> unaryOps;
     std::vector<BinaryOperator *> binaryOps;
-    std::vector<BinaryOperator *> routeOps;
 
     std::vector<int> lastTestedNodes;
-    std::vector<int> lastTestedRoutes;
     std::vector<int> lastUpdated;
 
     std::vector<std::vector<size_t>> clientToSameVehicleGroups_;
@@ -51,8 +49,6 @@ class LocalSearch
                         Route::Node *V,
                         CostEvaluator const &costEvaluator);
 
-    bool applyRouteOps(Route *U, Route *V, CostEvaluator const &costEvaluator);
-
     void applyEmptyRouteMoves(Route::Node *U,
                               CostEvaluator const &costEvaluator);
 
@@ -62,8 +58,6 @@ class LocalSearch
     void update(Route *U, Route *V);
 
     void search(CostEvaluator const &costEvaluator);
-
-    void intensify(CostEvaluator const &costEvaluator);
 
     void ensureStructuralFeasibility(CostEvaluator const &costEvaluator);
 
@@ -79,13 +73,9 @@ public:
 
     void addOperator(BinaryOperator &op);
 
-    void addRouteOperator(BinaryOperator &op);
-
     void addOperator(UnaryOperator &op);
 
     std::vector<BinaryOperator *> const &operators() const;
-
-    std::vector<BinaryOperator *> const &routeOperators() const;
 
     void setNeighbours(SearchSpace::Neighbours neighbours);
 
@@ -103,9 +93,6 @@ public:
     pyvrp::Solution search(pyvrp::Solution const &solution,
                            CostEvaluator const &costEvaluator,
                            int64_t timeout_ms = 0);
-
-    pyvrp::Solution intensify(pyvrp::Solution const &solution,
-                              CostEvaluator const &costEvaluator);
 
     void shuffle(RandomNumberGenerator &rng);
 

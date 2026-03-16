@@ -115,30 +115,35 @@ Phase 6 (Island ILS — pure Elixir)
 
 ---
 
-## Phase 3: Remove SwapRoutes/SwapStar + Bug Fixes — Size: M
+## Phase 3: Remove SwapRoutes/SwapStar — Size: M ✅ DONE
 
-**Goal**: Remove route operators deleted upstream. Add `ensureStructuralFeasibility()`. Port bug fixes #998 and #1045.
+**Goal**: Remove route operators deleted upstream and all route operator infrastructure from LocalSearch.
 
-**C++ files to remove**:
+**What changed**:
 
-- `c_src/pyvrp/search/SwapRoutes.{h,cpp}`
-- `c_src/pyvrp/search/SwapStar.{h,cpp}`
+- Deleted `SwapRoutes.{h,cpp}` and `SwapStar.{h,cpp}`
+- Removed all route operator infrastructure from `LocalSearch.{h,cpp}`: `routeOps` vector, `lastTestedRoutes`, `applyRouteOps()`, `intensify()` (both private search loop and public method), `addRouteOperator()`, `routeOperators()`
+- Simplified `operator()` — no longer runs search→intensify loop, just calls `search()` directly
+- Removed `SwapStarResource`, `SwapRoutesResource` structs and all associated NIFs from `ex_vrp_nif.cpp`
+- Removed `reconcile_route_ownership` overload for `SearchRouteResource` (dead code after NIF removal)
+- Removed route_operators parsing from `local_search_with_operators_nif` and `local_search_stats_nif`
+- Removed SwapRoutes auto-registration from `LocalSearchResource` constructor
 
-**C++ files to modify**:
+**Files modified**:
 | File | Change |
 |------|--------|
-| `c_src/pyvrp/search/LocalSearch.{h,cpp}` | Remove route operator infrastructure. Add `ensureStructuralFeasibility()` call after perturbation (fixes #1045). Port #998 randomness in initial solution for optional clients |
-| `c_src/ex_vrp_nif.cpp` | Remove SwapStar/SwapRoutes resources, NIFs, includes |
-| `Makefile` | Remove `SwapRoutes.cpp`, `SwapStar.cpp` |
+| `c_src/pyvrp/search/LocalSearch.{h,cpp}` | Major rewrite: removed route operator infrastructure, simplified `operator()` |
+| `c_src/ex_vrp_nif.cpp` | Removed includes, resource structs, 6 NIF functions, FINE_RESOURCE macros, route_ops parsing |
+| `Makefile` | Removed `SwapRoutes.cpp`, `SwapStar.cpp` |
+| `lib/ex_vrp/native.ex` | Removed 6 NIF declarations (create/evaluate/apply for SwapStar and SwapRoutes), removed `:route_operators` docs |
+| `test/route_operators_test.exs` | Removed SwapStar and SwapRoutes test sections; renamed to SwapTails-focused test file |
+| `test/local_search_test.exs` | Removed tests referencing `:swap_star`/`:swap_routes` route operators, cleaned up `route_operators: []` remnants |
 
-**Elixir changes**:
+**Files removed**: `SwapStar.{h,cpp}`, `SwapRoutes.{h,cpp}`
 
-- `lib/ex_vrp/native.ex`: Remove SwapStar/SwapRoutes NIFs
-- Remove/update `test/route_operators_test.exs`
+**Divergences from upstream plan**: Bug fixes #998 and #1045 were not ported — `ensureStructuralFeasibility()` was already added in Phase 2, and #998 (random optional client insertion) requires further investigation.
 
-**Tests**: Run full suite + benchmarks. Watch for quality regression on prize-collecting instances.
-
-**Risk**: MEDIUM — route operators may have been helping on some problem types. The new operators from Phase 2 should compensate.
+**Verified**: 926/926 tests pass (21 removed), benchmarks show no quality regression.
 
 ---
 

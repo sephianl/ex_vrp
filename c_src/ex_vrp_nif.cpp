@@ -20,8 +20,6 @@
 #include "pyvrp/search/RemoveOptional.h"
 #include "pyvrp/search/ReplaceGroup.h"
 #include "pyvrp/search/ReplaceOptional.h"
-#include "pyvrp/search/SwapRoutes.h"
-#include "pyvrp/search/SwapStar.h"
 #include "pyvrp/search/SwapTails.h"
 
 #include <algorithm>
@@ -177,32 +175,6 @@ template <size_t N, size_t M> struct ExchangeOperatorResource
     }
 };
 
-// Wrap SwapStar operator
-struct SwapStarResource
-{
-    std::unique_ptr<search::SwapStar> op;
-    std::shared_ptr<ProblemData> problemData;
-
-    SwapStarResource(std::unique_ptr<search::SwapStar> o,
-                     std::shared_ptr<ProblemData> pd)
-        : op(std::move(o)), problemData(std::move(pd))
-    {
-    }
-};
-
-// Wrap SwapRoutes operator
-struct SwapRoutesResource
-{
-    std::unique_ptr<search::SwapRoutes> op;
-    std::shared_ptr<ProblemData> problemData;
-
-    SwapRoutesResource(std::unique_ptr<search::SwapRoutes> o,
-                       std::shared_ptr<ProblemData> pd)
-        : op(std::move(o)), problemData(std::move(pd))
-    {
-    }
-};
-
 // Wrap SwapTails operator
 struct SwapTailsResource
 {
@@ -285,7 +257,6 @@ struct LocalSearchResource
     std::unique_ptr<search::Exchange<2, 2>> exchange22;
     std::unique_ptr<search::SwapTails> swapTails;
     std::unique_ptr<search::RelocateWithDepot> relocateDepot;
-    std::unique_ptr<search::SwapRoutes> swapRoutes;
 
     std::unique_ptr<search::RemoveOptional> removeOptional;
     std::unique_ptr<search::ReplaceOptional> replaceOptional;
@@ -331,12 +302,6 @@ struct LocalSearchResource
         {
             relocateDepot = std::make_unique<search::RelocateWithDepot>(data);
             ls->addOperator(*relocateDepot);
-        }
-
-        if (search::supports<search::SwapRoutes>(data))
-        {
-            swapRoutes = std::make_unique<search::SwapRoutes>(data);
-            ls->addRouteOperator(*swapRoutes);
         }
 
         auto const &ss = ls->searchSpace();
@@ -395,8 +360,6 @@ FINE_RESOURCE(Exchange30Resource);
 FINE_RESOURCE(Exchange31Resource);
 FINE_RESOURCE(Exchange32Resource);
 FINE_RESOURCE(Exchange33Resource);
-FINE_RESOURCE(SwapStarResource);
-FINE_RESOURCE(SwapRoutesResource);
 FINE_RESOURCE(SwapTailsResource);
 FINE_RESOURCE(RelocateWithDepotResource);
 FINE_RESOURCE(RNGResource);
@@ -427,10 +390,6 @@ static void reconcile_route_ownership_impl(
     search::Route *route2,
     std::vector<std::unique_ptr<search::Route::Node>> &owned1,
     std::vector<std::unique_ptr<search::Route::Node>> &owned2);
-
-static void reconcile_route_ownership(
-    fine::ResourcePtr<SearchRouteResource> &route1_resource,
-    fine::ResourcePtr<SearchRouteResource> &route2_resource);
 
 static void
 reconcile_route_ownership(std::shared_ptr<SearchRouteData> &route1_data,
@@ -3015,10 +2974,9 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
     // Create local search
     pyvrp::search::LocalSearch ls(problem_data, neighbours, perturbManager);
 
-    // Add node operators - matching PyVRP's default NODE_OPERATORS:
+    // Add operators - matching PyVRP's defaults:
     // Exchange10, Exchange20, Exchange11, Exchange21, Exchange22, SwapTails,
-    // RelocateWithDepot Note: PyVRP's default ROUTE_OPERATORS is empty, so we
-    // don't add SwapStar/SwapRoutes here
+    // RelocateWithDepot
     pyvrp::search::Exchange<1, 0> relocate(problem_data);   // RELOCATE
     pyvrp::search::Exchange<2, 0> relocate2(problem_data);  // 2-RELOCATE
     pyvrp::search::Exchange<1, 1> swap11(problem_data);     // SWAP(1,1)
@@ -3046,9 +3004,6 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
         ls.addOperator(*relocateDepot);
     }
 
-    // Note: PyVRP's default ROUTE_OPERATORS is empty - don't add
-    // SwapStar/SwapRoutes
-
     auto unaryOps = registerUnaryOperators(ls, problem_data);
 
     // Create RNG and shuffle (like Python's ls.search() does)
@@ -3075,7 +3030,6 @@ FINE_NIF(local_search_search_only_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
  * Options:
  * - :node_operators - list of atom operator names: [:exchange10, :exchange11,
  * ...]
- * - :route_operators - list of atom operator names: [:swap_star, :swap_routes]
  * - :exhaustive - boolean (default false)
  */
 fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
@@ -3092,7 +3046,6 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
     bool exhaustive = false;
     int64_t seed = 42;
     std::vector<std::string> node_ops;
-    std::vector<std::string> route_ops;
 
     ERL_NIF_TERM key, value;
 
@@ -3134,26 +3087,6 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
         }
     }
 
-    // Parse route_operators list
-    key = enif_make_atom(env, "route_operators");
-    if (enif_get_map_value(env, opts_term, key, &value))
-    {
-        unsigned len;
-        if (enif_get_list_length(env, value, &len))
-        {
-            ERL_NIF_TERM head, tail = value;
-            for (unsigned i = 0; i < len; i++)
-            {
-                enif_get_list_cell(env, tail, &head, &tail);
-                char buf[64];
-                if (enif_get_atom(env, head, buf, sizeof(buf), ERL_NIF_LATIN1))
-                {
-                    route_ops.push_back(std::string(buf));
-                }
-            }
-        }
-    }
-
     // Build neighbourhood
     auto neighbours = build_neighbours(problem_data);
 
@@ -3177,8 +3110,6 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
     std::vector<std::unique_ptr<pyvrp::search::SwapTails>> swap_tails_ops;
     std::vector<std::unique_ptr<pyvrp::search::RelocateWithDepot>>
         relocate_depot_ops;
-    std::vector<std::unique_ptr<pyvrp::search::SwapStar>> swap_star_ops;
-    std::vector<std::unique_ptr<pyvrp::search::SwapRoutes>> swap_routes_ops;
 
     // Add specified node operators
     for (const auto &op_name : node_ops)
@@ -3252,23 +3183,6 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
         }
     }
 
-    // Add specified route operators
-    for (const auto &op_name : route_ops)
-    {
-        if (op_name == "swap_star")
-        {
-            swap_star_ops.push_back(
-                std::make_unique<pyvrp::search::SwapStar>(problem_data));
-            ls.addRouteOperator(*swap_star_ops.back());
-        }
-        else if (op_name == "swap_routes")
-        {
-            swap_routes_ops.push_back(
-                std::make_unique<pyvrp::search::SwapRoutes>(problem_data));
-            ls.addRouteOperator(*swap_routes_ops.back());
-        }
-    }
-
     auto unaryOps = registerUnaryOperators(ls, problem_data);
 
     // Create RNG and shuffle (like PyVRP's LocalSearch.__call__ does)
@@ -3306,7 +3220,6 @@ fine::Term local_search_stats_nif(
     // Parse options
     bool exhaustive = false;
     std::vector<std::string> node_ops;
-    std::vector<std::string> route_ops;
 
     ERL_NIF_TERM key, value;
 
@@ -3339,25 +3252,6 @@ fine::Term local_search_stats_nif(
         }
     }
 
-    key = enif_make_atom(env, "route_operators");
-    if (enif_get_map_value(env, opts_term, key, &value))
-    {
-        unsigned len;
-        if (enif_get_list_length(env, value, &len))
-        {
-            ERL_NIF_TERM head, tail = value;
-            for (unsigned i = 0; i < len; i++)
-            {
-                enif_get_list_cell(env, tail, &head, &tail);
-                char buf[64];
-                if (enif_get_atom(env, head, buf, sizeof(buf), ERL_NIF_LATIN1))
-                {
-                    route_ops.push_back(std::string(buf));
-                }
-            }
-        }
-    }
-
     // Build neighbourhood
     auto neighbours = build_neighbours(problem_data);
 
@@ -3371,8 +3265,6 @@ fine::Term local_search_stats_nif(
     // Track operators for stats collection
     std::vector<std::pair<std::string, pyvrp::search::BinaryOperator *>>
         node_operator_ptrs;
-    std::vector<std::pair<std::string, pyvrp::search::BinaryOperator *>>
-        route_operator_ptrs;
 
     // Create and add operators
     std::vector<std::unique_ptr<pyvrp::search::Exchange<1, 0>>> exchange10_ops;
@@ -3387,8 +3279,6 @@ fine::Term local_search_stats_nif(
     std::vector<std::unique_ptr<pyvrp::search::SwapTails>> swap_tails_ops;
     std::vector<std::unique_ptr<pyvrp::search::RelocateWithDepot>>
         relocate_depot_ops;
-    std::vector<std::unique_ptr<pyvrp::search::SwapStar>> swap_star_ops;
-    std::vector<std::unique_ptr<pyvrp::search::SwapRoutes>> swap_routes_ops;
 
     for (const auto &op_name : node_ops)
     {
@@ -3483,26 +3373,6 @@ fine::Term local_search_stats_nif(
         }
     }
 
-    for (const auto &op_name : route_ops)
-    {
-        if (op_name == "swap_star")
-        {
-            swap_star_ops.push_back(
-                std::make_unique<pyvrp::search::SwapStar>(problem_data));
-            ls.addRouteOperator(*swap_star_ops.back());
-            route_operator_ptrs.push_back(
-                {op_name, swap_star_ops.back().get()});
-        }
-        else if (op_name == "swap_routes")
-        {
-            swap_routes_ops.push_back(
-                std::make_unique<pyvrp::search::SwapRoutes>(problem_data));
-            ls.addRouteOperator(*swap_routes_ops.back());
-            route_operator_ptrs.push_back(
-                {op_name, swap_routes_ops.back().get()});
-        }
-    }
-
     auto unaryOps = registerUnaryOperators(ls, problem_data);
 
     // Run local search
@@ -3545,30 +3415,6 @@ fine::Term local_search_stats_nif(
     std::vector<ERL_NIF_TERM> op_stats_list;
 
     for (const auto &[name, op] : node_operator_ptrs)
-    {
-        auto const &stats = op->statistics();
-        ERL_NIF_TERM op_map = enif_make_new_map(env);
-        enif_make_map_put(env,
-                          op_map,
-                          enif_make_atom(env, "name"),
-                          enif_make_atom(env, name.c_str()),
-                          &op_map);
-        enif_make_map_put(
-            env,
-            op_map,
-            enif_make_atom(env, "num_evaluations"),
-            enif_make_int64(env, static_cast<int64_t>(stats.numEvaluations)),
-            &op_map);
-        enif_make_map_put(
-            env,
-            op_map,
-            enif_make_atom(env, "num_applications"),
-            enif_make_int64(env, static_cast<int64_t>(stats.numApplications)),
-            &op_map);
-        op_stats_list.push_back(op_map);
-    }
-
-    for (const auto &[name, op] : route_operator_ptrs)
     {
         auto const &stats = op->statistics();
         ERL_NIF_TERM op_map = enif_make_new_map(env);
@@ -4873,97 +4719,6 @@ exchange33_apply_nif([[maybe_unused]] ErlNifEnv *env,
 
 FINE_NIF(exchange33_apply_nif, 0);
 
-// Create SwapStar operator with optional overlap_tolerance
-fine::ResourcePtr<SwapStarResource>
-create_swap_star_nif([[maybe_unused]] ErlNifEnv *env,
-                     fine::ResourcePtr<ProblemDataResource> problem_resource,
-                     double overlap_tolerance)
-{
-    auto &data = *problem_resource->data;
-    auto op = std::make_unique<search::SwapStar>(data, overlap_tolerance);
-    return fine::make_resource<SwapStarResource>(std::move(op),
-                                                 problem_resource->data);
-}
-
-FINE_NIF(create_swap_star_nif, 0);
-
-// Create SwapRoutes operator
-fine::ResourcePtr<SwapRoutesResource>
-create_swap_routes_nif([[maybe_unused]] ErlNifEnv *env,
-                       fine::ResourcePtr<ProblemDataResource> problem_resource)
-{
-    auto &data = *problem_resource->data;
-    auto op = std::make_unique<search::SwapRoutes>(data);
-    return fine::make_resource<SwapRoutesResource>(std::move(op),
-                                                   problem_resource->data);
-}
-
-FINE_NIF(create_swap_routes_nif, 0);
-
-// SwapStar evaluate (takes two Routes, passes start depot nodes)
-int64_t swap_star_evaluate_nif(
-    [[maybe_unused]] ErlNifEnv *env,
-    fine::ResourcePtr<SwapStarResource> op_resource,
-    fine::ResourcePtr<SearchRouteResource> route1_resource,
-    fine::ResourcePtr<SearchRouteResource> route2_resource,
-    fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
-{
-    auto [cost, applied]
-        = op_resource->op->evaluate((*route1_resource->route())[0],
-                                    (*route2_resource->route())[0],
-                                    evaluator_resource->evaluator);
-    return static_cast<int64_t>(cost);
-}
-
-FINE_NIF(swap_star_evaluate_nif, 0);
-
-// SwapStar apply (takes two Routes) - reconciles ownership after apply
-fine::Atom
-swap_star_apply_nif([[maybe_unused]] ErlNifEnv *env,
-                    fine::ResourcePtr<SwapStarResource> op_resource,
-                    fine::ResourcePtr<SearchRouteResource> route1_resource,
-                    fine::ResourcePtr<SearchRouteResource> route2_resource)
-{
-    op_resource->op->apply((*route1_resource->route())[0],
-                           (*route2_resource->route())[0]);
-    reconcile_route_ownership(route1_resource, route2_resource);
-    return fine::Atom("ok");
-}
-
-FINE_NIF(swap_star_apply_nif, 0);
-
-// SwapRoutes evaluate (takes two Routes, passes start depot nodes)
-int64_t swap_routes_evaluate_nif(
-    [[maybe_unused]] ErlNifEnv *env,
-    fine::ResourcePtr<SwapRoutesResource> op_resource,
-    fine::ResourcePtr<SearchRouteResource> route1_resource,
-    fine::ResourcePtr<SearchRouteResource> route2_resource,
-    fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
-{
-    auto [cost, applied]
-        = op_resource->op->evaluate((*route1_resource->route())[0],
-                                    (*route2_resource->route())[0],
-                                    evaluator_resource->evaluator);
-    return static_cast<int64_t>(cost);
-}
-
-FINE_NIF(swap_routes_evaluate_nif, 0);
-
-// SwapRoutes apply (takes two Routes) - reconciles ownership after apply
-fine::Atom
-swap_routes_apply_nif([[maybe_unused]] ErlNifEnv *env,
-                      fine::ResourcePtr<SwapRoutesResource> op_resource,
-                      fine::ResourcePtr<SearchRouteResource> route1_resource,
-                      fine::ResourcePtr<SearchRouteResource> route2_resource)
-{
-    op_resource->op->apply((*route1_resource->route())[0],
-                           (*route2_resource->route())[0]);
-    reconcile_route_ownership(route1_resource, route2_resource);
-    return fine::Atom("ok");
-}
-
-FINE_NIF(swap_routes_apply_nif, 0);
-
 // Create SwapTails operator
 fine::ResourcePtr<SwapTailsResource>
 create_swap_tails_nif([[maybe_unused]] ErlNifEnv *env,
@@ -5836,18 +5591,7 @@ static void reconcile_route_ownership_impl(
     }
 }
 
-// Overload for route-based operations (SwapStar, SwapRoutes)
-static void reconcile_route_ownership(
-    fine::ResourcePtr<SearchRouteResource> &route1_resource,
-    fine::ResourcePtr<SearchRouteResource> &route2_resource)
-{
-    reconcile_route_ownership_impl(route1_resource->route(),
-                                   route2_resource->route(),
-                                   route1_resource->ownedNodes(),
-                                   route2_resource->ownedNodes());
-}
-
-// Overload for node-based operations (Exchange, SwapTails)
+// Reconcile ownership for node-based operations (Exchange, SwapTails)
 static void
 reconcile_route_ownership(std::shared_ptr<SearchRouteData> &route1_data,
                           std::shared_ptr<SearchRouteData> &route2_data)

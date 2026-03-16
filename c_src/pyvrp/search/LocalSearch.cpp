@@ -39,25 +39,7 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
         has_timeout_ = false;
     }
 
-    while (true)
-    {
-        search(costEvaluator);
-
-        if (has_timeout_
-            && std::chrono::steady_clock::now() >= timeout_deadline_)
-            break;
-
-        auto const numUpdates = numUpdates_;
-
-        intensify(costEvaluator);
-
-        if (has_timeout_
-            && std::chrono::steady_clock::now() >= timeout_deadline_)
-            break;
-
-        if (numUpdates_ == numUpdates)
-            break;
-    }
+    search(costEvaluator);
 
     return solution_.unload();
 }
@@ -83,14 +65,6 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
 
     improveWithMultiTrip(costEvaluator);
 
-    return solution_.unload();
-}
-
-pyvrp::Solution LocalSearch::intensify(pyvrp::Solution const &solution,
-                                       CostEvaluator const &costEvaluator)
-{
-    loadSolution(solution);
-    intensify(costEvaluator);
     return solution_.unload();
 }
 
@@ -150,47 +124,6 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
     }
 }
 
-void LocalSearch::intensify(CostEvaluator const &costEvaluator)
-{
-    if (routeOps.empty())
-        return;
-
-    searchCompleted_ = false;
-    while (!searchCompleted_)
-    {
-        if (has_timeout_
-            && std::chrono::steady_clock::now() >= timeout_deadline_)
-            return;
-
-        searchCompleted_ = true;
-
-        for (auto const rU : searchSpace_.routeOrder())
-        {
-            auto *U = &solution_.routes[rU];
-            assert(U->idx() == rU);
-
-            if (U->empty())
-                continue;
-
-            auto const lastTested = lastTestedRoutes[U->idx()];
-            lastTestedRoutes[U->idx()] = numUpdates_;
-
-            for (size_t rV = U->idx() + 1; rV != solution_.routes.size(); ++rV)
-            {
-                auto *V = &solution_.routes[rV];
-                assert(V->idx() == rV);
-
-                if (V->empty())
-                    continue;
-
-                if (lastUpdated[U->idx()] > lastTested
-                    || lastUpdated[V->idx()] > lastTested)
-                    applyRouteOps(U, V, costEvaluator);
-            }
-        }
-    }
-}
-
 void LocalSearch::shuffle(RandomNumberGenerator &rng)
 {
     perturbationManager_.shuffle(rng);
@@ -198,7 +131,6 @@ void LocalSearch::shuffle(RandomNumberGenerator &rng)
 
     rng.shuffle(unaryOps.begin(), unaryOps.end());
     rng.shuffle(binaryOps.begin(), binaryOps.end());
-    rng.shuffle(routeOps.begin(), routeOps.end());
 }
 
 bool LocalSearch::wouldViolateSameVehicle(Route::Node const *U,
@@ -314,36 +246,6 @@ bool LocalSearch::applyBinaryOps(Route::Node *U,
                 = rU ? costEvaluator.penalisedCost(*rU)
                            + Cost(rU != rV) * costEvaluator.penalisedCost(*rV)
                      : costEvaluator.penalisedCost(*rV);
-
-            assert(costAfter == costBefore + deltaCost);
-
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool LocalSearch::applyRouteOps(Route *U,
-                                Route *V,
-                                CostEvaluator const &costEvaluator)
-{
-    for (auto *routeOp : routeOps)
-    {
-        auto [deltaCost, shouldApply]
-            = routeOp->evaluate((*U)[0], (*V)[0], costEvaluator);
-        if (shouldApply)
-        {
-            [[maybe_unused]] auto const costBefore
-                = costEvaluator.penalisedCost(*U)
-                  + Cost(U != V) * costEvaluator.penalisedCost(*V);
-
-            routeOp->apply((*U)[0], (*V)[0]);
-            update(U, V);
-
-            [[maybe_unused]] auto const costAfter
-                = costEvaluator.penalisedCost(*U)
-                  + Cost(U != V) * costEvaluator.penalisedCost(*V);
 
             assert(costAfter == costBefore + deltaCost);
 
@@ -587,31 +489,18 @@ void LocalSearch::update(Route *U, Route *V)
     {
         U->update();
         lastUpdated[U->idx()] = numUpdates_;
-
-        for (auto *op : binaryOps)
-            op->update(U);
-
-        for (auto *op : routeOps)
-            op->update(U);
     }
 
     if (V && U != V)
     {
         V->update();
         lastUpdated[V->idx()] = numUpdates_;
-
-        for (auto *op : binaryOps)
-            op->update(V);
-
-        for (auto *op : routeOps)
-            op->update(V);
     }
 }
 
 void LocalSearch::loadSolution(pyvrp::Solution const &solution)
 {
     std::fill(lastTestedNodes.begin(), lastTestedNodes.end(), -1);
-    std::fill(lastTestedRoutes.begin(), lastTestedRoutes.end(), -1);
     std::fill(lastUpdated.begin(), lastUpdated.end(), 0);
     searchSpace_.markAllPromising();
     numUpdates_ = 0;
@@ -623,9 +512,6 @@ void LocalSearch::loadSolution(pyvrp::Solution const &solution)
 
     for (auto *op : binaryOps)
         op->init(solution_);
-
-    for (auto *op : routeOps)
-        op->init(solution_);
 }
 
 void LocalSearch::addOperator(BinaryOperator &op)
@@ -633,21 +519,11 @@ void LocalSearch::addOperator(BinaryOperator &op)
     binaryOps.emplace_back(&op);
 }
 
-void LocalSearch::addRouteOperator(BinaryOperator &op)
-{
-    routeOps.emplace_back(&op);
-}
-
 void LocalSearch::addOperator(UnaryOperator &op) { unaryOps.emplace_back(&op); }
 
 std::vector<BinaryOperator *> const &LocalSearch::operators() const
 {
     return binaryOps;
-}
-
-std::vector<BinaryOperator *> const &LocalSearch::routeOperators() const
-{
-    return routeOps;
 }
 
 void LocalSearch::setNeighbours(SearchSpace::Neighbours neighbours)
@@ -676,7 +552,6 @@ LocalSearch::Statistics LocalSearch::statistics() const
 
     std::for_each(unaryOps.begin(), unaryOps.end(), count);
     std::for_each(binaryOps.begin(), binaryOps.end(), count);
-    std::for_each(routeOps.begin(), routeOps.end(), count);
 
     assert(numImproving <= numUpdates_);
     return {numMoves, numImproving, numUpdates_};
@@ -690,7 +565,6 @@ LocalSearch::LocalSearch(ProblemData const &data,
       searchSpace_(data, neighbours),
       perturbationManager_(perturbationManager),
       lastTestedNodes(data.numLocations()),
-      lastTestedRoutes(data.numVehicles()),
       lastUpdated(data.numVehicles()),
       clientToSameVehicleGroups_(data.numLocations())
 {
