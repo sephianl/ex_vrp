@@ -99,10 +99,23 @@ ALL_SRC = $(NIF_SRC) $(PYVRP_CORE_SRC) $(PYVRP_SEARCH_SRC)
 OBJ_DIR = c_src/obj
 OBJS = $(patsubst c_src/%.cpp,$(OBJ_DIR)/%.o,$(ALL_SRC))
 
-all: $(PRIV_DIR) $(NIF_SO)
+# Toolchain fingerprint: force full rebuild when compiler or system libs change.
+# Without this, a devenv/nix update can swap the compiler or glibc under us,
+# leaving stale .o files that link against the wrong libraries and silently
+# degrade NIF performance by ~2x.
+TOOLCHAIN_ID := $(shell $(CXX) --version | head -1)$(shell $(CXX) -print-file-name=libc.so)
+TOOLCHAIN_HASH := $(shell echo "$(TOOLCHAIN_ID)" | shasum | cut -c1-16)
+TOOLCHAIN_STAMP = $(OBJ_DIR)/.toolchain_$(TOOLCHAIN_HASH)
+
+all: $(PRIV_DIR) $(TOOLCHAIN_STAMP) $(NIF_SO)
 
 $(PRIV_DIR):
 	mkdir -p $(PRIV_DIR)
+
+$(TOOLCHAIN_STAMP):
+	@rm -rf $(OBJ_DIR)
+	@mkdir -p $(OBJ_DIR)/pyvrp/search
+	@touch $@
 
 # Create all object directories
 $(OBJ_DIR)/%.o: c_src/%.cpp
