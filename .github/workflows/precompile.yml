@@ -1,0 +1,109 @@
+name: Precompile NIFs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mix.exs"
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: prod
+      EX_VRP_BUILD: "1"
+    strategy:
+      matrix:
+        otp: ["26.2", "27.2"]
+        elixir: ["1.18"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
+      - run: sudo apt-get update && sudo apt-get install -y build-essential g++
+      - run: mix deps.get
+      - name: Precompile
+        run: |
+          export ELIXIR_MAKE_CACHE_DIR=$(pwd)/cache
+          mkdir -p "$ELIXIR_MAKE_CACHE_DIR"
+          mix elixir_make.precompile
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-otp${{ matrix.otp }}
+          path: cache/*.tar.gz
+
+  macos-intel:
+    runs-on: macos-13
+    env:
+      MIX_ENV: prod
+      EX_VRP_BUILD: "1"
+    strategy:
+      matrix:
+        otp: ["26.2", "27.2"]
+        elixir: ["1.18"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
+      - run: mix deps.get
+      - name: Precompile
+        run: |
+          export ELIXIR_MAKE_CACHE_DIR=$(pwd)/cache
+          mkdir -p "$ELIXIR_MAKE_CACHE_DIR"
+          mix elixir_make.precompile
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-intel-otp${{ matrix.otp }}
+          path: cache/*.tar.gz
+
+  macos-arm:
+    runs-on: macos-14
+    env:
+      MIX_ENV: prod
+      EX_VRP_BUILD: "1"
+    strategy:
+      matrix:
+        otp: ["26.2", "27.2"]
+        elixir: ["1.18"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
+      - run: mix deps.get
+      - name: Precompile
+        run: |
+          export ELIXIR_MAKE_CACHE_DIR=$(pwd)/cache
+          mkdir -p "$ELIXIR_MAKE_CACHE_DIR"
+          mix elixir_make.precompile
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm-otp${{ matrix.otp }}
+          path: cache/*.tar.gz
+
+  release:
+    needs: [linux, macos-intel, macos-arm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get version
+        id: version
+        run: |
+          version=$(grep '@version "' mix.exs | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=v${version}" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          files: artifacts/*.tar.gz

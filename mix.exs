@@ -1,7 +1,7 @@
 defmodule ExVrp.MixProject do
   use Mix.Project
 
-  @version "0.2.3"
+  @version "0.2.4"
   @github_url "https://github.com/sephianl/ex_vrp"
 
   def project do
@@ -16,7 +16,18 @@ defmodule ExVrp.MixProject do
       make_targets: ["all"],
       make_clean: ["clean"],
       make_args: ["-j#{System.schedulers_online()}"],
-      make_env: fn -> %{"FINE_INCLUDE_DIR" => Fine.include_dir()} end,
+      make_env: &make_env/0,
+      make_precompiler: make_precompiler(),
+      make_precompiler_url: "#{@github_url}/releases/download/v#{@version}/@{artefact_filename}",
+      make_precompiler_filename: "ex_vrp_nif",
+      make_precompiler_nif_versions: [versions: ["2.16", "2.17"]],
+      cc_precompiler: [
+        cleanup: "clean",
+        compilers: %{
+          {:unix, :linux} => %{:include_default_ones => true},
+          {:unix, :darwin} => %{:include_default_ones => true}
+        }
+      ],
 
       # Hex
       description: "Elixir bindings for PyVRP - a state-of-the-art vehicle routing problem solver",
@@ -32,7 +43,8 @@ defmodule ExVrp.MixProject do
       # Dialyzer
       dialyzer: [
         plt_add_apps: [:mix]
-      ]
+      ],
+      aliases: aliases()
     ]
   end
 
@@ -54,6 +66,31 @@ defmodule ExVrp.MixProject do
     ]
   end
 
+  defp aliases do
+    [
+      "hex.publish": ["elixir_make.checksum --all --ignore-unavailable", "hex.publish"]
+    ]
+  end
+
+  defp make_precompiler do
+    if System.get_env("EX_VRP_BUILD") in ["1", "true"] do
+      nil
+    else
+      {:nif, CCPrecompiler}
+    end
+  end
+
+  defp make_env do
+    fine_dir =
+      if Code.ensure_loaded?(Fine) do
+        Fine.include_dir()
+      else
+        Path.join(Mix.Project.deps_path(), "fine/c_include")
+      end
+
+    %{"FINE_INCLUDE_DIR" => fine_dir}
+  end
+
   defp elixirc_paths(:test), do: ["lib", "dev"]
   defp elixirc_paths(:dev), do: ["lib", "dev"]
   defp elixirc_paths(_), do: ["lib"]
@@ -62,6 +99,7 @@ defmodule ExVrp.MixProject do
     [
       # NIF compilation
       {:elixir_make, "~> 0.8", runtime: false},
+      {:cc_precompiler, "~> 0.1", runtime: false},
       {:fine, "~> 0.1.4"},
       {:nx, "~> 0.10"},
 
@@ -92,7 +130,7 @@ defmodule ExVrp.MixProject do
       maintainers: ["Sephian"],
       licenses: ["MIT"],
       links: %{"GitHub" => @github_url},
-      files: ~w(lib c_src priv mix.exs Makefile README.md LICENSE)
+      files: ~w(lib c_src priv mix.exs Makefile README.md LICENSE checksum.exs)
     ]
   end
 

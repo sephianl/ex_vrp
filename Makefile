@@ -58,8 +58,13 @@ ifdef FINE_INCLUDE_DIR
 CXXFLAGS += -isystem $(FINE_INCLUDE_DIR)
 endif
 
-# Output
+# Output - use MIX_APP_PATH/priv when available (elixir_make sets this),
+# fall back to local priv/ for standalone builds
+ifdef MIX_APP_PATH
+PRIV_DIR = $(MIX_APP_PATH)/priv
+else
 PRIV_DIR = priv
+endif
 NIF_SO = $(PRIV_DIR)/ex_vrp_nif.$(SO_EXT)
 
 # Source files - NIF bindings
@@ -101,7 +106,8 @@ OBJS = $(patsubst c_src/%.cpp,$(OBJ_DIR)/%.o,$(ALL_SRC))
 # leaving stale .o files that link against the wrong libraries and silently
 # degrade NIF performance by ~2x.
 TOOLCHAIN_ID := $(shell $(CXX) --version | head -1)$(shell $(CXX) -print-file-name=libc.so)
-TOOLCHAIN_HASH := $(shell echo "$(TOOLCHAIN_ID)" | shasum | cut -c1-16)
+SHASUM := $(shell command -v shasum 2>/dev/null || command -v sha1sum 2>/dev/null || echo "md5sum")
+TOOLCHAIN_HASH := $(shell echo "$(TOOLCHAIN_ID)" | $(SHASUM) | cut -c1-16)
 TOOLCHAIN_STAMP = $(OBJ_DIR)/.toolchain_$(TOOLCHAIN_HASH)
 
 all: $(PRIV_DIR) $(TOOLCHAIN_STAMP) $(NIF_SO)
