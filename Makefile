@@ -120,8 +120,9 @@ $(TOOLCHAIN_STAMP):
 	@mkdir -p $(OBJ_DIR)/pyvrp/search
 	@touch $@
 
-# Create all object directories
-$(OBJ_DIR)/%.o: c_src/%.cpp
+# Object files depend on toolchain stamp via order-only prerequisite
+# to prevent parallel make from compiling while the stamp rule cleans obj/
+$(OBJ_DIR)/%.o: c_src/%.cpp | $(TOOLCHAIN_STAMP)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 

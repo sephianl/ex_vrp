@@ -40,13 +40,13 @@ jobs:
         run: |
           devenv shell mix deps.get
 
-      - name: Check Elixir formatting
+      - name: Compile
+        run: |
+          devenv shell mix compile --warnings-as-errors
+
+      - name: Check formatting
         run: |
           devenv shell mix format --check-formatted
-
-      - name: Run Elixir checks
-        run: |
-          devenv shell mix check
 
       - name: Check C++ formatting
         run: |
@@ -55,10 +55,6 @@ jobs:
       - name: Run C++ static analysis
         run: |
           devenv shell task cpp:check
-
-      - name: Compile
-        run: |
-          devenv shell mix compile --warnings-as-errors
 
       - name: Run tests
         run: |
@@ -71,3 +67,8 @@ jobs:
       - name: Run production benchmarks
         run: |
           devenv shell mix test test/production_benchmark_test.exs --include production_benchmark --only production_benchmark
+
+      - name: Run full checks
+        if: github.event_name == 'pull_request'
+        run: |
+          devenv shell mix check

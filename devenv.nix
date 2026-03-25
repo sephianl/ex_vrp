@@ -45,12 +45,17 @@ in
     mix-check = {
       enable = !config.devenv.isTesting;
       name = "mix-check";
-      entry = "mix check";
+      entry = "mix check --no-retry";
       pass_filenames = false;
-      stages = [
-        "pre-commit"
-        "pre-push"
-      ];
+      stages = [ "pre-push" ];
+      files = ".ex[s]?$";
+    };
+    mix-compile = {
+      enable = !config.devenv.isTesting;
+      name = "mix-compile";
+      entry = "mix compile --warnings-as-errors";
+      pass_filenames = false;
+      stages = [ "pre-commit" ];
       files = ".ex[s]?$";
     };
 
