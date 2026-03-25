@@ -1,273 +1,422 @@
-# ExVRP Upstream Sync Plan
+# Upstream Sync — Phases 6, 7, 9 Implementation Plan
 
 ## Context
 
-Ex_vrp (v0.2.2) is an Elixir NIF wrapper around PyVRP's C++ core, forked at ~v0.13.0. Upstream PyVRP has continued evolving through v0.13.3 and beyond on `main`, with significant C++ architecture changes, new operators, bug fixes, and removed components. The sephianl/PyVRP fork is also behind upstream.
+Phases 1-5 complete on `update-to-upstream`. This plan covers the remaining work: two bug fixes (Phase 6), CostEvaluator refactoring (Phase 7), and Island ILS (Phase 9). Phase 8 (Activity/Location) is deferred until PyVRP v0.14.0 ships (2026-04-01).
 
-This plan syncs ex_vrp's C++ core with upstream and adds EPyVRP-inspired algorithmic improvements. Each phase is independently deployable and backward-compatible with Zelo's usage.
+Execution order: Phase 6 -> Phase 7 -> Phase 9 (sequential, commit after each phase).
 
-**Consumer context**: Zelo uses prize-collecting (`required: false`, `prize: 100_000`), ClientGroups (disjunctive time windows), SameVehicleGroups (equipment), multi-depot, multi-profile matrices, and custom OSRM matrices.
+---
 
-## Dependency Graph
+## Phase 6: Bug Fixes — Size: S
 
-```
-Phase 1 (Operator Interface)
-    │
-    v
-Phase 2 (New Operators + Remove Primitives)
-    │
-    v
-Phase 3 (Remove SwapRoutes/SwapStar + Bug Fixes)
-    │
-    ├──────────────────┐
-    v                  v
-Phase 4              Phase 5
-(Neighbourhood→C++)  (Data Model)
-    │                  │
-    └────────┬─────────┘
-             v
-Phase 6 (Island ILS — pure Elixir)
+### Step 6.1: Fix #1045 — ReplaceOptional replacing group members
+
+**File**: `c_src/pyvrp/search/ReplaceOptional.cpp`
+
+**Current** (line 69):
+
+```cpp
+if (vData.required)
+    continue;
 ```
 
----
+**Change to**:
 
-## Phase 1: Operator Interface Modernization — Size: L ✅ DONE
+```cpp
+if (vData.required || vData.group)
+    continue;
+```
 
-**Goal**: Align operator base classes and evaluate() return type with upstream. This unblocks all subsequent phases.
+**Why**: V (the target being replaced) could belong to a mutually exclusive group. ReplaceGroup would then reinsert it, creating an infinite cycle.
 
-**What changed**:
+### Step 6.2: Fix #998 — Fallback insertion for optional clients
 
-- `NodeOperator`/`RouteOperator` → `UnaryOperator`/`BinaryOperator` (variadic template on `Route::Node *`)
-- `evaluate()` returns `std::pair<Cost, bool>` internally; NIFs extract `.first` and keep returning `int64_t`
-- `init()` takes `Solution &` (non-const search::Solution) instead of `pyvrp::Solution const &`
-- `addNodeOperator()` → `addOperator()`, kept `addRouteOperator()` for SwapRoutes/SwapStar
-- `NodeOperator` kept as backward-compat alias for `BinaryOperator`
-- `routeOps` kept as separate `vector<BinaryOperator *>` — merging into `binaryOps` would break RelocateWithDepot's `assert(!U->isDepot())`
+**File**: `c_src/pyvrp/search/LocalSearch.cpp`
 
-**Files modified**:
-| File | Change |
-|------|--------|
-| `c_src/pyvrp/search/LocalSearchOperator.h` | Variadic template, `UnaryOperator`/`BinaryOperator` aliases, `NodeOperator` compat alias, removed `RouteOperator` |
-| `c_src/pyvrp/search/Exchange.h` | Base → `BinaryOperator`, evaluate returns `pair<Cost, bool>` |
-| `c_src/pyvrp/search/SwapTails.{h,cpp}` | Base → `BinaryOperator`, evaluate returns pair |
-| `c_src/pyvrp/search/RelocateWithDepot.{h,cpp}` | Base → `BinaryOperator`, evaluate returns pair |
-| `c_src/pyvrp/search/SwapRoutes.{h,cpp}` | Base → `BinaryOperator`, takes `Route::Node *` args, extracts routes via `->route()` |
-| `c_src/pyvrp/search/SwapStar.{h,cpp}` | Base → `BinaryOperator`, takes `Route::Node *` args, renamed loop vars to avoid shadowing |
-| `c_src/pyvrp/search/LocalSearch.{h,cpp}` | `nodeOps` → `binaryOps`, added `unaryOps`, `applyNodeOps` → `applyBinaryOps`, destructures `auto [deltaCost, applied]` |
-| `c_src/ex_vrp_nif.cpp` | Updated operator types, `addNodeOperator` → `addOperator`, evaluate NIFs extract `.first` from pair |
+**Add include** at top (after existing includes):
 
-**Elixir changes**: None needed.
+```cpp
+#include "ClientSegment.h"
+```
 
-**Verified**: 960/960 tests pass, benchmarks show no quality regression.
+**After the existing fallback block** (after line 213's closing `}`), add:
 
----
+```cpp
+if (!U->route())
+{
+    auto &route = solution_.routes[0];
+    if (!route.empty())
+    {
+        Cost insertionCost = 0;
+        costEvaluator.deltaCost<true>(
+            insertionCost,
+            Route::Proposal(route.before(0),
+                            ClientSegment(data, U->client()),
+                            route.after(1)));
+        if (insertionCost < 0)
+        {
+            route.insert(1, U);
+            update(&route, &route);
+            searchSpace_.markPromising(U);
+        }
+    }
+}
+```
 
-## Phase 2: New Operators + Remove Primitives — Size: L ✅ DONE
+**Why**: When starting from empty solution, neighbourhood is empty so `solution_.insert()` can't evaluate optional clients against neighbours. This fallback tries inserting at position 1 of the first non-empty route directly.
 
-**Goal**: Add new operators that replace the inline custom logic in LocalSearch.cpp. Remove primitives.h/cpp.
+### Step 6.3: Verify
 
-**What changed**:
+```bash
+mix compile
+mix test --include nif_required
+mix benchmark --instances ok_small
+```
 
-- Evaluate return semantics shifted: `{cost, false}` → `{cost, cost < 0}` (operator decides via bool, not caller via `deltaCost < 0`). All existing operators (Exchange, SwapTails, RelocateWithDepot, SwapStar) updated. `applyBinaryOps`/`applyRouteOps` now check `shouldApply` instead of `deltaCost < 0`.
-- Exchange.h: added `!U->route()` guard since search loop now iterates unrouted clients
-- `markRequiredMissingAsPromising()` replaced by `ensureStructuralFeasibility()` (pulled forward from Phase 3 plan — needed because inline insertion logic was removed)
-- `applyUnaryOps()` added — iterates unary operators, handles unrouted→routed transition
-- Fallback optional client insertion via `Solution::insert()` in `applyUnaryOps` (replaces upstream's InsertOptional BinaryOperator — simpler, greedy best-position approach)
-- `update(Route *U, Route *V)` now handles null U (needed for unrouted→routed transitions)
-- `insertCost()` moved from primitives to file-scope function in `Solution.cpp` (still used by `Solution::insert`)
-
-**New files created**:
-| File | Type | Replaces |
-|------|------|----------|
-| `RemoveOptional.{h,cpp}` | UnaryOperator | inline `applyOptionalClientMoves` (remove) |
-| `ReplaceOptional.{h,cpp}` | UnaryOperator | inline optional swap logic (searches neighbours for best swap) |
-| `ReplaceGroup.{h,cpp}` | UnaryOperator | inline `applyGroupMoves` |
-| `RemoveAdjacentDepot.{h,cpp}` | UnaryOperator | inline `applyDepotRemovalMove` |
-| `ClientSegment.h` | Segment type | anonymous class in primitives.cpp |
-
-**Divergences from upstream**:
-
-- No `InsertOptional` BinaryOperator — replaced by `Solution::insert()` fallback in `applyUnaryOps`
-- `ReplaceOptional` is a UnaryOperator (not BinaryOperator) — searches neighbours internally for best swap target
-- No `DepotSegment.h` — not needed by any current operator
-- `RemoveOptional` has SameVehicleGroup awareness (won't remove a client if it has a same-vehicle group member on the route)
-- `ReplaceOptional` has SameVehicleGroup awareness (won't swap if target has a same-vehicle group member)
-- All operators use `data.location()` (our API) not `data.client()` (upstream API)
-- New operators use `deltaCost<true>` (exact evaluation) not the default non-exact
-
-**Files modified**:
-| File | Change |
-|------|--------|
-| `c_src/pyvrp/search/Exchange.h` | Added `!U->route()` guard, returns `{cost, cost < 0}` |
-| `c_src/pyvrp/search/SwapTails.cpp` | Returns `{cost, cost < 0}` |
-| `c_src/pyvrp/search/RelocateWithDepot.cpp` | Returns `{cost, cost < 0}` |
-| `c_src/pyvrp/search/SwapStar.cpp` | Returns `{cost, cost < 0}` |
-| `c_src/pyvrp/search/LocalSearch.{h,cpp}` | Major rewrite: removed 4 inline methods, added `applyUnaryOps`, `ensureStructuralFeasibility`, refactored `search()` loop and dispatch |
-| `c_src/pyvrp/search/Solution.cpp` | Absorbed `insertCost` from primitives |
-| `c_src/pyvrp/search/PerturbationManager.cpp` | Removed unused `#include "primitives.h"` |
-| `c_src/ex_vrp_nif.cpp` | Added operator resources with `supports<Op>(data)` registration, removed primitive NIFs |
-| `Makefile` | Removed `primitives.cpp`, added 4 new .cpp files |
-| `lib/ex_vrp/native.ex` | Removed `insert_cost`, `remove_cost`, `inplace_cost` NIFs |
-
-**Files removed**: `primitives.{h,cpp}`, `test/primitives_test.exs`
-
-**Verified**: 947/947 tests pass (13 primitives tests removed), benchmarks show no quality regression (most instances faster).
+### Step 6.4: Commit
 
 ---
 
-## Phase 3: Remove SwapRoutes/SwapStar — Size: M ✅ DONE
+## Phase 7: CostEvaluator Template Specialization — Size: M
 
-**Goal**: Remove route operators deleted upstream and all route operator infrastructure from LocalSearch.
+**Goal**: Replace concept-constrained templates with explicit specializations. Breaks circular `#include "Solution.h"` dependency in CostEvaluator.h.
 
-**What changed**:
+### Analysis of current call sites
 
-- Deleted `SwapRoutes.{h,cpp}` and `SwapStar.{h,cpp}`
-- Removed all route operator infrastructure from `LocalSearch.{h,cpp}`: `routeOps` vector, `lastTestedRoutes`, `applyRouteOps()`, `intensify()` (both private search loop and public method), `addRouteOperator()`, `routeOperators()`
-- Simplified `operator()` — no longer runs search→intensify loop, just calls `search()` directly
-- Removed `SwapStarResource`, `SwapRoutesResource` structs and all associated NIFs from `ex_vrp_nif.cpp`
-- Removed `reconcile_route_ownership` overload for `SearchRouteResource` (dead code after NIF removal)
-- Removed route_operators parsing from `local_search_with_operators_nif` and `local_search_stats_nif`
-- Removed SwapRoutes auto-registration from `LocalSearchResource` constructor
+| Call site                 | Type              | File                                                              |
+| ------------------------- | ----------------- | ----------------------------------------------------------------- |
+| `penalisedCost(solution)` | `pyvrp::Solution` | `c_src/ex_vrp_nif.cpp:2220`                                       |
+| `cost(solution)`          | `pyvrp::Solution` | `c_src/ex_vrp_nif.cpp:2234`                                       |
+| `penalisedCost(*rU)`      | `search::Route`   | `c_src/pyvrp/search/LocalSearch.cpp:235-249` (debug asserts only) |
 
-**Files modified**:
-| File | Change |
-|------|--------|
-| `c_src/pyvrp/search/LocalSearch.{h,cpp}` | Major rewrite: removed route operator infrastructure, simplified `operator()` |
-| `c_src/ex_vrp_nif.cpp` | Removed includes, resource structs, 6 NIF functions, FINE_RESOURCE macros, route_ops parsing |
-| `Makefile` | Removed `SwapRoutes.cpp`, `SwapStar.cpp` |
-| `lib/ex_vrp/native.ex` | Removed 6 NIF declarations (create/evaluate/apply for SwapStar and SwapRoutes), removed `:route_operators` docs |
-| `test/route_operators_test.exs` | Removed SwapStar and SwapRoutes test sections; renamed to SwapTails-focused test file |
-| `test/local_search_test.exs` | Removed tests referencing `:swap_star`/`:swap_routes` route operators, cleaned up `route_operators: []` remnants |
+`penalisedCost`/`cost` are **never** called on `pyvrp::Route` or `search::Solution`.
 
-**Files removed**: `SwapStar.{h,cpp}`, `SwapRoutes.{h,cpp}`
+### Step 7.1: Add `fixedVehicleCost_` to `pyvrp::Route`
 
-**Divergences from upstream plan**: Bug fixes #998 and #1045 were not ported — `ensureStructuralFeasibility()` was already added in Phase 2, and #998 (random optional client insertion) requires further investigation.
+**File**: `c_src/pyvrp/Route.h`
 
-**Verified**: 926/926 tests pass (21 removed), benchmarks show no quality regression.
+Add member after `reloadCost_` (line 127):
+
+```cpp
+Cost fixedVehicleCost_ = 0;  // Fixed cost of the vehicle type
+```
+
+Add public getter after `reloadCost()` (after line 291):
+
+```cpp
+[[nodiscard]] Cost fixedVehicleCost() const;
+```
+
+**File**: `c_src/pyvrp/Route.cpp`
+
+In constructor `Route(ProblemData const &data, Trips trips, size_t vehType)`, after line 216 (`endDepot_ = vehData.endDepot;`), add:
+
+```cpp
+fixedVehicleCost_ = vehData.fixedCost;
+```
+
+Add getter implementation after `reloadCost()`:
+
+```cpp
+Cost Route::fixedVehicleCost() const { return fixedVehicleCost_; }
+```
+
+Update the raw constructor (line 310+) to accept and store `fixedVehicleCost_`. This also requires updating all callers of this constructor (serialization code in NIFs).
+
+**File**: `c_src/pyvrp/Solution.cpp`
+
+In `evaluate()` (line 41), change:
+
+```cpp
+fixedVehicleCost_ += data.vehicleType(route.vehicleType()).fixedCost;
+```
+
+to:
+
+```cpp
+fixedVehicleCost_ += route.fixedVehicleCost();
+```
+
+### Step 7.2: Refactor CostEvaluator.h
+
+**File**: `c_src/pyvrp/CostEvaluator.h`
+
+1. **Remove** `#include "Solution.h"` (line 6)
+2. **Remove** `CostEvaluatable` concept (lines 18-28)
+3. **Remove** `PrizeCostEvaluatable` concept (lines 33-36)
+4. **Keep** `DeltaCostEvaluatable` concept (lines 40-46) — still used by `deltaCost`
+5. **Change** `penalisedCost` declaration (line 122-123) from:
+   ```cpp
+   template <CostEvaluatable T>
+   [[nodiscard]] Cost penalisedCost(T const &arg) const;
+   ```
+   to:
+   ```cpp
+   template <typename T>
+   [[nodiscard]] Cost penalisedCost(T const &arg) const;
+   ```
+6. **Change** `cost` declaration (line 161) similarly to `template <typename T>`
+7. **Remove** the inline definitions of `penalisedCost` (lines 237-257) and `cost` (lines 259-265) — these move to specializations
+
+### Step 7.3: Add specialization for `pyvrp::Route`
+
+**Simplest approach** (matching upstream pattern):
+
+- Declare specializations in CostEvaluator.h using forward declarations
+- Define specializations in the respective .cpp files
+
+**File**: `c_src/pyvrp/CostEvaluator.h` — after the class definition, add forward-declared specializations:
+
+```cpp
+// Forward declarations for types used in specializations
+class Route;
+class Solution;
+namespace search { class Route; }
+
+// Explicit specialization declarations
+template <> Cost CostEvaluator::penalisedCost(Route const &) const;
+template <> Cost CostEvaluator::cost(Route const &) const;
+template <> Cost CostEvaluator::penalisedCost(Solution const &) const;
+template <> Cost CostEvaluator::cost(Solution const &) const;
+template <> Cost CostEvaluator::penalisedCost(search::Route const &) const;
+template <> Cost CostEvaluator::cost(search::Route const &) const;
+```
+
+**File**: `c_src/pyvrp/Route.cpp` — add at bottom:
+
+```cpp
+#include "CostEvaluator.h"
+
+template <>
+Cost CostEvaluator::penalisedCost(Route const &route) const
+{
+    if (route.empty())
+        return 0;
+
+    return route.distanceCost() + route.durationCost() + route.fixedVehicleCost()
+           + route.reloadCost() + excessLoadPenalties(route.excessLoad())
+           + twPenalty(route.timeWarp()) + distPenalty(route.excessDistance(), 0);
+}
+
+template <>
+Cost CostEvaluator::cost(Route const &route) const
+{
+    return route.isFeasible() ? penalisedCost(route)
+                              : std::numeric_limits<Cost>::max();
+}
+```
+
+**File**: `c_src/pyvrp/Solution.cpp` — add at bottom:
+
+```cpp
+#include "CostEvaluator.h"
+
+template <>
+Cost CostEvaluator::penalisedCost(Solution const &sol) const
+{
+    if (sol.empty())
+        return sol.uncollectedPrizes();
+
+    Cost cost = sol.uncollectedPrizes();
+    for (auto const &route : sol.routes())
+        cost += penalisedCost(route);
+    return cost;
+}
+
+template <>
+Cost CostEvaluator::cost(Solution const &sol) const
+{
+    return sol.isFeasible() ? penalisedCost(sol)
+                            : std::numeric_limits<Cost>::max();
+}
+```
+
+**File**: `c_src/pyvrp/search/Route.cpp` — add at bottom:
+
+```cpp
+#include "../CostEvaluator.h"
+
+template <>
+pyvrp::Cost pyvrp::CostEvaluator::penalisedCost(search::Route const &route) const
+{
+    if (route.empty())
+        return 0;
+
+    return route.distanceCost() + route.durationCost() + route.fixedVehicleCost()
+           + route.reloadCost() + excessLoadPenalties(route.excessLoad())
+           + twPenalty(route.timeWarp()) + distPenalty(route.excessDistance(), 0);
+}
+
+template <>
+pyvrp::Cost pyvrp::CostEvaluator::cost(search::Route const &route) const
+{
+    return route.isFeasible() ? penalisedCost(route)
+                              : std::numeric_limits<Cost>::max();
+}
+```
+
+### Step 7.4: Handle include ordering
+
+The main challenge: `CostEvaluator.h` currently includes `Solution.h`. Removing it means files that use both must include them in the right order. The `deltaCost` templates still work via the `DeltaCostEvaluatable` concept which only needs `search::Route` types (already available through `search/Route.h`).
+
+Files to check/update includes:
+
+- `c_src/ex_vrp_nif.cpp` — needs both `CostEvaluator.h` and `Solution.h`
+- `c_src/pyvrp/search/LocalSearch.cpp` — includes `LocalSearch.h` which chains to `CostEvaluator.h`
+- `c_src/pyvrp/bindings.cpp` — Python bindings, not used but should compile
+
+### Step 7.5: Update raw Route constructor
+
+The raw constructor in `Route.h` (line 349+) and `Route.cpp` (line 310+) needs `fixedVehicleCost` parameter added. Check if NIFs use this constructor for deserialization.
+
+### Step 7.6: Verify
+
+```bash
+mix compile --warnings-as-errors
+mix test --include nif_required
+mix benchmark
+```
+
+### Step 7.7: Commit
 
 ---
 
-## Phase 4: Move Neighbourhood to C++ — Size: M ✅ DONE
+## Phase 9: Island ILS — Size: XL (Pure Elixir)
 
-**Goal**: Replace inline `build_neighbours()` in NIF file with proper C++ files matching upstream structure.
+**Goal**: Parallel Island ILS using BEAM processes for better solution quality on multi-core.
 
-**What changed**:
+### Step 9.1: Create `lib/ex_vrp/island_solver.ex` — Orchestrator
 
-- Extracted ~200-line `build_neighbours()` from `ex_vrp_nif.cpp` into `neighbourhood.{h,cpp}` under `pyvrp::search` namespace
-- Added `NeighbourhoodParams` struct with `weightWaitTime` (default 0.2), `numNeighbours` (default 60), `symmetricProximity` (default true)
-- `weightTimeWarp` hardcoded to 1.0 inside implementation (matches upstream — not a param)
-- Replaced all 5 `build_neighbours(problem_data)` call sites with `pyvrp::search::computeNeighbours(problem_data)`
+```elixir
+defmodule ExVrp.IslandSolver do
+  @moduledoc """
+  Parallel Island-based ILS solver using BEAM processes.
 
-**New files created**:
-| File | Purpose |
-|------|---------|
-| `c_src/pyvrp/search/neighbourhood.h` | `NeighbourhoodParams` struct + `computeNeighbours()` declaration |
-| `c_src/pyvrp/search/neighbourhood.cpp` | Algorithm moved from `ex_vrp_nif.cpp` |
+  Each island runs an independent ILS with:
+  - Its own LocalSearch resource (independent RNG)
+  - Its own PenaltyManager with variant parameters
+  - Its own LAHC history buffer
 
-**Files modified**:
-| File | Change |
-|------|--------|
-| `c_src/ex_vrp_nif.cpp` | Removed `build_neighbours()`, added `#include`, replaced 5 call sites |
-| `Makefile` | Added `neighbourhood.cpp` to `PYVRP_SEARCH_SRC` |
+  Islands periodically exchange best solutions via message passing.
+  """
+end
+```
 
-**Divergences from upstream**: Our default `numNeighbours` is 60 (upstream uses 50) to maintain backward compatibility. Elixir `neighbourhood.ex` kept as reference implementation.
+**Key functions**:
 
-**Verified**: 923/923 tests pass, benchmarks show no quality regression.
+1. `solve(problem_data, stop_fn, opts)` — main entry point
+   - Determine `num_islands` (default `System.schedulers_online()`)
+   - Generate island configs (parameter diversity table)
+   - Front-load all LocalSearch creation (expensive O(n^2) neighbour computation)
+   - Spawn island processes
+   - Run orchestrator receive loop for migration
+   - Collect results, return best
+
+2. `island_configs(num_islands, base_params, seed)` — generate per-island params
+   - Cycles through the 4 diversity profiles (baseline, aggressive, conservative, explorer)
+   - Each gets a unique seed derived from base seed
+
+3. `run_island(config, problem_data, local_search, stop_fn)` — island entry point
+   - Create PenaltyManager with island-specific params
+   - Create initial solution (empty -> local search, like current Solver)
+   - Run ILS.run with migration callbacks
+   - Send final result to orchestrator
+
+4. `orchestrator_loop(islands, global_best, global_best_cost)` — migration coordination
+   - Receive `{:island_best, pid, solution, cost}` messages
+   - Update global best if improved
+   - Broadcast `{:migration, solution}` to all islands
+   - Monitor island processes for completion
+
+### Step 9.2: Modify `lib/ex_vrp/iterated_local_search.ex` — Migration support
+
+Add to ILS state (new optional fields, backward compatible):
+
+```elixir
+on_migration: nil,        # fn() -> solution_ref | nil
+send_migration: nil,      # fn(solution_ref) -> :ok
+migration_interval: 1000, # check/send every N iterations
+migration_quarantine: 500, # min iterations between accepting migrations
+last_migration: 0         # iteration of last accepted migration
+```
+
+Add two new pipeline steps in `iterate/2`:
+
+1. `maybe_accept_migration/1` — every `migration_interval` iterations, call `on_migration.()` to check for incoming solution. Accept if quarantine elapsed and cost improves current.
+2. `maybe_send_migration/1` — every `migration_interval` iterations, call `send_migration.(best)`.
+
+**Migration acceptance rule**: Replace `current` (not `best`) to avoid premature convergence. Only accept if received solution's penalised cost < current cost.
+
+### Step 9.3: Modify `lib/ex_vrp/solver.ex` — Add island strategy
+
+Add to `@type solve_opts`:
+
+```elixir
+strategy: :single | :island,
+num_islands: pos_integer()
+```
+
+In `solve/2`, branch on strategy:
+
+- `:single` (default) — current behavior, unchanged
+- `:island` — delegate to `IslandSolver.solve/3`
+
+### Step 9.4: Create `lib/ex_vrp/initializers.ex` — Diversified initial solutions
+
+Actually, for v1, all islands start from empty -> local search (current behavior) with different seeds. This already provides diversity via the random perturbation in LocalSearch. Defer fancy initializers (nearest-neighbor, sweep, etc.) to a follow-up.
+
+**Skip this file for now** — not needed for MVP island solver.
+
+### Step 9.5: Island parameter diversity
+
+Encode the diversity table as a function:
+
+```elixir
+@island_profiles [
+  # {max_no_improvement, history_size, penalty_increase, penalty_decrease}
+  {50_000, 500, 1.25, 0.85},   # baseline
+  {20_000, 200, 1.5, 0.7},     # aggressive
+  {100_000, 1000, 1.1, 0.95},  # conservative
+  {30_000, 300, 1.3, 0.8}      # explorer
+]
+```
+
+Islands beyond 4 cycle through these profiles.
+
+### Step 9.6: Tests
+
+**File**: `test/island_solver_test.exs`
+
+- Basic solve with 2 islands produces valid result
+- Island solver respects max_runtime
+- Result struct matches single solver interface
+- Island solver with 1 island ~ single solver behavior
+
+### Step 9.7: Verify
+
+```bash
+mix test --include nif_required
+mix benchmark   # compare single vs island
+```
+
+### Step 9.8: Commit
 
 ---
 
-## Phase 5: Data Model Modernization — Size: M ✅ DONE
+## Risk Notes
 
-**Goal**: Activity type system, remove centroid, remove `location()` accessor, add `client()`/`depot()` accessors, logging stub.
+**Phase 6**: Low risk. One-liner fix + 15-line fallback. Both are defensive checks.
 
-**What changed**:
+**Phase 7**: Medium risk. Template specialization ordering is tricky. Main concern: ensuring the forward declarations in CostEvaluator.h work with the namespace structure (`pyvrp::search::Route` vs `pyvrp::Route`). If include ordering gets messy, fallback is to keep the inline template but just add `fixedVehicleCost()` to `pyvrp::Route` and skip the rest.
 
-- Added `client(size_t)` and `depot(size_t)` inline accessors to `ProblemData.h` matching upstream API
-- Removed `Location` union, `location()` method, `centroid_` member, `centroid()` method from ProblemData
-- Replaced all ~40 `data.location(idx)` call sites across 14 C++ files with `data.client(idx - data.numDepots())` or `data.depot(idx)` as appropriate
-- Removed `problem_data_centroid_nif` from C++ and Elixir
-- Created Activity type system, PiecewiseLinearFunction, and logging stub
+**Phase 9**: Low risk to existing code (additive, new files + backward-compatible option). Main concern: dirty scheduler contention if too many islands. Default to `System.schedulers_online()` which matches BEAM best practice.
 
-**New files created**:
-| File | Purpose |
-|------|---------|
-| `c_src/pyvrp/Activity.{h,cpp}` | Activity type system with DEPOT/CLIENT enum |
-| `c_src/pyvrp/PiecewiseLinearFunction.h` | Header-only template class (from upstream) |
-| `c_src/pyvrp/logging.h` | No-op logging macros stub (avoids spdlog dependency) |
+## Verification Checklist (After All Phases)
 
-**Files modified**:
-| File | Change |
-|------|--------|
-| `c_src/pyvrp/ProblemData.{h,cpp}` | Added `client()`/`depot()` accessors, removed `Location` union, `location()`, `centroid_`, `centroid()` |
-| `c_src/pyvrp/Route.cpp` | `location()` → `client()`/`depot()` |
-| `c_src/pyvrp/Trip.cpp` | `location()` → `client()` |
-| `c_src/pyvrp/Solution.cpp` | `location()` → `client()` |
-| `c_src/pyvrp/bindings.cpp` | Removed ProblemData centroid binding |
-| `c_src/pyvrp/search/LocalSearch.cpp` | `location()` → `client()`/`depot()` (6 sites) |
-| `c_src/pyvrp/search/Route.{h,cpp}` | `location()` → `client()`/`depot()`, inline centroid computation replacing `data.centroid()` |
-| `c_src/pyvrp/search/Solution.cpp` | `location()` → `client()`/`depot()` (6 sites) |
-| `c_src/pyvrp/search/RelocateWithDepot.cpp` | `location()` → `depot()` (5 sites) |
-| `c_src/pyvrp/search/RemoveOptional.cpp` | `location()` → `client()` (2 sites) |
-| `c_src/pyvrp/search/ReplaceOptional.cpp` | `location()` → `client()` (3 sites) |
-| `c_src/pyvrp/search/ReplaceGroup.cpp` | `location()` → `client()` (3 sites) |
-| `c_src/pyvrp/search/RemoveAdjacentDepot.cpp` | `location()` → `client()` (1 site) |
-| `c_src/pyvrp/search/ClientSegment.h` | `location()` → `client()` (2 sites) |
-| `c_src/ex_vrp_nif.cpp` | Removed `problem_data_centroid_nif` |
-| `lib/ex_vrp/native.ex` | Removed `problem_data_centroid_nif` from `@nifs` and function stub |
-| `Makefile` | Added `Activity.cpp` to `PYVRP_CORE_SRC` |
-| `test/problem_data_test.exs` | Removed centroid test |
-
-**Divergences from upstream**: Trip/Route/search::Route centroids kept (they compute route-level centroids, not ProblemData-level). `solution_route_centroid` and `search_route_centroid_nif` NIFs kept. `route_centroid/2` in `solution.ex` kept (Zelo dependency — uses route centroid, not ProblemData centroid).
-
-**Verified**: 923/923 tests pass, zero compilation warnings.
-
----
-
-## Phase 6: EPyVRP-Inspired Algorithmic Improvements — Size: XL
-
-**Goal**: Parallel Island ILS, diversified initialization, two-stage optimization. Pure Elixir — no C++ changes.
-
-**Inspired by** EPyVRP's competition-winning approach, implemented from scratch using standard metaheuristic techniques.
-
-**New Elixir files**:
-
-| File                          | Purpose                                                                                                                |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `lib/ex_vrp/island_solver.ex` | Parallel Island ILS — launch N ILS processes with diverse params, periodic best-solution migration via message passing |
-| `lib/ex_vrp/initializers.ex`  | Constructive heuristics: nearest-neighbor, sweep, time-window-aware, random insertion                                  |
-
-**Modified Elixir files**:
-
-| File                                  | Change                                                            |
-| ------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `lib/ex_vrp/solver.ex`                | Add `strategy: :single                                            | :island`option,`num_islands:` option, two-stage support (Phase 1: minimize vehicles → Phase 2: minimize distance with elite seeding) |
-| `lib/ex_vrp/iterated_local_search.ex` | Accept initial solution as parameter, add migration callback hook |
-
-**Island Model design**:
-
-- Each island: separate `Task.async` with its own ILS params (vary `max_no_improvement`, `history_size`, penalty params)
-- Migration: every M iterations, best solution shared via message passing
-- Quarantine: minimum K iterations before accepting migration
-- Final result: best feasible solution across all islands
-- NIF safety: Fine resources are reference-counted shared_ptrs — safe across BEAM processes
-
-**Tests**: `test/island_solver_test.exs`, `test/initializers_test.exs`. Benchmark single vs island on Zelo-scale problems.
-
-**Risk**: LOW (pure Elixir, additive). Watch for dirty scheduler contention with many islands.
-
----
-
-## Verification Strategy
-
-After each phase:
-
-1. `mix compile --warnings-as-errors`
-2. `mix test --include nif_required` — full test suite
-3. `mix benchmark --instances ok_small,rc208,e_n22_k4` — regression check
-4. For Zelo integration: update dep, run planner test suite
-
-## Notes
-
-- **sephianl/PyVRP fork**: Should be synced with upstream as a separate effort, or abandoned in favor of tracking upstream directly in ex_vrp's `c_src/`
-- **Upstream tracking**: After this sync, consider a process for periodic upstream pulls (tag-based diffing)
-- **SameVehicleGroup**: Ex_vrp extension not in upstream — must be maintained as a local divergence in LocalSearch.cpp
+```bash
+mix compile --warnings-as-errors
+mix test --include nif_required
+mix benchmark --instances ok_small
+mix benchmark  # full suite
+```
