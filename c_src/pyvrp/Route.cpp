@@ -214,6 +214,7 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     auto const &vehData = data.vehicleType(vehType);
     startDepot_ = vehData.startDepot;
     endDepot_ = vehData.endDepot;
+    fixedVehicleCost_ = vehData.fixedCost;
 
     validate(data);
 
@@ -324,6 +325,7 @@ Route::Route(Trips trips,
              Duration slack,
              Cost prizes,
              Cost reloadCost,
+             Cost fixedVehicleCost,
              std::pair<Coordinate, Coordinate> centroid,
              size_t vehicleType,
              size_t startDepot,
@@ -347,6 +349,7 @@ Route::Route(Trips trips,
       slack_(slack),
       prizes_(prizes),
       reloadCost_(reloadCost),
+      fixedVehicleCost_(fixedVehicleCost),
       centroid_(centroid),
       vehicleType_(vehicleType),
       startDepot_(startDepot),
@@ -435,6 +438,8 @@ Cost Route::prizes() const { return prizes_; }
 
 Cost Route::reloadCost() const { return reloadCost_; }
 
+Cost Route::fixedVehicleCost() const { return fixedVehicleCost_; }
+
 std::pair<Coordinate, Coordinate> const &Route::centroid() const
 {
     return centroid_;
@@ -486,4 +491,24 @@ std::ostream &operator<<(std::ostream &out, Route const &route)
     }
 
     return out;
+}
+
+#include "CostEvaluator.h"
+
+template <> Cost pyvrp::CostEvaluator::penalisedCost(Route const &route) const
+{
+    if (route.empty())
+        return 0;
+
+    return route.distanceCost() + route.durationCost()
+           + route.fixedVehicleCost() + route.reloadCost()
+           + excessLoadPenalties(route.excessLoad())
+           + twPenalty(route.timeWarp())
+           + distPenalty(route.excessDistance(), 0);
+}
+
+template <> Cost pyvrp::CostEvaluator::cost(Route const &route) const
+{
+    return route.isFeasible() ? penalisedCost(route)
+                              : std::numeric_limits<Cost>::max();
 }

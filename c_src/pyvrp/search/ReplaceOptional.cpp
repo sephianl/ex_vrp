@@ -66,7 +66,7 @@ ReplaceOptional::evaluate(Route::Node *U, CostEvaluator const &costEvaluator)
 
         ProblemData::Client const &vData
             = data.client(V->client() - data.numDepots());
-        if (vData.required)
+        if (vData.required || vData.group)
             continue;
 
         if (hasSameVehicleMemberOnRoute(V->client(), route))

@@ -1,10 +1,11 @@
 # Upstream Sync — Phases 6, 7, 9 Implementation Plan
 
-## Context
+## Status: PHASES 6-7 COMPLETE, PHASE 9 COMPLETE (ExVRP-specific)
 
-Phases 1-5 complete on `update-to-upstream`. This plan covers the remaining work: two bug fixes (Phase 6), CostEvaluator refactoring (Phase 7), and Island ILS (Phase 9). Phase 8 (Activity/Location) is deferred until PyVRP v0.14.0 ships (2026-04-01).
-
-Execution order: Phase 6 -> Phase 7 -> Phase 9 (sequential, commit after each phase).
+Phase 6: Bug fix — DONE (ReplaceOptional group fix, verified against upstream #1045)
+Phase 7: CostEvaluator template specialization — DONE (verified against upstream)
+Phase 8: Activity/Location — DEFERRED until PyVRP v0.14.0 ships (2026-04-01)
+Phase 9: Island ILS — DONE (ExVRP-specific, NOT upstream — uses BEAM concurrency)
 
 ---
 
