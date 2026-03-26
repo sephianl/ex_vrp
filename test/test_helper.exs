@@ -1,6 +1,6 @@
 # Exclude NIF-dependent tests until C++ bindings are implemented.
 # Run with `mix test --include nif_required` to include them.
-ExUnit.configure([])
+ExUnit.configure(exclude: [:production_benchmark])
 ExUnit.start()
 
 # Suppress info-level solver logs during tests to keep CI output clean.

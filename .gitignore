@@ -61,3 +61,4 @@ priv/*.so
 priv/*.dll
 priv/*.dylib
 c_src/obj/
+checksum.exs
