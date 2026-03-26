@@ -412,19 +412,19 @@ defmodule ExVrp.IteratedLocalSearch do
     %{iteration: iter, migration_interval: interval, migration_quarantine: quarantine, last_migration: last} = state
 
     if rem(iter, interval) == 0 and iter - last >= quarantine do
-      case state.on_migration.() do
-        nil ->
-          state
+      accept_migration(state.on_migration.(), state)
+    else
+      state
+    end
+  end
 
-        migrated_solution ->
-          migrated_cost = Native.solution_penalised_cost(migrated_solution, state.cost_eval)
+  defp accept_migration(nil, state), do: state
 
-          if migrated_cost < state.current_cost do
-            %{state | current: migrated_solution, current_cost: migrated_cost, last_migration: iter}
-          else
-            state
-          end
-      end
+  defp accept_migration(migrated_solution, state) do
+    migrated_cost = Native.solution_penalised_cost(migrated_solution, state.cost_eval)
+
+    if migrated_cost < state.current_cost do
+      %{state | current: migrated_solution, current_cost: migrated_cost, last_migration: state.iteration}
     else
       state
     end
