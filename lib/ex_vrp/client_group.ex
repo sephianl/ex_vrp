@@ -74,7 +74,7 @@ defmodule ExVrp.ClientGroup do
   """
   @spec add_client(t(), non_neg_integer()) :: t()
   def add_client(%__MODULE__{clients: clients} = group, client_idx) do
-    %{group | clients: clients ++ [client_idx]}
+    %{group | clients: [client_idx | clients]}
   end
 
   @doc """

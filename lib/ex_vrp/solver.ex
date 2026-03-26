@@ -96,39 +96,8 @@ defmodule ExVrp.Solver do
       problem_data_time = System.monotonic_time(:millisecond) - solve_start
       Logger.info("Problem data created in #{problem_data_time}ms")
 
-      # Initialize penalty manager
-      penalty_params = opts[:penalty_params] || %PenaltyManager.Params{}
-      penalty_manager = PenaltyManager.init_from(problem_data, penalty_params)
-
-      # Create persistent LocalSearch resource (computes neighbours once)
-      # This matches PyVRP's behavior where LocalSearch is created once in solve()
-      # and reused for all iterations. The seed initializes the RNG stored in
-      # the resource, which advances across calls.
-      local_search_start = System.monotonic_time(:millisecond)
-      local_search = Native.create_local_search(problem_data, seed)
-      local_search_time = System.monotonic_time(:millisecond) - local_search_start
-      Logger.info("LocalSearch created (neighbours computed) in #{local_search_time}ms")
-
-      # Create initial solution from empty (matches PyVRP behavior)
-      # PyVRP: init = ls.search(Solution(data, []), pm.max_cost_evaluator())
-      initial_solution_start = System.monotonic_time(:millisecond)
-      {:ok, max_cost_eval} = PenaltyManager.max_cost_evaluator(penalty_manager)
-      {:ok, empty_solution} = Native.create_solution_from_routes(problem_data, [])
-
-      # Pass remaining budget as timeout so the initial search doesn't consume it all
-      init_timeout_ms =
-        if opts[:max_runtime] do
-          elapsed = System.monotonic_time(:millisecond) - solve_start
-          max(round(opts[:max_runtime]) - elapsed, 1)
-        else
-          0
-        end
-
-      {:ok, initial_solution} =
-        Native.local_search_search_run(local_search, empty_solution, max_cost_eval, init_timeout_ms)
-
-      initial_solution_time = System.monotonic_time(:millisecond) - initial_solution_start
-      Logger.info("Initial solution generated in #{initial_solution_time}ms")
+      {local_search, penalty_manager, initial_solution} =
+        setup_solver(problem_data, seed, opts, solve_start)
 
       notify_progress(opts[:on_progress], %{
         stage: :initial_solution,
@@ -142,43 +111,72 @@ defmodule ExVrp.Solver do
       total_setup_time = System.monotonic_time(:millisecond) - solve_start
       Logger.info("Total setup time before ILS: #{total_setup_time}ms")
 
-      # Run ILS
-      ils_params = opts[:ils_params] || %IteratedLocalSearch.Params{}
+      result = run_ils(problem_data, penalty_manager, local_search, initial_solution, stop_fn, opts, seed, solve_start)
 
-      Logger.info("Starting ILS iterations")
-      ils_start = System.monotonic_time(:millisecond)
-
-      # Pass remaining runtime to ILS so it can calculate per-iteration timeouts for C++ local search.
-      # Deduct setup time from the budget so the total solve time stays within max_runtime.
-      ils_opts = [seed: seed, on_progress: opts[:on_progress]]
-
-      ils_opts =
-        if opts[:max_runtime] do
-          setup_elapsed = System.monotonic_time(:millisecond) - solve_start
-          remaining_ms = max(opts[:max_runtime] - setup_elapsed, 0)
-          Keyword.put(ils_opts, :max_runtime_ms, remaining_ms)
-        else
-          ils_opts
-        end
-
-      result =
-        IteratedLocalSearch.run(
-          problem_data,
-          penalty_manager,
-          local_search,
-          initial_solution,
-          stop_fn,
-          ils_params,
-          ils_opts
-        )
-
-      ils_time = System.monotonic_time(:millisecond) - ils_start
+      ils_time = System.monotonic_time(:millisecond) - solve_start - total_setup_time
       total_time = System.monotonic_time(:millisecond) - solve_start
       Logger.info("ILS completed in #{ils_time}ms (#{result.num_iterations} iterations)")
       Logger.info("Total solve time: #{total_time}ms (setup: #{total_setup_time}ms, ILS: #{ils_time}ms)")
 
       {:ok, result}
     end
+  end
+
+  defp setup_solver(problem_data, seed, opts, solve_start) do
+    penalty_params = opts[:penalty_params] || %PenaltyManager.Params{}
+    penalty_manager = PenaltyManager.init_from(problem_data, penalty_params)
+
+    local_search_start = System.monotonic_time(:millisecond)
+    local_search = Native.create_local_search(problem_data, seed)
+    local_search_time = System.monotonic_time(:millisecond) - local_search_start
+    Logger.info("LocalSearch created (neighbours computed) in #{local_search_time}ms")
+
+    initial_solution_start = System.monotonic_time(:millisecond)
+    {:ok, max_cost_eval} = PenaltyManager.max_cost_evaluator(penalty_manager)
+    {:ok, empty_solution} = Native.create_solution_from_routes(problem_data, [])
+
+    init_timeout_ms =
+      if opts[:max_runtime] do
+        elapsed = System.monotonic_time(:millisecond) - solve_start
+        max(round(opts[:max_runtime]) - elapsed, 1)
+      else
+        0
+      end
+
+    {:ok, initial_solution} =
+      Native.local_search_search_run(local_search, empty_solution, max_cost_eval, init_timeout_ms)
+
+    initial_solution_time = System.monotonic_time(:millisecond) - initial_solution_start
+    Logger.info("Initial solution generated in #{initial_solution_time}ms")
+
+    {local_search, penalty_manager, initial_solution}
+  end
+
+  defp run_ils(problem_data, penalty_manager, local_search, initial_solution, stop_fn, opts, seed, solve_start) do
+    ils_params = opts[:ils_params] || %IteratedLocalSearch.Params{}
+
+    Logger.info("Starting ILS iterations")
+
+    ils_opts = [seed: seed, on_progress: opts[:on_progress]]
+
+    ils_opts =
+      if opts[:max_runtime] do
+        setup_elapsed = System.monotonic_time(:millisecond) - solve_start
+        remaining_ms = max(opts[:max_runtime] - setup_elapsed, 0)
+        Keyword.put(ils_opts, :max_runtime_ms, remaining_ms)
+      else
+        ils_opts
+      end
+
+    IteratedLocalSearch.run(
+      problem_data,
+      penalty_manager,
+      local_search,
+      initial_solution,
+      stop_fn,
+      ils_params,
+      ils_opts
+    )
   end
 
   defp notify_progress(nil, _info), do: :ok

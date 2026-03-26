@@ -26,7 +26,7 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> SameVehicleGroup.add_client(1)
         |> SameVehicleGroup.add_client(2)
 
-      assert group.clients == [1, 2]
+      assert group.clients == [2, 1]
     end
 
     test "add_client raises for duplicate" do
@@ -67,7 +67,8 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.add_client(x: 3, y: 3)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
 
-      [c1, c2, _c3] = model.clients
+      # Internal list is reversed; reverse to get insertion order for destructuring
+      [c1, c2, _c3] = Enum.reverse(model.clients)
 
       model = Model.add_same_vehicle_group(model, [c1, c2], name: "group1")
 
@@ -104,7 +105,8 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.add_client(x: 2, y: 2)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      [c1, c2] = model.clients
+      # Internal list is reversed; reverse to get insertion order for destructuring
+      [c1, c2] = Enum.reverse(model.clients)
 
       # Add same-vehicle group (clients will have indices 1 and 2)
       model = Model.add_same_vehicle_group(model, [c1, c2])
@@ -174,7 +176,7 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.add_client(x: 3, y: 3)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
 
-      [c1, c2, _c3] = model.clients
+      [c1, c2, _c3] = Enum.reverse(model.clients)
 
       # Clients c1 and c2 must be on same vehicle
       model = Model.add_same_vehicle_group(model, [c1, c2])
@@ -197,7 +199,7 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.add_client(x: 3, y: 3, required: false)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      [c1, c2, c3] = model.clients
+      [c1, c2, c3] = Enum.reverse(model.clients)
 
       # All three must be on same vehicle IF visited
       model = Model.add_same_vehicle_group(model, [c1, c2, c3])
@@ -217,7 +219,7 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.add_client(x: 3, y: 3)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
 
-      [c1, c2, _c3] = model.clients
+      [c1, c2, _c3] = Enum.reverse(model.clients)
       model = Model.add_same_vehicle_group(model, [c1, c2])
 
       {:ok, result} = ExVrp.solve(model, max_iterations: 100)
@@ -251,7 +253,7 @@ defmodule ExVrp.SameVehicleGroupTest do
           max_reloads: 3
         )
 
-      [c1, c2, c3, c4] = model.clients
+      [c1, c2, c3, c4] = Enum.reverse(model.clients)
 
       # All 4 clients must be served by the same vehicle
       model = Model.add_same_vehicle_group(model, [c1, c2, c3, c4])
@@ -286,7 +288,7 @@ defmodule ExVrp.SameVehicleGroupTest do
         # Two vehicles, each can handle 2 clients
         |> Model.add_vehicle_type(num_available: 2, capacity: [70])
 
-      [c1, c2, c3] = model.clients
+      [c1, c2, c3] = Enum.reverse(model.clients)
 
       # All clients must be on same vehicle
       model = Model.add_same_vehicle_group(model, [c1, c2, c3])
@@ -340,7 +342,7 @@ defmodule ExVrp.SameVehicleGroupTest do
           max_reloads: 2
         )
 
-      [c1, c2, c3, c4] = model.clients
+      [c1, c2, c3, c4] = Enum.reverse(model.clients)
 
       # Group 1: clients 1 and 2 must be on same vehicle
       model = Model.add_same_vehicle_group(model, [c1, c2], name: "group1")
@@ -375,7 +377,7 @@ defmodule ExVrp.SameVehicleGroupTest do
           tw_late: 500
         )
 
-      [c1, c2] = model.clients
+      [c1, c2] = Enum.reverse(model.clients)
       model = Model.add_same_vehicle_group(model, [c1, c2])
 
       {:ok, result} = ExVrp.solve(model, max_iterations: 300)
@@ -438,7 +440,7 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.set_duration_matrices([duration_matrix])
         |> Model.set_distance_matrices([duration_matrix])
 
-      [c1, c2, c3, c4] = model.clients
+      [c1, c2, c3, c4] = Enum.reverse(model.clients)
 
       # All 4 clients must be on the same vehicle (v0)
       # They can be split across the two shifts but must be on routes with the
@@ -568,7 +570,7 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.set_duration_matrices([duration_matrix])
         |> Model.set_distance_matrices([duration_matrix])
 
-      [c1, c2, c3, c4] = model.clients
+      [c1, c2, c3, c4] = Enum.reverse(model.clients)
 
       # Equipment constraint: all 4 must be on same vehicle
       model = Model.add_same_vehicle_group(model, [c1, c2, c3, c4])
@@ -628,7 +630,7 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.set_duration_matrices([duration_matrix])
         |> Model.set_distance_matrices([duration_matrix])
 
-      [c1, c2, c3, c4] = model.clients
+      [c1, c2, c3, c4] = Enum.reverse(model.clients)
 
       # Equipment constraint: all 4 must be on same vehicle
       model = Model.add_same_vehicle_group(model, [c1, c2, c3, c4])

@@ -43,7 +43,7 @@ defmodule ExVrp.ClientGroupTest do
       assert group.clients == [5]
 
       group = ClientGroup.add_client(group, 10)
-      assert group.clients == [5, 10]
+      assert group.clients == [10, 5]
     end
 
     test "preserves other group properties" do
@@ -65,7 +65,7 @@ defmodule ExVrp.ClientGroupTest do
         |> ClientGroup.add_client(2)
         |> ClientGroup.add_client(3)
 
-      assert group.clients == [1, 2, 3]
+      assert group.clients == [3, 2, 1]
 
       cleared = ClientGroup.clear(group)
       assert cleared.clients == []

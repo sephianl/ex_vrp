@@ -62,7 +62,7 @@ defmodule ExVrp.SameVehicleGroup do
       raise ArgumentError, "Client already in same-vehicle group"
     end
 
-    %{group | clients: clients ++ [client_idx]}
+    %{group | clients: [client_idx | clients]}
   end
 
   @doc """

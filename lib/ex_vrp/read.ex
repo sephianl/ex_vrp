@@ -90,7 +90,6 @@ defmodule ExVrp.Read do
       # Key-value pairs (e.g., "NAME : OkSmall")
       String.contains?(line, ":") and not String.ends_with?(line, "_SECTION") ->
         [key, value] = String.split(line, ":", parts: 2)
-        # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
         key = key |> String.trim() |> String.downcase() |> String.to_atom()
         value = parse_value(String.trim(value))
         parse_lines(rest, Map.put(acc, key, value))
@@ -101,7 +100,6 @@ defmodule ExVrp.Read do
           line
           |> String.trim_trailing("_SECTION")
           |> String.downcase()
-          # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
           |> String.to_atom()
 
         {section_data, remaining} = parse_section(rest, section_name)
@@ -291,197 +289,186 @@ defmodule ExVrp.Read do
     dimension = Map.get(instance, :dimension, 0)
     num_depots = length(Map.get(instance, :depot, [1]))
     num_clients = dimension - num_depots
-
-    # Extract raw coords and scale them for model storage
-    raw_coords = extract_raw_coords(instance)
-    coords = scale_coords(raw_coords, round_fn)
-
-    # Get depot indices (1-based in file, we use 0-based internally)
+    coords = instance |> extract_raw_coords() |> scale_coords(round_fn)
     depot_indices = instance |> Map.get(:depot, [1]) |> Enum.map(&(&1 - 1))
-
-    # Build distance/duration matrix (uses raw coords internally)
     {distances, durations} = build_matrices(instance, dimension, round_fn)
-
-    # Build depots
-    model =
-      Enum.reduce(depot_indices, Model.new(), fn depot_idx, model ->
-        {x, y} = Enum.at(coords, depot_idx)
-        Model.add_depot(model, x: x, y: y)
-      end)
-
-    # Get vehicle info
-    num_vehicles = Map.get(instance, :vehicles, num_clients)
-    capacity = get_capacity(instance, num_vehicles, round_fn)
-    vehicles_depots = get_vehicles_depots(instance, num_vehicles, depot_indices)
-    max_distances = get_max_distances(instance, num_vehicles, round_fn)
-    shift_durations = get_shift_durations(instance, num_vehicles, round_fn)
-    fixed_costs = get_fixed_costs(instance, num_vehicles, round_fn)
-    unit_distance_costs = get_unit_distance_costs(instance, num_vehicles)
-    reload_depots = get_reload_depots(instance, num_vehicles)
-    max_reloads = get_max_reloads(instance, num_vehicles)
-    allowed_clients = get_allowed_clients(instance, num_vehicles, num_depots, dimension)
-
-    # Get time windows from depot for vehicles
     time_windows = build_time_windows(instance, round_fn)
 
-    # Get mutually exclusive groups
-    groups = Map.get(instance, :mutually_exclusive_group, [])
-    # Filter out groups with less than 2 members
-    groups = Enum.filter(groups, fn g -> length(g) > 1 end)
+    model = add_depots(coords, depot_indices)
+    model = add_client_groups(model, instance)
 
-    # Check if this is a GTSP instance - groups are required in GTSP
+    client_data = %{
+      demands: build_demands(instance, round_fn),
+      backhauls: build_backhauls(instance, round_fn),
+      service_times: build_service_times(instance, dimension, round_fn),
+      prizes: build_prizes(instance, round_fn),
+      release_times: build_release_times(instance, round_fn),
+      time_windows: time_windows,
+      client_to_group: build_client_to_group_map(instance)
+    }
+
+    model = add_clients(model, coords, depot_indices, dimension, client_data)
+
+    vehicle_info = collect_vehicle_info(instance, num_clients, num_depots, dimension, depot_indices, round_fn)
+    model = add_vehicle_types(model, vehicle_info, time_windows, depot_indices)
+
+    add_profile_matrices(model, vehicle_info.allowed_clients, distances, durations, client_data, num_depots, dimension,
+      instance: instance
+    )
+  end
+
+  defp add_depots(coords, depot_indices) do
+    Enum.reduce(depot_indices, Model.new(), fn depot_idx, model ->
+      {x, y} = Enum.at(coords, depot_idx)
+      Model.add_depot(model, x: x, y: y)
+    end)
+  end
+
+  defp add_client_groups(model, instance) do
+    groups = instance |> Map.get(:mutually_exclusive_group, []) |> Enum.filter(fn g -> length(g) > 1 end)
     instance_type = Map.get(instance, :type)
     is_gtsp = is_binary(instance_type) and String.upcase(instance_type) == "GTSP"
 
-    # Build client index -> group mapping
-    client_to_group =
-      groups
-      |> Enum.with_index()
-      |> Enum.flat_map(fn {members, group_idx} ->
-        Enum.map(members, fn client_idx -> {client_idx, group_idx} end)
-      end)
-      |> Map.new()
+    Enum.reduce(groups, model, fn _group, m ->
+      opts =
+        if is_gtsp do
+          [required: true, mutually_exclusive: true]
+        else
+          [required: false]
+        end
 
-    # Add client groups to model
-    # For GTSP: groups are required AND mutually_exclusive (exactly one member must be visited)
-    # For other types: groups are optional (at most one member can be visited)
-    {model, _group_indices} =
-      Enum.reduce(groups, {model, []}, fn _group, {m, indices} ->
-        opts =
-          if is_gtsp do
-            [required: true, mutually_exclusive: true]
-          else
-            [required: false]
-          end
+      {new_model, _idx} = Model.add_client_group(m, opts)
+      new_model
+    end)
+  end
 
-        {new_model, idx} = Model.add_client_group(m, opts)
-        {new_model, indices ++ [idx]}
-      end)
+  defp build_client_to_group_map(instance) do
+    instance
+    |> Map.get(:mutually_exclusive_group, [])
+    |> Enum.filter(fn g -> length(g) > 1 end)
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {members, group_idx} ->
+      Enum.map(members, fn client_idx -> {client_idx, group_idx} end)
+    end)
+    |> Map.new()
+  end
 
-    # Build clients
-    demands = build_demands(instance, round_fn)
-    backhauls = build_backhauls(instance, round_fn)
-    service_times = build_service_times(instance, dimension, round_fn)
-    prizes = build_prizes(instance, round_fn)
-    release_times = build_release_times(instance, round_fn)
+  defp add_clients(model, coords, depot_indices, dimension, data) do
+    client_indices = Enum.filter(0..(dimension - 1), fn idx -> idx not in depot_indices end)
 
-    # Add clients (all locations except depots)
-    client_indices =
-      Enum.filter(0..(dimension - 1), fn idx -> idx not in depot_indices end)
+    Enum.reduce(client_indices, model, fn loc_idx, model ->
+      {x, y} = Enum.at(coords, loc_idx)
+      prize = Map.get(data.prizes, loc_idx, 0)
+      group_idx = Map.get(data.client_to_group, loc_idx)
+      {tw_early, tw_late} = Map.get(data.time_windows, loc_idx, {0, :infinity})
 
-    model =
-      Enum.reduce(client_indices, model, fn loc_idx, model ->
-        {x, y} = Enum.at(coords, loc_idx)
-        demand = Map.get(demands, loc_idx, [0])
-        backhaul = Map.get(backhauls, loc_idx, [0])
-        service = Map.get(service_times, loc_idx, 0)
-        # Use :infinity for tw_late default - gets converted to INT64_MAX in NIF
-        {tw_early, tw_late} = Map.get(time_windows, loc_idx, {0, :infinity})
-        prize = Map.get(prizes, loc_idx, 0)
-        release = Map.get(release_times, loc_idx, 0)
+      Model.add_client(model,
+        x: x,
+        y: y,
+        delivery: Map.get(data.demands, loc_idx, [0]),
+        pickup: Map.get(data.backhauls, loc_idx, [0]),
+        service_duration: Map.get(data.service_times, loc_idx, 0),
+        tw_early: tw_early,
+        tw_late: tw_late,
+        release_time: Map.get(data.release_times, loc_idx, 0),
+        prize: prize,
+        required: prize == 0 and group_idx == nil,
+        group: group_idx
+      )
+    end)
+  end
 
-        # Check if client is in a mutually exclusive group
-        group_idx = Map.get(client_to_group, loc_idx)
+  defp collect_vehicle_info(instance, num_clients, num_depots, dimension, depot_indices, round_fn) do
+    num_vehicles = Map.get(instance, :vehicles, num_clients)
 
-        # A client is required if it has no prize and is not in a group
-        required = prize == 0 and group_idx == nil
+    %{
+      num_vehicles: num_vehicles,
+      capacity: get_capacity(instance, num_vehicles, round_fn),
+      vehicles_depots: get_vehicles_depots(instance, num_vehicles, depot_indices),
+      max_distances: get_max_distances(instance, num_vehicles, round_fn),
+      shift_durations: get_shift_durations(instance, num_vehicles, round_fn),
+      fixed_costs: get_fixed_costs(instance, num_vehicles, round_fn),
+      unit_distance_costs: get_unit_distance_costs(instance, num_vehicles),
+      reload_depots: get_reload_depots(instance, num_vehicles),
+      max_reloads: get_max_reloads(instance, num_vehicles),
+      allowed_clients: get_allowed_clients(instance, num_vehicles, num_depots, dimension)
+    }
+  end
 
-        Model.add_client(model,
-          x: x,
-          y: y,
-          delivery: demand,
-          pickup: backhaul,
-          service_duration: service,
-          tw_early: tw_early,
-          tw_late: tw_late,
-          release_time: release,
-          prize: prize,
-          required: required,
-          group: group_idx
-        )
-      end)
-
-    # Group vehicles by their attributes to create vehicle types
+  defp add_vehicle_types(model, info, time_windows, depot_indices) do
     vehicles_data =
-      for veh <- 0..(num_vehicles - 1) do
-        cap = Enum.at(capacity, veh)
-        depot = Enum.at(vehicles_depots, veh)
-        max_dist = Enum.at(max_distances, veh)
-        shift_dur = Enum.at(shift_durations, veh)
-        fixed_cost = Enum.at(fixed_costs, veh)
-        unit_dist_cost = Enum.at(unit_distance_costs, veh)
-        reload = Enum.at(reload_depots, veh)
-        max_reload = Enum.at(max_reloads, veh)
-        allowed = Enum.at(allowed_clients, veh)
-
-        {veh, cap, depot, max_dist, shift_dur, fixed_cost, unit_dist_cost, reload, max_reload, allowed}
+      for veh <- 0..(info.num_vehicles - 1) do
+        {veh, Enum.at(info.capacity, veh), Enum.at(info.vehicles_depots, veh), Enum.at(info.max_distances, veh),
+         Enum.at(info.shift_durations, veh), Enum.at(info.fixed_costs, veh), Enum.at(info.unit_distance_costs, veh),
+         Enum.at(info.reload_depots, veh), Enum.at(info.max_reloads, veh), Enum.at(info.allowed_clients, veh)}
       end
 
-    # Group by attributes (excluding vehicle index)
     type_groups =
       Enum.group_by(vehicles_data, fn {_veh, cap, depot, max_dist, shift_dur, fixed_cost, unit_dist_cost, reload,
                                        max_reload, allowed} ->
         {cap, depot, max_dist, shift_dur, fixed_cost, unit_dist_cost, reload, max_reload, allowed}
       end)
 
-    # Get depot time windows for vehicle types
-    # Use :infinity for tw_late default - gets converted to INT64_MAX in NIF
     depot_time_windows =
       Enum.map(depot_indices, fn depot_idx ->
         Map.get(time_windows, depot_idx, {0, :infinity})
       end)
 
-    # Build vehicle types from groups (need to know profile mapping)
     {model, _profile_map_final} =
-      Enum.reduce(type_groups, {model, %{}}, fn {{cap, depot, max_dist, shift_dur, fixed_cost, unit_dist_cost, reload,
-                                                  _max_reload, allowed}, vehicles},
-                                                {m, profile_map} ->
-        num_available = length(vehicles)
-
-        vehicle_indices =
-          Enum.map(vehicles, fn {veh, _cap, _depot, _max_dist, _shift_dur, _fixed_cost, _unit_dist_cost, _reload,
-                                 _max_reload, _allowed} ->
-            veh
-          end)
-
-        name = Enum.join(vehicle_indices, ",")
-
-        # Get or create profile for this allowed_clients set
-        {profile, new_profile_map} =
-          case Map.get(profile_map, allowed) do
-            nil ->
-              new_idx = map_size(profile_map)
-              {new_idx, Map.put(profile_map, allowed, new_idx)}
-
-            existing ->
-              {existing, profile_map}
-          end
-
-        # Get depot time window - use :infinity for tw_late default
-        {tw_early, tw_late} = Enum.at(depot_time_windows, depot, {0, :infinity})
-
-        m =
-          Model.add_vehicle_type(m,
-            num_available: num_available,
-            capacity: cap,
-            start_depot: depot,
-            end_depot: depot,
-            fixed_cost: fixed_cost,
-            tw_early: tw_early,
-            tw_late: tw_late,
-            shift_duration: shift_dur,
-            max_distance: max_dist,
-            unit_distance_cost: unit_dist_cost,
-            profile: profile,
-            reload_depots: reload,
-            name: name
-          )
-
-        {m, new_profile_map}
+      Enum.reduce(type_groups, {model, %{}}, fn {type_key, vehicles}, {m, profile_map} ->
+        add_single_vehicle_type(m, profile_map, type_key, vehicles, depot_time_windows)
       end)
 
-    # Build distance/duration matrices
-    # First, determine how many profiles we need based on allowed_clients variations
+    model
+  end
+
+  defp add_single_vehicle_type(model, profile_map, type_key, vehicles, depot_time_windows) do
+    {cap, depot, max_dist, shift_dur, fixed_cost, unit_dist_cost, reload, _max_reload, allowed} = type_key
+    num_available = length(vehicles)
+
+    vehicle_indices =
+      Enum.map(vehicles, fn {veh, _cap, _depot, _max_dist, _shift_dur, _fixed_cost, _unit_dist_cost, _reload,
+                             _max_reload, _allowed} ->
+        veh
+      end)
+
+    name = Enum.join(vehicle_indices, ",")
+
+    {profile, new_profile_map} =
+      case Map.get(profile_map, allowed) do
+        nil ->
+          new_idx = map_size(profile_map)
+          {new_idx, Map.put(profile_map, allowed, new_idx)}
+
+        existing ->
+          {existing, profile_map}
+      end
+
+    {tw_early, tw_late} = Enum.at(depot_time_windows, depot, {0, :infinity})
+
+    model =
+      Model.add_vehicle_type(model,
+        num_available: num_available,
+        capacity: cap,
+        start_depot: depot,
+        end_depot: depot,
+        fixed_cost: fixed_cost,
+        tw_early: tw_early,
+        tw_late: tw_late,
+        shift_duration: shift_dur,
+        max_distance: max_dist,
+        unit_distance_cost: unit_dist_cost,
+        profile: profile,
+        reload_depots: reload,
+        name: name
+      )
+
+    {model, new_profile_map}
+  end
+
+  defp add_profile_matrices(model, allowed_clients, distances, durations, client_data, num_depots, dimension,
+         instance: instance
+       ) do
     unique_allowed =
       allowed_clients
       |> Enum.uniq()
@@ -494,8 +481,8 @@ defmodule ExVrp.Read do
     matrix_context = %{
       distances: distances,
       durations: durations,
-      demands: demands,
-      backhauls: backhauls,
+      demands: client_data.demands,
+      backhauls: client_data.backhauls,
       num_depots: num_depots,
       dimension: dimension,
       all_clients: all_clients,

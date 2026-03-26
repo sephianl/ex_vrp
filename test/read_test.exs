@@ -34,10 +34,11 @@ defmodule ExVrp.ReadTest do
       assert depot.x == 2334
       assert depot.y == 726
 
-      # Check clients
+      # Check clients (internal list is in reverse order; reverse to get insertion order)
       assert length(model.clients) == 4
+      clients = Enum.reverse(model.clients)
 
-      model.clients
+      clients
       |> Enum.zip(tl(expected_coords))
       |> Enum.each(fn {client, {x, y}} ->
         assert client.x == x
@@ -47,7 +48,7 @@ defmodule ExVrp.ReadTest do
       # From DEMAND_SECTION
       expected_demands = [5, 5, 3, 5]
 
-      model.clients
+      clients
       |> Enum.zip(expected_demands)
       |> Enum.each(fn {client, demand} ->
         assert client.delivery == [demand]
@@ -61,7 +62,7 @@ defmodule ExVrp.ReadTest do
         {12_000, 19_500}
       ]
 
-      model.clients
+      clients
       |> Enum.zip(expected_time_windows)
       |> Enum.each(fn {client, {tw_early, tw_late}} ->
         assert client.tw_early == tw_early
@@ -75,7 +76,7 @@ defmodule ExVrp.ReadTest do
       # From SERVICE_TIME_SECTION
       expected_service = [360, 360, 420, 360]
 
-      model.clients
+      clients
       |> Enum.zip(expected_service)
       |> Enum.each(fn {client, service} ->
         assert client.service_duration == service
@@ -100,7 +101,7 @@ defmodule ExVrp.ReadTest do
       assert depot.x == 1450
       assert depot.y == 2150
 
-      first_client = hd(model.clients)
+      first_client = model.clients |> Enum.reverse() |> hd()
       assert first_client.x == 1510
       assert first_client.y == 2640
     end
@@ -116,8 +117,8 @@ defmodule ExVrp.ReadTest do
       # Two vehicle types (one per depot)
       assert length(model.vehicle_types) == 2
 
-      # First depot
-      [depot1, depot2] = model.depots
+      # First depot (internal list is reversed; reverse to get insertion order)
+      [depot1, depot2] = Enum.reverse(model.depots)
       assert depot1.x == 2334
       assert depot1.y == 726
       assert depot2.x == 226
@@ -149,11 +150,13 @@ defmodule ExVrp.ReadTest do
       # Clients in the group should not be required
       num_depots = Model.num_depots(model)
 
+      clients = Enum.reverse(model.clients)
+
       Enum.each(group.clients, fn client_idx ->
         # client_idx is the absolute location index (depot + client index)
         # We need to convert to list index (subtract num_depots)
         list_idx = client_idx - num_depots
-        client = Enum.at(model.clients, list_idx)
+        client = Enum.at(clients, list_idx)
         assert client.required == false
       end)
     end

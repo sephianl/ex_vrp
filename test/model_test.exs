@@ -36,9 +36,11 @@ defmodule ExVrp.ModelTest do
         |> Model.add_client(x: 3, y: 3)
 
       assert length(model.clients) == 3
-      assert Enum.at(model.clients, 0).x == 1
-      assert Enum.at(model.clients, 1).x == 2
-      assert Enum.at(model.clients, 2).x == 3
+      # Internal list is in reverse (prepend) order; finalize restores insertion order
+      clients = Enum.reverse(model.clients)
+      assert Enum.at(clients, 0).x == 1
+      assert Enum.at(clients, 1).x == 2
+      assert Enum.at(clients, 2).x == 3
     end
   end
 
@@ -171,9 +173,9 @@ defmodule ExVrp.ModelTest do
         |> Model.add_client(x: 1, y: 1, required: false, group: group)
         |> Model.add_client(x: 2, y: 2, required: false, group: group)
 
-      # Group should now have both clients
+      # Group should now have both clients (in reverse/prepend order internally)
       # depot is 0, clients are 1, 2
-      assert hd(model.client_groups).clients == [1, 2]
+      assert hd(model.client_groups).clients == [2, 1]
     end
 
     test "raises when required client added to mutually exclusive group" do
@@ -226,21 +228,25 @@ defmodule ExVrp.ModelTest do
 
     test "clients accessor returns all clients", %{model: model} do
       assert length(model.clients) == 3
-      assert Enum.at(model.clients, 0).name == "client1"
-      assert Enum.at(model.clients, 1).name == "client2"
-      assert Enum.at(model.clients, 2).name == "client3"
+      # Internal lists are in reverse (prepend) order
+      clients = Enum.reverse(model.clients)
+      assert Enum.at(clients, 0).name == "client1"
+      assert Enum.at(clients, 1).name == "client2"
+      assert Enum.at(clients, 2).name == "client3"
     end
 
     test "depots accessor returns all depots", %{model: model} do
       assert length(model.depots) == 2
-      assert Enum.at(model.depots, 0).name == "depot1"
-      assert Enum.at(model.depots, 1).name == "depot2"
+      depots = Enum.reverse(model.depots)
+      assert Enum.at(depots, 0).name == "depot1"
+      assert Enum.at(depots, 1).name == "depot2"
     end
 
     test "vehicle_types accessor returns all vehicle types", %{model: model} do
       assert length(model.vehicle_types) == 2
-      assert Enum.at(model.vehicle_types, 0).name == "small"
-      assert Enum.at(model.vehicle_types, 1).name == "large"
+      vehicle_types = Enum.reverse(model.vehicle_types)
+      assert Enum.at(vehicle_types, 0).name == "small"
+      assert Enum.at(vehicle_types, 1).name == "large"
     end
 
     test "client_groups accessor returns all groups", %{model: model} do

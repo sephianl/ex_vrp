@@ -275,10 +275,9 @@ defmodule ExVrp.StoppingCriteria do
   end
 
   def should_stop?(%__MODULE__{type: :multiple_criteria, state: state} = criteria, context) do
-    {results, _acc} =
-      Enum.map_reduce(state.criteria, [], fn sub_criteria, acc ->
-        {stop?, updated} = should_stop?(sub_criteria, context)
-        {{stop?, updated}, acc ++ [updated]}
+    results =
+      Enum.map(state.criteria, fn sub_criteria ->
+        should_stop?(sub_criteria, context)
       end)
 
     any_stop = Enum.any?(results, fn {stop?, _updated} -> stop? end)
@@ -302,10 +301,9 @@ defmodule ExVrp.StoppingCriteria do
   end
 
   def should_stop?(%__MODULE__{type: :all, state: state} = criteria, context) do
-    {results, _acc} =
-      Enum.map_reduce(state.criteria, [], fn sub_criteria, acc ->
-        {stop?, updated} = should_stop?(sub_criteria, context)
-        {{stop?, updated}, acc ++ [updated]}
+    results =
+      Enum.map(state.criteria, fn sub_criteria ->
+        should_stop?(sub_criteria, context)
       end)
 
     all_stop = Enum.all?(results, fn {stop?, _updated} -> stop? end)
