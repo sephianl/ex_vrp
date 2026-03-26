@@ -31,7 +31,7 @@ defmodule ExVrp.StatisticsTest do
 
       # Collect 5 iterations
       stats =
-        Enum.reduce(1..5, stats, fn _, acc ->
+        Enum.reduce(1..5, stats, fn _i, acc ->
           Statistics.collect(acc, solution, solution, solution, cost_evaluator)
         end)
 
@@ -163,7 +163,7 @@ defmodule ExVrp.StatisticsTest do
       stats = Statistics.new()
 
       stats =
-        Enum.reduce(1..5, stats, fn _, acc ->
+        Enum.reduce(1..5, stats, fn _i, acc ->
           Statistics.collect(acc, solution, solution, solution, cost_evaluator)
         end)
 
@@ -197,7 +197,7 @@ defmodule ExVrp.StatisticsTest do
       stats = Statistics.new()
 
       stats =
-        Enum.reduce(1..3, stats, fn _, acc ->
+        Enum.reduce(1..3, stats, fn _i, acc ->
           Statistics.collect(acc, solution, solution, solution, cost_evaluator)
         end)
 
@@ -213,7 +213,7 @@ defmodule ExVrp.StatisticsTest do
       stats = Statistics.new()
 
       stats =
-        Enum.reduce(1..3, stats, fn _, acc ->
+        Enum.reduce(1..3, stats, fn _i, acc ->
           Statistics.collect(acc, solution, solution, solution, cost_evaluator)
         end)
 
@@ -230,7 +230,7 @@ defmodule ExVrp.StatisticsTest do
       stats = Statistics.new()
 
       stats =
-        Enum.reduce(1..10, stats, fn _, acc ->
+        Enum.reduce(1..10, stats, fn _i, acc ->
           Statistics.collect(acc, solution, solution, solution, cost_evaluator)
         end)
 

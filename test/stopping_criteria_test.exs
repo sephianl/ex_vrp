@@ -13,7 +13,7 @@ defmodule ExVrp.StoppingCriteriaTest do
 
       # Simulate 98 more iterations
       {stop?, criteria} =
-        Enum.reduce(2..99, {false, criteria}, fn _, {_, c} ->
+        Enum.reduce(2..99, {false, criteria}, fn _i, {_stop, c} ->
           StoppingCriteria.should_stop?(c, %{})
         end)
 
@@ -222,13 +222,13 @@ defmodule ExVrp.StoppingCriteriaTest do
     test "returns false for infeasible (:infinity cost)" do
       # The ILS passes :infinity for infeasible solutions (via solution_cost)
       criteria = StoppingCriteria.first_feasible()
-      {stop?, _} = StoppingCriteria.should_stop?(criteria, %{best_cost: :infinity})
+      {stop?, _criteria} = StoppingCriteria.should_stop?(criteria, %{best_cost: :infinity})
       assert stop? == false
     end
 
     test "returns true for feasible (integer cost)" do
       criteria = StoppingCriteria.first_feasible()
-      {stop?, _} = StoppingCriteria.should_stop?(criteria, %{best_cost: 1000})
+      {stop?, _criteria} = StoppingCriteria.should_stop?(criteria, %{best_cost: 1000})
       assert stop? == true
     end
   end
@@ -242,14 +242,14 @@ defmodule ExVrp.StoppingCriteriaTest do
 
         # Should not stop during first (max-1) iterations
         criteria =
-          Enum.reduce(1..(max - 1), criteria, fn _, c ->
+          Enum.reduce(1..(max - 1), criteria, fn _i, c ->
             {stop?, c} = StoppingCriteria.should_stop?(c, %{})
             assert stop? == false
             c
           end)
 
         # Max-th iteration should stop (count == max)
-        {stop?, _} = StoppingCriteria.should_stop?(criteria, %{})
+        {stop?, _criteria} = StoppingCriteria.should_stop?(criteria, %{})
         assert stop? == true
       end
     end
@@ -257,7 +257,7 @@ defmodule ExVrp.StoppingCriteriaTest do
     test "max_iterations 1 stops immediately" do
       criteria = StoppingCriteria.max_iterations(1)
       # First call: count becomes 1, 1 >= 1, returns true
-      {stop?, _} = StoppingCriteria.should_stop?(criteria, %{})
+      {stop?, _criteria} = StoppingCriteria.should_stop?(criteria, %{})
       assert stop? == true
     end
 
@@ -279,7 +279,7 @@ defmodule ExVrp.StoppingCriteriaTest do
   describe "NoImprovement edge cases" do
     test "zero max iterations always stops" do
       criteria = StoppingCriteria.no_improvement(0)
-      {stop?, _} = StoppingCriteria.should_stop?(criteria, %{improved: false})
+      {stop?, _criteria} = StoppingCriteria.should_stop?(criteria, %{improved: false})
       assert stop? == true
     end
 
@@ -287,7 +287,7 @@ defmodule ExVrp.StoppingCriteriaTest do
       criteria = StoppingCriteria.no_improvement(1)
 
       # First non-improvement triggers stop (counter goes to 1, 1 >= 1)
-      {stop?, _} = StoppingCriteria.should_stop?(criteria, %{improved: false})
+      {stop?, _criteria} = StoppingCriteria.should_stop?(criteria, %{improved: false})
       assert stop? == true
     end
 
@@ -297,7 +297,7 @@ defmodule ExVrp.StoppingCriteriaTest do
 
       # First k improving iterations (counter stays at 0)
       criteria =
-        Enum.reduce(1..2, criteria, fn _, c ->
+        Enum.reduce(1..2, criteria, fn _i, c ->
           {stop?, c} = StoppingCriteria.should_stop?(c, %{improved: true})
           assert stop? == false
           c
@@ -310,7 +310,7 @@ defmodule ExVrp.StoppingCriteriaTest do
       assert stop? == false
 
       # Third non-improving (counter goes to 3, 3 >= 3)
-      {stop?, _} = StoppingCriteria.should_stop?(criteria, %{improved: false})
+      {stop?, _criteria} = StoppingCriteria.should_stop?(criteria, %{improved: false})
       assert stop? == true
     end
 
@@ -332,7 +332,7 @@ defmodule ExVrp.StoppingCriteriaTest do
       assert stop? == false
       {stop?, criteria} = StoppingCriteria.should_stop?(criteria, %{improved: false})
       assert stop? == false
-      {stop?, _} = StoppingCriteria.should_stop?(criteria, %{improved: false})
+      {stop?, _criteria} = StoppingCriteria.should_stop?(criteria, %{improved: false})
       assert stop? == true
     end
   end
@@ -346,7 +346,7 @@ defmodule ExVrp.StoppingCriteriaTest do
         ])
 
       # Should not stop immediately
-      {stop?, _} = StoppingCriteria.should_stop?(criteria, %{})
+      {stop?, _criteria} = StoppingCriteria.should_stop?(criteria, %{})
       assert stop? == false
     end
 
@@ -365,7 +365,7 @@ defmodule ExVrp.StoppingCriteriaTest do
       # After 3 non-improving, should stop
       {stop?, criteria} = StoppingCriteria.should_stop?(criteria, %{improved: false})
       assert stop? == false
-      {stop?, _} = StoppingCriteria.should_stop?(criteria, %{improved: false})
+      {stop?, _criteria} = StoppingCriteria.should_stop?(criteria, %{improved: false})
       assert stop? == true
     end
 
@@ -385,7 +385,7 @@ defmodule ExVrp.StoppingCriteriaTest do
       # After 2 non-improving, inner should trigger
       {stop?, outer} = StoppingCriteria.should_stop?(outer, %{improved: false})
       assert stop? == false
-      {stop?, _} = StoppingCriteria.should_stop?(outer, %{improved: false})
+      {stop?, _outer} = StoppingCriteria.should_stop?(outer, %{improved: false})
       assert stop? == true
     end
   end

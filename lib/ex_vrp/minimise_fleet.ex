@@ -110,11 +110,11 @@ defmodule ExVrp.MinimiseFleet do
     minimise_loop(model, new_fleet, lb, stop, seed)
   end
 
-  defp handle_minimise_result({:ok, _}, _model, _fleet, feas_fleet, _lb, _stop, _seed) do
+  defp handle_minimise_result({:ok, _result}, _model, _fleet, feas_fleet, _lb, _stop, _seed) do
     {:ok, feas_fleet}
   end
 
-  defp handle_minimise_result({:error, _}, _model, _fleet, feas_fleet, _lb, _stop, _seed) do
+  defp handle_minimise_result({:error, _reason}, _model, _fleet, feas_fleet, _lb, _stop, _seed) do
     {:ok, feas_fleet}
   end
 

@@ -90,6 +90,7 @@ defmodule ExVrp.Read do
       # Key-value pairs (e.g., "NAME : OkSmall")
       String.contains?(line, ":") and not String.ends_with?(line, "_SECTION") ->
         [key, value] = String.split(line, ":", parts: 2)
+        # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
         key = key |> String.trim() |> String.downcase() |> String.to_atom()
         value = parse_value(String.trim(value))
         parse_lines(rest, Map.put(acc, key, value))
@@ -100,6 +101,7 @@ defmodule ExVrp.Read do
           line
           |> String.trim_trailing("_SECTION")
           |> String.downcase()
+          # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
           |> String.to_atom()
 
         {section_data, remaining} = parse_section(rest, section_name)
@@ -121,10 +123,10 @@ defmodule ExVrp.Read do
       {int, ""} ->
         int
 
-      _ ->
+      _not_int ->
         case Float.parse(value) do
           {float, ""} -> float
-          _ -> value
+          _not_float -> value
         end
     end
   end
@@ -169,8 +171,7 @@ defmodule ExVrp.Read do
 
   defp parse_section_data(:depot, lines) do
     lines
-    |> Enum.map(&String.trim/1)
-    |> Enum.map(&parse_number/1)
+    |> Enum.map(fn line -> line |> String.trim() |> parse_number() end)
     |> Enum.filter(&(&1 > 0))
   end
 
@@ -277,10 +278,10 @@ defmodule ExVrp.Read do
       {int, ""} ->
         int
 
-      _ ->
+      _not_int ->
         case Float.parse(str) do
           {float, ""} -> float
-          _ -> str
+          _not_float -> str
         end
     end
   end
@@ -431,12 +432,18 @@ defmodule ExVrp.Read do
       end)
 
     # Build vehicle types from groups (need to know profile mapping)
-    {model, _profile_map} =
+    {model, _profile_map_final} =
       Enum.reduce(type_groups, {model, %{}}, fn {{cap, depot, max_dist, shift_dur, fixed_cost, unit_dist_cost, reload,
                                                   _max_reload, allowed}, vehicles},
                                                 {m, profile_map} ->
         num_available = length(vehicles)
-        vehicle_indices = Enum.map(vehicles, fn {veh, _, _, _, _, _, _, _, _, _} -> veh end)
+
+        vehicle_indices =
+          Enum.map(vehicles, fn {veh, _cap, _depot, _max_dist, _shift_dur, _fixed_cost, _unit_dist_cost, _reload,
+                                 _max_reload, _allowed} ->
+            veh
+          end)
+
         name = Enum.join(vehicle_indices, ",")
 
         # Get or create profile for this allowed_clients set
@@ -509,7 +516,7 @@ defmodule ExVrp.Read do
   defp build_profile_matrices(unique_allowed, ctx) do
     matrices =
       unique_allowed
-      |> Enum.sort_by(fn {_, idx} -> idx end)
+      |> Enum.sort_by(fn {_allowed, idx} -> idx end)
       |> Enum.map(fn {allowed, _idx} -> build_profile_matrix(allowed, ctx) end)
 
     {Enum.map(matrices, &elem(&1, 0)), Enum.map(matrices, &elem(&1, 1))}
@@ -538,7 +545,7 @@ defmodule ExVrp.Read do
 
       coords ->
         coords
-        |> Enum.sort_by(fn {idx, _} -> idx end)
+        |> Enum.sort_by(fn {idx, _coords} -> idx end)
         |> Enum.map(fn {_idx, [x, y]} -> {x, y} end)
     end
   end
@@ -579,7 +586,7 @@ defmodule ExVrp.Read do
     raise ArgumentError, "Unsupported edge weight type: #{other}"
   end
 
-  defp parse_edge_weights([[_ | _] | _] = matrix, _dimension), do: matrix
+  defp parse_edge_weights([[_head | _tail] | _rest] = matrix, _dimension), do: matrix
   defp parse_edge_weights(flat_list, dimension), do: Enum.chunk_every(flat_list, dimension)
 
   defp apply_rounding(matrix, round_fn) do
@@ -640,7 +647,7 @@ defmodule ExVrp.Read do
         %{}
 
       list when is_list(list) ->
-        Map.new(list, fn {idx, [value | _]} ->
+        Map.new(list, fn {idx, [value | _rest]} ->
           {idx - 1, round_fn.(value)}
         end)
 
@@ -658,7 +665,7 @@ defmodule ExVrp.Read do
   defp build_prizes(instance, round_fn) do
     case Map.get(instance, :prize) do
       nil -> %{}
-      list -> Map.new(list, fn {idx, [value | _]} -> {idx - 1, round_fn.(value)} end)
+      list -> Map.new(list, fn {idx, [value | _rest]} -> {idx - 1, round_fn.(value)} end)
     end
   end
 
@@ -666,7 +673,7 @@ defmodule ExVrp.Read do
   defp build_release_times(instance, round_fn) do
     case Map.get(instance, :release_time) do
       nil -> %{}
-      list -> Map.new(list, fn {idx, [value | _]} -> {idx - 1, round_fn.(value)} end)
+      list -> Map.new(list, fn {idx, [value | _rest]} -> {idx - 1, round_fn.(value)} end)
     end
   end
 
@@ -686,9 +693,9 @@ defmodule ExVrp.Read do
   defp parse_capacity(cap, num_vehicles, round_fn) when is_number(cap),
     do: List.duplicate([round_fn.(cap)], num_vehicles)
 
-  defp parse_capacity([{_vid, values} | _] = caps, _num_vehicles, round_fn) when is_list(values) do
+  defp parse_capacity([{_vid, values} | _rest] = caps, _num_vehicles, round_fn) when is_list(values) do
     caps
-    |> Enum.sort_by(fn {vid, _} -> vid end)
+    |> Enum.sort_by(fn {vid, _values} -> vid end)
     |> Enum.map(fn {_vid, cap_values} -> Enum.map(cap_values, round_fn) end)
   end
 
@@ -704,7 +711,7 @@ defmodule ExVrp.Read do
 
       list ->
         list
-        |> Enum.sort_by(fn {veh, _} -> veh end)
+        |> Enum.sort_by(fn {veh, _depot} -> veh end)
         |> Enum.map(fn {_veh, depot} -> depot - 1 end)
     end
   end
@@ -747,9 +754,9 @@ defmodule ExVrp.Read do
   defp parse_vehicle_values(val, num_vehicles, round_fn, _default) when is_number(val),
     do: List.duplicate(round_fn.(val), num_vehicles)
 
-  defp parse_vehicle_values([{_vid, _val} | _] = list, _num_vehicles, round_fn, _default) do
+  defp parse_vehicle_values([{_vid, _val} | _rest] = list, _num_vehicles, round_fn, _default) do
     list
-    |> Enum.sort_by(fn {vid, _} -> vid end)
+    |> Enum.sort_by(fn {vid, _val} -> vid end)
     |> Enum.map(fn {_vid, val} -> round_fn.(val) end)
   end
 
@@ -812,12 +819,12 @@ defmodule ExVrp.Read do
     linehaul_clients =
       demands
       |> Enum.filter(fn {_idx, vals} -> Enum.any?(vals, &(&1 > 0)) end)
-      |> MapSet.new(fn {idx, _} -> idx end)
+      |> MapSet.new(fn {idx, _vals} -> idx end)
 
     backhaul_clients =
       backhauls
       |> Enum.filter(fn {_idx, vals} -> Enum.any?(vals, &(&1 > 0)) end)
-      |> MapSet.new(fn {idx, _} -> idx end)
+      |> MapSet.new(fn {idx, _vals} -> idx end)
 
     # Set MAX_VALUE for:
     # - depot (0) to backhaul clients

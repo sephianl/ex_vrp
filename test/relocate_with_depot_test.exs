@@ -336,7 +336,7 @@ defmodule ExVrp.RelocateWithDepotTest do
           reload_depots: [0, 1]
         )
         |> Model.set_distance_matrices([mat])
-        |> Model.set_duration_matrices([Enum.map(mat, fn row -> Enum.map(row, fn _ -> 0 end) end)])
+        |> Model.set_duration_matrices([Enum.map(mat, fn row -> Enum.map(row, fn _dist -> 0 end) end)])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 

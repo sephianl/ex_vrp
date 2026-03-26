@@ -384,7 +384,7 @@ defmodule ExVrp.PrimitivesTest do
 
     test "inplace_cost delta distance computation (PyVRP parity)" do
       # Based on test_inplace_cost_delta_distance_computation
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       # Cost evaluator with no penalties
       {:ok, cost_evaluator} =

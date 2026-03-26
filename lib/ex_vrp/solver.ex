@@ -183,7 +183,7 @@ defmodule ExVrp.Solver do
 
   defp notify_progress(nil, _info), do: :ok
   defp notify_progress(callback, info) when is_function(callback, 1), do: callback.(info)
-  defp notify_progress(_, _info), do: :ok
+  defp notify_progress(_callback, _info), do: :ok
 
   # Build stop function from options
   defp build_stop_fn(opts) do

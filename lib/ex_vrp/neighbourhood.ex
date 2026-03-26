@@ -143,10 +143,10 @@ defmodule ExVrp.Neighbourhood do
     prize = Nx.broadcast(0.0, {num_locs})
 
     # Build lists for client values
-    client_early = Enum.map(clients, fn {tw_early, _, _, _} -> tw_early end)
-    client_late = Enum.map(clients, fn {_, tw_late, _, _} -> tw_late end)
-    client_service = Enum.map(clients, fn {_, _, svc, _} -> svc end)
-    client_prize = Enum.map(clients, fn {_, _, _, prz} -> prz end)
+    client_early = Enum.map(clients, fn {tw_early, _tw_late, _svc, _prz} -> tw_early end)
+    client_late = Enum.map(clients, fn {_tw_early, tw_late, _svc, _prz} -> tw_late end)
+    client_service = Enum.map(clients, fn {_tw_early, _tw_late, svc, _prz} -> svc end)
+    client_prize = Enum.map(clients, fn {_tw_early, _tw_late, _svc, prz} -> prz end)
 
     # Create client tensors
     client_early_t = Nx.tensor(client_early, type: :f64)
@@ -284,11 +284,11 @@ defmodule ExVrp.Neighbourhood do
   end
 
   defp extract_top_k(_proximity, num_depots, _num_locs, k) when k <= 0 do
-    for _ <- 0..(num_depots - 1), do: []
+    for _depot <- 0..(num_depots - 1), do: []
   end
 
   defp extract_top_k(proximity, num_depots, num_locs, k) do
-    depot_neighbours = for _ <- 0..(num_depots - 1), do: []
+    depot_neighbours = for _depot <- 0..(num_depots - 1), do: []
 
     client_neighbours =
       if num_depots < num_locs do
@@ -328,8 +328,8 @@ defmodule ExVrp.Neighbourhood do
     {:gb_sets.add(candidate, set), count + 1}
   end
 
-  defp accumulate_smallest({prox, _} = candidate, {set, count}, _k) do
-    {max_prox, _} = max_elem = :gb_sets.largest(set)
+  defp accumulate_smallest({prox, _idx} = candidate, {set, count}, _k) do
+    {max_prox, _max_idx} = max_elem = :gb_sets.largest(set)
 
     if prox < max_prox do
       set = :gb_sets.delete(max_elem, set)

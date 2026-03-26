@@ -15,7 +15,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Node init" do
     test "node has correct initial state" do
       # Based on test_node_init
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       for loc <- [0, 1, 2] do
         node = Native.create_search_node_nif(problem_data, loc)
@@ -29,7 +29,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Route init" do
     test "route has correct initial state" do
       # Based on test_route_init
-      {:ok, problem_data, _} = ok_small_with_two_vehicle_types()
+      {:ok, problem_data, _cost_evaluator} = ok_small_with_two_vehicle_types()
 
       route0 = Native.create_search_route_nif(problem_data, 0, 0)
       assert Native.search_route_idx_nif(route0) == 0
@@ -44,7 +44,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "New nodes are not depots" do
     test "nodes not in route are not depots" do
       # Based on test_new_nodes_are_not_depots
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       for loc <- [0, 1, 2] do
         node = Native.create_search_node_nif(problem_data, loc)
@@ -56,7 +56,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Insert and remove" do
     test "updates node idx and route properties" do
       # Based on test_insert_and_remove_update_node_idx_and_route_properties
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.create_search_route_nif(problem_data, 0, 0)
 
@@ -80,7 +80,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Route depots" do
     test "route depots are identified as depots" do
       # Based on test_route_depots_are_depots
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.create_search_route_nif(problem_data, 0, 0)
       assert Native.search_route_start_depot_nif(route) == 0
@@ -110,7 +110,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Route append increases length" do
     test "appending nodes increases route len" do
       # Based on test_route_append_increases_route_len
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.create_search_route_nif(problem_data, 0, 0)
       assert Native.search_route_num_clients_nif(route) == 0
@@ -128,7 +128,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Route insert" do
     test "inserting nodes at specific positions" do
       # Based on test_route_insert
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.create_search_route_nif(problem_data, 0, 0)
       assert Native.search_route_num_clients_nif(route) == 0
@@ -164,7 +164,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Route add and delete" do
     test "add and delete leaves route empty" do
       # Based on test_route_add_and_delete_client_leaves_route_empty
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.create_search_route_nif(problem_data, 0, 0)
 
@@ -178,7 +178,7 @@ defmodule ExVrp.SearchRouteTest do
 
     test "delete reduces size by one" do
       # Based on test_route_delete_reduces_size_by_one
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.create_search_route_nif(problem_data, 0, 0)
 
@@ -200,7 +200,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Route clear" do
     test "clear empties entire route" do
       # Based on test_route_clear_empties_entire_route
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       for num_nodes <- 0..3 do
         route = Native.create_search_route_nif(problem_data, 0, 0)
@@ -223,7 +223,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Excess load" do
     test "route calculates excess load correctly" do
       # Based on test_excess_load
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       # Create route with all 4 clients
       route = Native.make_search_route_nif(problem_data, [1, 2, 3, 4], 0, 0)
@@ -260,7 +260,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Distance and load for single client routes" do
     test "calculates correctly for single client" do
       # Based on test_dist_and_load_for_single_client_routes
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       for client <- 1..4 do
         route = Native.make_search_route_nif(problem_data, [client], 0, 0)
@@ -276,7 +276,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Route centroid" do
     test "computes center point correctly" do
       # Based on test_route_centroid
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       # Test with clients 1, 2, 3, 4
       route = Native.make_search_route_nif(problem_data, [1, 2, 3, 4], 0, 0)
@@ -359,7 +359,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Route swap" do
     test "swaps nodes between routes" do
       # Based on test_route_swap
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route1 = Native.create_search_route_nif(problem_data, 0, 0)
       route2 = Native.create_search_route_nif(problem_data, 1, 0)
@@ -385,7 +385,7 @@ defmodule ExVrp.SearchRouteTest do
 
   describe "Route distance" do
     test "distance equals sum of edge distances" do
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
       distance = Native.search_route_distance_nif(route)
@@ -399,7 +399,7 @@ defmodule ExVrp.SearchRouteTest do
 
   describe "Route duration" do
     test "duration includes service times" do
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
       duration = Native.search_route_duration_nif(route)
@@ -414,7 +414,7 @@ defmodule ExVrp.SearchRouteTest do
 
   describe "Route time warp" do
     test "detects time window violations" do
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       # Create a route that likely has time warp (all clients in wrong order)
       route = Native.make_search_route_nif(problem_data, [1, 2, 3, 4], 0, 0)
@@ -433,7 +433,7 @@ defmodule ExVrp.SearchRouteTest do
 
   describe "Route profile" do
     test "returns vehicle profile" do
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.create_search_route_nif(problem_data, 0, 0)
       profile = Native.search_route_profile_nif(route)
@@ -445,7 +445,7 @@ defmodule ExVrp.SearchRouteTest do
 
   describe "Route empty check" do
     test "empty route has no clients" do
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.create_search_route_nif(problem_data, 0, 0)
       assert Native.search_route_empty_nif(route) == true
@@ -461,7 +461,7 @@ defmodule ExVrp.SearchRouteTest do
 
   describe "Route size" do
     test "size includes depots" do
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.create_search_route_nif(problem_data, 0, 0)
       # Empty route has 2 depots
@@ -476,7 +476,7 @@ defmodule ExVrp.SearchRouteTest do
 
   describe "Route costs" do
     test "distance cost is calculated" do
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
       dist_cost = Native.search_route_distance_cost_nif(route)
@@ -487,7 +487,7 @@ defmodule ExVrp.SearchRouteTest do
     end
 
     test "duration cost is calculated" do
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
       dur_cost = Native.search_route_duration_cost_nif(route)
@@ -500,7 +500,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Route overlap (PyVRP parity)" do
     test "route overlaps with self no matter the tolerance value" do
       # Based on test_route_overlaps_with_self_no_matter_the_tolerance_value
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
 
@@ -511,7 +511,7 @@ defmodule ExVrp.SearchRouteTest do
 
     test "all routes overlap with maximum tolerance value" do
       # Based on test_all_routes_overlap_with_maximum_tolerance_value
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route1 = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
       route2 = Native.make_search_route_nif(problem_data, [3, 4], 1, 0)
@@ -529,7 +529,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Distance segment access (PyVRP parity)" do
     test "dist_between on whole route equals distance" do
       # Based on test_distance_is_equal_to_dist_between_over_whole_route
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.make_search_route_nif(problem_data, [1, 2, 3, 4], 0, 0)
       distance = Native.search_route_distance_nif(route)
@@ -542,7 +542,7 @@ defmodule ExVrp.SearchRouteTest do
 
     test "dist_at returns zero for nodes (distance is edge property)" do
       # Based on test_dist_and_load_for_single_client_routes
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.make_search_route_nif(problem_data, [1], 0, 0)
 
@@ -552,7 +552,7 @@ defmodule ExVrp.SearchRouteTest do
     end
 
     test "dist_before and dist_after for single client route" do
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       # Single client route: depot(0) -> client(1) -> depot(0)
       route = Native.make_search_route_nif(problem_data, [1], 0, 0)
@@ -568,7 +568,7 @@ defmodule ExVrp.SearchRouteTest do
 
     test "dist_between equal to dist_before/dist_after when one is depot" do
       # Based on test_dist_between_equal_to_before_after_when_one_is_depot
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.make_search_route_nif(problem_data, [1, 2, 3, 4], 0, 0)
       size = Native.search_route_size_nif(route)
@@ -923,7 +923,7 @@ defmodule ExVrp.SearchRouteTest do
   describe "Route swap parameterized (PyVRP parity)" do
     test "swap nodes - both in routes" do
       # Based on test_route_swap with (3, 4, true, true)
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route1 = Native.create_search_route_nif(problem_data, 0, 0)
       route2 = Native.create_search_route_nif(problem_data, 1, 0)
@@ -949,7 +949,7 @@ defmodule ExVrp.SearchRouteTest do
 
     test "swap nodes - one in route, one not" do
       # Based on test_route_swap with (1, 2, true, false)
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route1 = Native.create_search_route_nif(problem_data, 0, 0)
 
@@ -971,7 +971,7 @@ defmodule ExVrp.SearchRouteTest do
 
     test "swap nodes - neither in route" do
       # Based on test_route_swap with (1, 2, false, false)
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       node1 = Native.create_search_node_nif(problem_data, 1)
       node2 = Native.create_search_node_nif(problem_data, 2)
@@ -991,7 +991,7 @@ defmodule ExVrp.SearchRouteTest do
     test "zero centroid for empty routes" do
       # Based on test_zero_centroid_empty_routes
       # Tests that empty routes return (0.0, 0.0), not NaN from divide-by-zero
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.create_search_route_nif(problem_data, 0, 0)
       assert Native.search_route_empty_nif(route) == true
@@ -1006,7 +1006,7 @@ defmodule ExVrp.SearchRouteTest do
     test "initial_load affects excess_load calculation" do
       # Based on test_initial_load_calculation
       # Route with clients 1 and 2 has load 10, capacity 10 - no excess
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
       assert Native.search_route_excess_load_nif(route) == [0]

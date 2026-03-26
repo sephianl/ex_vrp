@@ -509,7 +509,7 @@ defmodule ExVrp.PenaltyManagerTest do
         | load_penalties: new_load,
           tw_penalty: new_tw,
           dist_penalty: new_dist,
-          load_feas: Enum.map(pm.load_feas, fn _ -> [] end),
+          load_feas: Enum.map(pm.load_feas, fn _feas -> [] end),
           tw_feas: [],
           dist_feas: []
       }

@@ -187,7 +187,7 @@ defmodule ExVrp.Statistics do
   end
 
   defp parse_row([runtime, curr_cost, curr_feas, cand_cost, cand_feas, best_cost, best_feas]) do
-    {runtime, _} = Float.parse(runtime)
+    {runtime, _rest} = Float.parse(runtime)
 
     datum = %{
       current_cost: String.to_integer(curr_cost),

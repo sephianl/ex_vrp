@@ -362,7 +362,7 @@ defmodule ExVrp.Model do
 
     case errors do
       [] -> :ok
-      _ -> {:error, errors}
+      _errors -> {:error, errors}
     end
   end
 
@@ -388,12 +388,12 @@ defmodule ExVrp.Model do
     invalid_indices =
       clients
       |> Enum.with_index()
-      |> Enum.filter(fn {c, _} -> length(c.delivery) != dims or length(c.pickup) != dims end)
-      |> Enum.map(fn {_, i} -> i end)
+      |> Enum.filter(fn {c, _idx} -> length(c.delivery) != dims or length(c.pickup) != dims end)
+      |> Enum.map(fn {_client, i} -> i end)
 
     case invalid_indices do
       [] -> errors
-      _ -> ["Clients #{inspect(invalid_indices)} have mismatched capacity dimensions" | errors]
+      _indices -> ["Clients #{inspect(invalid_indices)} have mismatched capacity dimensions" | errors]
     end
   end
 
@@ -401,12 +401,12 @@ defmodule ExVrp.Model do
     invalid =
       clients
       |> Enum.with_index()
-      |> Enum.filter(fn {c, _} -> c.tw_late < c.tw_early end)
-      |> Enum.map(fn {_, i} -> i end)
+      |> Enum.filter(fn {c, _idx} -> c.tw_late < c.tw_early end)
+      |> Enum.map(fn {_client, i} -> i end)
 
     case invalid do
       [] -> errors
-      _ -> ["Client time windows invalid (tw_late < tw_early) at indices #{inspect(invalid)}" | errors]
+      _indices -> ["Client time windows invalid (tw_late < tw_early) at indices #{inspect(invalid)}" | errors]
     end
   end
 
@@ -414,12 +414,12 @@ defmodule ExVrp.Model do
     invalid =
       clients
       |> Enum.with_index()
-      |> Enum.filter(fn {c, _} -> c.service_duration < 0 end)
-      |> Enum.map(fn {_, i} -> i end)
+      |> Enum.filter(fn {c, _idx} -> c.service_duration < 0 end)
+      |> Enum.map(fn {_client, i} -> i end)
 
     case invalid do
       [] -> errors
-      _ -> ["Negative service duration at client indices #{inspect(invalid)}" | errors]
+      _indices -> ["Negative service duration at client indices #{inspect(invalid)}" | errors]
     end
   end
 
@@ -427,12 +427,12 @@ defmodule ExVrp.Model do
     invalid =
       clients
       |> Enum.with_index()
-      |> Enum.filter(fn {c, _} -> Enum.any?(c.delivery, &(&1 < 0)) or Enum.any?(c.pickup, &(&1 < 0)) end)
-      |> Enum.map(fn {_, i} -> i end)
+      |> Enum.filter(fn {c, _idx} -> Enum.any?(c.delivery, &(&1 < 0)) or Enum.any?(c.pickup, &(&1 < 0)) end)
+      |> Enum.map(fn {_client, i} -> i end)
 
     case invalid do
       [] -> errors
-      _ -> ["Negative demand amounts at client indices #{inspect(invalid)}" | errors]
+      _indices -> ["Negative demand amounts at client indices #{inspect(invalid)}" | errors]
     end
   end
 
@@ -440,12 +440,12 @@ defmodule ExVrp.Model do
     invalid =
       clients
       |> Enum.with_index()
-      |> Enum.filter(fn {c, _} -> c.release_time > c.tw_late end)
-      |> Enum.map(fn {_, i} -> i end)
+      |> Enum.filter(fn {c, _idx} -> c.release_time > c.tw_late end)
+      |> Enum.map(fn {_client, i} -> i end)
 
     case invalid do
       [] -> errors
-      _ -> ["Release time > tw_late at client indices #{inspect(invalid)}" | errors]
+      _indices -> ["Release time > tw_late at client indices #{inspect(invalid)}" | errors]
     end
   end
 
@@ -453,12 +453,12 @@ defmodule ExVrp.Model do
     invalid =
       depots
       |> Enum.with_index()
-      |> Enum.filter(fn {d, _} -> d.tw_late < d.tw_early end)
-      |> Enum.map(fn {_, i} -> i end)
+      |> Enum.filter(fn {d, _idx} -> d.tw_late < d.tw_early end)
+      |> Enum.map(fn {_depot, i} -> i end)
 
     case invalid do
       [] -> errors
-      _ -> ["Depot time windows invalid (tw_late < tw_early) at indices #{inspect(invalid)}" | errors]
+      _indices -> ["Depot time windows invalid (tw_late < tw_early) at indices #{inspect(invalid)}" | errors]
     end
   end
 
@@ -466,12 +466,12 @@ defmodule ExVrp.Model do
     invalid =
       vehicle_types
       |> Enum.with_index()
-      |> Enum.filter(fn {vt, _} -> vt.num_available <= 0 end)
-      |> Enum.map(fn {_, i} -> i end)
+      |> Enum.filter(fn {vt, _idx} -> vt.num_available <= 0 end)
+      |> Enum.map(fn {_vt, i} -> i end)
 
     case invalid do
       [] -> errors
-      _ -> ["Vehicle type num_available must be > 0 at indices #{inspect(invalid)}" | errors]
+      _indices -> ["Vehicle type num_available must be > 0 at indices #{inspect(invalid)}" | errors]
     end
   end
 
@@ -479,12 +479,12 @@ defmodule ExVrp.Model do
     invalid =
       vehicle_types
       |> Enum.with_index()
-      |> Enum.filter(fn {vt, _} -> Enum.any?(vt.capacity, &(&1 < 0)) end)
-      |> Enum.map(fn {_, i} -> i end)
+      |> Enum.filter(fn {vt, _idx} -> Enum.any?(vt.capacity, &(&1 < 0)) end)
+      |> Enum.map(fn {_vt, i} -> i end)
 
     case invalid do
       [] -> errors
-      _ -> ["Negative vehicle capacity at indices #{inspect(invalid)}" | errors]
+      _indices -> ["Negative vehicle capacity at indices #{inspect(invalid)}" | errors]
     end
   end
 
@@ -494,14 +494,14 @@ defmodule ExVrp.Model do
     invalid =
       vehicle_types
       |> Enum.with_index()
-      |> Enum.filter(fn {vt, _} ->
+      |> Enum.filter(fn {vt, _idx} ->
         vt.start_depot >= num_depots or vt.end_depot >= num_depots
       end)
-      |> Enum.map(fn {_, i} -> i end)
+      |> Enum.map(fn {_vt, i} -> i end)
 
     case invalid do
       [] -> errors
-      _ -> ["Vehicle type has invalid depot index at indices #{inspect(invalid)}" | errors]
+      _indices -> ["Vehicle type has invalid depot index at indices #{inspect(invalid)}" | errors]
     end
   end
 
@@ -511,14 +511,14 @@ defmodule ExVrp.Model do
     invalid =
       vehicle_types
       |> Enum.with_index()
-      |> Enum.filter(fn {vt, _} ->
+      |> Enum.filter(fn {vt, _idx} ->
         Enum.any?(vt.reload_depots, &(&1 >= num_depots))
       end)
-      |> Enum.map(fn {_, i} -> i end)
+      |> Enum.map(fn {_vt, i} -> i end)
 
     case invalid do
       [] -> errors
-      _ -> ["Vehicle type has invalid reload depot index at indices #{inspect(invalid)}" | errors]
+      _indices -> ["Vehicle type has invalid reload depot index at indices #{inspect(invalid)}" | errors]
     end
   end
 
@@ -580,7 +580,7 @@ defmodule ExVrp.Model do
     |> Enum.any?(fn {row, i} -> is_list(row) and Enum.at(row, i, 0) != 0 end)
   end
 
-  defp has_nonzero_diagonal?(_), do: false
+  defp has_nonzero_diagonal?(_matrix), do: false
 
   defp validate_client_groups(errors, %{client_groups: [], clients: _clients}) do
     errors
@@ -656,7 +656,7 @@ defmodule ExVrp.Model do
   def to_problem_data(%__MODULE__{} = model) do
     case validate(model) do
       :ok -> ExVrp.Native.create_problem_data(model)
-      {:error, _} = error -> error
+      {:error, _reason} = error -> error
     end
   end
 end

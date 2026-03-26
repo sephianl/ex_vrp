@@ -147,7 +147,7 @@ defmodule ExVrp.PyVRPApiTest do
       stop_fn = StoppingCriteria.to_stop_fn(criteria)
 
       # Run 100 iterations - should not stop
-      for _ <- 1..99 do
+      for _i <- 1..99 do
         assert stop_fn.(1000) == false
       end
     end
@@ -158,7 +158,7 @@ defmodule ExVrp.PyVRPApiTest do
       stop_fn = StoppingCriteria.to_stop_fn(criteria)
 
       # Run exactly 100 iterations
-      for _ <- 1..100 do
+      for _i <- 1..100 do
         stop_fn.(1000)
       end
 
@@ -256,7 +256,7 @@ defmodule ExVrp.PyVRPApiTest do
       stop_fn = StoppingCriteria.to_stop_fn(criteria)
 
       # Should not stop before 5 iterations
-      for _ <- 1..4 do
+      for _i <- 1..4 do
         assert stop_fn.(1000) == false
       end
 

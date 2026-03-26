@@ -292,7 +292,7 @@ defmodule ExVrp.ModelTest do
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
       assert :ok = Model.validate(model)
-      assert {:ok, _} = Model.to_problem_data(model)
+      assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
 
     test "model with no clients (empty problem)" do

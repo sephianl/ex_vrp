@@ -49,7 +49,7 @@ defmodule ExVrp.PerturbationManagerTest do
       pm = PerturbationManager.new(min: 1, max: 10)
       rng = RNG.new(42)
 
-      for _ <- 1..10 do
+      for _i <- 1..10 do
         pm = PerturbationManager.shuffle(pm, rng)
         num = PerturbationManager.num_perturbations(pm)
         assert num >= 1 and num <= 10
@@ -60,7 +60,7 @@ defmodule ExVrp.PerturbationManagerTest do
       pm = PerturbationManager.new(min: 0, max: 0)
       rng = RNG.new(42)
 
-      for _ <- 1..10 do
+      for _i <- 1..10 do
         pm = PerturbationManager.shuffle(pm, rng)
         assert PerturbationManager.num_perturbations(pm) == 0
       end
@@ -86,7 +86,7 @@ defmodule ExVrp.PerturbationManagerTest do
       # Collect a large sample
       samples =
         1..1000
-        |> Enum.reduce({pm, []}, fn _, {pm, acc} ->
+        |> Enum.reduce({pm, []}, fn _i, {pm, acc} ->
           pm = PerturbationManager.shuffle(pm, rng)
           num = PerturbationManager.num_perturbations(pm)
           {pm, [num | acc]}
@@ -112,7 +112,7 @@ defmodule ExVrp.PerturbationManagerTest do
     rng = RNG.new(seed)
 
     1..n
-    |> Enum.reduce({pm, []}, fn _, {pm, acc} ->
+    |> Enum.reduce({pm, []}, fn _i, {pm, acc} ->
       pm = PerturbationManager.shuffle(pm, rng)
       num = PerturbationManager.num_perturbations(pm)
       {pm, [num | acc]}

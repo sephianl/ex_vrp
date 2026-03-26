@@ -255,7 +255,7 @@ defmodule ExVrp.Native do
 
     case :erlang.load_nif(path, 0) do
       :ok -> :ok
-      {:error, {:reload, _}} -> :ok
+      {:error, {:reload, _message}} -> :ok
       {:error, reason} -> {:error, reason}
     end
   end
