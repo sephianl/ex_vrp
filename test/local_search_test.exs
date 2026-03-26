@@ -1833,10 +1833,14 @@ defmodule ExVrp.LocalSearchTest do
       {:ok, sol2} = Native.create_random_solution(problem_data, seed: 42)
 
       {:ok, improved1} =
-        Native.local_search_with_operators(sol1, problem_data, cost_evaluator, node_operators: [:exchange10, :exchange11])
+        Native.local_search_with_operators(sol1, problem_data, cost_evaluator,
+          node_operators: [:exchange10, :exchange11]
+        )
 
       {:ok, improved2} =
-        Native.local_search_with_operators(sol2, problem_data, cost_evaluator, node_operators: [:exchange10, :exchange11])
+        Native.local_search_with_operators(sol2, problem_data, cost_evaluator,
+          node_operators: [:exchange10, :exchange11]
+        )
 
       # Same starting solution and operators should give same result
       assert Native.solution_penalised_cost(improved1, cost_evaluator) ==
@@ -1852,10 +1856,14 @@ defmodule ExVrp.LocalSearchTest do
       {:ok, sol2} = Native.create_random_solution(problem_data, seed: 9999)
 
       {:ok, improved1} =
-        Native.local_search_with_operators(sol1, problem_data, cost_evaluator, node_operators: [:exchange10, :exchange11])
+        Native.local_search_with_operators(sol1, problem_data, cost_evaluator,
+          node_operators: [:exchange10, :exchange11]
+        )
 
       {:ok, improved2} =
-        Native.local_search_with_operators(sol2, problem_data, cost_evaluator, node_operators: [:exchange10, :exchange11])
+        Native.local_search_with_operators(sol2, problem_data, cost_evaluator,
+          node_operators: [:exchange10, :exchange11]
+        )
 
       # Different seeds likely produce different solutions
       # Just verify both complete successfully

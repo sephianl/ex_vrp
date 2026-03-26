@@ -683,7 +683,8 @@ defmodule ExVrp.Read do
 
   defp parse_capacity(nil, num_vehicles, _round_fn), do: List.duplicate([@max_value], num_vehicles)
 
-  defp parse_capacity(cap, num_vehicles, round_fn) when is_number(cap), do: List.duplicate([round_fn.(cap)], num_vehicles)
+  defp parse_capacity(cap, num_vehicles, round_fn) when is_number(cap),
+    do: List.duplicate([round_fn.(cap)], num_vehicles)
 
   defp parse_capacity([{_vid, values} | _] = caps, _num_vehicles, round_fn) when is_list(values) do
     caps
