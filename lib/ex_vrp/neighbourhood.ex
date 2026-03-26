@@ -296,7 +296,7 @@ defmodule ExVrp.Neighbourhood do
           proximity
           |> extract_row_candidates(i, num_locs, num_depots)
           |> k_smallest(k)
-          |> Enum.map(fn {_prox, idx} -> idx end)
+          |> extract_indices()
         end
       else
         []
@@ -350,32 +350,36 @@ defmodule ExVrp.Neighbourhood do
     adj =
       neighbours
       |> Enum.with_index()
-      |> Enum.reduce(adj, fn {nbrs, i}, acc ->
-        if nbrs == [] do
-          acc
-        else
-          indices = for j <- nbrs, do: [i, j]
-          idx = Nx.tensor(indices)
-          vals = Nx.broadcast(1, {length(nbrs)})
-          Nx.indexed_put(acc, idx, vals)
-        end
-      end)
+      |> Enum.reduce(adj, fn {nbrs, i}, acc -> set_adj_row(acc, nbrs, i) end)
 
     # Symmetrize: adj = adj | adj.T
     adj = Nx.max(adj, Nx.transpose(adj))
 
     # Convert back to neighbour lists
     for i <- 0..(num_locs - 1) do
-      if i < num_depots do
-        []
-      else
-        row = adj |> Nx.slice([i, 0], [1, num_locs]) |> Nx.to_flat_list()
-
-        row
-        |> Enum.with_index()
-        |> Enum.filter(fn {val, _j} -> val == 1 end)
-        |> Enum.map(fn {_val, j} -> j end)
-      end
+      adj_row_to_neighbours(adj, i, num_locs, num_depots)
     end
   end
+
+  defp set_adj_row(adj, [], _i), do: adj
+
+  defp set_adj_row(adj, nbrs, i) do
+    indices = for j <- nbrs, do: [i, j]
+    idx = Nx.tensor(indices)
+    vals = Nx.broadcast(1, {length(nbrs)})
+    Nx.indexed_put(adj, idx, vals)
+  end
+
+  defp adj_row_to_neighbours(_adj, i, _num_locs, num_depots) when i < num_depots, do: []
+
+  defp adj_row_to_neighbours(adj, i, num_locs, _num_depots) do
+    adj
+    |> Nx.slice([i, 0], [1, num_locs])
+    |> Nx.to_flat_list()
+    |> Enum.with_index()
+    |> Enum.filter(fn {val, _j} -> val == 1 end)
+    |> extract_indices()
+  end
+
+  defp extract_indices(pairs), do: Enum.map(pairs, fn {_val, idx} -> idx end)
 end
