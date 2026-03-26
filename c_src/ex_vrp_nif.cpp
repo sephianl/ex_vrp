@@ -33,6 +33,25 @@
 
 using namespace pyvrp;
 
+// Portable wrapper for enif_get_int64. On macOS ARM64, int64_t is `long long`
+// but the NIF API macro maps enif_get_int64 to enif_get_long (which takes
+// `long*`). Both are 64-bit, but the compiler rejects the type mismatch.
+#if defined(__APPLE__) && defined(__aarch64__)
+static inline int nif_get_int64(ErlNifEnv *env, ERL_NIF_TERM term, int64_t *ip)
+{
+    long tmp;
+    int ret = enif_get_int64(env, term, &tmp);
+    if (ret)
+        *ip = static_cast<int64_t>(tmp);
+    return ret;
+}
+#else
+static inline int nif_get_int64(ErlNifEnv *env, ERL_NIF_TERM term, int64_t *ip)
+{
+    return enif_get_int64(env, term, ip);
+}
+#endif
+
 // Forward declarations
 std::string decode_binary_to_string([[maybe_unused]] ErlNifEnv *env,
                                     ERL_NIF_TERM term);
@@ -440,11 +459,11 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
 
             if (key_str == "x")
             {
-                enif_get_int64(env, value, &x);
+                nif_get_int64(env, value, &x);
             }
             else if (key_str == "y")
             {
-                enif_get_int64(env, value, &y);
+                nif_get_int64(env, value, &y);
             }
             else if (key_str == "delivery")
             {
@@ -458,7 +477,7 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                     {
                         enif_get_list_cell(env, tail, &head, &tail);
                         int64_t v;
-                        enif_get_int64(env, head, &v);
+                        nif_get_int64(env, head, &v);
                         delivery_vec[i] = v;
                     }
                 }
@@ -474,18 +493,18 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                     {
                         enif_get_list_cell(env, tail, &head, &tail);
                         int64_t v;
-                        enif_get_int64(env, head, &v);
+                        nif_get_int64(env, head, &v);
                         pickup_vec[i] = v;
                     }
                 }
             }
             else if (key_str == "service_duration")
             {
-                enif_get_int64(env, value, &service_duration);
+                nif_get_int64(env, value, &service_duration);
             }
             else if (key_str == "tw_early")
             {
-                enif_get_int64(env, value, &tw_early);
+                nif_get_int64(env, value, &tw_early);
             }
             else if (key_str == "tw_late")
             {
@@ -500,16 +519,16 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                 }
                 else
                 {
-                    enif_get_int64(env, value, &tw_late);
+                    nif_get_int64(env, value, &tw_late);
                 }
             }
             else if (key_str == "release_time")
             {
-                enif_get_int64(env, value, &release_time);
+                nif_get_int64(env, value, &release_time);
             }
             else if (key_str == "prize")
             {
-                enif_get_int64(env, value, &prize);
+                nif_get_int64(env, value, &prize);
             }
             else if (key_str == "required")
             {
@@ -527,7 +546,7 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                     || std::string(buf) != "nil")
                 {
                     int64_t g;
-                    if (enif_get_int64(env, value, &g))
+                    if (nif_get_int64(env, value, &g))
                     {
                         group = static_cast<size_t>(g);
                     }
@@ -591,19 +610,19 @@ ProblemData::Depot decode_depot([[maybe_unused]] ErlNifEnv *env,
 
             if (key_str == "x")
             {
-                enif_get_int64(env, value, &x);
+                nif_get_int64(env, value, &x);
             }
             else if (key_str == "y")
             {
-                enif_get_int64(env, value, &y);
+                nif_get_int64(env, value, &y);
             }
             else if (key_str == "service_duration")
             {
-                enif_get_int64(env, value, &service_duration);
+                nif_get_int64(env, value, &service_duration);
             }
             else if (key_str == "reload_cost")
             {
-                enif_get_int64(env, value, &reload_cost);
+                nif_get_int64(env, value, &reload_cost);
             }
         }
         enif_map_iterator_next(env, &iter);
@@ -659,7 +678,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
 
             if (key_str == "num_available")
             {
-                enif_get_int64(env, value, &num_available);
+                nif_get_int64(env, value, &num_available);
             }
             else if (key_str == "capacity")
             {
@@ -673,26 +692,26 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                     {
                         enif_get_list_cell(env, tail, &head, &tail);
                         int64_t v;
-                        enif_get_int64(env, head, &v);
+                        nif_get_int64(env, head, &v);
                         capacity_vec[i] = v;
                     }
                 }
             }
             else if (key_str == "start_depot")
             {
-                enif_get_int64(env, value, &start_depot);
+                nif_get_int64(env, value, &start_depot);
             }
             else if (key_str == "end_depot")
             {
-                enif_get_int64(env, value, &end_depot);
+                nif_get_int64(env, value, &end_depot);
             }
             else if (key_str == "fixed_cost")
             {
-                enif_get_int64(env, value, &fixed_cost);
+                nif_get_int64(env, value, &fixed_cost);
             }
             else if (key_str == "tw_early")
             {
-                enif_get_int64(env, value, &tw_early);
+                nif_get_int64(env, value, &tw_early);
             }
             else if (key_str == "tw_late")
             {
@@ -706,7 +725,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                 }
                 else
                 {
-                    enif_get_int64(env, value, &tw_late);
+                    nif_get_int64(env, value, &tw_late);
                 }
             }
             else if (key_str == "shift_duration")
@@ -721,7 +740,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                 }
                 else
                 {
-                    enif_get_int64(env, value, &shift_duration);
+                    nif_get_int64(env, value, &shift_duration);
                 }
             }
             else if (key_str == "max_distance")
@@ -736,28 +755,28 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                 }
                 else
                 {
-                    enif_get_int64(env, value, &max_distance);
+                    nif_get_int64(env, value, &max_distance);
                 }
             }
             else if (key_str == "unit_distance_cost")
             {
-                enif_get_int64(env, value, &unit_distance_cost);
+                nif_get_int64(env, value, &unit_distance_cost);
             }
             else if (key_str == "unit_duration_cost")
             {
-                enif_get_int64(env, value, &unit_duration_cost);
+                nif_get_int64(env, value, &unit_duration_cost);
             }
             else if (key_str == "profile")
             {
-                enif_get_int64(env, value, &profile);
+                nif_get_int64(env, value, &profile);
             }
             else if (key_str == "max_overtime")
             {
-                enif_get_int64(env, value, &max_overtime);
+                nif_get_int64(env, value, &max_overtime);
             }
             else if (key_str == "unit_overtime_cost")
             {
-                enif_get_int64(env, value, &unit_overtime_cost);
+                nif_get_int64(env, value, &unit_overtime_cost);
             }
             else if (key_str == "reload_depots")
             {
@@ -770,7 +789,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                     {
                         enif_get_list_cell(env, tail, &head, &tail);
                         int64_t v;
-                        enif_get_int64(env, head, &v);
+                        nif_get_int64(env, head, &v);
                         reload_depots_vec[i] = v;
                     }
                 }
@@ -787,7 +806,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                 }
                 else
                 {
-                    enif_get_int64(env, value, &max_reloads);
+                    nif_get_int64(env, value, &max_reloads);
                 }
             }
             else if (key_str == "initial_load")
@@ -801,7 +820,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                     {
                         enif_get_list_cell(env, tail, &head, &tail);
                         int64_t v;
-                        enif_get_int64(env, head, &v);
+                        nif_get_int64(env, head, &v);
                         initial_load_vec[i] = v;
                     }
                 }
@@ -892,7 +911,7 @@ Matrix<Distance> decode_distance_matrix([[maybe_unused]] ErlNifEnv *env,
         {
             enif_get_list_cell(env, cell_tail, &cell_head, &cell_tail);
             int64_t val;
-            enif_get_int64(env, cell_head, &val);
+            nif_get_int64(env, cell_head, &val);
             data.push_back(Distance(val));
         }
     }
@@ -931,7 +950,7 @@ Matrix<Duration> decode_duration_matrix([[maybe_unused]] ErlNifEnv *env,
         {
             enif_get_list_cell(env, cell_tail, &cell_head, &cell_tail);
             int64_t val;
-            enif_get_int64(env, cell_head, &val);
+            nif_get_int64(env, cell_head, &val);
             data.push_back(Duration(val));
         }
     }
@@ -2271,7 +2290,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> create_random_solution_nif(
     key = enif_make_atom(env, "seed");
     if (enif_get_map_value(env, opts_term, key, &value))
     {
-        enif_get_int64(env, value, &seed);
+        nif_get_int64(env, value, &seed);
     }
 
     // Create RNG
@@ -2336,7 +2355,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> create_solution_from_routes_nif(
             }
 
             int64_t client_id;
-            if (!enif_get_int64(env, client_head, &client_id))
+            if (!nif_get_int64(env, client_head, &client_id))
             {
                 throw std::runtime_error("Expected integer for client ID");
             }
@@ -2839,7 +2858,7 @@ local_search_nif([[maybe_unused]] ErlNifEnv *env,
     key = enif_make_atom(env, "seed");
     if (enif_get_map_value(env, opts_term, key, &value))
     {
-        enif_get_int64(env, value, &seed);
+        nif_get_int64(env, value, &seed);
     }
 
     // Build neighbourhood
@@ -2921,7 +2940,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
     key = enif_make_atom(env, "seed");
     if (enif_get_map_value(env, opts_term, key, &value))
     {
-        enif_get_int64(env, value, &seed);
+        nif_get_int64(env, value, &seed);
     }
 
     // Build neighbourhood
@@ -3029,7 +3048,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
     key = enif_make_atom(env, "seed");
     if (enif_get_map_value(env, opts_term, key, &value))
     {
-        enif_get_int64(env, value, &seed);
+        nif_get_int64(env, value, &seed);
     }
 
     // Parse node_operators list
@@ -5646,7 +5665,7 @@ static bool get_number_as_double([[maybe_unused]] ErlNifEnv *env,
         return true;
     }
     int64_t int_val;
-    if (enif_get_int64(env, term, &int_val))
+    if (nif_get_int64(env, term, &int_val))
     {
         *out = static_cast<double>(int_val);
         return true;

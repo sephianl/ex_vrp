@@ -113,6 +113,7 @@ defmodule ExVrp.Statistics do
   - `opts` - Options (`:delimiter` defaults to `,`)
   """
   @spec to_csv(t(), Path.t(), keyword()) :: :ok | {:error, term()}
+  # sobelow_skip ["Traversal.FileModule"]
   def to_csv(%__MODULE__{} = stats, path, opts \\ []) do
     delimiter = Keyword.get(opts, :delimiter, ",")
 
@@ -156,6 +157,7 @@ defmodule ExVrp.Statistics do
   - `opts` - Options (`:delimiter` defaults to `,`)
   """
   @spec from_csv(Path.t(), keyword()) :: {:ok, t()} | {:error, term()}
+  # sobelow_skip ["Traversal.FileModule"]
   def from_csv(path, opts \\ []) do
     delimiter = Keyword.get(opts, :delimiter, ",")
 
