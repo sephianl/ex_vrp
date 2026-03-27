@@ -471,7 +471,7 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                     for (unsigned i = 0; i < len; i++)
                     {
                         enif_get_list_cell(env, tail, &head, &tail);
-                        int64_t v;
+                        int64_t v = 0;
                         nif_get_int64(env, head, &v);
                         delivery_vec[i] = v;
                     }
@@ -487,7 +487,7 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                     for (unsigned i = 0; i < len; i++)
                     {
                         enif_get_list_cell(env, tail, &head, &tail);
-                        int64_t v;
+                        int64_t v = 0;
                         nif_get_int64(env, head, &v);
                         pickup_vec[i] = v;
                     }
@@ -686,7 +686,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                     for (unsigned i = 0; i < len; i++)
                     {
                         enif_get_list_cell(env, tail, &head, &tail);
-                        int64_t v;
+                        int64_t v = 0;
                         nif_get_int64(env, head, &v);
                         capacity_vec[i] = v;
                     }
@@ -783,7 +783,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                     for (unsigned i = 0; i < len; i++)
                     {
                         enif_get_list_cell(env, tail, &head, &tail);
-                        int64_t v;
+                        int64_t v = 0;
                         nif_get_int64(env, head, &v);
                         reload_depots_vec[i] = v;
                     }
@@ -814,7 +814,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                     for (unsigned i = 0; i < len; i++)
                     {
                         enif_get_list_cell(env, tail, &head, &tail);
-                        int64_t v;
+                        int64_t v = 0;
                         nif_get_int64(env, head, &v);
                         initial_load_vec[i] = v;
                     }
@@ -905,7 +905,7 @@ Matrix<Distance> decode_distance_matrix([[maybe_unused]] ErlNifEnv *env,
         for (unsigned c = 0; c < num_cols; c++)
         {
             enif_get_list_cell(env, cell_tail, &cell_head, &cell_tail);
-            int64_t val;
+            int64_t val = 0;
             nif_get_int64(env, cell_head, &val);
             data.push_back(Distance(val));
         }
@@ -944,7 +944,7 @@ Matrix<Duration> decode_duration_matrix([[maybe_unused]] ErlNifEnv *env,
         for (unsigned c = 0; c < num_cols; c++)
         {
             enif_get_list_cell(env, cell_tail, &cell_head, &cell_tail);
-            int64_t val;
+            int64_t val = 0;
             nif_get_int64(env, cell_head, &val);
             data.push_back(Duration(val));
         }
