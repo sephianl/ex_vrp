@@ -33,10 +33,11 @@
 
 using namespace pyvrp;
 
-// Portable wrapper for enif_get_int64. On macOS ARM64, int64_t is `long long`
-// but the NIF API macro maps enif_get_int64 to enif_get_long (which takes
-// `long*`). Both are 64-bit, but the compiler rejects the type mismatch.
-#if defined(__APPLE__) && defined(__aarch64__)
+// Portable wrapper for enif_get_int64. On macOS (both ARM64 and x86_64), the
+// NIF API macro maps enif_get_int64 to enif_get_long (which takes `long*`),
+// but int64_t may be `long long` depending on the platform. Both are 64-bit,
+// but the compiler rejects the type mismatch. The `long` intermediate is safe
+// on all platforms where this NIF API exists (long is always 64-bit there).
 static inline int nif_get_int64(ErlNifEnv *env, ERL_NIF_TERM term, int64_t *ip)
 {
     long tmp;
@@ -45,12 +46,6 @@ static inline int nif_get_int64(ErlNifEnv *env, ERL_NIF_TERM term, int64_t *ip)
         *ip = static_cast<int64_t>(tmp);
     return ret;
 }
-#else
-static inline int nif_get_int64(ErlNifEnv *env, ERL_NIF_TERM term, int64_t *ip)
-{
-    return enif_get_int64(env, term, ip);
-}
-#endif
 
 // Forward declarations
 std::string decode_binary_to_string([[maybe_unused]] ErlNifEnv *env,
