@@ -333,9 +333,9 @@ defmodule ExVrp.PenaltyManagerTest do
 
       pm = PenaltyManager.init_from(problem_data)
 
-      # tw_penalty should be at least prize / 60 so that 1 minute of time warp
+      # tw_penalty should be at least prize / 3600 so that 1 hour of time warp
       # costs as much as one client's prize
-      min_expected_tw_penalty = prize / 60.0
+      min_expected_tw_penalty = prize / 3600.0
       assert pm.tw_penalty >= min_expected_tw_penalty
     end
 
