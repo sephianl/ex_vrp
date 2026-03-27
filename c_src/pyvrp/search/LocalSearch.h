@@ -88,9 +88,9 @@ class LocalSearch
     // Performs intensify on the currently loaded solution.
     void intensify(CostEvaluator const &costEvaluator);
 
-    // Marks missing but required clients and groups as promising, to ensure
-    // they get inserted.
-    void markRequiredMissingAsPromising();
+    // Marks missing clients as promising: required clients, prize clients,
+    // and first members of required groups, to ensure they get inserted.
+    void markMissingAsPromising();
 
     // Tries to insert unassigned clients with prizes by creating new trips.
     // This is a one-time pass after the main search, not iterative.

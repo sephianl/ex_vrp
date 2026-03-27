@@ -106,10 +106,7 @@ defmodule ExVrp.PenaltyManager do
 
     init_tw =
       if max_prize > 0 do
-        # Set tw_penalty so that even small time warps are heavily penalized.
-        # We want 1 minute (60s) of time warp to cost as much as one prize.
-        # This strongly discourages any time warp violations.
-        prize_based_tw = max_prize / 60.0
+        prize_based_tw = max_prize / 3600.0
         max(init_tw, prize_based_tw)
       else
         init_tw

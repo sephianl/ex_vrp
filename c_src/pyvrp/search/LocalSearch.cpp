@@ -26,7 +26,7 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
     if (!exhaustive)
         perturbationManager_.perturb(solution_, searchSpace_, costEvaluator);
 
-    markRequiredMissingAsPromising();
+    markMissingAsPromising();
 
     // Set up timeout tracking
     if (timeout_ms > 0)
@@ -107,7 +107,7 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
     if (nodeOps.empty())
         return;
 
-    markRequiredMissingAsPromising();
+    markMissingAsPromising();
 
     searchCompleted_ = false;
     for (int step = 0; !searchCompleted_; ++step)
@@ -543,7 +543,7 @@ void LocalSearch::applyGroupMoves(Route::Node *U,
     }
 }
 
-void LocalSearch::markRequiredMissingAsPromising()
+void LocalSearch::markMissingAsPromising()
 {
     for (auto client = data.numDepots(); client != data.numLocations();
          ++client)
@@ -553,6 +553,14 @@ void LocalSearch::markRequiredMissingAsPromising()
 
         ProblemData::Client const &clientData = data.location(client);
         if (clientData.required)
+        {
+            searchSpace_.markPromising(client);
+            continue;
+        }
+
+        // Mark unassigned prize clients as promising so the search considers
+        // inserting them even when perturbation didn't reach them.
+        if (clientData.prize > 0)
         {
             searchSpace_.markPromising(client);
             continue;
