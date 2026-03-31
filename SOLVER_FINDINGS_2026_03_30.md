@@ -264,3 +264,46 @@ The `update-to-upstream` branch has a significant performance regression:
 - Profile 0 (45 vehicles): penalized for all 102 zone clients
 - Profile 5 (1 vehicle): 7 exclusive clients
 - Profile 7 (1 vehicle): 5 exclusive clients (clients 303, 620 are in this set)
+
+---
+
+## How to test benchmarks quickly
+
+The production benchmark test (`mix test --include production_benchmark`) runs ALL benchmarks with long timeouts (100-200s each). For quick iteration, use a script file + `File.write!` for output:
+
+```elixir
+# test_bench.exs
+Logger.configure(level: :error)
+data = File.read!("priv/benchmark_data/production/2026-03-30_5d6a2c58-7a27-4092-ae02-b1f5f1833dff_model.etf")
+model = data |> Base.decode64!() |> :erlang.binary_to_term()
+{:ok, r} = ExVrp.solve(model, max_runtime: 5_000, seed: 42)
+File.write!("/tmp/sr.txt", "feasible=#{r.best.is_feasible} clients=#{r.best.num_clients}\n")
+```
+
+Run with: `timeout 15 mix run test_bench.exs 2>/dev/null && cat /tmp/sr.txt`
+
+Key points:
+
+- **Use `max_runtime: N` (milliseconds)** NOT `stop: StoppingCriteria.max_runtime(N)` — the latter takes SECONDS, so `max_runtime(3_000)` = 3000 seconds = 50 minutes, not 3 seconds!
+- Always wrap with `timeout` to catch hangs/segfaults
+- Use `File.write!("/tmp/sr.txt", ...)` for output — BEAM stdout isn't reliably captured when running via background tasks
+- Use `Logger.configure(level: :error)` to suppress noisy ILS iteration logs
+- Test ONE seed with a SHORT timeout first (1-5s), verify it completes, then scale up
+- Always clean rebuild C++ before testing: `rm -rf c_src/obj _build/dev/lib/ex_vrp/priv && mix compile`
+
+Multi-seed consistency test:
+
+```elixir
+# test_seeds.exs
+Logger.configure(level: :error)
+data = File.read!("priv/benchmark_data/production/2026-03-30_5d6a2c58-7a27-4092-ae02-b1f5f1833dff_model.etf")
+model = data |> Base.decode64!() |> :erlang.binary_to_term()
+File.write!("/tmp/sr.txt", "")
+for seed <- 1..10 do
+  {:ok, r} = ExVrp.solve(model, max_runtime: 10_000, seed: seed)
+  f = if r.best.is_feasible, do: "OK", else: "INFEASIBLE"
+  File.write!("/tmp/sr.txt", "seed=#{seed} #{f} clients=#{r.best.num_clients}/628\n", [:append])
+end
+```
+
+Run with: `timeout 180 mix run test_seeds.exs 2>/dev/null && cat /tmp/sr.txt`

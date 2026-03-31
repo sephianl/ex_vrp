@@ -200,14 +200,16 @@ bool Solution::insert(Route::Node *U,
         return false;
     };
 
-    // Check if client is reachable by a route's vehicle profile (not
-    // forbidden via prohibitive distance from depot to client).
+    // Reachability check: only filter when there are multiple profiles
+    // (zone restrictions). With a single profile all clients are equally
+    // reachable, and filtering can prevent VRPB/backhaul client placement.
     auto const clientLoc = U->client();
     auto isReachable = [&](Route const *route) -> bool
     {
+        if (data_.numProfiles() <= 1)
+            return true;
         auto const profile = data_.vehicleType(route->vehicleType()).profile;
         auto const &distMatrix = data_.distanceMatrix(profile);
-        // Check depot→client distance; prohibitive values indicate hard blocks.
         auto const startDepot
             = data_.vehicleType(route->vehicleType()).startDepot;
         return distMatrix(startDepot, clientLoc) < 1'000'000'000;

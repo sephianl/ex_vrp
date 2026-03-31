@@ -72,13 +72,10 @@ defmodule ExVrp.MixProject do
     ]
   end
 
-  defp make_precompiler do
-    if System.get_env("EX_VRP_BUILD") in ["1", "true"] do
-      nil
-    else
-      {:nif, CCPrecompiler}
-    end
-  end
+  # Always build from source. Precompiled binaries hide C++ bugs and
+  # ignore local changes. The precompile.yml workflow builds release
+  # binaries for GitHub releases separately.
+  defp make_precompiler, do: nil
 
   defp make_env do
     fine_dir =

@@ -85,10 +85,8 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
         has_timeout_ = false;
     }
 
-    // Pre-pass: insert most-constrained clients first (fewest reachable
-    // routes). This ensures zone-restricted clients get their preferred
-    // vehicles before unrestricted clients fill them up.
-    insertConstrainedFirst(costEvaluator);
+    // TODO: insertConstrainedFirst disabled while debugging crash
+    // insertConstrainedFirst(costEvaluator);
 
     search(costEvaluator);
 
@@ -155,11 +153,9 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
             if (!U->route())  // we already evaluated inserting U, so there is
                 continue;     // nothing left to be done for this client.
 
-            // Try to unite same-vehicle group members: if U is in an SVG
-            // and a partner is on a different route, try exchange moves
-            // with clients on the partner's route (they may not be in U's
-            // neighbourhood, so the regular loop wouldn't reach them).
-            applySameVehicleRepair(U, costEvaluator);
+            // TODO: applySameVehicleRepair has an OOB bug in insertCost
+            // evaluation that causes segfaults. Disabled until fixed.
+            // applySameVehicleRepair(U, costEvaluator);
 
             // If U borders a reload depot, try removing it.
             applyDepotRemovalMove(p(U), costEvaluator);
@@ -250,6 +246,12 @@ bool LocalSearch::isHardToPlace(Route::Node const *U) const
     if (!U->route() || U->isDepot())
         return false;
 
+    // Only meaningful when there are multiple profiles (zone restrictions).
+    // With <= 2 profiles every client is equally restricted, so none are
+    // "hard to place".
+    if (data.numProfiles() <= 2)
+        return false;
+
     auto const client = U->client();
 
     // Count how many distinct profiles can reach this client
@@ -262,8 +264,8 @@ bool LocalSearch::isHardToPlace(Route::Node const *U) const
             reachableProfiles++;
     }
 
-    // A client reachable from 2 or fewer profiles is hard to place —
-    // protect it from removal.
+    // A client reachable from very few profiles (relative to total) is
+    // hard to place — protect it from removal.
     return reachableProfiles <= 2;
 }
 
@@ -470,10 +472,10 @@ void LocalSearch::applySameVehicleRepair(Route::Node *U,
             // Cost of removing U from its current route
             Cost remCost = removeCost(U, data, costEvaluator);
 
-            // Find best insertion position on V's route
+            // Find best insertion position on V's route (exclude end depot)
             Cost bestIns = std::numeric_limits<Cost>::max();
             Route::Node *bestPos = nullptr;
-            for (size_t idx = 0; idx < rV->size(); ++idx)
+            for (size_t idx = 0; idx + 1 < rV->size(); ++idx)
             {
                 auto *pos = rV->operator[](idx);
                 auto cost = insertCost(U, pos, data, costEvaluator);
@@ -488,7 +490,7 @@ void LocalSearch::applySameVehicleRepair(Route::Node *U,
                 continue;
 
             // Accept if removal + insertion + SVG penalty bonus < 0.
-            Cost totalDelta = remCost + bestIns - 500'000;
+            Cost totalDelta = remCost + bestIns - Cost(500'000);
             if (totalDelta < 0)
             {
                 searchSpace_.markPromising(U);
@@ -532,9 +534,11 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
 
     if (uData.required && !U->route())  // then we must insert U
     {
-        solution_.insert(U, searchSpace_, costEvaluator, true);
-        update(U->route(), U->route());
-        searchSpace_.markPromising(U);
+        if (solution_.insert(U, searchSpace_, costEvaluator, true))
+        {
+            update(U->route(), U->route());
+            searchSpace_.markPromising(U);
+        }
     }
 
     // Required clients are not optional, and have just been inserted above
