@@ -310,72 +310,21 @@ defmodule ExVrp.IteratedLocalSearch do
       candidate_cost: cand_cost,
       current: current,
       current_cost: curr_cost,
-      best: best,
-      best_cost: best_cost,
       history: history
     } = state
 
-    # Update best if candidate improves. Use cost() (infinity for infeasible)
-    # so feasible always beats infeasible. When both are infeasible, fall back
-    # to penalisedCost so the solver tracks progress toward feasibility.
     candidate_obj_cost = Native.solution_cost(candidate, state.cost_eval)
-    iters_no_improvement = state.iters_no_improvement + 1
 
-    {new_best, new_best_cost, new_iters_no_improvement, new_stats} =
-      cond do
-        candidate_obj_cost < best_cost ->
-          {candidate, candidate_obj_cost, 0, Map.update!(state.stats, :improvements, &(&1 + 1))}
+    {new_best, new_best_cost, new_best_penalised, new_iters_no_improvement, new_stats} =
+      update_best(state, candidate_obj_cost)
 
-        best_cost == :infinity and candidate_obj_cost == :infinity and
-            cand_cost < state.best_penalised_cost ->
-          # Both infeasible but candidate is closer to feasibility.
-          # Update best for better restart point but DON'T reset
-          # iters_no_improvement — we still want restarts to trigger.
-          {candidate, :infinity, iters_no_improvement, Map.update!(state.stats, :improvements, &(&1 + 1))}
-
-        true ->
-          {best, best_cost, iters_no_improvement, state.stats}
-      end
-
-    new_best_penalised =
-      if new_best == best,
-        do: state.best_penalised_cost,
-        else: cand_cost
-
-    # PyVRP lines 157-159: late_cost from history.peek() or best
     late = RingBuffer.peek(history)
+    late_cost = compute_late_cost(late, new_best, state.cost_eval)
 
-    late_cost =
-      if late == nil do
-        Native.solution_penalised_cost(new_best, state.cost_eval)
-      else
-        Native.solution_penalised_cost(late, state.cost_eval)
-      end
-
-    # Accept if better than late or current. Also always accept the first
-    # feasible solution when the current best is infeasible — the transition
-    # from infeasible to feasible is always an improvement even if penalised
-    # cost is higher (uncollected prizes inflate cost of feasible solutions).
-    first_feasible? = best_cost == :infinity and candidate_obj_cost != :infinity
-    accept? = first_feasible? or cand_cost < late_cost or cand_cost < curr_cost
-
-    # Update current if accepted
     {new_current, new_curr_cost} =
-      if accept? do
-        {candidate, cand_cost}
-      else
-        {current, curr_cost}
-      end
+      accept_candidate(candidate, cand_cost, current, curr_cost, state.best_cost, candidate_obj_cost, late_cost)
 
-    # PyVRP lines 171-174: Update history
-    # - append(current) if curr_cost < late_cost OR late is nil
-    # - skip() otherwise
-    new_history =
-      if new_curr_cost < late_cost or late == nil do
-        RingBuffer.append(history, new_current)
-      else
-        RingBuffer.skip(history)
-      end
+    new_history = update_history(history, new_current, new_curr_cost, late, late_cost)
 
     %{
       state
@@ -389,6 +338,60 @@ defmodule ExVrp.IteratedLocalSearch do
         stats: new_stats
     }
   end
+
+  # Update best if candidate improves. Use cost() (infinity for infeasible)
+  # so feasible always beats infeasible. When both are infeasible, fall back
+  # to penalisedCost so the solver tracks progress toward feasibility.
+  defp update_best(state, candidate_obj_cost) do
+    %{candidate: candidate, candidate_cost: cand_cost, best: best, best_cost: best_cost} = state
+    iters_no_improvement = state.iters_no_improvement + 1
+
+    cond do
+      candidate_obj_cost < best_cost ->
+        stats = Map.update!(state.stats, :improvements, &(&1 + 1))
+        {candidate, candidate_obj_cost, cand_cost, 0, stats}
+
+      best_cost == :infinity and candidate_obj_cost == :infinity and
+          cand_cost < state.best_penalised_cost ->
+        # Both infeasible but candidate is closer to feasibility.
+        # Update best for better restart point but DON'T reset
+        # iters_no_improvement — we still want restarts to trigger.
+        stats = Map.update!(state.stats, :improvements, &(&1 + 1))
+        {candidate, :infinity, cand_cost, iters_no_improvement, stats}
+
+      true ->
+        {best, best_cost, state.best_penalised_cost, iters_no_improvement, state.stats}
+    end
+  end
+
+  # PyVRP lines 157-159: late_cost from history.peek() or best
+  defp compute_late_cost(nil, best, cost_eval), do: Native.solution_penalised_cost(best, cost_eval)
+
+  defp compute_late_cost(late, _best, cost_eval), do: Native.solution_penalised_cost(late, cost_eval)
+
+  # Accept if better than late or current. Also always accept the first
+  # feasible solution when the current best is infeasible — the transition
+  # from infeasible to feasible is always an improvement even if penalised
+  # cost is higher (uncollected prizes inflate cost of feasible solutions).
+  defp accept_candidate(candidate, cand_cost, current, curr_cost, best_cost, candidate_obj_cost, late_cost) do
+    first_feasible? = best_cost == :infinity and candidate_obj_cost != :infinity
+
+    if first_feasible? or cand_cost < late_cost or cand_cost < curr_cost do
+      {candidate, cand_cost}
+    else
+      {current, curr_cost}
+    end
+  end
+
+  # PyVRP lines 171-174: Update history
+  # - append(current) if curr_cost < late_cost OR late is nil
+  # - skip() otherwise
+  defp update_history(history, current, _curr_cost, nil = _late, _late_cost), do: RingBuffer.append(history, current)
+
+  defp update_history(history, current, curr_cost, _late, late_cost) when curr_cost < late_cost,
+    do: RingBuffer.append(history, current)
+
+  defp update_history(history, _current, _curr_cost, _late, _late_cost), do: RingBuffer.skip(history)
 
   # Update penalty manager with candidate solution
   defp update_penalty_manager(state) do
