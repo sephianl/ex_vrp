@@ -341,9 +341,14 @@ struct LocalSearchResource
             ls->addNodeOperator(*relocateDepot);
         }
 
-        // Add route operators for better exploration of solution space
-        // SwapRoutes can help escape local optima in prize-collecting problems
-        // by swapping visits between vehicles
+        // TODO: SwapStar is PyVRP's most powerful route operator for
+        // inter-route optimization. Currently disabled because it's O(V²×N)
+        // per pass and needs a per-iteration timeout to prevent hanging on
+        // large problems (53+ vehicles). Enable when a per-iteration timeout
+        // is passed from the Elixir ILS layer.
+        // swapStar = std::make_unique<search::SwapStar>(data);
+        // ls->addRouteOperator(*swapStar);
+
         if (search::supports<search::SwapRoutes>(data))
         {
             swapRoutes = std::make_unique<search::SwapRoutes>(data);

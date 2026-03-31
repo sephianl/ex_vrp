@@ -79,6 +79,17 @@ class LocalSearch
     bool wouldViolateSameVehicle(Route::Node const *U,
                                  Route const *targetRoute) const;
 
+    // Checks if U is forbidden from targetRoute (prohibitive distance).
+    bool wouldViolateForbidden(Route::Node const *U,
+                               Route const *targetRoute) const;
+
+    // Checks if U is hard to place (reachable from very few profiles).
+    bool isHardToPlace(Route::Node const *U) const;
+
+    // Tries to unite same-vehicle group members that are on different routes.
+    void applySameVehicleRepair(Route::Node *U,
+                                CostEvaluator const &costEvaluator);
+
     // Updates solution state after an improving local search move.
     void update(Route *U, Route *V);
 
@@ -87,6 +98,11 @@ class LocalSearch
 
     // Performs intensify on the currently loaded solution.
     void intensify(CostEvaluator const &costEvaluator);
+
+    // Pre-pass for initial solution: inserts most-constrained clients first
+    // (fewest reachable routes), ensuring zone-restricted clients get their
+    // preferred vehicles before unrestricted clients fill them.
+    void insertConstrainedFirst(CostEvaluator const &costEvaluator);
 
     // Marks missing clients as promising: required clients, prize clients,
     // and first members of required groups, to ensure they get inserted.

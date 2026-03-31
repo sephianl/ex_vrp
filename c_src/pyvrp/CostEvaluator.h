@@ -35,6 +35,12 @@ concept PrizeCostEvaluatable = CostEvaluatable<T> && requires(T arg) {
     { arg.uncollectedPrizes() } -> std::same_as<Cost>;
 };
 
+// Same-vehicle group violations can be penalized when the type exposes them.
+template <typename T>
+concept SVGCostEvaluatable = CostEvaluatable<T> && requires(T arg) {
+    { arg.numSameVehicleViolations() } -> std::same_as<size_t>;
+};
+
 // The following methods must be available before a type's delta cost can be
 // evaluated by the CostEvaluator.
 template <typename T>
@@ -250,10 +256,18 @@ Cost CostEvaluator::penalisedCost(T const &arg) const
           + arg.reloadCost() + excessLoadPenalties(arg.excessLoad())
           + twPenalty(arg.timeWarp()) + distPenalty(arg.excessDistance(), 0);
 
-    if constexpr (PrizeCostEvaluatable<T>)
-        return cost + arg.uncollectedPrizes();
+    Cost total = cost;
 
-    return cost;
+    if constexpr (PrizeCostEvaluatable<T>)
+        total += arg.uncollectedPrizes();
+
+    // Penalize same-vehicle group violations heavily — each violation means
+    // SVG members are split across routes. Use a large fixed penalty per
+    // violation to give the solver a strong gradient toward SVG feasibility.
+    if constexpr (SVGCostEvaluatable<T>)
+        total += Cost(arg.numSameVehicleViolations() * 500'000);
+
+    return total;
 }
 
 template <CostEvaluatable T> Cost CostEvaluator::cost(T const &arg) const

@@ -83,6 +83,8 @@ bool Solution::isFeasible() const
 
 bool Solution::isGroupFeasible() const { return isGroupFeas_; }
 
+size_t Solution::numSameVehicleViolations() const { return numSVGViolations_; }
+
 bool Solution::isComplete() const { return numMissingClients_ == 0; }
 
 bool Solution::hasExcessLoad() const
@@ -321,6 +323,7 @@ Solution::Solution(ProblemData const &data, std::vector<Route> routes)
                     if (std::strcmp(expectedVehicleName, vehicleName) != 0)
                     {
                         isGroupFeas_ = false;  // Different vehicle names
+                        numSVGViolations_++;
                         break;
                     }
                 }
@@ -330,6 +333,7 @@ Solution::Solution(ProblemData const &data, std::vector<Route> routes)
                     if (clientRoute[client] != expectedRoute)
                     {
                         isGroupFeas_ = false;  // Different routes
+                        numSVGViolations_++;
                         break;
                     }
                 }

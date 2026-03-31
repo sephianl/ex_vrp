@@ -85,6 +85,11 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
         has_timeout_ = false;
     }
 
+    // Pre-pass: insert most-constrained clients first (fewest reachable
+    // routes). This ensures zone-restricted clients get their preferred
+    // vehicles before unrestricted clients fill them up.
+    insertConstrainedFirst(costEvaluator);
+
     search(costEvaluator);
 
     // After the main search, try to insert unassigned clients via multi-trip.
@@ -149,6 +154,12 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
 
             if (!U->route())  // we already evaluated inserting U, so there is
                 continue;     // nothing left to be done for this client.
+
+            // Try to unite same-vehicle group members: if U is in an SVG
+            // and a partner is on a different route, try exchange moves
+            // with clients on the partner's route (they may not be in U's
+            // neighbourhood, so the regular loop wouldn't reach them).
+            applySameVehicleRepair(U, costEvaluator);
 
             // If U borders a reload depot, try removing it.
             applyDepotRemovalMove(p(U), costEvaluator);
@@ -234,6 +245,41 @@ void LocalSearch::shuffle(RandomNumberGenerator &rng)
     rng.shuffle(routeOps.begin(), routeOps.end());
 }
 
+bool LocalSearch::isHardToPlace(Route::Node const *U) const
+{
+    if (!U->route() || U->isDepot())
+        return false;
+
+    auto const client = U->client();
+
+    // Count how many distinct profiles can reach this client
+    size_t reachableProfiles = 0;
+    for (size_t p = 0; p < data.numProfiles(); ++p)
+    {
+        auto const &distMatrix = data.distanceMatrix(p);
+        // Check from any depot (use first depot as proxy)
+        if (distMatrix(0, client) < 1'000'000'000)
+            reachableProfiles++;
+    }
+
+    // A client reachable from 2 or fewer profiles is hard to place —
+    // protect it from removal.
+    return reachableProfiles <= 2;
+}
+
+bool LocalSearch::wouldViolateForbidden(Route::Node const *U,
+                                        Route const *targetRoute) const
+{
+    if (!targetRoute || U->isDepot())
+        return false;
+
+    auto const profile = data.vehicleType(targetRoute->vehicleType()).profile;
+    auto const &distMatrix = data.distanceMatrix(profile);
+    auto const startDepot
+        = data.vehicleType(targetRoute->vehicleType()).startDepot;
+    return distMatrix(startDepot, U->client()) >= 1'000'000'000;
+}
+
 bool LocalSearch::wouldViolateSameVehicle(Route::Node const *U,
                                           Route const *targetRoute) const
 {
@@ -270,16 +316,25 @@ bool LocalSearch::wouldViolateSameVehicle(Route::Node const *U,
     {
         auto const &group = data.sameVehicleGroup(groupIdx);
 
-        // Check if any other group member is in the current route.
-        // If so, moving U would split them.
         for (auto const otherClient : group)
         {
             if (otherClient == U->client())
                 continue;
 
             auto const *otherNode = &solution_.nodes[otherClient];
+            if (!otherNode->route())
+                continue;  // Partner not placed yet, no constraint
+
+            // If partner is on the target route, moving U there is good
+            // (brings them together).
+            if (otherNode->route() == targetRoute)
+                return false;
+
+            // If partner is on U's current route, moving U away would
+            // split them — only allow if the target route has another
+            // partner already (for multi-member groups).
             if (otherNode->route() == currentRoute)
-                return true;  // Would leave behind a group member
+                return true;
         }
     }
 
@@ -294,11 +349,12 @@ bool LocalSearch::applyNodeOps(Route::Node *U,
     auto *rV = V->route();
 
     // Skip if moving U to V's route (or vice versa) would violate same-vehicle
-    // constraints. We check both directions since different operators may move
-    // clients in different ways.
+    // constraints or place a client on a zone-forbidden route.
     if (rU != rV)
     {
         if (wouldViolateSameVehicle(U, rV) || wouldViolateSameVehicle(V, rU))
+            return false;
+        if (wouldViolateForbidden(U, rV) || wouldViolateForbidden(V, rU))
             return false;
     }
 
@@ -383,6 +439,71 @@ void LocalSearch::applyDepotRemovalMove(Route::Node *U,
     }
 }
 
+void LocalSearch::applySameVehicleRepair(Route::Node *U,
+                                         CostEvaluator const &costEvaluator)
+{
+    auto const &groups = clientToSameVehicleGroups_[U->client()];
+    if (groups.empty() || !U->route())
+        return;
+
+    for (auto const groupIdx : groups)
+    {
+        auto const &group = data.sameVehicleGroup(groupIdx);
+        for (auto const otherClient : group)
+        {
+            if (otherClient == U->client())
+                continue;
+
+            auto *V = &solution_.nodes[otherClient];
+            if (!V->route() || V->route() == U->route())
+                continue;
+
+            // Partner V is on a different route. Try inserting U on V's
+            // route at the best position. Accept if the total cost
+            // (including SVG penalty savings) is improving.
+            auto *rU = U->route();
+            auto *rV = V->route();
+
+            if (wouldViolateForbidden(U, rV))
+                continue;
+
+            // Cost of removing U from its current route
+            Cost remCost = removeCost(U, data, costEvaluator);
+
+            // Find best insertion position on V's route
+            Cost bestIns = std::numeric_limits<Cost>::max();
+            Route::Node *bestPos = nullptr;
+            for (size_t idx = 0; idx < rV->size(); ++idx)
+            {
+                auto *pos = rV->operator[](idx);
+                auto cost = insertCost(U, pos, data, costEvaluator);
+                if (cost < bestIns)
+                {
+                    bestIns = cost;
+                    bestPos = pos;
+                }
+            }
+
+            if (!bestPos)
+                continue;
+
+            // Accept if removal + insertion + SVG penalty bonus < 0.
+            Cost totalDelta = remCost + bestIns - 500'000;
+            if (totalDelta < 0)
+            {
+                searchSpace_.markPromising(U);
+                rU->remove(U->idx());
+                update(rU, rU);
+
+                rV->insert(bestPos->idx() + 1, U);
+                update(rV, rV);
+                searchSpace_.markPromising(U);
+                return;
+            }
+        }
+    }
+}
+
 void LocalSearch::applyEmptyRouteMoves(Route::Node *U,
                                        CostEvaluator const &costEvaluator)
 {
@@ -422,9 +543,10 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
     if (uData.required || uData.group)
         return;
 
-    // Don't remove U if it would violate same-vehicle constraints (i.e., if
-    // U is in a same-vehicle group with other clients on the same route).
-    if (!wouldViolateSameVehicle(U, nullptr)
+    // Don't remove U if it would violate same-vehicle constraints, or if
+    // U is zone-restricted to very few vehicles (removing would likely leave
+    // it unassigned since reinsertion options are severely limited).
+    if (!wouldViolateSameVehicle(U, nullptr) && !isHardToPlace(U)
         && removeCost(U, data, costEvaluator) < 0)  // remove if improving
     {
         searchSpace_.markPromising(U);
@@ -540,6 +662,96 @@ void LocalSearch::applyGroupMoves(Route::Node *U,
         route->insert(idx, U);
         update(route, route);
         searchSpace_.markPromising(U);
+    }
+}
+
+void LocalSearch::insertConstrainedFirst(CostEvaluator const &costEvaluator)
+{
+    // Phase 1: Insert same-vehicle group members together on a jointly
+    // reachable route. This ensures SVG feasibility from the start —
+    // the search's wouldViolateSameVehicle check will then maintain it.
+    for (size_t groupIdx = 0; groupIdx < data.numSameVehicleGroups();
+         ++groupIdx)
+    {
+        auto const &group = data.sameVehicleGroup(groupIdx);
+
+        // Skip if any member is already placed
+        bool anyPlaced = false;
+        for (auto const client : group)
+            if (solution_.nodes[client].route())
+                anyPlaced = true;
+        if (anyPlaced)
+            continue;
+
+        // Find a route reachable by ALL group members
+        for (auto &route : solution_.routes)
+        {
+            auto const profile = data.vehicleType(route.vehicleType()).profile;
+            auto const &distMatrix = data.distanceMatrix(profile);
+            auto const startDepot
+                = data.vehicleType(route.vehicleType()).startDepot;
+
+            bool allReachable = true;
+            for (auto const client : group)
+            {
+                if (distMatrix(startDepot, client) >= 1'000'000'000)
+                {
+                    allReachable = false;
+                    break;
+                }
+            }
+
+            if (!allReachable)
+                continue;
+
+            // Insert all group members on this route (before end depot)
+            for (auto const client : group)
+            {
+                auto *U = &solution_.nodes[client];
+                auto const insertIdx = route.size() - 1;
+                route.insert(insertIdx, U);
+            }
+            route.update();
+            break;
+        }
+    }
+
+    // Phase 2: Insert zone-restricted clients (few reachable routes).
+    std::vector<std::pair<size_t, size_t>> clientReach;
+    for (auto client = data.numDepots(); client != data.numLocations();
+         ++client)
+    {
+        if (solution_.nodes[client].route())
+            continue;
+
+        size_t reachable = 0;
+        for (auto const &route : solution_.routes)
+        {
+            auto const profile = data.vehicleType(route.vehicleType()).profile;
+            auto const &distMatrix = data.distanceMatrix(profile);
+            auto const startDepot
+                = data.vehicleType(route.vehicleType()).startDepot;
+            if (distMatrix(startDepot, client) < 1'000'000'000)
+                reachable++;
+        }
+
+        if (reachable > 0 && reachable < solution_.routes.size())
+            clientReach.emplace_back(reachable, client);
+    }
+
+    std::sort(clientReach.begin(), clientReach.end());
+
+    for (auto const &[reach, client] : clientReach)
+    {
+        auto *U = &solution_.nodes[client];
+        if (U->route())
+            continue;
+
+        if (solution_.insert(U, searchSpace_, costEvaluator, true))
+        {
+            update(U->route(), U->route());
+            searchSpace_.markPromising(U);
+        }
     }
 }
 

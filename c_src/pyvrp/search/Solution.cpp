@@ -200,12 +200,25 @@ bool Solution::insert(Route::Node *U,
         return false;
     };
 
+    // Check if client is reachable by a route's vehicle profile (not
+    // forbidden via prohibitive distance from depot to client).
+    auto const clientLoc = U->client();
+    auto isReachable = [&](Route const *route) -> bool
+    {
+        auto const profile = data_.vehicleType(route->vehicleType()).profile;
+        auto const &distMatrix = data_.distanceMatrix(profile);
+        // Check depot→client distance; prohibitive values indicate hard blocks.
+        auto const startDepot
+            = data_.vehicleType(route->vehicleType()).startDepot;
+        return distMatrix(startDepot, clientLoc) < 1'000'000'000;
+    };
+
     Route::Node *UAfter = nullptr;
     auto bestCost = std::numeric_limits<Cost>::max();
 
     for (auto &route : routes)
     {
-        if (isCompatibleRoute(&route))
+        if (isCompatibleRoute(&route) && isReachable(&route))
         {
             UAfter = route[0];
             bestCost = insertCost(U, UAfter, data_, costEvaluator);
@@ -220,7 +233,8 @@ bool Solution::insert(Route::Node *U,
     {
         auto *V = &nodes[vClient];
 
-        if (!V->route() || !isCompatibleRoute(V->route()))
+        if (!V->route() || !isCompatibleRoute(V->route())
+            || !isReachable(V->route()))
             continue;
 
         auto const cost = insertCost(U, V, data_, costEvaluator);
@@ -238,7 +252,7 @@ bool Solution::insert(Route::Node *U,
 
         for (auto it = begin; it != end; ++it)
         {
-            if (!isCompatibleRoute(&*it))
+            if (!isCompatibleRoute(&*it) || !isReachable(&*it))
                 continue;
 
             if (!it->empty() && UAfter->route() == &*it)

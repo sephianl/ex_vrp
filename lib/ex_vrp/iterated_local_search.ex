@@ -269,16 +269,16 @@ defmodule ExVrp.IteratedLocalSearch do
 
   # Apply local search to generate candidate
   defp search_step(state) do
-    # Calculate remaining timeout for C++ local search (in milliseconds).
-    # Always pass a timeout — 0 means "no timeout" in C++, which lets
-    # expensive route operators (SwapStar) run indefinitely.
+    # Calculate remaining timeout for C++ local search (in milliseconds)
     timeout_ms =
       if state.max_runtime_ms do
         elapsed_ms = System.monotonic_time(:millisecond) - state.start_time
+        # Pass remaining time, minimum 1ms (0 means "no timeout" in C++)
+        # round/1 ensures integer for NIF when max_runtime_ms is a float
         max(round(state.max_runtime_ms) - elapsed_ms, 1)
       else
-        # Cap per-iteration time to prevent unbounded intensification
-        30_000
+        # No timeout
+        0
       end
 
     # Use persistent LocalSearch for performance

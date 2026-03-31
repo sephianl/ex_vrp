@@ -60,6 +60,7 @@ class Solution
     Cost uncollectedPrizes_ = 0;    // Total uncollected prize value
     Duration timeWarp_ = 0;         // Total time warp over all routes
     bool isGroupFeas_ = true;       // Is feasible w.r.t. client groups?
+    size_t numSVGViolations_ = 0;   // Number of same-vehicle group violations
 
     Routes routes_;
     Neighbours neighbours_;  // client [pred, succ] pairs, null if unassigned
@@ -139,6 +140,11 @@ public:
      * restrictions.
      */
     [[nodiscard]] bool isGroupFeasible() const;
+
+    /**
+     * Number of same-vehicle group violations (members on different routes).
+     */
+    [[nodiscard]] size_t numSameVehicleViolations() const;
 
     /**
      * Returns whether this solution is complete, which it is when it has all
