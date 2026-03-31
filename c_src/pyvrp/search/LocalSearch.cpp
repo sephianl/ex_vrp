@@ -85,8 +85,7 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
         has_timeout_ = false;
     }
 
-    // TODO: insertConstrainedFirst disabled while debugging crash
-    // insertConstrainedFirst(costEvaluator);
+    insertConstrainedFirst(costEvaluator);
 
     search(costEvaluator);
 
@@ -153,9 +152,7 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
             if (!U->route())  // we already evaluated inserting U, so there is
                 continue;     // nothing left to be done for this client.
 
-            // TODO: applySameVehicleRepair has an OOB bug in insertCost
-            // evaluation that causes segfaults. Disabled until fixed.
-            // applySameVehicleRepair(U, costEvaluator);
+            applySameVehicleRepair(U, costEvaluator);
 
             // If U borders a reload depot, try removing it.
             applyDepotRemovalMove(p(U), costEvaluator);
@@ -352,10 +349,23 @@ bool LocalSearch::applyNodeOps(Route::Node *U,
 
     // Skip if moving U to V's route (or vice versa) would violate same-vehicle
     // constraints or place a client on a zone-forbidden route.
+    // We also check n(U) and n(V) to cover Exchange(2,*) operators that move
+    // segments of 2 clients. This is slightly conservative for Exchange(1,*)
+    // but the impact is negligible.
     if (rU != rV)
     {
         if (wouldViolateSameVehicle(U, rV) || wouldViolateSameVehicle(V, rU))
             return false;
+
+        auto const *nU = n(U);
+        auto const *nV = n(V);
+        if (!nU->isEndDepot() && !nU->isDepot()
+            && wouldViolateSameVehicle(nU, rV))
+            return false;
+        if (!nV->isEndDepot() && !nV->isDepot()
+            && wouldViolateSameVehicle(nV, rU))
+            return false;
+
         if (wouldViolateForbidden(U, rV) || wouldViolateForbidden(V, rU))
             return false;
     }
@@ -365,6 +375,13 @@ bool LocalSearch::applyNodeOps(Route::Node *U,
         auto const deltaCost = nodeOp->evaluate(U, V, costEvaluator);
         if (deltaCost < 0)
         {
+            // For operators that swap entire tails (SwapTails/2-OPT*),
+            // the per-client SVG check above is insufficient — we must
+            // verify that no SVG group gets split by the tail swap.
+            if (rU != rV && nodeOp->affectsEntireTail()
+                && wouldTailSwapSplitSVG(U, V))
+                continue;
+
             [[maybe_unused]] auto const costBefore
                 = costEvaluator.penalisedCost(*rU)
                   + Cost(rU != rV) * costEvaluator.penalisedCost(*rV);
@@ -460,6 +477,18 @@ void LocalSearch::applySameVehicleRepair(Route::Node *U,
             if (!V->route() || V->route() == U->route())
                 continue;
 
+            // If both routes use the same vehicle (same name, different
+            // shifts), the SVG constraint is already satisfied.
+            {
+                auto const *uName
+                    = data.vehicleType(U->route()->vehicleType()).name;
+                auto const *vName
+                    = data.vehicleType(V->route()->vehicleType()).name;
+                if (uName && vName && uName[0] != '\0'
+                    && std::strcmp(uName, vName) == 0)
+                    continue;
+            }
+
             // Partner V is on a different route. Try inserting U on V's
             // route at the best position. Accept if the total cost
             // (including SVG penalty savings) is improving.
@@ -504,6 +533,55 @@ void LocalSearch::applySameVehicleRepair(Route::Node *U,
             }
         }
     }
+}
+
+bool LocalSearch::wouldTailSwapSplitSVG(Route::Node const *U,
+                                        Route::Node const *V) const
+{
+    auto const *rU = U->route();
+    auto const *rV = V->route();
+
+    // Check clients in U's tail (would move to V's route): if any SVG
+    // partner stays on U's route (at or before U), the swap splits them.
+    for (auto const *node = n(U); !node->isEndDepot(); node = n(node))
+    {
+        if (node->isDepot())
+            continue;
+
+        for (auto const groupIdx : clientToSameVehicleGroups_[node->client()])
+        {
+            for (auto const partner : data.sameVehicleGroup(groupIdx))
+            {
+                if (partner == node->client())
+                    continue;
+                auto const *pNode = &solution_.nodes[partner];
+                if (pNode->route() == rU && pNode->idx() <= U->idx())
+                    return true;
+            }
+        }
+    }
+
+    // Check clients in V's tail (would move to U's route): if any SVG
+    // partner stays on V's route (at or before V), the swap splits them.
+    for (auto const *node = n(V); !node->isEndDepot(); node = n(node))
+    {
+        if (node->isDepot())
+            continue;
+
+        for (auto const groupIdx : clientToSameVehicleGroups_[node->client()])
+        {
+            for (auto const partner : data.sameVehicleGroup(groupIdx))
+            {
+                if (partner == node->client())
+                    continue;
+                auto const *pNode = &solution_.nodes[partner];
+                if (pNode->route() == rV && pNode->idx() <= V->idx())
+                    return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 void LocalSearch::applyEmptyRouteMoves(Route::Node *U,

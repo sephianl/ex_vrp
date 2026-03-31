@@ -1,7 +1,7 @@
 defmodule ExVrp.MixProject do
   use Mix.Project
 
-  @version "0.2.5"
+  @version "0.3.0"
   @github_url "https://github.com/sephianl/ex_vrp"
 
   def project do
@@ -72,10 +72,9 @@ defmodule ExVrp.MixProject do
     ]
   end
 
-  # Always build from source. Precompiled binaries hide C++ bugs and
-  # ignore local changes. The precompile.yml workflow builds release
-  # binaries for GitHub releases separately.
-  defp make_precompiler, do: nil
+  # Precompiled binaries are downloaded when this package is installed as
+  # a hex dependency. When working in this repo, mix always builds from source.
+  defp make_precompiler, do: {:nif, CCPrecompiler}
 
   defp make_env do
     fine_dir =

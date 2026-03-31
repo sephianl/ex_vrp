@@ -646,5 +646,86 @@ defmodule ExVrp.SameVehicleGroupTest do
       num_trips = Solution.route_num_trips(solution, 0)
       assert num_trips >= 2, "Expected multiple trips to serve all clients, got #{num_trips}"
     end
+
+    test "SVG not split by SwapTails across seeds (regression)" do
+      # Regression test for SVG splitting. Before the fix, SwapTails (2-OPT*)
+      # would swap route tails without checking if SVG members got separated.
+      #
+      # Setup: two geographic clusters with SVG members split across them.
+      # Without SVG protection, the optimal solution puts each cluster on a
+      # separate vehicle — splitting the SVG pair. The solver must keep them
+      # together even though it costs more distance.
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        # Cluster A (east): clients 1-5
+        |> Model.add_client(x: 100, y: 10, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 110, y: -10, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 105, y: 20, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 95, y: -15, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 108, y: 5, delivery: [10], prize: 150_000)
+        # Cluster B (north): clients 6-10
+        |> Model.add_client(x: -10, y: 100, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 10, y: 110, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: -5, y: 95, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 15, y: 105, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 0, y: 108, delivery: [10], prize: 150_000)
+        # Two vehicles — natural split is one per cluster
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+
+      clients = model.clients
+      # SVG: client 3 (cluster A) + client 8 (cluster B) must share a vehicle
+      model = Model.add_same_vehicle_group(model, [Enum.at(clients, 2), Enum.at(clients, 7)])
+
+      for seed <- 1..20 do
+        {:ok, result} = ExVrp.solve(model, max_iterations: 2000, seed: seed)
+
+        assert result.best.is_feasible,
+               "seed #{seed}: solution should be feasible"
+
+        assert Solution.group_feasible?(result.best),
+               "seed #{seed}: SVG members should be on the same vehicle"
+      end
+    end
+
+    test "SVG not split by Exchange(2,*) across seeds (regression)" do
+      # Regression test for Exchange(2,0) / Exchange(2,1) splitting SVGs.
+      # These operators move segments of 2 clients. Before the fix, the SVG
+      # check only verified U and V, not n(U) — so moving [U, n(U)] where
+      # n(U) is an SVG member would silently split the group.
+      #
+      # Setup: SVG members adjacent on a route, surrounded by clients that
+      # create pressure for Exchange(2,*) to relocate the pair.
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        # Line of clients along x-axis
+        |> Model.add_client(x: 10, y: 0, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 20, y: 0, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 30, y: 0, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 40, y: 0, delivery: [10], prize: 150_000)
+        # Clients on a separate branch (y-axis)
+        |> Model.add_client(x: 0, y: 50, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 0, y: 60, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 0, y: 70, delivery: [10], prize: 150_000)
+        |> Model.add_client(x: 0, y: 80, delivery: [10], prize: 150_000)
+        # Two vehicles
+        |> Model.add_vehicle_type(num_available: 2, capacity: [50])
+
+      clients = model.clients
+      # SVG: client 2 (x=20) + client 3 (x=30) — adjacent, likely to be
+      # part of a 2-client segment that Exchange(2,*) tries to relocate
+      model = Model.add_same_vehicle_group(model, [Enum.at(clients, 1), Enum.at(clients, 2)])
+
+      for seed <- 1..20 do
+        {:ok, result} = ExVrp.solve(model, max_iterations: 2000, seed: seed)
+
+        assert result.best.is_feasible,
+               "seed #{seed}: solution should be feasible"
+
+        assert Solution.group_feasible?(result.best),
+               "seed #{seed}: SVG members should be on the same vehicle"
+      end
+    end
   end
 end

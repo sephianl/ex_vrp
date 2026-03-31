@@ -90,6 +90,10 @@ class LocalSearch
     void applySameVehicleRepair(Route::Node *U,
                                 CostEvaluator const &costEvaluator);
 
+    // Checks if swapping tails at U and V would split any SVG group.
+    bool wouldTailSwapSplitSVG(Route::Node const *U,
+                               Route::Node const *V) const;
+
     // Updates solution state after an improving local search move.
     void update(Route *U, Route *V);
 
