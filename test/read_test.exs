@@ -34,9 +34,8 @@ defmodule ExVrp.ReadTest do
       assert depot.x == 2334
       assert depot.y == 726
 
-      # Check clients (internal list is in reverse order; reverse to get insertion order)
       assert length(model.clients) == 4
-      clients = Enum.reverse(model.clients)
+      clients = model.clients
 
       clients
       |> Enum.zip(tl(expected_coords))
@@ -101,7 +100,7 @@ defmodule ExVrp.ReadTest do
       assert depot.x == 1450
       assert depot.y == 2150
 
-      first_client = model.clients |> Enum.reverse() |> hd()
+      first_client = hd(model.clients)
       assert first_client.x == 1510
       assert first_client.y == 2640
     end
@@ -117,8 +116,7 @@ defmodule ExVrp.ReadTest do
       # Two vehicle types (one per depot)
       assert length(model.vehicle_types) == 2
 
-      # First depot (internal list is reversed; reverse to get insertion order)
-      [depot1, depot2] = Enum.reverse(model.depots)
+      [depot1, depot2] = model.depots
       assert depot1.x == 2334
       assert depot1.y == 726
       assert depot2.x == 226
@@ -150,13 +148,11 @@ defmodule ExVrp.ReadTest do
       # Clients in the group should not be required
       num_depots = Model.num_depots(model)
 
-      clients = Enum.reverse(model.clients)
-
       Enum.each(group.clients, fn client_idx ->
         # client_idx is the absolute location index (depot + client index)
         # We need to convert to list index (subtract num_depots)
         list_idx = client_idx - num_depots
-        client = Enum.at(clients, list_idx)
+        client = Enum.at(model.clients, list_idx)
         assert client.required == false
       end)
     end

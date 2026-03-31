@@ -24,8 +24,7 @@ defmodule ExVrp.IteratedLocalSearch do
     @moduledoc """
     Parameters for Iterated Local Search.
     """
-    # These defaults match PyVRP's IteratedLocalSearchParams
-    defstruct max_no_improvement: 50_000,
+    defstruct max_no_improvement: 5_000,
               # Number of iterations without improvement before restart
               # Size of the late acceptance history buffer
               history_size: 500
@@ -176,6 +175,7 @@ defmodule ExVrp.IteratedLocalSearch do
       best: initial_solution,
       # Use cost() for best selection - infeasible solutions have infinite cost
       best_cost: initial_cost,
+      best_penalised_cost: initial_penalised_cost,
       current: initial_solution,
       current_cost: initial_penalised_cost,
       # Ring buffer matching PyVRP's implementation exactly
@@ -239,13 +239,25 @@ defmodule ExVrp.IteratedLocalSearch do
   # Restart from best if no improvement for too long
   defp maybe_restart(%{iters_no_improvement: iters, params: params} = state) do
     if iters >= params.max_no_improvement do
-      # On restart, recalculate current_cost as penalised_cost of best
-      best_penalised = Native.solution_penalised_cost(state.best, state.cost_eval)
+      # On restart: if the best is infeasible, rebuild a fresh initial
+      # solution with a different seed. This gives the solver a completely
+      # new starting point instead of cycling from the same infeasible state.
+      {restart_sol, restart_cost} =
+        if state.best_cost == :infinity do
+          restart_seed = state.rng_seed + state.stats.restarts + 1
+          restart_ls = Native.create_local_search(state.problem_data, restart_seed)
+          {:ok, max_eval} = PenaltyManager.max_cost_evaluator(state.penalty_manager)
+          {:ok, empty} = Native.create_solution_from_routes(state.problem_data, [])
+          {:ok, fresh} = Native.local_search_search_run(restart_ls, empty, max_eval, 0)
+          {fresh, Native.solution_penalised_cost(fresh, state.cost_eval)}
+        else
+          {state.best, Native.solution_penalised_cost(state.best, state.cost_eval)}
+        end
 
       %{
         state
-        | current: state.best,
-          current_cost: best_penalised,
+        | current: restart_sol,
+          current_cost: restart_cost,
           history: RingBuffer.clear(state.history),
           iters_no_improvement: 0,
           stats: Map.update!(state.stats, :restarts, &(&1 + 1))
@@ -257,16 +269,16 @@ defmodule ExVrp.IteratedLocalSearch do
 
   # Apply local search to generate candidate
   defp search_step(state) do
-    # Calculate remaining timeout for C++ local search (in milliseconds)
+    # Calculate remaining timeout for C++ local search (in milliseconds).
+    # Always pass a timeout — 0 means "no timeout" in C++, which lets
+    # expensive route operators (SwapStar) run indefinitely.
     timeout_ms =
       if state.max_runtime_ms do
         elapsed_ms = System.monotonic_time(:millisecond) - state.start_time
-        # Pass remaining time, minimum 1ms (0 means "no timeout" in C++)
-        # round/1 ensures integer for NIF when max_runtime_ms is a float
         max(round(state.max_runtime_ms) - elapsed_ms, 1)
       else
-        # No timeout
-        0
+        # Cap per-iteration time to prevent unbounded intensification
+        30_000
       end
 
     # Use persistent LocalSearch for performance
@@ -303,17 +315,32 @@ defmodule ExVrp.IteratedLocalSearch do
       history: history
     } = state
 
-    # PyVRP line 146-149: Update best if candidate is new best (using cost())
-    # iters_no_improvement is incremented unconditionally, then reset to 0 on improvement
+    # Update best if candidate improves. Use cost() (infinity for infeasible)
+    # so feasible always beats infeasible. When both are infeasible, fall back
+    # to penalisedCost so the solver tracks progress toward feasibility.
     candidate_obj_cost = Native.solution_cost(candidate, state.cost_eval)
     iters_no_improvement = state.iters_no_improvement + 1
 
     {new_best, new_best_cost, new_iters_no_improvement, new_stats} =
-      if candidate_obj_cost < best_cost do
-        {candidate, candidate_obj_cost, 0, Map.update!(state.stats, :improvements, &(&1 + 1))}
-      else
-        {best, best_cost, iters_no_improvement, state.stats}
+      cond do
+        candidate_obj_cost < best_cost ->
+          {candidate, candidate_obj_cost, 0, Map.update!(state.stats, :improvements, &(&1 + 1))}
+
+        best_cost == :infinity and candidate_obj_cost == :infinity and
+            cand_cost < state.best_penalised_cost ->
+          # Both infeasible but candidate is closer to feasibility.
+          # Update best for better restart point but DON'T reset
+          # iters_no_improvement — we still want restarts to trigger.
+          {candidate, :infinity, iters_no_improvement, Map.update!(state.stats, :improvements, &(&1 + 1))}
+
+        true ->
+          {best, best_cost, iters_no_improvement, state.stats}
       end
+
+    new_best_penalised =
+      if new_best == best,
+        do: state.best_penalised_cost,
+        else: cand_cost
 
     # PyVRP lines 157-159: late_cost from history.peek() or best
     late = RingBuffer.peek(history)
@@ -325,8 +352,12 @@ defmodule ExVrp.IteratedLocalSearch do
         Native.solution_penalised_cost(late, state.cost_eval)
       end
 
-    # PyVRP line 165: Accept if better than late or current
-    accept? = cand_cost < late_cost or cand_cost < curr_cost
+    # Accept if better than late or current. Also always accept the first
+    # feasible solution when the current best is infeasible — the transition
+    # from infeasible to feasible is always an improvement even if penalised
+    # cost is higher (uncollected prizes inflate cost of feasible solutions).
+    first_feasible? = best_cost == :infinity and candidate_obj_cost != :infinity
+    accept? = first_feasible? or cand_cost < late_cost or cand_cost < curr_cost
 
     # Update current if accepted
     {new_current, new_curr_cost} =
@@ -352,6 +383,7 @@ defmodule ExVrp.IteratedLocalSearch do
         current_cost: new_curr_cost,
         best: new_best,
         best_cost: new_best_cost,
+        best_penalised_cost: new_best_penalised,
         history: new_history,
         iters_no_improvement: new_iters_no_improvement,
         stats: new_stats

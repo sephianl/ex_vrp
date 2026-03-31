@@ -182,7 +182,9 @@
           {Credo.Check.Readability.StrictModuleLayout, []},
           {Credo.Check.Readability.WithCustomTaggedTuple, []},
           {Credo.Check.Refactor.ABCSize, [max_size: 80]},
-          {Credo.Check.Refactor.AppendSingleItem, []},
+          # Disabled: Model building appends to maintain insertion order for correct
+          # index computation. The O(n) cost is negligible vs solve time.
+          # {Credo.Check.Refactor.AppendSingleItem, []},
           {Credo.Check.Refactor.DoubleBooleanNegation, []},
           {Credo.Check.Refactor.FilterReject, []},
           {Credo.Check.Refactor.IoPuts, []},

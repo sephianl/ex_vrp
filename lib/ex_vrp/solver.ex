@@ -143,11 +143,24 @@ defmodule ExVrp.Solver do
         0
       end
 
-    {:ok, initial_solution} =
-      Native.local_search_search_run(local_search, empty_solution, max_cost_eval, init_timeout_ms)
+    # Build multiple initial solutions with different seeds and pick the best.
+    # Initial solution quality varies significantly with random client
+    # ordering — a bad start can leave the ILS stuck in infeasible space.
+    candidates =
+      for i <- 0..2 do
+        ls = if i == 0, do: local_search, else: Native.create_local_search(problem_data, seed + i)
+
+        {:ok, sol} =
+          Native.local_search_search_run(ls, empty_solution, max_cost_eval, init_timeout_ms)
+
+        cost = Native.solution_penalised_cost(sol, max_cost_eval)
+        {cost, sol}
+      end
+
+    {_, initial_solution} = Enum.min_by(candidates, fn {cost, _} -> cost end)
 
     initial_solution_time = System.monotonic_time(:millisecond) - initial_solution_start
-    Logger.info("Initial solution generated in #{initial_solution_time}ms")
+    Logger.info("Initial solution generated in #{initial_solution_time}ms (best of 3)")
 
     {local_search, penalty_manager, initial_solution}
   end

@@ -141,7 +141,7 @@ defmodule ExVrp.Model do
     # Create client (with group index stored)
     client = Client.new(opts)
 
-    %{model | clients: [client | clients], client_groups: groups}
+    %{model | clients: clients ++ [client], client_groups: groups}
   end
 
   @doc """
@@ -165,7 +165,7 @@ defmodule ExVrp.Model do
         opts
       ) do
     depot = Depot.new(opts)
-    new_depots = [depot | depots]
+    new_depots = depots ++ [depot]
 
     # Recalculate group indices if clients exist
     new_groups =
@@ -216,7 +216,7 @@ defmodule ExVrp.Model do
   @spec add_vehicle_type(t(), keyword()) :: t()
   def add_vehicle_type(%__MODULE__{vehicle_types: vehicle_types} = model, opts) do
     vehicle_type = VehicleType.new(opts)
-    %{model | vehicle_types: [vehicle_type | vehicle_types]}
+    %{model | vehicle_types: vehicle_types ++ [vehicle_type]}
   end
 
   @doc """
@@ -242,7 +242,7 @@ defmodule ExVrp.Model do
   def add_client_group(%__MODULE__{client_groups: groups} = model, opts \\ []) do
     group = ClientGroup.new(opts)
     group_idx = length(groups)
-    {%{model | client_groups: [group | groups]}, group_idx}
+    {%{model | client_groups: groups ++ [group]}, group_idx}
   end
 
   @doc """
@@ -285,11 +285,10 @@ defmodule ExVrp.Model do
   def add_same_vehicle_group(%__MODULE__{} = model, clients, opts \\ []) do
     name = Keyword.get(opts, :name, "")
     num_depots = length(model.depots)
-    ordered_clients = Enum.reverse(model.clients)
 
     client_indices =
       Enum.map(clients, fn client ->
-        idx = Enum.find_index(ordered_clients, &(&1 == client))
+        idx = Enum.find_index(model.clients, &(&1 == client))
 
         if is_nil(idx) do
           raise ArgumentError, "Client not in model"
@@ -300,7 +299,7 @@ defmodule ExVrp.Model do
       end)
 
     group = %SameVehicleGroup{clients: client_indices, name: name}
-    %{model | same_vehicle_groups: [group | model.same_vehicle_groups]}
+    %{model | same_vehicle_groups: model.same_vehicle_groups ++ [group]}
   end
 
   @doc """
@@ -655,28 +654,9 @@ defmodule ExVrp.Model do
   """
   @spec to_problem_data(t()) :: {:ok, reference()} | {:error, term()}
   def to_problem_data(%__MODULE__{} = model) do
-    model = finalize(model)
-
     case validate(model) do
       :ok -> ExVrp.Native.create_problem_data(model)
       {:error, _reason} = error -> error
     end
-  end
-
-  defp finalize(%__MODULE__{} = model) do
-    %{
-      model
-      | clients: Enum.reverse(model.clients),
-        depots: Enum.reverse(model.depots),
-        vehicle_types: Enum.reverse(model.vehicle_types),
-        client_groups:
-          Enum.map(Enum.reverse(model.client_groups), fn group ->
-            %{group | clients: Enum.reverse(group.clients)}
-          end),
-        same_vehicle_groups:
-          Enum.map(Enum.reverse(model.same_vehicle_groups), fn group ->
-            %{group | clients: Enum.reverse(group.clients)}
-          end)
-    }
   end
 end
