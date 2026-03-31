@@ -248,7 +248,16 @@ defmodule ExVrp.IteratedLocalSearch do
           restart_ls = Native.create_local_search(state.problem_data, restart_seed)
           {:ok, max_eval} = PenaltyManager.max_cost_evaluator(state.penalty_manager)
           {:ok, empty} = Native.create_solution_from_routes(state.problem_data, [])
-          {:ok, fresh} = Native.local_search_search_run(restart_ls, empty, max_eval, 0)
+
+          restart_timeout_ms =
+            if state.max_runtime_ms do
+              elapsed_ms = System.monotonic_time(:millisecond) - state.start_time
+              max(round(state.max_runtime_ms) - elapsed_ms, 1)
+            else
+              0
+            end
+
+          {:ok, fresh} = Native.local_search_search_run(restart_ls, empty, max_eval, restart_timeout_ms)
           {fresh, Native.solution_penalised_cost(fresh, state.cost_eval)}
         else
           {state.best, Native.solution_penalised_cost(state.best, state.cost_eval)}
