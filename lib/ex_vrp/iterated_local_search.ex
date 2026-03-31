@@ -249,15 +249,7 @@ defmodule ExVrp.IteratedLocalSearch do
           {:ok, max_eval} = PenaltyManager.max_cost_evaluator(state.penalty_manager)
           {:ok, empty} = Native.create_solution_from_routes(state.problem_data, [])
 
-          restart_timeout_ms =
-            if state.max_runtime_ms do
-              elapsed_ms = System.monotonic_time(:millisecond) - state.start_time
-              max(round(state.max_runtime_ms) - elapsed_ms, 1)
-            else
-              0
-            end
-
-          {:ok, fresh} = Native.local_search_search_run(restart_ls, empty, max_eval, restart_timeout_ms)
+          {:ok, fresh} = Native.local_search_search_run(restart_ls, empty, max_eval, remaining_timeout_ms(state))
           {fresh, Native.solution_penalised_cost(fresh, state.cost_eval)}
         else
           {state.best, Native.solution_penalised_cost(state.best, state.cost_eval)}
@@ -278,17 +270,7 @@ defmodule ExVrp.IteratedLocalSearch do
 
   # Apply local search to generate candidate
   defp search_step(state) do
-    # Calculate remaining timeout for C++ local search (in milliseconds)
-    timeout_ms =
-      if state.max_runtime_ms do
-        elapsed_ms = System.monotonic_time(:millisecond) - state.start_time
-        # Pass remaining time, minimum 1ms (0 means "no timeout" in C++)
-        # round/1 ensures integer for NIF when max_runtime_ms is a float
-        max(round(state.max_runtime_ms) - elapsed_ms, 1)
-      else
-        # No timeout
-        0
-      end
+    timeout_ms = remaining_timeout_ms(state)
 
     # Use persistent LocalSearch for performance
     # RNG is stored in the LocalSearch resource and advances across calls,
@@ -445,6 +427,15 @@ defmodule ExVrp.IteratedLocalSearch do
     else
       state
     end
+  end
+
+  # Remaining time budget in milliseconds (0 means no timeout).
+  # round/1 ensures integer for NIF when max_runtime_ms is a float.
+  defp remaining_timeout_ms(%{max_runtime_ms: nil}), do: 0
+
+  defp remaining_timeout_ms(state) do
+    elapsed_ms = System.monotonic_time(:millisecond) - state.start_time
+    max(round(state.max_runtime_ms) - elapsed_ms, 1)
   end
 
   # Build Solution struct from solution reference
