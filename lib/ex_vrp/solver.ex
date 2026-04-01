@@ -204,7 +204,7 @@ defmodule ExVrp.Solver do
     Enum.find_value(criteria, &extract_max_runtime_ms/1)
   end
 
-  defp extract_max_runtime_ms(_), do: nil
+  defp extract_max_runtime_ms(_criteria), do: nil
 
   # Build stop function from options
   defp build_stop_fn(opts) do

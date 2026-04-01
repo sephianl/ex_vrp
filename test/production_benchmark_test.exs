@@ -22,6 +22,8 @@ defmodule ExVrp.ProductionBenchmarkTest do
 
   alias ExVrp.StoppingCriteria
 
+  require Logger
+
   # 5 minutes per test — enough for the largest benchmark (~215s) with margin
   @moduletag timeout: 300_000
   @benchmark_dir Path.join(:code.priv_dir(:ex_vrp), "benchmark_data/production")
@@ -48,11 +50,11 @@ defmodule ExVrp.ProductionBenchmarkTest do
     plannable = plannable_count(model)
     timeout_s = round(102.6622 * :math.exp(0.00096445 * n))
 
-    IO.puts("[benchmark] #{name}: n=#{n}, plannable=#{plannable}, timeout=#{timeout_s}s")
+    Logger.warning("[benchmark] #{name}: n=#{n}, plannable=#{plannable}, timeout=#{timeout_s}s")
 
     {:ok, result} = ExVrp.solve(model, stop: StoppingCriteria.max_runtime(timeout_s))
 
-    IO.puts("[benchmark] #{name}: done — #{result.best.num_clients}/#{plannable} clients")
+    Logger.warning("[benchmark] #{name}: done — #{result.best.num_clients}/#{plannable} clients")
 
     assert result.best.num_clients == plannable,
            "planned #{result.best.num_clients}/#{plannable} plannable clients (#{length(model.clients)} total)"
