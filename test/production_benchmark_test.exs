@@ -18,11 +18,12 @@ defmodule ExVrp.ProductionBenchmarkTest do
   Copy it to `priv/benchmark_data/production/`.
   """
 
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   alias ExVrp.StoppingCriteria
 
-  @moduletag timeout: :infinity
+  # 5 minutes per test — enough for the largest benchmark (~215s) with margin
+  @moduletag timeout: 300_000
   @benchmark_dir Path.join(:code.priv_dir(:ex_vrp), "benchmark_data/production")
 
   @benchmarks @benchmark_dir
@@ -41,13 +42,17 @@ defmodule ExVrp.ProductionBenchmarkTest do
   end
 
   defp run_benchmark(file) do
+    name = Path.basename(file, "_model.etf")
     model = load_model(file)
     n = ExVrp.Model.num_locations(model)
+    plannable = plannable_count(model)
     timeout_s = round(102.6622 * :math.exp(0.00096445 * n))
+
+    IO.puts("[benchmark] #{name}: n=#{n}, plannable=#{plannable}, timeout=#{timeout_s}s")
 
     {:ok, result} = ExVrp.solve(model, stop: StoppingCriteria.max_runtime(timeout_s))
 
-    plannable = plannable_count(model)
+    IO.puts("[benchmark] #{name}: done — #{result.best.num_clients}/#{plannable} clients")
 
     assert result.best.num_clients == plannable,
            "planned #{result.best.num_clients}/#{plannable} plannable clients (#{length(model.clients)} total)"

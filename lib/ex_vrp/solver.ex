@@ -135,10 +135,12 @@ defmodule ExVrp.Solver do
     {:ok, max_cost_eval} = PenaltyManager.max_cost_evaluator(penalty_manager)
     {:ok, empty_solution} = Native.create_solution_from_routes(problem_data, [])
 
+    max_runtime_ms = resolve_max_runtime_ms(opts)
+
     init_timeout_ms =
-      if opts[:max_runtime] do
+      if max_runtime_ms do
         elapsed = System.monotonic_time(:millisecond) - solve_start
-        max(round(opts[:max_runtime]) - elapsed, 1)
+        max(round(max_runtime_ms) - elapsed, 1)
       else
         0
       end
@@ -159,10 +161,12 @@ defmodule ExVrp.Solver do
 
     ils_opts = [seed: seed, on_progress: opts[:on_progress]]
 
+    max_runtime_ms = resolve_max_runtime_ms(opts)
+
     ils_opts =
-      if opts[:max_runtime] do
+      if max_runtime_ms do
         setup_elapsed = System.monotonic_time(:millisecond) - solve_start
-        remaining_ms = max(opts[:max_runtime] - setup_elapsed, 0)
+        remaining_ms = max(max_runtime_ms - setup_elapsed, 0)
         Keyword.put(ils_opts, :max_runtime_ms, remaining_ms)
       else
         ils_opts
@@ -182,6 +186,25 @@ defmodule ExVrp.Solver do
   defp notify_progress(nil, _info), do: :ok
   defp notify_progress(callback, info) when is_function(callback, 1), do: callback.(info)
   defp notify_progress(_callback, _info), do: :ok
+
+  # Extract max_runtime_ms from opts, checking both :max_runtime and :stop criteria.
+  # This ensures the NIF gets per-iteration timeouts even when using stop: criteria.
+  defp resolve_max_runtime_ms(opts) do
+    cond do
+      opts[:max_runtime] -> opts[:max_runtime]
+      opts[:stop] -> extract_max_runtime_ms(opts[:stop])
+      true -> nil
+    end
+  end
+
+  defp extract_max_runtime_ms(%StoppingCriteria{type: :max_runtime, state: state}), do: state.max_ms
+
+  defp extract_max_runtime_ms(%StoppingCriteria{type: type, state: %{criteria: criteria}})
+       when type in [:multiple_criteria, :any, :all] do
+    Enum.find_value(criteria, &extract_max_runtime_ms/1)
+  end
+
+  defp extract_max_runtime_ms(_), do: nil
 
   # Build stop function from options
   defp build_stop_fn(opts) do

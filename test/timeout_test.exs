@@ -62,6 +62,21 @@ defmodule ExVrp.TimeoutTest do
         )
 
       assert result.best
+      assert result.runtime <= 500, "stop: max_runtime(0.25) should complete within ~250ms, took #{result.runtime}ms"
+    end
+
+    test "stop: max_runtime respects timeout as accurately as max_runtime option" do
+      timeout_ms = 300
+
+      {:ok, via_option} = Solver.solve(medium_model(), max_runtime: timeout_ms)
+      {:ok, via_stop} = Solver.solve(medium_model(), stop: StoppingCriteria.max_runtime(timeout_ms / 1000))
+
+      # Both paths should complete within 2x the requested timeout
+      assert via_option.runtime <= timeout_ms * 2,
+             "max_runtime: option took #{via_option.runtime}ms (limit: #{timeout_ms}ms)"
+
+      assert via_stop.runtime <= timeout_ms * 2,
+             "stop: max_runtime took #{via_stop.runtime}ms (limit: #{timeout_ms}ms)"
     end
   end
 
