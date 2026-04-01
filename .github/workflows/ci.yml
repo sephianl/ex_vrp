@@ -60,13 +60,14 @@ jobs:
         run: |
           devenv shell mix test
 
+      - name: Run production benchmarks
+        timeout-minutes: 20
+        run: |
+          devenv shell mix test test/production_benchmark_test.exs --include production_benchmark --only production_benchmark
+
       - name: Run AddressSanitizer tests
         run: |
           devenv shell task test:asan
-
-      - name: Run production benchmarks
-        run: |
-          devenv shell mix test test/production_benchmark_test.exs --include production_benchmark --only production_benchmark
 
       - name: Run full checks
         if: github.event_name == 'pull_request'
