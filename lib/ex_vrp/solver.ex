@@ -20,7 +20,7 @@ defmodule ExVrp.Solver do
           max_runtime: pos_integer(),
           stop: StoppingCriteria.t(),
           seed: non_neg_integer(),
-          num_starts: pos_integer(),
+          num_starts: pos_integer() | :auto,
           penalty_params: PenaltyManager.Params.t(),
           ils_params: IteratedLocalSearch.Params.t(),
           on_progress: (map() -> any()) | nil
@@ -55,6 +55,7 @@ defmodule ExVrp.Solver do
   - `:num_starts` - Number of parallel independent solver starts (default: 1).
     Each start uses a different seed and runs its own ILS chain.
     The best result across all starts is returned.
+    Use `:auto` to pick based on available cores (`div(schedulers_online, 3)`).
   - `:penalty_params` - PenaltyManager.Params for penalty adjustment
   - `:ils_params` - IteratedLocalSearch.Params for ILS behavior
   - `:on_progress` - Optional callback function receiving progress maps during ILS iterations (time-gated at ~1s intervals). When `num_starts > 1`, progress maps include `:seed_idx` and `:seed` fields.
@@ -91,7 +92,7 @@ defmodule ExVrp.Solver do
     opts = Keyword.merge(@default_opts, opts)
 
     base_seed = opts[:seed] || :rand.uniform(1_000_000)
-    num_starts = opts[:num_starts]
+    num_starts = resolve_num_starts(opts[:num_starts])
 
     with {:ok, problem_data} <- Model.to_problem_data(model) do
       problem_data_time = System.monotonic_time(:millisecond) - solve_start
@@ -210,6 +211,9 @@ defmodule ExVrp.Solver do
         opts
     end
   end
+
+  defp resolve_num_starts(:auto), do: max(div(System.schedulers_online(), 3), 1)
+  defp resolve_num_starts(n) when is_integer(n) and n >= 1, do: n
 
   defp task_timeout(opts) do
     case opts[:max_runtime] do

@@ -439,6 +439,16 @@ defmodule ExVrp.SolveTest do
       assert IteratedLocalSearch.Result.cost(multi) <= IteratedLocalSearch.Result.cost(best_single)
     end
 
+    test "num_starts: :auto resolves based on schedulers" do
+      model = build_ok_small_model()
+
+      {:ok, result} = Solver.solve(model, max_iterations: 20, seed: 42, num_starts: :auto)
+
+      expected = max(div(System.schedulers_online(), 3), 1)
+      assert result.best.is_feasible
+      assert result.stats.num_starts == expected
+    end
+
     test "on_progress receives seed_idx and seed fields" do
       model = build_ok_small_model()
       test_pid = self()
