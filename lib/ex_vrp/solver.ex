@@ -55,7 +55,7 @@ defmodule ExVrp.Solver do
   - `:num_starts` - Number of parallel independent solver starts (default: `:auto`).
     Each start uses a different seed and runs its own ILS chain.
     The best result across all starts is returned.
-    Use `:auto` to pick based on available cores (`div(schedulers_online, 3)`).
+    Use `:auto` to pick based on available cores (`div(schedulers_online, 2)`).
   - `:penalty_params` - PenaltyManager.Params for penalty adjustment
   - `:ils_params` - IteratedLocalSearch.Params for ILS behavior
   - `:on_progress` - Optional callback function receiving progress maps during ILS iterations (time-gated at ~1s intervals). When `num_starts > 1`, progress maps include `:seed_idx` and `:seed` fields.
@@ -212,7 +212,7 @@ defmodule ExVrp.Solver do
     end
   end
 
-  defp resolve_num_starts(:auto), do: max(div(System.schedulers_online(), 3), 1)
+  defp resolve_num_starts(:auto), do: max(div(System.schedulers_online(), 2), 1)
   defp resolve_num_starts(n) when is_integer(n) and n >= 1, do: n
 
   defp task_timeout(opts) do

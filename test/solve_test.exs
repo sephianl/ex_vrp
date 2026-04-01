@@ -444,7 +444,7 @@ defmodule ExVrp.SolveTest do
 
       {:ok, result} = Solver.solve(model, max_iterations: 20, seed: 42, num_starts: :auto)
 
-      expected = max(div(System.schedulers_online(), 3), 1)
+      expected = max(div(System.schedulers_online(), 2), 1)
       assert result.best.is_feasible
       assert result.stats.num_starts == expected
     end
