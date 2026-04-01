@@ -31,7 +31,7 @@ defmodule ExVrp.Solver do
     max_runtime: nil,
     stop: nil,
     seed: nil,
-    num_starts: 1,
+    num_starts: :auto,
     penalty_params: nil,
     ils_params: nil,
     on_progress: nil
@@ -52,7 +52,7 @@ defmodule ExVrp.Solver do
   - `:max_runtime` - Maximum runtime in seconds (default: unlimited). Matches PyVRP.
   - `:stop` - Custom StoppingCriteria (overrides max_iterations/max_runtime)
   - `:seed` - Random seed for reproducibility (default: random)
-  - `:num_starts` - Number of parallel independent solver starts (default: 1).
+  - `:num_starts` - Number of parallel independent solver starts (default: `:auto`).
     Each start uses a different seed and runs its own ILS chain.
     The best result across all starts is returned.
     Use `:auto` to pick based on available cores (`div(schedulers_online, 3)`).
