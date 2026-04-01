@@ -14,7 +14,7 @@ defmodule ExVrp.PenaltyManager do
     @moduledoc """
     Parameters for penalty management.
     """
-    defstruct solutions_between_updates: 500,
+    defstruct solutions_between_updates: 100,
               penalty_increase: 1.25,
               penalty_decrease: 0.85,
               target_feasible: 0.65,

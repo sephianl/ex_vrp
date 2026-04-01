@@ -159,7 +159,7 @@ defmodule ExVrp.PenaltyManagerTest do
     test "uses default values" do
       params = %PenaltyManager.Params{}
 
-      assert params.solutions_between_updates == 500
+      assert params.solutions_between_updates == 100
       assert params.penalty_increase == 1.25
       assert params.penalty_decrease == 0.85
       assert params.target_feasible == 0.65
