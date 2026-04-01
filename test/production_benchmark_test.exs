@@ -59,8 +59,10 @@ defmodule ExVrp.ProductionBenchmarkTest do
     assert result.best.is_feasible,
            "solution is infeasible (#{result.best.num_clients}/#{plannable} clients)"
 
-    assert result.best.num_clients >= 400,
-           "planned #{result.best.num_clients}/#{plannable} plannable clients (need >= 400)"
+    min_clients = min(400, plannable)
+
+    assert result.best.num_clients >= min_clients,
+           "planned #{result.best.num_clients}/#{plannable} plannable clients (need >= #{min_clients})"
   end
 
   # --- Quick multi-seed feasibility ---
@@ -91,7 +93,7 @@ defmodule ExVrp.ProductionBenchmarkTest do
     # Require feasibility and at least 70% of plannable clients.
     # Prize-collecting problems may not serve all clients when fleet
     # capacity can't accommodate them without time warp violations.
-    min_clients = 400
+    min_clients = min(400, plannable)
 
     feasible =
       Enum.count(results, fn {_seed, r} ->
