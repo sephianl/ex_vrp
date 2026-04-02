@@ -3,7 +3,64 @@ defmodule ExVrp.Solution do
   Represents a solution to a VRP.
 
   A solution consists of routes (one per vehicle used) and provides
-  methods to compute costs, distances, and validate feasibility.
+  functions to query costs, distances, feasibility, and detailed schedules.
+
+  ## Accessing Solutions
+
+  Solutions are returned as `result.best` from the solver:
+
+      {:ok, result} = ExVrp.solve(model)
+      solution = result.best
+
+      solution.routes       #=> [[1, 3], [2]]
+      solution.distance     #=> 4521
+      solution.is_feasible  #=> true
+      solution.num_clients  #=> 3
+
+  ## Querying Routes
+
+  Use `routes/1` to get `ExVrp.Route` structs with full query capabilities:
+
+      routes = ExVrp.Solution.routes(solution)
+
+      for route <- routes do
+        IO.puts("Distance: \#{ExVrp.Route.distance(route)}")
+        IO.puts("Duration: \#{ExVrp.Route.duration(route)}")
+        IO.puts("Vehicle type: \#{route.vehicle_type}")
+      end
+
+  Or query route properties directly by index:
+
+      ExVrp.Solution.route_distance(solution, 0)
+      ExVrp.Solution.route_delivery(solution, 0)
+      ExVrp.Solution.route_feasible?(solution, 0)
+
+  ## Schedules
+
+  Get detailed timing for each visit in a route:
+
+      schedule = ExVrp.Solution.route_schedule(solution, 0)
+
+      for visit <- schedule do
+        IO.puts("Location \#{visit.location}: \#{visit.start_service}-\#{visit.end_service}")
+      end
+
+  ## Constraint Violations
+
+  Check for specific constraint violations:
+
+      ExVrp.Solution.has_time_warp?(solution)
+      ExVrp.Solution.has_excess_load?(solution)
+      ExVrp.Solution.has_excess_distance?(solution)
+      ExVrp.Solution.time_warp(solution)        #=> total time warp
+      ExVrp.Solution.excess_load(solution)       #=> per-dimension excess
+
+  ## Unassigned Clients
+
+  For prize-collecting problems, check which clients were not visited:
+
+      ExVrp.Solution.unassigned(solution)  #=> [4, 7]
+
   """
 
   @type t :: %__MODULE__{

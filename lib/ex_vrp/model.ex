@@ -2,10 +2,11 @@ defmodule ExVrp.Model do
   @moduledoc """
   High-level builder for constructing VRP problems.
 
-  The Model provides a fluent API for defining clients, depots,
-  vehicle types, and routing constraints before solving.
+  The Model provides a fluent API for defining depots, vehicle types,
+  clients, and routing constraints. A model must have at least one depot
+  and one vehicle type before it can be solved.
 
-  ## Example
+  ## Basic Example
 
       model =
         ExVrp.Model.new()
@@ -15,7 +16,64 @@ defmodule ExVrp.Model do
         |> ExVrp.Model.add_client(x: 2, y: 2, delivery: [20])
         |> ExVrp.Model.add_client(x: 3, y: 1, delivery: [15])
 
-      {:ok, solution} = ExVrp.solve(model)
+      {:ok, result} = ExVrp.solve(model)
+
+  ## Custom Distance/Duration Matrices
+
+  By default, Euclidean distances are computed from coordinates. You can
+  provide custom matrices instead (one per vehicle profile):
+
+      # Matrix rows/columns: [depot, client1, client2, ...]
+      distances = [
+        [0, 100, 200],
+        [100, 0, 150],
+        [200, 150, 0]
+      ]
+
+      model =
+        ExVrp.Model.new()
+        |> ExVrp.Model.add_depot(x: 0, y: 0)
+        |> ExVrp.Model.add_client(x: 1, y: 0, delivery: [10])
+        |> ExVrp.Model.add_client(x: 2, y: 0, delivery: [20])
+        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> ExVrp.Model.set_distance_matrices([distances])
+        |> ExVrp.Model.set_duration_matrices([distances])
+
+  ## Multi-Dimensional Capacity
+
+  Vehicles and clients can have multiple capacity dimensions (e.g. weight and volume):
+
+      model
+      |> ExVrp.Model.add_vehicle_type(num_available: 3, capacity: [1000, 50])
+      |> ExVrp.Model.add_client(x: 1, y: 1, delivery: [200, 10])
+
+  ## Client Groups
+
+  Client groups allow mutually exclusive alternatives — only one client from
+  the group will be visited:
+
+      {model, group} = ExVrp.Model.add_client_group(model, required: false)
+      model =
+        model
+        |> ExVrp.Model.add_client(x: 1, y: 1, group: group, required: false, prize: 100)
+        |> ExVrp.Model.add_client(x: 2, y: 2, group: group, required: false, prize: 150)
+
+  ## Same-Vehicle Groups
+
+  Force specific clients onto the same route:
+
+      [c1, c2] = model.clients
+      model = ExVrp.Model.add_same_vehicle_group(model, [c1, c2])
+
+  ## Validation
+
+  Models are validated automatically before solving. You can also validate
+  explicitly:
+
+      case ExVrp.Model.validate(model) do
+        :ok -> :ready
+        {:error, reasons} -> IO.inspect(reasons)
+      end
 
   """
 

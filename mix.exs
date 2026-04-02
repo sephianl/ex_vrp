@@ -132,10 +132,34 @@ defmodule ExVrp.MixProject do
 
   defp docs do
     [
-      main: "readme",
+      main: "ExVrp",
       extras: ["README.md"],
       source_url: @github_url,
-      source_ref: "v#{@version}"
+      source_ref: "v#{@version}",
+      groups_for_modules: [
+        "Problem Definition": [
+          ExVrp.Model,
+          ExVrp.Client,
+          ExVrp.Depot,
+          ExVrp.VehicleType,
+          ExVrp.ClientGroup,
+          ExVrp.SameVehicleGroup
+        ],
+        Solving: [
+          ExVrp.Solver,
+          ExVrp.StoppingCriteria,
+          ExVrp.PenaltyManager,
+          ExVrp.PenaltyManager.Params,
+          ExVrp.IteratedLocalSearch,
+          ExVrp.IteratedLocalSearch.Params
+        ],
+        Results: [
+          ExVrp.Solution,
+          ExVrp.Route,
+          ExVrp.ScheduledVisit,
+          ExVrp.IteratedLocalSearch.Result
+        ]
+      ]
     ]
   end
 end
