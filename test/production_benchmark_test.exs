@@ -52,14 +52,14 @@ defmodule ExVrp.ProductionBenchmarkTest do
 
     Logger.warning("[benchmark] #{name}: n=#{n}, plannable=#{plannable}, timeout=#{timeout_s}s")
 
-    {:ok, result} = ExVrp.solve(model, stop: StoppingCriteria.max_runtime(timeout_s))
+    {:ok, result} = ExVrp.solve(model, stop: StoppingCriteria.max_runtime(timeout_s), num_starts: 1)
 
     Logger.warning("[benchmark] #{name}: done — #{result.best.num_clients}/#{plannable} clients")
 
-    min_clients = 400
-
     assert result.best.is_feasible,
            "solution is infeasible (#{result.best.num_clients}/#{plannable} clients)"
+
+    min_clients = min(400, plannable)
 
     assert result.best.num_clients >= min_clients,
            "planned #{result.best.num_clients}/#{plannable} plannable clients (need >= #{min_clients})"
@@ -86,14 +86,14 @@ defmodule ExVrp.ProductionBenchmarkTest do
 
     results =
       Enum.map(@seeds, fn seed ->
-        {:ok, result} = ExVrp.solve(model, max_runtime: timeout_ms, seed: seed)
+        {:ok, result} = ExVrp.solve(model, max_runtime: timeout_ms, seed: seed, num_starts: 1)
         {seed, result}
       end)
 
     # Require feasibility and at least 70% of plannable clients.
     # Prize-collecting problems may not serve all clients when fleet
     # capacity can't accommodate them without time warp violations.
-    min_clients = 400
+    min_clients = min(400, plannable)
 
     feasible =
       Enum.count(results, fn {_seed, r} ->
