@@ -386,6 +386,101 @@ defmodule ExVrp.SolveTest do
     end
   end
 
+  describe "parallel multi-start solving" do
+    test "num_starts: 4 produces a valid result" do
+      model = build_ok_small_model()
+
+      {:ok, result} = Solver.solve(model, max_iterations: 20, seed: 42, num_starts: 4)
+
+      assert result.best.is_feasible
+      assert result.best.distance > 0
+      assert result.stats.num_starts == 4
+      assert result.stats.total_iterations > 0
+    end
+
+    test "reproducible with same seed and num_starts" do
+      model = build_ok_small_model()
+
+      opts = [max_iterations: 20, seed: 42, num_starts: 4]
+      {:ok, res1} = Solver.solve(model, opts)
+      {:ok, res2} = Solver.solve(model, opts)
+
+      assert res1.best.routes == res2.best.routes
+      assert res1.best.distance == res2.best.distance
+    end
+
+    test "num_starts: 1 behaves identically to default" do
+      model = build_ok_small_model()
+
+      stop = StoppingCriteria.max_iterations(20)
+      {:ok, res1} = Solver.solve(model, stop: stop, seed: 42)
+      {:ok, res2} = Solver.solve(model, stop: stop, seed: 42, num_starts: 1)
+
+      assert res1.best.routes == res2.best.routes
+      assert res1.best.distance == res2.best.distance
+    end
+
+    test "multi-start result is at least as good as single best seed" do
+      model = build_ok_small_model()
+
+      # Run individual seeds
+      single_results =
+        for seed <- 42..45 do
+          {:ok, result} = Solver.solve(model, max_iterations: 50, seed: seed)
+          result
+        end
+
+      best_single =
+        Enum.min_by(single_results, fn r -> IteratedLocalSearch.Result.cost(r) end)
+
+      # Run multi-start with same seeds
+      {:ok, multi} = Solver.solve(model, max_iterations: 50, seed: 42, num_starts: 4)
+
+      assert IteratedLocalSearch.Result.cost(multi) <= IteratedLocalSearch.Result.cost(best_single)
+    end
+
+    test "num_starts: :auto resolves based on schedulers" do
+      model = build_ok_small_model()
+
+      {:ok, result} = Solver.solve(model, max_iterations: 20, seed: 42, num_starts: :auto)
+
+      expected = max(div(System.schedulers_online(), 2), 1)
+      assert result.best.is_feasible
+      assert result.stats.num_starts == expected
+    end
+
+    test "on_progress receives seed_idx and seed fields" do
+      model = build_ok_small_model()
+      test_pid = self()
+
+      callback = fn info ->
+        send(test_pid, {:progress, info})
+      end
+
+      {:ok, _result} =
+        Solver.solve(model, max_iterations: 10, seed: 42, num_starts: 2, on_progress: callback)
+
+      # Collect all progress messages (including initial_solution events)
+      messages = collect_messages(:progress)
+
+      seed_indices = messages |> Enum.map(& &1.seed_idx) |> Enum.uniq() |> Enum.sort()
+      assert 0 in seed_indices
+      assert 1 in seed_indices
+
+      seeds = messages |> Enum.map(& &1.seed) |> Enum.uniq() |> Enum.sort()
+      assert 42 in seeds
+      assert 43 in seeds
+    end
+  end
+
+  defp collect_messages(tag) do
+    receive do
+      {^tag, info} -> [info | collect_messages(tag)]
+    after
+      0 -> []
+    end
+  end
+
   # Helper functions
 
   defp build_ok_small_model do

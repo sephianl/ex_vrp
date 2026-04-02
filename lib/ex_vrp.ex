@@ -51,6 +51,7 @@ defmodule ExVrp do
   - `:max_iterations` - Maximum number of iterations (default: 10_000)
   - `:max_runtime` - Maximum runtime in seconds (default: none)
   - `:seed` - Random seed for reproducibility (default: random)
+  - `:num_starts` - Number of parallel independent solver starts (default: `:auto`)
 
   ## Example
 

@@ -52,7 +52,7 @@ defmodule ExVrp.ProductionBenchmarkTest do
 
     Logger.warning("[benchmark] #{name}: n=#{n}, plannable=#{plannable}, timeout=#{timeout_s}s")
 
-    {:ok, result} = ExVrp.solve(model, stop: StoppingCriteria.max_runtime(timeout_s))
+    {:ok, result} = ExVrp.solve(model, stop: StoppingCriteria.max_runtime(timeout_s), num_starts: 1)
 
     Logger.warning("[benchmark] #{name}: done — #{result.best.num_clients}/#{plannable} clients")
 
@@ -86,7 +86,7 @@ defmodule ExVrp.ProductionBenchmarkTest do
 
     results =
       Enum.map(@seeds, fn seed ->
-        {:ok, result} = ExVrp.solve(model, max_runtime: timeout_ms, seed: seed)
+        {:ok, result} = ExVrp.solve(model, max_runtime: timeout_ms, seed: seed, num_starts: 1)
         {seed, result}
       end)
 
