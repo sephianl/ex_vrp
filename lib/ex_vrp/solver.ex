@@ -218,7 +218,7 @@ defmodule ExVrp.Solver do
   defp task_timeout(opts) do
     case opts[:max_runtime] do
       nil -> :infinity
-      ms -> round(ms * 2) + 30_000
+      ms -> round(ms * 1.1) + 5_000
     end
   end
 
