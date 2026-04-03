@@ -5,3 +5,4 @@ ExUnit.start()
 
 # Suppress info-level solver logs during tests to keep CI output clean.
 Logger.configure(level: :warning)
+Application.ensure_all_started(:credo)
