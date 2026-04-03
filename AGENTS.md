@@ -14,11 +14,11 @@
 
 ### Delegation Matrix
 
-| Trigger                           | Subagent             | Why                                                                                                           |
-| --------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Run/debug tests                   | `test-runner`        | Verbose output pollutes main context. **Read-only: never edit files, only run `mix test` and report results** |
-| Understand PyVRP internals        | `Explore` (built-in) | Deep research into C++ sources and algorithm details stays isolated                                           |
-| Explore unfamiliar codebase areas | `Explore` (built-in) | Fast read-only search                                                                                         |
+| Trigger                           | Subagent             | Why                                                                                      |
+| --------------------------------- | -------------------- | ---------------------------------------------------------------------------------------- |
+| Run/debug tests                   | Bash (default)       | `mix test path/file.exs 2>&1 \| tail -20` — cheap pass/fail check without agent overhead |
+| Understand PyVRP internals        | `Explore` (built-in) | Deep research into C++ sources and algorithm details stays isolated                      |
+| Explore unfamiliar codebase areas | `Explore` (built-in) | Fast read-only search                                                                    |
 
 ### Keep in Main Context
 
@@ -31,7 +31,7 @@
 
 - Never mark a task complete without proving it works
 - Self-review your own diff before presenting -- fix minor issues (unused params, scattered logic, naming) before they stack up
-- Delegate test running to `test-runner` subagent -- don't pollute main context with test output
+- Run tests via Bash (`mix test file.exs 2>&1 | tail -20`) -- read more output only if failures need diagnosis
 - Ask yourself: "Would a staff engineer approve this?"
 
 ## 4. Demand Elegance (When It Matters)
@@ -55,9 +55,9 @@
 
 # Testing
 
-- Delegate test runs to `test-runner` subagent
+- **Default to Bash for test runs** -- run `mix test path/to/test.exs 2>&1 | tail -20` directly for pass/fail. Only read more output when diagnosing failures
 - **Scope test runs to what changed**: run only the specific test file(s) affected, not the full suite
-- For trivial checks like "does it compile", just run `mix compile --warnings-as-errors` directly -- no need to delegate
+- For trivial checks like "does it compile", just run `mix compile --warnings-as-errors` directly
 - Use `task test:asan` to run tests with AddressSanitizer + UBSan when debugging memory issues or after touching C++ code
 - NIF-dependent tests require `--include nif_required`
 
