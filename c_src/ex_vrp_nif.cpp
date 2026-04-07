@@ -592,6 +592,8 @@ ProblemData::Depot decode_depot([[maybe_unused]] ErlNifEnv *env,
     int64_t x = 0, y = 0;
     int64_t service_duration = 0;
     int64_t reload_cost = 0;
+    int64_t tw_early = 0;
+    int64_t tw_late = std::numeric_limits<int64_t>::max();
 
     ERL_NIF_TERM key, value;
     ErlNifMapIterator iter;
@@ -624,6 +626,25 @@ ProblemData::Depot decode_depot([[maybe_unused]] ErlNifEnv *env,
             {
                 nif_get_int64(env, value, &reload_cost);
             }
+            else if (key_str == "tw_early")
+            {
+                nif_get_int64(env, value, &tw_early);
+            }
+            else if (key_str == "tw_late")
+            {
+                char buf[32];
+                if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1))
+                {
+                    if (std::string(buf) == "infinity")
+                    {
+                        tw_late = std::numeric_limits<int64_t>::max();
+                    }
+                }
+                else
+                {
+                    nif_get_int64(env, value, &tw_late);
+                }
+            }
         }
         enif_map_iterator_next(env, &iter);
     }
@@ -631,8 +652,8 @@ ProblemData::Depot decode_depot([[maybe_unused]] ErlNifEnv *env,
 
     return ProblemData::Depot(Coordinate(x),
                               Coordinate(y),
-                              Duration(0),
-                              std::numeric_limits<Duration>::max(),
+                              Duration(tw_early),
+                              Duration(tw_late),
                               Duration(service_duration),
                               Cost(reload_cost));
 }
