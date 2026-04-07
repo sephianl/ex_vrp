@@ -81,6 +81,7 @@ defmodule ExVrp.Model do
   alias ExVrp.ClientGroup
   alias ExVrp.Depot
   alias ExVrp.SameVehicleGroup
+  alias ExVrp.VehicleGroup
   alias ExVrp.VehicleType
 
   @type t :: %__MODULE__{
@@ -89,6 +90,7 @@ defmodule ExVrp.Model do
           vehicle_types: [VehicleType.t()],
           client_groups: [ClientGroup.t()],
           same_vehicle_groups: [SameVehicleGroup.t()],
+          vehicle_groups: [VehicleGroup.t()],
           distance_matrices: [[[non_neg_integer()]]],
           duration_matrices: [[[non_neg_integer()]]]
         }
@@ -98,6 +100,7 @@ defmodule ExVrp.Model do
             vehicle_types: [],
             client_groups: [],
             same_vehicle_groups: [],
+            vehicle_groups: [],
             distance_matrices: [],
             duration_matrices: []
 
@@ -361,6 +364,35 @@ defmodule ExVrp.Model do
   end
 
   @doc """
+  Adds a vehicle group to the model.
+
+  Vehicle groups represent vehicle types that belong to the same physical
+  vehicle/driver. The solver enforces a minimum time gap between consecutive
+  routes assigned to vehicle types in the same group.
+
+  ## Options
+
+  - `:vehicle_types` - List of vehicle type indices (0-based) belonging to this group (required)
+  - `:min_gap` - Minimum time gap between consecutive routes (default: 0)
+
+  ## Example
+
+      model
+      |> Model.add_vehicle_type(num_available: 1, capacity: [100], tw_early: 0, tw_late: 500)
+      |> Model.add_vehicle_type(num_available: 1, capacity: [100], tw_early: 600, tw_late: 1000)
+      |> Model.add_vehicle_group(vehicle_types: [0, 1], min_gap: 100)
+
+  """
+  @spec add_vehicle_group(t(), keyword()) :: t()
+  def add_vehicle_group(%__MODULE__{} = model, opts) do
+    vehicle_type_indices = Keyword.fetch!(opts, :vehicle_types)
+    min_gap = Keyword.get(opts, :min_gap, 0)
+
+    group = %VehicleGroup{vehicle_type_indices: vehicle_type_indices, min_gap: min_gap}
+    %{model | vehicle_groups: model.vehicle_groups ++ [group]}
+  end
+
+  @doc """
   Sets custom distance matrices.
 
   If not provided, Euclidean distances are computed from coordinates.
@@ -417,6 +449,7 @@ defmodule ExVrp.Model do
       |> validate_matrix_diagonals(model)
       |> validate_client_groups(model)
       |> validate_same_vehicle_groups(model)
+      |> validate_vehicle_groups(model)
 
     case errors do
       [] -> :ok
@@ -698,6 +731,28 @@ defmodule ExVrp.Model do
         # Check for duplicate clients within the group
         length(group.clients) != length(Enum.uniq(group.clients)) ->
           ["Same-vehicle group #{idx} has duplicate clients" | acc]
+
+        true ->
+          acc
+      end
+    end)
+  end
+
+  defp validate_vehicle_groups(errors, %{vehicle_groups: []}), do: errors
+
+  defp validate_vehicle_groups(errors, %{vehicle_groups: groups, vehicle_types: vehicle_types}) do
+    num_vehicle_types = length(vehicle_types)
+
+    Enum.reduce(Enum.with_index(groups), errors, fn {group, idx}, acc ->
+      cond do
+        group.vehicle_type_indices == [] ->
+          ["Vehicle group #{idx} is empty" | acc]
+
+        Enum.any?(group.vehicle_type_indices, fn i -> i >= num_vehicle_types end) ->
+          ["Vehicle group #{idx} has invalid vehicle type index" | acc]
+
+        group.min_gap < 0 ->
+          ["Vehicle group #{idx} has negative min_gap" | acc]
 
         true ->
           acc

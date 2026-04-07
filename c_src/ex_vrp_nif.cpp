@@ -1093,6 +1093,45 @@ decode_same_vehicle_group([[maybe_unused]] ErlNifEnv *env, ERL_NIF_TERM term)
     return ProblemData::SameVehicleGroup(clients, name);
 }
 
+// Decode a VehicleGroup from Elixir map
+ProblemData::VehicleGroup
+decode_vehicle_group([[maybe_unused]] ErlNifEnv *env, ERL_NIF_TERM term)
+{
+    std::vector<size_t> vehicle_type_indices;
+    int64_t min_gap = 0;
+
+    ERL_NIF_TERM key, value;
+
+    // Get vehicle_type_indices list
+    key = enif_make_atom(env, "vehicle_type_indices");
+    if (enif_get_map_value(env, term, key, &value))
+    {
+        unsigned len;
+        if (enif_get_list_length(env, value, &len))
+        {
+            vehicle_type_indices.reserve(len);
+            ERL_NIF_TERM head, tail = value;
+            for (unsigned i = 0; i < len; i++)
+            {
+                enif_get_list_cell(env, tail, &head, &tail);
+                unsigned long idx;
+                enif_get_ulong(env, head, &idx);
+                vehicle_type_indices.push_back(static_cast<size_t>(idx));
+            }
+        }
+    }
+
+    // Get min_gap
+    key = enif_make_atom(env, "min_gap");
+    if (enif_get_map_value(env, term, key, &value))
+    {
+        nif_get_int64(env, value, &min_gap);
+    }
+
+    return ProblemData::VehicleGroup(std::move(vehicle_type_indices),
+                                     Duration(min_gap));
+}
+
 // -----------------------------------------------------------------------------
 // NIF Functions
 // -----------------------------------------------------------------------------
@@ -1151,6 +1190,12 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
     key = enif_make_atom(env, "same_vehicle_groups");
     bool has_same_vehicle_groups
         = enif_get_map_value(env, model_term, key, &same_vehicle_groups_term);
+
+    // Get vehicle groups (optional)
+    ERL_NIF_TERM vehicle_groups_term;
+    key = enif_make_atom(env, "vehicle_groups");
+    bool has_vehicle_groups
+        = enif_get_map_value(env, model_term, key, &vehicle_groups_term);
 
     // Decode depots
     std::vector<ProblemData::Depot> depots;
@@ -1313,6 +1358,24 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
         }
     }
 
+    // Decode vehicle groups
+    std::vector<ProblemData::VehicleGroup> vehicle_groups;
+    if (has_vehicle_groups)
+    {
+        unsigned groups_len;
+        if (enif_get_list_length(env, vehicle_groups_term, &groups_len)
+            && groups_len > 0)
+        {
+            vehicle_groups.reserve(groups_len);
+            tail = vehicle_groups_term;
+            for (unsigned i = 0; i < groups_len; i++)
+            {
+                enif_get_list_cell(env, tail, &head, &tail);
+                vehicle_groups.push_back(decode_vehicle_group(env, head));
+            }
+        }
+    }
+
     // Create ProblemData
     auto problem_data
         = std::make_shared<ProblemData>(std::move(clients),
@@ -1321,7 +1384,8 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
                                         std::move(dist_matrices),
                                         std::move(dur_matrices),
                                         std::move(client_groups),
-                                        std::move(same_vehicle_groups));
+                                        std::move(same_vehicle_groups),
+                                        std::move(vehicle_groups));
 
     return fine::Ok(fine::make_resource<ProblemDataResource>(problem_data));
 }
@@ -2166,6 +2230,24 @@ solution_route_schedule([[maybe_unused]] ErlNifEnv *env,
 }
 
 FINE_NIF(solution_route_schedule, 0);
+
+/**
+ * Enforce vehicle group gap constraints on a solution.
+ * Returns a new solution with route times shifted and infeasible routes removed.
+ */
+fine::Ok<fine::ResourcePtr<SolutionResource>>
+enforce_vehicle_group_gaps(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SolutionResource> solution_resource)
+{
+    auto enforced = Solution::enforceVehicleGroupGaps(
+        *solution_resource->problemData, solution_resource->solution);
+
+    return fine::Ok(fine::make_resource<SolutionResource>(
+        std::move(enforced), solution_resource->problemData));
+}
+
+FINE_NIF(enforce_vehicle_group_gaps, 0);
 
 /**
  * Get the total fixed vehicle cost of the solution.

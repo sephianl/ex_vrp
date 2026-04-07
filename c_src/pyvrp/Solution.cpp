@@ -47,6 +47,42 @@ void Solution::evaluate(ProblemData const &data)
     }
 
     uncollectedPrizes_ = allPrizes - prizes_;
+
+    // Vehicle group gap violation: for each group, collect active routes,
+    // sort by start time, and check consecutive gaps.
+    vehicleGroupGapViolation_ = 0;
+    for (auto const &group : data.vehicleGroups())
+    {
+        // Collect (startTime, endTime) for routes whose vehicle type is in
+        // this group and that have clients.
+        std::vector<std::pair<Duration, Duration>> routeTimes;
+        for (auto const &route : routes_)
+        {
+            if (route.empty())
+                continue;
+
+            auto const vt = route.vehicleType();
+            auto const &indices = group.vehicleTypeIndices;
+            if (std::find(indices.begin(), indices.end(), vt) == indices.end())
+                continue;
+
+            auto const start = route.startTime();
+            auto const end = start + route.duration() - route.timeWarp();
+            routeTimes.emplace_back(start, end);
+        }
+
+        if (routeTimes.size() < 2)
+            continue;
+
+        std::sort(routeTimes.begin(), routeTimes.end());
+
+        for (size_t i = 1; i < routeTimes.size(); ++i)
+        {
+            auto const gap = routeTimes[i].first - routeTimes[i - 1].second;
+            if (gap < group.minGap)
+                vehicleGroupGapViolation_ += (group.minGap - gap);
+        }
+    }
 }
 
 bool Solution::empty() const { return numClients() == 0 && numRoutes() == 0; }
@@ -84,6 +120,11 @@ bool Solution::isFeasible() const
 bool Solution::isGroupFeasible() const { return isGroupFeas_; }
 
 size_t Solution::numSameVehicleViolations() const { return numSVGViolations_; }
+
+Duration Solution::vehicleGroupGapViolation() const
+{
+    return vehicleGroupGapViolation_;
+}
 
 bool Solution::isComplete() const { return numMissingClients_ == 0; }
 
@@ -146,6 +187,7 @@ bool Solution::operator==(Solution const &other) const
                               && durationCost_ == other.durationCost_
                               && timeWarp_ == other.timeWarp_
                               && isGroupFeas_ == other.isGroupFeas_
+                              && vehicleGroupGapViolation_ == other.vehicleGroupGapViolation_
                               && routes_.size() == other.routes_.size()
                               && neighbours_ == other.neighbours_;
     // clang-format on
@@ -388,6 +430,173 @@ Solution::Solution(size_t numClients,
       routes_(std::move(routes)),
       neighbours_(std::move(neighbours))
 {
+}
+
+namespace
+{
+// Creates a copy of a Route with all absolute times shifted forward by offset.
+Route shiftRoute(Route const &route, Duration offset)
+{
+    std::vector<Route::ScheduledVisit> newSchedule;
+    newSchedule.reserve(route.schedule().size());
+    for (auto const &visit : route.schedule())
+    {
+        newSchedule.emplace_back(visit.location,
+                                 visit.trip,
+                                 visit.startService + offset,
+                                 visit.endService + offset,
+                                 visit.waitDuration,
+                                 visit.timeWarp);
+    }
+
+    return Route(route.trips(),
+                 route.distance(),
+                 route.distanceCost(),
+                 route.excessDistance(),
+                 route.delivery(),
+                 route.pickup(),
+                 route.excessLoad(),
+                 route.duration(),
+                 route.overtime(),
+                 route.durationCost(),
+                 route.timeWarp(),
+                 route.travelDuration(),
+                 route.serviceDuration(),
+                 route.startTime() + offset,
+                 std::max<Duration>(route.slack() - offset, 0),
+                 route.prizes(),
+                 route.reloadCost(),
+                 route.centroid(),
+                 route.vehicleType(),
+                 route.startDepot(),
+                 route.endDepot(),
+                 std::move(newSchedule));
+}
+}  // namespace
+
+Solution Solution::enforceVehicleGroupGaps(ProblemData const &data,
+                                           Solution const &original)
+{
+    if (data.vehicleGroups().empty())
+        return Solution(original);
+
+    auto const &origRoutes = original.routes();
+    auto const numRoutes = origRoutes.size();
+
+    // Per-route accumulated offset and drop flag.
+    std::vector<Duration> offsets(numRoutes, 0);
+    std::vector<bool> dropped(numRoutes, false);
+
+    for (auto const &group : data.vehicleGroups())
+    {
+        // Collect (routeIndex, startTime, endTime) for routes in this group.
+        struct RouteTime
+        {
+            size_t idx;
+            Duration start;
+            Duration end;
+        };
+        std::vector<RouteTime> routeTimes;
+
+        for (size_t i = 0; i < numRoutes; ++i)
+        {
+            if (origRoutes[i].empty() || dropped[i])
+                continue;
+
+            auto const vt = origRoutes[i].vehicleType();
+            auto const &indices = group.vehicleTypeIndices;
+            if (std::find(indices.begin(), indices.end(), vt)
+                == indices.end())
+                continue;
+
+            // Use already-shifted times if this route was shifted by a
+            // previous group.
+            auto const start = origRoutes[i].startTime() + offsets[i];
+            auto const end = origRoutes[i].endTime() + offsets[i];
+            routeTimes.push_back({i, start, end});
+        }
+
+        if (routeTimes.size() < 2)
+            continue;
+
+        std::sort(routeTimes.begin(),
+                  routeTimes.end(),
+                  [](auto const &a, auto const &b)
+                  { return a.start < b.start; });
+
+        auto prevEnd = routeTimes[0].end;
+
+        for (size_t j = 1; j < routeTimes.size(); ++j)
+        {
+            auto const ri = routeTimes[j].idx;
+            auto const gap = routeTimes[j].start - prevEnd;
+
+            if (gap >= group.minGap)
+            {
+                prevEnd = routeTimes[j].end;
+                continue;
+            }
+
+            auto const extraOffset = group.minGap - gap;
+            auto const totalOffset = offsets[ri] + extraOffset;
+            auto const shiftedEnd
+                = origRoutes[ri].endTime() + totalOffset;
+            auto const twLate
+                = data.vehicleType(origRoutes[ri].vehicleType()).twLate;
+
+            if (shiftedEnd > twLate)
+            {
+                dropped[ri] = true;
+                // prevEnd stays unchanged — next route checks against
+                // the last non-dropped route.
+            }
+            else
+            {
+                offsets[ri] = totalOffset;
+                prevEnd = shiftedEnd;
+            }
+        }
+    }
+
+    // Build new routes vector: skip dropped, shift others as needed.
+    Routes newRoutes;
+    newRoutes.reserve(numRoutes);
+    for (size_t i = 0; i < numRoutes; ++i)
+    {
+        if (dropped[i])
+            continue;
+
+        if (offsets[i] > 0)
+            newRoutes.push_back(shiftRoute(origRoutes[i], offsets[i]));
+        else
+            newRoutes.push_back(origRoutes[i]);
+    }
+
+    if (newRoutes.empty())
+    {
+        // All routes were dropped — return an empty solution. We cannot
+        // call the validated constructor with zero routes, so use the raw
+        // constructor with empty data.
+        return Solution(0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        std::vector<Load>(data.numLoadDimensions(), 0),
+                        0,
+                        0,
+                        0,
+                        0,
+                        true,
+                        {},
+                        std::vector<std::optional<std::pair<size_t, size_t>>>(
+                            data.numLocations(), std::nullopt));
+    }
+
+    return Solution(data, std::move(newRoutes));
 }
 
 std::ostream &operator<<(std::ostream &out, Solution const &sol)

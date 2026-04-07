@@ -41,6 +41,12 @@ concept SVGCostEvaluatable = CostEvaluatable<T> && requires(T arg) {
     { arg.numSameVehicleViolations() } -> std::same_as<size_t>;
 };
 
+// Vehicle group gap violations can be penalized when the type exposes them.
+template <typename T>
+concept VehicleGroupGapEvaluatable = CostEvaluatable<T> && requires(T arg) {
+    { arg.vehicleGroupGapViolation() } -> std::same_as<Duration>;
+};
+
 // The following methods must be available before a type's delta cost can be
 // evaluated by the CostEvaluator.
 template <typename T>
@@ -266,6 +272,12 @@ Cost CostEvaluator::penalisedCost(T const &arg) const
     // violation to give the solver a strong gradient toward SVG feasibility.
     if constexpr (SVGCostEvaluatable<T>)
         total += Cost(arg.numSameVehicleViolations() * 500'000);
+
+    // Penalize vehicle group gap violations heavily so the solver treats the
+    // min_gap as a near-hard constraint. The multiplier must dominate typical
+    // prize values to prevent the solver from ignoring gap requirements.
+    if constexpr (VehicleGroupGapEvaluatable<T>)
+        total += Cost(arg.vehicleGroupGapViolation().get() * 1'000'000);
 
     return total;
 }

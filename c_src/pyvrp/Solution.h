@@ -61,6 +61,7 @@ class Solution
     Duration timeWarp_ = 0;         // Total time warp over all routes
     bool isGroupFeas_ = true;       // Is feasible w.r.t. client groups?
     size_t numSVGViolations_ = 0;   // Number of same-vehicle group violations
+    Duration vehicleGroupGapViolation_ = 0;  // Total gap violation for vehicle groups
 
     Routes routes_;
     Neighbours neighbours_;  // client [pred, succ] pairs, null if unassigned
@@ -145,6 +146,13 @@ public:
      * Number of same-vehicle group violations (members on different routes).
      */
     [[nodiscard]] size_t numSameVehicleViolations() const;
+
+    /**
+     * Total time gap violation across all vehicle groups. This is the sum of
+     * (minGap - actualGap) for each consecutive pair of routes in the same
+     * vehicle group where the actual gap is less than the required minimum.
+     */
+    [[nodiscard]] Duration vehicleGroupGapViolation() const;
 
     /**
      * Returns whether this solution is complete, which it is when it has all
@@ -238,6 +246,16 @@ public:
     [[nodiscard]] Duration timeWarp() const;
 
     bool operator==(Solution const &other) const;
+
+    /**
+     * Creates a new Solution with vehicle group gap constraints enforced.
+     * Routes in the same vehicle group are shifted forward in time to
+     * maintain minGap between consecutive routes. Routes that cannot be
+     * shifted within their vehicle type's twLate are removed.
+     */
+    [[nodiscard]] static Solution
+    enforceVehicleGroupGaps(ProblemData const &data,
+                            Solution const &original);
 
     Solution(Solution const &other) = default;
     Solution(Solution &&other) = default;
