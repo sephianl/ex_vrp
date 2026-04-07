@@ -1218,24 +1218,44 @@ defmodule ExVrp.MultiTripTest do
         Model.new()
         |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1400, service_duration: depot_reload_time)
         |> Model.add_client(
-          x: 0, y: 0, tw_early: 0, tw_late: 1400,
-          service_duration: 10, delivery: [100],
-          required: false, prize: 100_000
+          x: 0,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1400,
+          service_duration: 10,
+          delivery: [100],
+          required: false,
+          prize: 100_000
         )
         |> Model.add_client(
-          x: 1, y: 0, tw_early: 0, tw_late: 1400,
-          service_duration: 10, delivery: [100],
-          required: false, prize: 100_000
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1400,
+          service_duration: 10,
+          delivery: [100],
+          required: false,
+          prize: 100_000
         )
         |> Model.add_client(
-          x: 2, y: 0, tw_early: 0, tw_late: 1400,
-          service_duration: 10, delivery: [100],
-          required: false, prize: 100_000
+          x: 2,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1400,
+          service_duration: 10,
+          delivery: [100],
+          required: false,
+          prize: 100_000
         )
         |> Model.add_client(
-          x: 3, y: 0, tw_early: 0, tw_late: 1400,
-          service_duration: 10, delivery: [100],
-          required: false, prize: 100_000
+          x: 3,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1400,
+          service_duration: 10,
+          delivery: [100],
+          required: false,
+          prize: 100_000
         )
         # Shift 1: 0-100
         |> Model.add_vehicle_type(
@@ -1271,7 +1291,8 @@ defmodule ExVrp.MultiTripTest do
 
       # Get schedules for both routes
       schedules =
-        Solution.routes(solution)
+        solution
+        |> Solution.routes()
         |> Enum.with_index()
         |> Enum.map(fn {_route, idx} -> Solution.route_schedule(solution, idx) end)
         |> Enum.reject(&(&1 == []))
@@ -1285,8 +1306,7 @@ defmodule ExVrp.MultiTripTest do
 
       # The gap between shifts must respect the depot reload time
       assert shift2_start - shift1_end >= depot_reload_time,
-        "Gap between shifts was #{shift2_start - shift1_end}, expected >= #{depot_reload_time}"
+             "Gap between shifts was #{shift2_start - shift1_end}, expected >= #{depot_reload_time}"
     end
-
   end
 end

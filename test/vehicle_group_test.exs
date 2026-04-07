@@ -96,14 +96,24 @@ defmodule ExVrp.VehicleGroupTest do
         Model.new()
         |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
         |> Model.add_client(
-          x: 1, y: 0, tw_early: 0, tw_late: 1000,
-          service_duration: 10, delivery: [50],
-          required: false, prize: 100
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1000,
+          service_duration: 10,
+          delivery: [50],
+          required: false,
+          prize: 100
         )
         |> Model.add_client(
-          x: 1, y: 0, tw_early: 0, tw_late: 1000,
-          service_duration: 10, delivery: [50],
-          required: false, prize: 100
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1000,
+          service_duration: 10,
+          delivery: [50],
+          required: false,
+          prize: 100
         )
         # Shift 1: 0-50
         |> Model.add_vehicle_type(
@@ -127,14 +137,13 @@ defmodule ExVrp.VehicleGroupTest do
       solution = result.best
 
       active_routes =
-        0..(Solution.num_routes(solution) - 1)
-        |> Enum.count(fn idx ->
+        Enum.count(0..(Solution.num_routes(solution) - 1), fn idx ->
           schedule = Solution.route_schedule(solution, idx)
           length(schedule) > 0
         end)
 
       assert active_routes <= 1,
-        "Expected at most 1 active route due to gap constraint, got #{active_routes}"
+             "Expected at most 1 active route due to gap constraint, got #{active_routes}"
     end
 
     test "negative min_gap fails validation" do
@@ -157,14 +166,24 @@ defmodule ExVrp.VehicleGroupTest do
         Model.new()
         |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
         |> Model.add_client(
-          x: 1, y: 0, tw_early: 0, tw_late: 200,
-          service_duration: 10, delivery: [50],
-          required: false, prize: 100_000
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 200,
+          service_duration: 10,
+          delivery: [50],
+          required: false,
+          prize: 100_000
         )
         |> Model.add_client(
-          x: 1, y: 0, tw_early: 500, tw_late: 1000,
-          service_duration: 10, delivery: [50],
-          required: false, prize: 100_000
+          x: 1,
+          y: 0,
+          tw_early: 500,
+          tw_late: 1000,
+          service_duration: 10,
+          delivery: [50],
+          required: false,
+          prize: 100_000
         )
         |> Model.add_vehicle_type(
           num_available: 1,
@@ -197,14 +216,24 @@ defmodule ExVrp.VehicleGroupTest do
         Model.new()
         |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 500)
         |> Model.add_client(
-          x: 1, y: 0, tw_early: 0, tw_late: 500,
-          service_duration: 10, delivery: [50],
-          required: false, prize: 100_000
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 500,
+          service_duration: 10,
+          delivery: [50],
+          required: false,
+          prize: 100_000
         )
         |> Model.add_client(
-          x: 1, y: 0, tw_early: 120, tw_late: 500,
-          service_duration: 10, delivery: [50],
-          required: false, prize: 100_000
+          x: 1,
+          y: 0,
+          tw_early: 120,
+          tw_late: 500,
+          service_duration: 10,
+          delivery: [50],
+          required: false,
+          prize: 100_000
         )
         |> Model.add_vehicle_type(
           num_available: 1,
@@ -236,14 +265,24 @@ defmodule ExVrp.VehicleGroupTest do
         Model.new()
         |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 200)
         |> Model.add_client(
-          x: 1, y: 0, tw_early: 0, tw_late: 50,
-          service_duration: 10, delivery: [50],
-          required: false, prize: 100_000
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 50,
+          service_duration: 10,
+          delivery: [50],
+          required: false,
+          prize: 100_000
         )
         |> Model.add_client(
-          x: 1, y: 0, tw_early: 60, tw_late: 80,
-          service_duration: 10, delivery: [50],
-          required: false, prize: 100_000
+          x: 1,
+          y: 0,
+          tw_early: 60,
+          tw_late: 80,
+          service_duration: 10,
+          delivery: [50],
+          required: false,
+          prize: 100_000
         )
         |> Model.add_vehicle_type(
           num_available: 1,
@@ -272,9 +311,14 @@ defmodule ExVrp.VehicleGroupTest do
         Model.new()
         |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
         |> Model.add_client(
-          x: 1, y: 0, tw_early: 0, tw_late: 1000,
-          service_duration: 10, delivery: [50],
-          required: false, prize: 100_000
+          x: 1,
+          y: 0,
+          tw_early: 0,
+          tw_late: 1000,
+          service_duration: 10,
+          delivery: [50],
+          required: false,
+          prize: 100_000
         )
         |> Model.add_vehicle_type(
           num_available: 1,
@@ -326,8 +370,7 @@ defmodule ExVrp.VehicleGroupTest do
           Solution.route_vehicle_type(solution, idx) in type_set
         end)
         |> Enum.map(fn idx ->
-          {Solution.route_start_time(solution, idx),
-           Solution.route_end_time(solution, idx)}
+          {Solution.route_start_time(solution, idx), Solution.route_end_time(solution, idx)}
         end)
         |> Enum.sort()
 
@@ -335,7 +378,7 @@ defmodule ExVrp.VehicleGroupTest do
         gap = start2 - end1
 
         assert gap >= group.min_gap,
-          "Gap #{gap} between consecutive routes is less than min_gap #{group.min_gap}"
+               "Gap #{gap} between consecutive routes is less than min_gap #{group.min_gap}"
       end
     end
   end
