@@ -388,12 +388,10 @@ void Route::update()
             {
                 ProblemData::Client const &client
                     = data.location(nodes[idx]->client());
-                auto const wait
-                    = std::max<Duration>(client.twEarly - now, 0);
+                auto const wait = std::max<Duration>(client.twEarly - now, 0);
                 auto startService = now + wait;
 
-                for (auto const &[fStart, fEnd] :
-                     vehicleType_.forbiddenWindows)
+                for (auto const &[fStart, fEnd] : vehicleType_.forbiddenWindows)
                 {
                     if (startService >= fStart && startService < fEnd)
                     {

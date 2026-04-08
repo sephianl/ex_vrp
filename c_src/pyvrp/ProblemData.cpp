@@ -282,8 +282,8 @@ void ProblemData::SameVehicleGroup::addClient(size_t client)
 
 void ProblemData::SameVehicleGroup::clear() { clients_.clear(); }
 
-ProblemData::VehicleGroup::VehicleGroup(
-    std::vector<size_t> vehicleTypeIndices, Duration minGap)
+ProblemData::VehicleGroup::VehicleGroup(std::vector<size_t> vehicleTypeIndices,
+                                        Duration minGap)
     : vehicleTypeIndices(std::move(vehicleTypeIndices)), minGap(minGap)
 {
     if (minGap < 0)
@@ -356,26 +356,27 @@ bool ProblemData::Depot::operator==(Depot const &other) const
     // clang-format on
 }
 
-ProblemData::VehicleType::VehicleType(size_t numAvailable,
-                                      std::vector<Load> capacity,
-                                      size_t startDepot,
-                                      size_t endDepot,
-                                      Cost fixedCost,
-                                      Duration twEarly,
-                                      Duration twLate,
-                                      Duration shiftDuration,
-                                      Distance maxDistance,
-                                      Cost unitDistanceCost,
-                                      Cost unitDurationCost,
-                                      size_t profile,
-                                      std::optional<Duration> startLate,
-                                      std::vector<Load> initialLoad,
-                                      std::vector<size_t> reloadDepots,
-                                      size_t maxReloads,
-                                      Duration maxOvertime,
-                                      Cost unitOvertimeCost,
-                                      std::string name,
-                                      std::vector<std::pair<Duration, Duration>> forbiddenWindows)
+ProblemData::VehicleType::VehicleType(
+    size_t numAvailable,
+    std::vector<Load> capacity,
+    size_t startDepot,
+    size_t endDepot,
+    Cost fixedCost,
+    Duration twEarly,
+    Duration twLate,
+    Duration shiftDuration,
+    Distance maxDistance,
+    Cost unitDistanceCost,
+    Cost unitDurationCost,
+    size_t profile,
+    std::optional<Duration> startLate,
+    std::vector<Load> initialLoad,
+    std::vector<size_t> reloadDepots,
+    size_t maxReloads,
+    Duration maxOvertime,
+    Cost unitOvertimeCost,
+    std::string name,
+    std::vector<std::pair<Duration, Duration>> forbiddenWindows)
     : numAvailable(numAvailable),
       startDepot(startDepot),
       endDepot(endDepot),
@@ -533,7 +534,8 @@ ProblemData::VehicleType ProblemData::VehicleType::replace(
     std::optional<Duration> maxOvertime,
     std::optional<Cost> unitOvertimeCost,
     std::optional<std::string> name,
-    std::optional<std::vector<std::pair<Duration, Duration>>> forbiddenWindows) const
+    std::optional<std::vector<std::pair<Duration, Duration>>> forbiddenWindows)
+    const
 {
     return {numAvailable.value_or(this->numAvailable),
             capacity.value_or(this->capacity),
@@ -611,8 +613,7 @@ ProblemData::sameVehicleGroups() const
     return sameVehicleGroups_;
 }
 
-std::vector<ProblemData::VehicleGroup> const &
-ProblemData::vehicleGroups() const
+std::vector<ProblemData::VehicleGroup> const &ProblemData::vehicleGroups() const
 {
     return vehicleGroups_;
 }
@@ -669,10 +670,7 @@ size_t ProblemData::numSameVehicleGroups() const
     return sameVehicleGroups_.size();
 }
 
-size_t ProblemData::numVehicleGroups() const
-{
-    return vehicleGroups_.size();
-}
+size_t ProblemData::numVehicleGroups() const { return vehicleGroups_.size(); }
 
 size_t ProblemData::numLocations() const { return numDepots() + numClients(); }
 

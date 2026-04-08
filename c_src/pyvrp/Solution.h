@@ -61,7 +61,8 @@ class Solution
     Duration timeWarp_ = 0;         // Total time warp over all routes
     bool isGroupFeas_ = true;       // Is feasible w.r.t. client groups?
     size_t numSVGViolations_ = 0;   // Number of same-vehicle group violations
-    Duration vehicleGroupGapViolation_ = 0;  // Total gap violation for vehicle groups
+    Duration vehicleGroupGapViolation_
+        = 0;  // Total gap violation for vehicle groups
 
     Routes routes_;
     Neighbours neighbours_;  // client [pred, succ] pairs, null if unassigned
@@ -254,8 +255,7 @@ public:
      * shifted within their vehicle type's twLate are removed.
      */
     [[nodiscard]] static Solution
-    enforceVehicleGroupGaps(ProblemData const &data,
-                            Solution const &original);
+    enforceVehicleGroupGaps(ProblemData const &data, Solution const &original);
 
     Solution(Solution const &other) = default;
     Solution(Solution &&other) = default;

@@ -325,16 +325,17 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     // metrics from the actual schedule so they reflect reality.
     if (!vehData.forbiddenWindows.empty())
     {
-        duration_ = schedule_.back().endService - schedule_.front().startService;
+        duration_
+            = schedule_.back().endService - schedule_.front().startService;
         overtime_ = std::max<Duration>(duration_ - vehData.shiftDuration, 0);
-        durationCost_ = vehData.unitDurationCost * static_cast<Cost>(duration_)
-                        + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
+        durationCost_
+            = vehData.unitDurationCost * static_cast<Cost>(duration_)
+              + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
 
         timeWarp_ = 0;
         for (auto const &visit : schedule_)
             timeWarp_ += visit.timeWarp;
-        timeWarp_
-            += std::max<Duration>(duration_ - vehData.maxDuration, 0);
+        timeWarp_ += std::max<Duration>(duration_ - vehData.maxDuration, 0);
     }
 }
 

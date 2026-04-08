@@ -1125,8 +1125,8 @@ decode_same_vehicle_group([[maybe_unused]] ErlNifEnv *env, ERL_NIF_TERM term)
 }
 
 // Decode a VehicleGroup from Elixir map
-ProblemData::VehicleGroup
-decode_vehicle_group([[maybe_unused]] ErlNifEnv *env, ERL_NIF_TERM term)
+ProblemData::VehicleGroup decode_vehicle_group([[maybe_unused]] ErlNifEnv *env,
+                                               ERL_NIF_TERM term)
 {
     std::vector<size_t> vehicle_type_indices;
     int64_t min_gap = 0;
@@ -2264,10 +2264,10 @@ FINE_NIF(solution_route_schedule, 0);
 
 /**
  * Enforce vehicle group gap constraints on a solution.
- * Returns a new solution with route times shifted and infeasible routes removed.
+ * Returns a new solution with route times shifted and infeasible routes
+ * removed.
  */
-fine::Ok<fine::ResourcePtr<SolutionResource>>
-enforce_vehicle_group_gaps(
+fine::Ok<fine::ResourcePtr<SolutionResource>> enforce_vehicle_group_gaps(
     [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SolutionResource> solution_resource)
 {

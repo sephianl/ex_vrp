@@ -601,8 +601,9 @@ public:
         Duration const maxOvertime;              // Maximum allowed overtime
         Cost const unitOvertimeCost;             // Cost per unit of overtime
         Duration const maxDuration;  // Maximum route duration, incl. overtime
-        std::vector<std::pair<Duration, Duration>> const forbiddenWindows;  // Forbidden time windows
-        char const *name;            // Type name (for reference)
+        std::vector<std::pair<Duration, Duration>> const
+            forbiddenWindows;  // Forbidden time windows
+        char const *name;      // Type name (for reference)
 
         VehicleType(size_t numAvailable = 1,
                     std::vector<Load> capacity = {},
@@ -624,7 +625,8 @@ public:
                     Duration maxOvertime = 0,
                     Cost unitOvertimeCost = 0,
                     std::string name = "",
-                    std::vector<std::pair<Duration, Duration>> forbiddenWindows = {});
+                    std::vector<std::pair<Duration, Duration>> forbiddenWindows
+                    = {});
 
         bool operator==(VehicleType const &other) const;
 
@@ -640,26 +642,28 @@ public:
          * Returns a new ``VehicleType`` with the same data as this one, except
          * for the given parameters, which are used instead.
          */
-        VehicleType replace(std::optional<size_t> numAvailable,
-                            std::optional<std::vector<Load>> capacity,
-                            std::optional<size_t> startDepot,
-                            std::optional<size_t> endDepot,
-                            std::optional<Cost> fixedCost,
-                            std::optional<Duration> twEarly,
-                            std::optional<Duration> twLate,
-                            std::optional<Duration> shiftDuration,
-                            std::optional<Distance> maxDistance,
-                            std::optional<Cost> unitDistanceCost,
-                            std::optional<Cost> unitDurationCost,
-                            std::optional<size_t> profile,
-                            std::optional<Duration> startLate,
-                            std::optional<std::vector<Load>> initialLoad,
-                            std::optional<std::vector<size_t>> reloadDepots,
-                            std::optional<size_t> maxReloads,
-                            std::optional<Duration> maxOvertime,
-                            std::optional<Cost> unitOvertimeCost,
-                            std::optional<std::string> name,
-                            std::optional<std::vector<std::pair<Duration, Duration>>> forbiddenWindows) const;
+        VehicleType
+        replace(std::optional<size_t> numAvailable,
+                std::optional<std::vector<Load>> capacity,
+                std::optional<size_t> startDepot,
+                std::optional<size_t> endDepot,
+                std::optional<Cost> fixedCost,
+                std::optional<Duration> twEarly,
+                std::optional<Duration> twLate,
+                std::optional<Duration> shiftDuration,
+                std::optional<Distance> maxDistance,
+                std::optional<Cost> unitDistanceCost,
+                std::optional<Cost> unitDurationCost,
+                std::optional<size_t> profile,
+                std::optional<Duration> startLate,
+                std::optional<std::vector<Load>> initialLoad,
+                std::optional<std::vector<size_t>> reloadDepots,
+                std::optional<size_t> maxReloads,
+                std::optional<Duration> maxOvertime,
+                std::optional<Cost> unitOvertimeCost,
+                std::optional<std::string> name,
+                std::optional<std::vector<std::pair<Duration, Duration>>>
+                    forbiddenWindows) const;
 
         /**
          * Returns the maximum number of trips these vehicle can execute.
@@ -919,15 +923,15 @@ public:
      * ProblemData
      *    A new ProblemData instance with possibly replaced data.
      */
-    ProblemData replace(
-        std::optional<std::vector<Client>> &clients,
-        std::optional<std::vector<Depot>> &depots,
-        std::optional<std::vector<VehicleType>> &vehicleTypes,
-        std::optional<std::vector<Matrix<Distance>>> &distMats,
-        std::optional<std::vector<Matrix<Duration>>> &durMats,
-        std::optional<std::vector<ClientGroup>> &groups,
-        std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups,
-        std::optional<std::vector<VehicleGroup>> &vehicleGroups) const;
+    ProblemData
+    replace(std::optional<std::vector<Client>> &clients,
+            std::optional<std::vector<Depot>> &depots,
+            std::optional<std::vector<VehicleType>> &vehicleTypes,
+            std::optional<std::vector<Matrix<Distance>>> &distMats,
+            std::optional<std::vector<Matrix<Duration>>> &durMats,
+            std::optional<std::vector<ClientGroup>> &groups,
+            std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups,
+            std::optional<std::vector<VehicleGroup>> &vehicleGroups) const;
 
     ProblemData(std::vector<Client> clients,
                 std::vector<Depot> depots,

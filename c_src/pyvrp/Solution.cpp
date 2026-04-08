@@ -505,8 +505,7 @@ Solution Solution::enforceVehicleGroupGaps(ProblemData const &data,
 
             auto const vt = origRoutes[i].vehicleType();
             auto const &indices = group.vehicleTypeIndices;
-            if (std::find(indices.begin(), indices.end(), vt)
-                == indices.end())
+            if (std::find(indices.begin(), indices.end(), vt) == indices.end())
                 continue;
 
             // Use already-shifted times if this route was shifted by a
@@ -539,8 +538,7 @@ Solution Solution::enforceVehicleGroupGaps(ProblemData const &data,
 
             auto const extraOffset = group.minGap - gap;
             auto const totalOffset = offsets[ri] + extraOffset;
-            auto const shiftedEnd
-                = origRoutes[ri].endTime() + totalOffset;
+            auto const shiftedEnd = origRoutes[ri].endTime() + totalOffset;
             auto const twLate
                 = data.vehicleType(origRoutes[ri].vehicleType()).twLate;
 
