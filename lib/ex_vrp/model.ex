@@ -558,7 +558,7 @@ defmodule ExVrp.Model do
     invalid =
       vehicle_types
       |> Enum.with_index()
-      |> Enum.filter(fn {vt, _idx} -> vt.num_available < 0 end)
+      |> Enum.filter(fn {vt, _idx} -> vt.num_available <= 0 end)
       |> Enum.map(fn {_vt, i} -> i end)
 
     case invalid do
@@ -825,9 +825,10 @@ defmodule ExVrp.Model do
     types = Enum.map(indices, &Enum.at(model.vehicle_types, &1))
     sorted = Enum.sort_by(types, & &1.tw_early)
     time_windows = Enum.map(sorted, fn vt -> {vt.tw_early, vt.tw_late} end)
+    base = hd(sorted)
 
-    # Only merge if there are actual gaps between shifts (not adjacent/overlapping)
-    if has_gaps?(time_windows) do
+    # Only merge shifts that have gaps AND can actually do inter-shift reloads
+    if has_gaps?(time_windows) and base.reload_depots != [] do
       do_merge(model, sorted, time_windows, indices, min_gap)
     else
       model
@@ -844,25 +845,28 @@ defmodule ExVrp.Model do
   defp do_merge(model, sorted, time_windows, indices, min_gap) do
     base = hd(sorted)
 
-    # Compute forbidden windows to determine effective working time
     tw_early = elem(hd(time_windows), 0)
     tw_late = elem(List.last(time_windows), 1)
-    total_forbidden = forbidden_duration(time_windows)
-    effective_working_time = tw_late - tw_early - total_forbidden
+    span = tw_late - tw_early
 
     original_max = sorted |> Enum.map(& &1.max_reloads) |> max_reloads_value()
     num_shifts = length(sorted)
 
-    # Allow reloads only if effective working time > reload time.
-    # Use exact count (num_shifts - 1) for inter-shift reloads, plus original intra-shift reloads.
+    # Check if a reload from the earliest possible time can reach before tw_late,
+    # accounting for forbidden windows that may delay the vehicle further.
+    can_reload = earliest_after_reload(tw_early, min_gap, time_windows) < tw_late
+
     merged_max_reloads =
-      if effective_working_time > min_gap do
+      if can_reload do
         case original_max do
           :infinity -> :infinity
           n -> n + num_shifts - 1
         end
       else
-        max_reloads_value_or_zero(original_max)
+        case original_max do
+          :infinity -> 0
+          n -> n
+        end
       end
 
     merged =
@@ -873,7 +877,7 @@ defmodule ExVrp.Model do
         end_depot: base.end_depot,
         fixed_cost: base.fixed_cost,
         time_windows: time_windows,
-        shift_duration: :infinity,
+        shift_duration: span,
         max_distance: base.max_distance,
         unit_distance_cost: base.unit_distance_cost,
         unit_duration_cost: base.unit_duration_cost,
@@ -898,12 +902,27 @@ defmodule ExVrp.Model do
     %{model | vehicle_types: vehicle_types}
   end
 
-  defp forbidden_duration(time_windows) do
+  # Computes the earliest time a vehicle could start a second trip after
+  # completing one at tw_early and reloading for min_gap seconds.
+  # Accounts for forbidden windows that may delay the vehicle further.
+  defp earliest_after_reload(tw_early, min_gap, time_windows) do
+    after_reload = tw_early + min_gap
+    forbidden_windows = compute_forbidden_windows(time_windows)
+    advance_past_forbidden(after_reload, forbidden_windows)
+  end
+
+  defp compute_forbidden_windows(time_windows) do
     time_windows
     |> Enum.sort()
     |> Enum.chunk_every(2, 1, :discard)
-    |> Enum.reduce(0, fn [{_start, prev_end}, {next_start, _end}], acc ->
-      acc + max(next_start - prev_end, 0)
+    |> Enum.flat_map(fn [{_s, prev_end}, {next_start, _e}] ->
+      if next_start > prev_end, do: [{prev_end, next_start}], else: []
+    end)
+  end
+
+  defp advance_past_forbidden(time, forbidden_windows) do
+    Enum.reduce(forbidden_windows, time, fn {fw_start, fw_end}, t ->
+      if t >= fw_start and t < fw_end, do: fw_end, else: t
     end)
   end
 
@@ -916,7 +935,4 @@ defmodule ExVrp.Model do
   defp max_reloads_value(values) do
     if :infinity in values, do: :infinity, else: Enum.max(values)
   end
-
-  defp max_reloads_value_or_zero(:infinity), do: :infinity
-  defp max_reloads_value_or_zero(v), do: max(v, 0)
 end

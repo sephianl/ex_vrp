@@ -371,11 +371,13 @@ void Route::update()
     duration_ = durAfter[0].duration();
     timeWarp_ = durAfter[0].timeWarp(maxDuration());
 
-    // Add time warp for visits during forbidden time windows.
+    // Account for forbidden time windows: delays are legitimate waits that
+    // increase route duration, not time warp violations.
     if (!vehicleType_.forbiddenWindows.empty())
     {
         auto const &durations = data.durationMatrix(profile());
         auto now = durAfter[0].startEarly();
+        Duration totalForbiddenDelay = 0;
 
         for (size_t idx = 0; idx != nodes.size(); ++idx)
         {
@@ -395,7 +397,7 @@ void Route::update()
                 {
                     if (startService >= fStart && startService < fEnd)
                     {
-                        timeWarp_ += fEnd - startService;
+                        totalForbiddenDelay += fEnd - startService;
                         startService = fEnd;
                         break;
                     }
@@ -410,6 +412,8 @@ void Route::update()
                 now += depot.serviceDuration;
             }
         }
+
+        duration_ += totalForbiddenDelay;
     }
 
     auto const overtime = std::max<Duration>(duration_ - shiftDuration(), 0);
