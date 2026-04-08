@@ -133,5 +133,22 @@ defmodule ExVrp.ProductionBenchmarkTest do
     |> File.read!()
     |> Base.decode64!()
     |> :erlang.binary_to_term()
+    |> migrate_model()
   end
+
+  # Reconstructs all structs so that fields added after the ETF was
+  # serialized get their default values (e.g. VehicleType.forbidden_windows).
+  defp migrate_model(%{__struct__: ExVrp.Model} = model) do
+    # Restruct the model first to add any missing top-level fields (e.g. vehicle_groups)
+    model
+    |> restruct()
+    |> Map.update!(:vehicle_types, fn vts -> Enum.map(vts, &restruct/1) end)
+    |> Map.update!(:clients, fn cs -> Enum.map(cs, &restruct/1) end)
+    |> Map.update!(:depots, fn ds -> Enum.map(ds, &restruct/1) end)
+    |> Map.update!(:client_groups, fn cgs -> Enum.map(cgs, &restruct/1) end)
+    |> Map.update!(:same_vehicle_groups, fn svgs -> Enum.map(svgs, &restruct/1) end)
+    |> Map.update!(:vehicle_groups, fn vgs -> Enum.map(vgs, &restruct/1) end)
+  end
+
+  defp restruct(%{__struct__: module} = s), do: struct(module, Map.from_struct(s))
 end
