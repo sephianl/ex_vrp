@@ -445,6 +445,7 @@ defmodule ExVrp.Model do
       |> validate_vehicle_capacity(model)
       |> validate_vehicle_depot_indices(model)
       |> validate_vehicle_reload_depots(model)
+      |> validate_vehicle_forbidden_windows(model)
       |> validate_matrix_dimensions(model)
       |> validate_matrix_diagonals(model)
       |> validate_client_groups(model)
@@ -557,7 +558,7 @@ defmodule ExVrp.Model do
     invalid =
       vehicle_types
       |> Enum.with_index()
-      |> Enum.filter(fn {vt, _idx} -> vt.num_available <= 0 end)
+      |> Enum.filter(fn {vt, _idx} -> vt.num_available < 0 end)
       |> Enum.map(fn {_vt, i} -> i end)
 
     case invalid do
@@ -610,6 +611,23 @@ defmodule ExVrp.Model do
     case invalid do
       [] -> errors
       _indices -> ["Vehicle type has invalid reload depot index at indices #{inspect(invalid)}" | errors]
+    end
+  end
+
+  defp validate_vehicle_forbidden_windows(errors, %{vehicle_types: vehicle_types}) do
+    invalid =
+      vehicle_types
+      |> Enum.with_index()
+      |> Enum.filter(fn {vt, _idx} ->
+        Enum.any?(vt.forbidden_windows, fn {s, e} ->
+          s >= e or s < vt.tw_early or e > vt.tw_late
+        end)
+      end)
+      |> Enum.map(fn {_vt, i} -> i end)
+
+    case invalid do
+      [] -> errors
+      _indices -> ["Vehicle forbidden windows invalid (must have start < end and be within [tw_early, tw_late]) at indices #{inspect(invalid)}" | errors]
     end
   end
 
@@ -768,8 +786,130 @@ defmodule ExVrp.Model do
   @spec to_problem_data(t()) :: {:ok, reference()} | {:error, term()}
   def to_problem_data(%__MODULE__{} = model) do
     case validate(model) do
-      :ok -> ExVrp.Native.create_problem_data(model)
-      {:error, _reason} = error -> error
+      :ok ->
+        model = merge_vehicle_group_shifts(model)
+        ExVrp.Native.create_problem_data(model)
+
+      {:error, _reason} = error ->
+        error
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # Vehicle group shift merging
+  # ---------------------------------------------------------------------------
+
+  # Merges vehicle types in the same vehicle group into a single type with
+  # forbidden_windows. This converts separate shift vehicle types (e.g. morning
+  # shift [0,500] and afternoon shift [600,1000]) into one type with
+  # time_windows: [{0,500},{600,1000}] which auto-generates forbidden_windows.
+  # The solver then enforces shift gaps during search rather than needing
+  # post-processing.
+  defp merge_vehicle_group_shifts(%{vehicle_groups: []} = model), do: model
+
+  defp merge_vehicle_group_shifts(model) do
+    Enum.reduce(model.vehicle_groups, model, &merge_single_group/2)
+    |> then(fn m -> %{m | vehicle_groups: []} end)
+  end
+
+  defp merge_single_group(%{vehicle_type_indices: indices}, model) when length(indices) < 2, do: model
+
+  defp merge_single_group(%{vehicle_type_indices: indices, min_gap: min_gap}, model) do
+    types = Enum.map(indices, &Enum.at(model.vehicle_types, &1))
+    sorted = Enum.sort_by(types, & &1.tw_early)
+    time_windows = Enum.map(sorted, fn vt -> {vt.tw_early, vt.tw_late} end)
+
+    # Only merge if there are actual gaps between shifts (not adjacent/overlapping)
+    if has_gaps?(time_windows) do
+      do_merge(model, sorted, time_windows, indices, min_gap)
+    else
+      model
+    end
+  end
+
+  defp has_gaps?(time_windows) do
+    time_windows
+    |> Enum.sort()
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.any?(fn [{_, prev_end}, {next_start, _}] -> next_start > prev_end end)
+  end
+
+  defp do_merge(model, sorted, time_windows, indices, min_gap) do
+    base = hd(sorted)
+
+    # Compute forbidden windows to determine effective working time
+    tw_early = elem(hd(time_windows), 0)
+    tw_late = elem(List.last(time_windows), 1)
+    total_forbidden = forbidden_duration(time_windows)
+    effective_working_time = tw_late - tw_early - total_forbidden
+
+    original_max = sorted |> Enum.map(& &1.max_reloads) |> max_reloads_value()
+    num_shifts = length(sorted)
+
+    # Allow reloads only if effective working time > reload time.
+    # Use exact count (num_shifts - 1) for inter-shift reloads, plus original intra-shift reloads.
+    merged_max_reloads =
+      if effective_working_time > min_gap do
+        case original_max do
+          :infinity -> :infinity
+          n -> n + num_shifts - 1
+        end
+      else
+        max_reloads_value_or_zero(original_max)
+      end
+
+    merged =
+      VehicleType.new(
+        num_available: base.num_available,
+        capacity: base.capacity,
+        start_depot: base.start_depot,
+        end_depot: base.end_depot,
+        fixed_cost: base.fixed_cost,
+        time_windows: time_windows,
+        shift_duration: :infinity,
+        max_distance: base.max_distance,
+        unit_distance_cost: base.unit_distance_cost,
+        unit_duration_cost: base.unit_duration_cost,
+        profile: base.profile,
+        start_late: base.start_late,
+        max_overtime: base.max_overtime,
+        unit_overtime_cost: base.unit_overtime_cost,
+        reload_depots: base.reload_depots,
+        max_reloads: merged_max_reloads,
+        initial_load: base.initial_load,
+        name: base.name
+      )
+
+    sorted_indices = Enum.sort(indices)
+    [first_idx | rest_indices] = sorted_indices
+
+    vehicle_types =
+      model.vehicle_types
+      |> List.replace_at(first_idx, merged)
+      |> zero_out_types(rest_indices)
+
+    %{model | vehicle_types: vehicle_types}
+  end
+
+  defp forbidden_duration(time_windows) do
+    time_windows
+    |> Enum.sort()
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.reduce(0, fn [{_, prev_end}, {next_start, _}], acc ->
+      acc + max(next_start - prev_end, 0)
+    end)
+  end
+
+  defp zero_out_types(types, indices) do
+    Enum.reduce(indices, types, fn idx, acc ->
+      List.update_at(acc, idx, &%{&1 | num_available: 0})
+    end)
+  end
+
+  defp max_reloads_value(values) do
+    if :infinity in values, do: :infinity, else: Enum.max(values)
+  end
+
+  defp max_reloads_value_or_zero(:infinity), do: :infinity
+  defp max_reloads_value_or_zero(v), do: max(v, 0)
 end

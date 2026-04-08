@@ -25,7 +25,8 @@ defmodule ExVrp.VehicleType do
           reload_depots: [non_neg_integer()],
           max_reloads: non_neg_integer() | :infinity,
           initial_load: [non_neg_integer()],
-          name: String.t()
+          name: String.t(),
+          forbidden_windows: [{non_neg_integer(), non_neg_integer()}]
         }
 
   @enforce_keys [:num_available, :capacity]
@@ -48,7 +49,8 @@ defmodule ExVrp.VehicleType do
     reload_depots: [],
     max_reloads: :infinity,
     initial_load: [],
-    name: ""
+    name: "",
+    forbidden_windows: []
   ]
 
   @doc """
@@ -78,6 +80,13 @@ defmodule ExVrp.VehicleType do
   - `:max_reloads` - Maximum number of reloads per route (default: `:infinity`)
   - `:initial_load` - Initial load per dimension (default: `[]`)
   - `:name` - Vehicle type name (default: `""`)
+  - `:time_windows` - List of `{start, end}` tuples representing multiple operating
+    windows. Automatically converted to `:tw_early`, `:tw_late`, and `:forbidden_windows`.
+    Mutually exclusive with `:tw_early`, `:tw_late`, and `:forbidden_windows`.
+    Example: `[{0, 500}, {600, 1000}]` becomes `tw_early: 0, tw_late: 1000,
+    forbidden_windows: [{500, 600}]`. Overlapping/adjacent windows are merged automatically.
+  - `:forbidden_windows` - List of `{start, end}` tuples for periods when the vehicle
+    cannot service clients (default: `[]`). Each window must be within `[tw_early, tw_late]`.
 
   ## Examples
 
@@ -87,6 +96,61 @@ defmodule ExVrp.VehicleType do
   """
   @spec new(keyword()) :: t()
   def new(opts) do
-    struct!(__MODULE__, opts)
+    opts |> expand_time_windows() |> then(&struct!(__MODULE__, &1))
+  end
+
+  defp expand_time_windows(opts) do
+    case Keyword.pop(opts, :time_windows) do
+      {nil, opts} ->
+        opts
+
+      {time_windows, rest} ->
+        if Keyword.has_key?(rest, :tw_early) or Keyword.has_key?(rest, :tw_late) or
+             Keyword.has_key?(rest, :forbidden_windows) do
+          raise ArgumentError,
+                "cannot specify :time_windows together with :tw_early, :tw_late, or :forbidden_windows"
+        end
+
+        if time_windows == [] do
+          raise ArgumentError, ":time_windows must be a non-empty list of {start, end} tuples"
+        end
+
+        Enum.each(time_windows, fn
+          {s, e} when is_integer(s) and is_integer(e) and s >= 0 and e > s ->
+            :ok
+
+          other ->
+            raise ArgumentError,
+                  "invalid time window: #{inspect(other)}, expected {start, end} where start >= 0 and end > start"
+        end)
+
+        merged = time_windows |> Enum.sort() |> merge_windows()
+
+        tw_early = elem(hd(merged), 0)
+        tw_late = elem(List.last(merged), 1)
+
+        forbidden =
+          merged
+          |> Enum.chunk_every(2, 1, :discard)
+          |> Enum.map(fn [{_, gap_start}, {gap_end, _}] -> {gap_start, gap_end} end)
+
+        rest
+        |> Keyword.put(:tw_early, tw_early)
+        |> Keyword.put(:tw_late, tw_late)
+        |> Keyword.put(:forbidden_windows, forbidden)
+    end
+  end
+
+  defp merge_windows([]), do: []
+
+  defp merge_windows([first | rest]) do
+    Enum.reduce(rest, [first], fn {s, e}, [{_cs, ce} | _acc] = all ->
+      if s <= ce do
+        [{elem(hd(all), 0), max(ce, e)} | tl(all)]
+      else
+        [{s, e} | all]
+      end
+    end)
+    |> Enum.reverse()
   end
 end

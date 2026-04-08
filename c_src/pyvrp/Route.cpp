@@ -141,13 +141,29 @@ void Route::makeSchedule(ProblemData const &data)
     auto const handle
         = [&](auto const &where, size_t location, size_t trip, Duration service)
     {
+        // Wait for forbidden window (client visits only)
+        Duration forbiddenWait = 0;
+        if (location >= data.numDepots())
+        {
+            for (auto const &[fStart, fEnd] : vehData.forbiddenWindows)
+            {
+                if (now >= fStart && now < fEnd)
+                {
+                    forbiddenWait = fEnd - now;
+                    now = fEnd;
+                    break;
+                }
+            }
+        }
+
         auto const wait = std::max<Duration>(where.twEarly - now, 0);
         auto const tw = std::max<Duration>(now - where.twLate, 0);
 
         now += wait;
         now -= tw;
 
-        schedule_.emplace_back(location, trip, now, now + service, wait, tw);
+        schedule_.emplace_back(
+            location, trip, now, now + service, wait + forbiddenWait, tw);
 
         now += service;
     };
@@ -303,6 +319,23 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     timeWarp_ = ds.timeWarp(vehData.maxDuration);
 
     makeSchedule(data);
+
+    // When forbidden windows exist, the schedule includes waits that the
+    // DurationSegment calculation does not know about. Recompute the route
+    // metrics from the actual schedule so they reflect reality.
+    if (!vehData.forbiddenWindows.empty())
+    {
+        duration_ = schedule_.back().endService - schedule_.front().startService;
+        overtime_ = std::max<Duration>(duration_ - vehData.shiftDuration, 0);
+        durationCost_ = vehData.unitDurationCost * static_cast<Cost>(duration_)
+                        + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
+
+        timeWarp_ = 0;
+        for (auto const &visit : schedule_)
+            timeWarp_ += visit.timeWarp;
+        timeWarp_
+            += std::max<Duration>(duration_ - vehData.maxDuration, 0);
+    }
 }
 
 Route::Route(Trips trips,

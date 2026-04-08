@@ -148,8 +148,6 @@ defmodule ExVrp do
   """
 
   alias ExVrp.Model
-  alias ExVrp.Native
-  alias ExVrp.Solution
   alias ExVrp.Solver
 
   @doc """
@@ -174,35 +172,9 @@ defmodule ExVrp do
   """
   @dialyzer {:nowarn_function, solve: 1}
   @dialyzer {:nowarn_function, solve: 2}
-  @spec solve(Model.t(), keyword()) :: {:ok, Solution.t()} | {:error, term()}
+  @spec solve(Model.t(), keyword()) :: {:ok, ExVrp.Solution.t()} | {:error, term()}
   def solve(%Model{} = model, opts \\ []) do
-    case Solver.solve(model, opts) do
-      {:ok, result} ->
-        {:ok, enforce_gaps(result, model)}
-
-      error ->
-        error
-    end
-  end
-
-  defp enforce_gaps(result, %Model{vehicle_groups: []}), do: result
-
-  defp enforce_gaps(result, _model) do
-    {:ok, enforced_ref} = Native.enforce_vehicle_group_gaps(result.best.solution_ref)
-
-    enforced_solution = %Solution{
-      routes: Native.solution_routes(enforced_ref),
-      solution_ref: enforced_ref,
-      problem_data: result.best.problem_data,
-      distance: Native.solution_distance(enforced_ref),
-      duration: Native.solution_duration(enforced_ref),
-      num_clients: Native.solution_num_clients(enforced_ref),
-      is_feasible: Native.solution_is_feasible(enforced_ref),
-      is_complete: Native.solution_is_complete(enforced_ref),
-      stats: result.best.stats
-    }
-
-    %{result | best: enforced_solution}
+    Solver.solve(model, opts)
   end
 
   @doc """
@@ -218,7 +190,7 @@ defmodule ExVrp do
   """
   @dialyzer {:nowarn_function, solve!: 1}
   @dialyzer {:nowarn_function, solve!: 2}
-  @spec solve!(Model.t(), keyword()) :: Solution.t()
+  @spec solve!(Model.t(), keyword()) :: ExVrp.Solution.t()
   def solve!(%Model{} = model, opts \\ []) do
     case solve(model, opts) do
       {:ok, solution} -> solution

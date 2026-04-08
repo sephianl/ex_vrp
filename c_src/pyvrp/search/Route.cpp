@@ -371,6 +371,47 @@ void Route::update()
     duration_ = durAfter[0].duration();
     timeWarp_ = durAfter[0].timeWarp(maxDuration());
 
+    // Add time warp for visits during forbidden time windows.
+    if (!vehicleType_.forbiddenWindows.empty())
+    {
+        auto const &durations = data.durationMatrix(profile());
+        auto now = durAfter[0].startEarly();
+
+        for (size_t idx = 0; idx != nodes.size(); ++idx)
+        {
+            if (idx > 0)
+                now += durations(visits[idx - 1], visits[idx]);
+
+            if (!nodes[idx]->isDepot() && !nodes[idx]->isReloadDepot())
+            {
+                ProblemData::Client const &client
+                    = data.location(nodes[idx]->client());
+                auto const wait
+                    = std::max<Duration>(client.twEarly - now, 0);
+                auto startService = now + wait;
+
+                for (auto const &[fStart, fEnd] :
+                     vehicleType_.forbiddenWindows)
+                {
+                    if (startService >= fStart && startService < fEnd)
+                    {
+                        timeWarp_ += fEnd - startService;
+                        startService = fEnd;
+                        break;
+                    }
+                }
+
+                now = startService + client.serviceDuration;
+            }
+            else if (nodes[idx]->isReloadDepot())
+            {
+                ProblemData::Depot const &depot
+                    = data.location(nodes[idx]->client());
+                now += depot.serviceDuration;
+            }
+        }
+    }
+
     auto const overtime = std::max<Duration>(duration_ - shiftDuration(), 0);
     durationCost_ = unitDurationCost() * static_cast<Cost>(duration_)
                     + unitOvertimeCost() * static_cast<Cost>(overtime);

@@ -601,6 +601,7 @@ public:
         Duration const maxOvertime;              // Maximum allowed overtime
         Cost const unitOvertimeCost;             // Cost per unit of overtime
         Duration const maxDuration;  // Maximum route duration, incl. overtime
+        std::vector<std::pair<Duration, Duration>> const forbiddenWindows;  // Forbidden time windows
         char const *name;            // Type name (for reference)
 
         VehicleType(size_t numAvailable = 1,
@@ -622,7 +623,8 @@ public:
                     size_t maxReloads = std::numeric_limits<size_t>::max(),
                     Duration maxOvertime = 0,
                     Cost unitOvertimeCost = 0,
-                    std::string name = "");
+                    std::string name = "",
+                    std::vector<std::pair<Duration, Duration>> forbiddenWindows = {});
 
         bool operator==(VehicleType const &other) const;
 
@@ -656,7 +658,8 @@ public:
                             std::optional<size_t> maxReloads,
                             std::optional<Duration> maxOvertime,
                             std::optional<Cost> unitOvertimeCost,
-                            std::optional<std::string> name) const;
+                            std::optional<std::string> name,
+                            std::optional<std::vector<std::pair<Duration, Duration>>> forbiddenWindows) const;
 
         /**
          * Returns the maximum number of trips these vehicle can execute.
