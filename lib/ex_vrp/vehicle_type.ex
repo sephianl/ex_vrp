@@ -101,50 +101,56 @@ defmodule ExVrp.VehicleType do
 
   defp expand_time_windows(opts) do
     case Keyword.pop(opts, :time_windows) do
-      {nil, opts} ->
-        opts
-
-      {time_windows, rest} ->
-        if Keyword.has_key?(rest, :tw_early) or Keyword.has_key?(rest, :tw_late) or
-             Keyword.has_key?(rest, :forbidden_windows) do
-          raise ArgumentError,
-                "cannot specify :time_windows together with :tw_early, :tw_late, or :forbidden_windows"
-        end
-
-        if time_windows == [] do
-          raise ArgumentError, ":time_windows must be a non-empty list of {start, end} tuples"
-        end
-
-        Enum.each(time_windows, fn
-          {s, e} when is_integer(s) and is_integer(e) and s >= 0 and e > s ->
-            :ok
-
-          other ->
-            raise ArgumentError,
-                  "invalid time window: #{inspect(other)}, expected {start, end} where start >= 0 and end > start"
-        end)
-
-        merged = time_windows |> Enum.sort() |> merge_windows()
-
-        tw_early = elem(hd(merged), 0)
-        tw_late = elem(List.last(merged), 1)
-
-        forbidden =
-          merged
-          |> Enum.chunk_every(2, 1, :discard)
-          |> Enum.map(fn [{_, gap_start}, {gap_end, _}] -> {gap_start, gap_end} end)
-
-        rest
-        |> Keyword.put(:tw_early, tw_early)
-        |> Keyword.put(:tw_late, tw_late)
-        |> Keyword.put(:forbidden_windows, forbidden)
+      {nil, opts} -> opts
+      {time_windows, rest} -> apply_time_windows(time_windows, rest)
     end
+  end
+
+  defp apply_time_windows(time_windows, rest) do
+    validate_time_windows!(time_windows, rest)
+
+    merged = time_windows |> Enum.sort() |> merge_windows()
+
+    tw_early = elem(hd(merged), 0)
+    tw_late = elem(List.last(merged), 1)
+
+    forbidden =
+      merged
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.map(fn [{_s, gap_start}, {gap_end, _e}] -> {gap_start, gap_end} end)
+
+    rest
+    |> Keyword.put(:tw_early, tw_early)
+    |> Keyword.put(:tw_late, tw_late)
+    |> Keyword.put(:forbidden_windows, forbidden)
+  end
+
+  defp validate_time_windows!(time_windows, rest) do
+    if Keyword.has_key?(rest, :tw_early) or Keyword.has_key?(rest, :tw_late) or
+         Keyword.has_key?(rest, :forbidden_windows) do
+      raise ArgumentError,
+            "cannot specify :time_windows together with :tw_early, :tw_late, or :forbidden_windows"
+    end
+
+    if time_windows == [] do
+      raise ArgumentError, ":time_windows must be a non-empty list of {start, end} tuples"
+    end
+
+    Enum.each(time_windows, fn
+      {s, e} when is_integer(s) and is_integer(e) and s >= 0 and e > s ->
+        :ok
+
+      other ->
+        raise ArgumentError,
+              "invalid time window: #{inspect(other)}, expected {start, end} where start >= 0 and end > start"
+    end)
   end
 
   defp merge_windows([]), do: []
 
   defp merge_windows([first | rest]) do
-    Enum.reduce(rest, [first], fn {s, e}, [{_cs, ce} | _acc] = all ->
+    rest
+    |> Enum.reduce([first], fn {s, e}, [{_cs, ce} | _acc] = all ->
       if s <= ce do
         [{elem(hd(all), 0), max(ce, e)} | tl(all)]
       else

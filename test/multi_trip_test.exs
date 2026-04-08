@@ -1296,7 +1296,7 @@ defmodule ExVrp.MultiTripTest do
         |> Enum.with_index()
         |> Enum.map(fn {_route, idx} -> Solution.route_schedule(solution, idx) end)
         |> Enum.reject(&(&1 == []))
-        |> Enum.sort_by(fn [first | _] -> first.start_service end)
+        |> Enum.sort_by(fn [first | _rest] -> first.start_service end)
 
       assert length(schedules) == 2
       [shift1_schedule, shift2_schedule] = schedules

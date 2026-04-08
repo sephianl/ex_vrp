@@ -626,8 +626,14 @@ defmodule ExVrp.Model do
       |> Enum.map(fn {_vt, i} -> i end)
 
     case invalid do
-      [] -> errors
-      _indices -> ["Vehicle forbidden windows invalid (must have start < end and be within [tw_early, tw_late]) at indices #{inspect(invalid)}" | errors]
+      [] ->
+        errors
+
+      _indices ->
+        [
+          "Vehicle forbidden windows invalid (must have start < end and be within [tw_early, tw_late]) at indices #{inspect(invalid)}"
+          | errors
+        ]
     end
   end
 
@@ -808,7 +814,8 @@ defmodule ExVrp.Model do
   defp merge_vehicle_group_shifts(%{vehicle_groups: []} = model), do: model
 
   defp merge_vehicle_group_shifts(model) do
-    Enum.reduce(model.vehicle_groups, model, &merge_single_group/2)
+    model.vehicle_groups
+    |> Enum.reduce(model, &merge_single_group/2)
     |> then(fn m -> %{m | vehicle_groups: []} end)
   end
 
@@ -831,7 +838,7 @@ defmodule ExVrp.Model do
     time_windows
     |> Enum.sort()
     |> Enum.chunk_every(2, 1, :discard)
-    |> Enum.any?(fn [{_, prev_end}, {next_start, _}] -> next_start > prev_end end)
+    |> Enum.any?(fn [{_start, prev_end}, {next_start, _end}] -> next_start > prev_end end)
   end
 
   defp do_merge(model, sorted, time_windows, indices, min_gap) do
@@ -895,7 +902,7 @@ defmodule ExVrp.Model do
     time_windows
     |> Enum.sort()
     |> Enum.chunk_every(2, 1, :discard)
-    |> Enum.reduce(0, fn [{_, prev_end}, {next_start, _}], acc ->
+    |> Enum.reduce(0, fn [{_start, prev_end}, {next_start, _end}], acc ->
       acc + max(next_start - prev_end, 0)
     end)
   end

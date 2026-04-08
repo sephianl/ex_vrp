@@ -139,7 +139,7 @@ defmodule ExVrp.VehicleGroupTest do
       active_routes =
         Enum.count(0..(Solution.num_routes(solution) - 1), fn idx ->
           schedule = Solution.route_schedule(solution, idx)
-          length(schedule) > 0
+          schedule != []
         end)
 
       assert active_routes <= 1,

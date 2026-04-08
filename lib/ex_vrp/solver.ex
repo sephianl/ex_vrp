@@ -326,5 +326,4 @@ defmodule ExVrp.Solver do
 
     StoppingCriteria.to_stop_fn(criteria)
   end
-
 end
