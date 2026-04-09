@@ -72,9 +72,9 @@ defmodule ExVrp.MixProject do
     ]
   end
 
-  # Precompiled binaries are downloaded when this package is installed as
-  # a hex dependency. When working in this repo, mix always builds from source.
-  defp make_precompiler, do: {:nif, CCPrecompiler}
+  defp make_precompiler do
+    if Mix.env() == :dev, do: nil, else: {:nif, CCPrecompiler}
+  end
 
   defp make_env do
     fine_dir =
