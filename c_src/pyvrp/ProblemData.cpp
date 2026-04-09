@@ -398,8 +398,8 @@ ProblemData::VehicleType::VehicleType(
       forbiddenWindows(std::move(forbiddenWindows)),
       name(duplicate(name.data()))
 {
-    // if (numAvailable < 0)
-    //     throw std::invalid_argument("num_available must be => 0.");
+    if (numAvailable < 0)
+        throw std::invalid_argument("num_available must be => 0.");
 
     if (std::any_of(capacity.begin(), capacity.end(), isNegative<Load>))
         throw std::invalid_argument("capacity amounts must be >= 0.");
