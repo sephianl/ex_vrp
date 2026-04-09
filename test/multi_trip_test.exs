@@ -720,7 +720,7 @@ defmodule ExVrp.MultiTripTest do
         |> Enum.map(&ScheduledVisit.from_tuple/1)
 
       # First scheduled visit should be the start depot with no service time
-      [first_visit | _] = schedule
+      [first_visit | _rest] = schedule
       assert first_visit.location == 0
       assert first_visit.trip == 0
       assert first_visit.start_service == first_visit.end_service

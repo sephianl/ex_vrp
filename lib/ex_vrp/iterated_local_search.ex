@@ -24,8 +24,7 @@ defmodule ExVrp.IteratedLocalSearch do
     @moduledoc """
     Parameters for Iterated Local Search.
     """
-    # These defaults match PyVRP's IteratedLocalSearchParams
-    defstruct max_no_improvement: 50_000,
+    defstruct max_no_improvement: 5_000,
               # Number of iterations without improvement before restart
               # Size of the late acceptance history buffer
               history_size: 500
@@ -174,6 +173,7 @@ defmodule ExVrp.IteratedLocalSearch do
       params: params,
       best: initial_solution,
       best_cost: initial_cost,
+      best_penalised_cost: initial_penalised_cost,
       current: initial_solution,
       current_cost: initial_penalised_cost,
       history: RingBuffer.new(params.history_size),
@@ -242,13 +242,26 @@ defmodule ExVrp.IteratedLocalSearch do
   # Restart from best if no improvement for too long
   defp maybe_restart(%{iters_no_improvement: iters, params: params} = state) do
     if iters >= params.max_no_improvement do
-      # On restart, recalculate current_cost as penalised_cost of best
-      best_penalised = Native.solution_penalised_cost(state.best, state.cost_eval)
+      # On restart: if the best is infeasible, rebuild a fresh initial
+      # solution with a different seed. This gives the solver a completely
+      # new starting point instead of cycling from the same infeasible state.
+      {restart_sol, restart_cost} =
+        if state.best_cost == :infinity do
+          restart_seed = state.rng_seed + state.stats.restarts + 1
+          restart_ls = Native.create_local_search(state.problem_data, restart_seed)
+          {:ok, max_eval} = PenaltyManager.max_cost_evaluator(state.penalty_manager)
+          {:ok, empty} = Native.create_solution_from_routes(state.problem_data, [])
+
+          {:ok, fresh} = Native.local_search_search_run(restart_ls, empty, max_eval, remaining_timeout_ms(state))
+          {fresh, Native.solution_penalised_cost(fresh, state.cost_eval)}
+        else
+          {state.best, Native.solution_penalised_cost(state.best, state.cost_eval)}
+        end
 
       %{
         state
-        | current: state.best,
-          current_cost: best_penalised,
+        | current: restart_sol,
+          current_cost: restart_cost,
           history: RingBuffer.clear(state.history),
           iters_no_improvement: 0,
           stats: Map.update!(state.stats, :restarts, &(&1 + 1))
@@ -260,17 +273,7 @@ defmodule ExVrp.IteratedLocalSearch do
 
   # Apply local search to generate candidate
   defp search_step(state) do
-    # Calculate remaining timeout for C++ local search (in milliseconds)
-    timeout_ms =
-      if state.max_runtime_ms do
-        elapsed_ms = System.monotonic_time(:millisecond) - state.start_time
-        # Pass remaining time, minimum 1ms (0 means "no timeout" in C++)
-        # round/1 ensures integer for NIF when max_runtime_ms is a float
-        max(round(state.max_runtime_ms) - elapsed_ms, 1)
-      else
-        # No timeout
-        0
-      end
+    timeout_ms = remaining_timeout_ms(state)
 
     # Use persistent LocalSearch for performance
     # RNG is stored in the LocalSearch resource and advances across calls,
@@ -301,53 +304,21 @@ defmodule ExVrp.IteratedLocalSearch do
       candidate_cost: cand_cost,
       current: current,
       current_cost: curr_cost,
-      best: best,
-      best_cost: best_cost,
       history: history
     } = state
 
-    # PyVRP line 146-149: Update best if candidate is new best (using cost())
-    # iters_no_improvement is incremented unconditionally, then reset to 0 on improvement
     candidate_obj_cost = Native.solution_cost(candidate, state.cost_eval)
-    iters_no_improvement = state.iters_no_improvement + 1
 
-    {new_best, new_best_cost, new_iters_no_improvement, new_stats} =
-      if candidate_obj_cost < best_cost do
-        {candidate, candidate_obj_cost, 0, Map.update!(state.stats, :improvements, &(&1 + 1))}
-      else
-        {best, best_cost, iters_no_improvement, state.stats}
-      end
+    {new_best, new_best_cost, new_best_penalised, new_iters_no_improvement, new_stats} =
+      update_best(state, candidate_obj_cost)
 
-    # PyVRP lines 157-159: late_cost from history.peek() or best
     late = RingBuffer.peek(history)
+    late_cost = compute_late_cost(late, new_best, state.cost_eval)
 
-    late_cost =
-      if late == nil do
-        Native.solution_penalised_cost(new_best, state.cost_eval)
-      else
-        Native.solution_penalised_cost(late, state.cost_eval)
-      end
-
-    # PyVRP line 165: Accept if better than late or current
-    accept? = cand_cost < late_cost or cand_cost < curr_cost
-
-    # Update current if accepted
     {new_current, new_curr_cost} =
-      if accept? do
-        {candidate, cand_cost}
-      else
-        {current, curr_cost}
-      end
+      accept_candidate(candidate, cand_cost, current, curr_cost, state.best_cost, candidate_obj_cost, late_cost)
 
-    # PyVRP lines 171-174: Update history
-    # - append(current) if curr_cost < late_cost OR late is nil
-    # - skip() otherwise
-    new_history =
-      if new_curr_cost < late_cost or late == nil do
-        RingBuffer.append(history, new_current)
-      else
-        RingBuffer.skip(history)
-      end
+    new_history = update_history(history, new_current, new_curr_cost, late, late_cost)
 
     %{
       state
@@ -355,11 +326,66 @@ defmodule ExVrp.IteratedLocalSearch do
         current_cost: new_curr_cost,
         best: new_best,
         best_cost: new_best_cost,
+        best_penalised_cost: new_best_penalised,
         history: new_history,
         iters_no_improvement: new_iters_no_improvement,
         stats: new_stats
     }
   end
+
+  # Update best if candidate improves. Use cost() (infinity for infeasible)
+  # so feasible always beats infeasible. When both are infeasible, fall back
+  # to penalisedCost so the solver tracks progress toward feasibility.
+  defp update_best(state, candidate_obj_cost) do
+    %{candidate: candidate, candidate_cost: cand_cost, best: best, best_cost: best_cost} = state
+    iters_no_improvement = state.iters_no_improvement + 1
+
+    cond do
+      candidate_obj_cost < best_cost ->
+        stats = Map.update!(state.stats, :improvements, &(&1 + 1))
+        {candidate, candidate_obj_cost, cand_cost, 0, stats}
+
+      best_cost == :infinity and candidate_obj_cost == :infinity and
+          cand_cost < state.best_penalised_cost ->
+        # Both infeasible but candidate is closer to feasibility.
+        # Update best for better restart point but DON'T reset
+        # iters_no_improvement — we still want restarts to trigger.
+        stats = Map.update!(state.stats, :improvements, &(&1 + 1))
+        {candidate, :infinity, cand_cost, iters_no_improvement, stats}
+
+      true ->
+        {best, best_cost, state.best_penalised_cost, iters_no_improvement, state.stats}
+    end
+  end
+
+  # PyVRP lines 157-159: late_cost from history.peek() or best
+  defp compute_late_cost(nil, best, cost_eval), do: Native.solution_penalised_cost(best, cost_eval)
+
+  defp compute_late_cost(late, _best, cost_eval), do: Native.solution_penalised_cost(late, cost_eval)
+
+  # Accept if better than late or current. Also always accept the first
+  # feasible solution when the current best is infeasible — the transition
+  # from infeasible to feasible is always an improvement even if penalised
+  # cost is higher (uncollected prizes inflate cost of feasible solutions).
+  defp accept_candidate(candidate, cand_cost, current, curr_cost, best_cost, candidate_obj_cost, late_cost) do
+    first_feasible? = best_cost == :infinity and candidate_obj_cost != :infinity
+
+    if first_feasible? or cand_cost < late_cost or cand_cost < curr_cost do
+      {candidate, cand_cost}
+    else
+      {current, curr_cost}
+    end
+  end
+
+  # PyVRP lines 171-174: Update history
+  # - append(current) if curr_cost < late_cost OR late is nil
+  # - skip() otherwise
+  defp update_history(history, current, _curr_cost, nil = _late, _late_cost), do: RingBuffer.append(history, current)
+
+  defp update_history(history, current, curr_cost, _late, late_cost) when curr_cost < late_cost,
+    do: RingBuffer.append(history, current)
+
+  defp update_history(history, _current, _curr_cost, _late, _late_cost), do: RingBuffer.skip(history)
 
   # Update penalty manager with candidate solution
   defp update_penalty_manager(state) do
@@ -439,6 +465,13 @@ defmodule ExVrp.IteratedLocalSearch do
     else
       state
     end
+  end
+
+  defp remaining_timeout_ms(%{max_runtime_ms: nil}), do: 0
+
+  defp remaining_timeout_ms(state) do
+    elapsed_ms = System.monotonic_time(:millisecond) - state.start_time
+    max(round(state.max_runtime_ms) - elapsed_ms, 1)
   end
 
   # Build Solution struct from solution reference

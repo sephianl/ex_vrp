@@ -274,6 +274,75 @@ defmodule ExVrp.SolutionTest do
     end
   end
 
+  describe "depot time windows" do
+    alias ExVrp.ScheduledVisit
+
+    test "depot tw_early delays departure in schedule" do
+      # With depot tw_early=500, the depot visit cannot start before 500
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 500, tw_late: 2000)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100], tw_early: 0, tw_late: 2000)
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
+      solution = result.best
+
+      assert Solution.feasible?(solution)
+
+      schedule = Solution.route_schedule(solution, 0)
+      depot_visit = hd(schedule)
+      assert depot_visit.location == 0
+      assert depot_visit.start_service >= 500
+    end
+
+    test "depot tw_late constrains route end" do
+      # With depot tw_late=100, the vehicle must return by 100
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 100)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100], tw_early: 0, tw_late: 100)
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
+      solution = result.best
+
+      assert Solution.feasible?(solution)
+
+      schedule = Solution.route_schedule(solution, 0)
+      last_visit = List.last(schedule)
+      assert last_visit.location == 0
+      assert last_visit.end_service <= 100
+    end
+
+    test "vehicle outside depot window raises error" do
+      # Vehicle window [0, 500] but depot only open [600, 1000] — no overlap
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0, tw_early: 600, tw_late: 1000)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100], tw_early: 0, tw_late: 500)
+
+      assert_raise ArgumentError, ~r/no overlapping time windows/, fn ->
+        Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
+      end
+    end
+
+    test "depot without explicit time windows uses defaults" do
+      # Default depot: tw_early=0, tw_late=infinity — same behavior as before
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
+      solution = result.best
+
+      assert Solution.feasible?(solution)
+    end
+  end
+
   describe "solution with capacity constraints" do
     test "uses multiple routes when capacity requires" do
       model =

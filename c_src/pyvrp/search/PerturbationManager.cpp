@@ -73,9 +73,11 @@ void PerturbationManager::perturb(Solution &solution,
         // Insert if node is not in a route and we are currently inserting.
         else if (!route && action == PerturbType::INSERT)
         {
-            solution.insert(node, searchSpace, costEvaluator, true);
-            node->route()->update();
-            searchSpace.markPromising(node);
+            if (solution.insert(node, searchSpace, costEvaluator, true))
+            {
+                node->route()->update();
+                searchSpace.markPromising(node);
+            }
         }
         else  // no-op
             return;

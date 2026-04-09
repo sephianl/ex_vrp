@@ -1,7 +1,7 @@
 defmodule ExVrp.MixProject do
   use Mix.Project
 
-  @version "0.2.4"
+  @version "0.4.1"
   @github_url "https://github.com/sephianl/ex_vrp"
 
   def project do
@@ -20,7 +20,7 @@ defmodule ExVrp.MixProject do
       make_precompiler: make_precompiler(),
       make_precompiler_url: "#{@github_url}/releases/download/v#{@version}/@{artefact_filename}",
       make_precompiler_filename: "ex_vrp_nif",
-      make_precompiler_nif_versions: [versions: ["2.16", "2.17"]],
+      make_precompiler_nif_versions: [versions: ["2.17"]],
       cc_precompiler: [
         cleanup: "clean",
         compilers: %{
@@ -72,13 +72,9 @@ defmodule ExVrp.MixProject do
     ]
   end
 
-  defp make_precompiler do
-    if System.get_env("EX_VRP_BUILD") in ["1", "true"] do
-      nil
-    else
-      {:nif, CCPrecompiler}
-    end
-  end
+  # Precompiled binaries are downloaded when this package is installed as
+  # a hex dependency. When working in this repo, mix always builds from source.
+  defp make_precompiler, do: {:nif, CCPrecompiler}
 
   defp make_env do
     fine_dir =
@@ -91,7 +87,7 @@ defmodule ExVrp.MixProject do
     %{"FINE_INCLUDE_DIR" => fine_dir}
   end
 
-  defp elixirc_paths(:test), do: ["lib", "dev"]
+  defp elixirc_paths(:test), do: ["lib", "dev", "credo"]
   defp elixirc_paths(:dev), do: ["lib", "dev"]
   defp elixirc_paths(_), do: ["lib"]
 
@@ -114,7 +110,7 @@ defmodule ExVrp.MixProject do
       # Mix check
       {:ex_check, "~> 0.16.0", only: [:dev, :test], runtime: false},
       # Static code analysis
-      {:credo, ">= 0.0.0", only: [:dev], runtime: false},
+      {:credo, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:dialyxir, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:sobelow, ">= 0.0.0", only: [:dev, :test], runtime: false},
@@ -136,10 +132,34 @@ defmodule ExVrp.MixProject do
 
   defp docs do
     [
-      main: "readme",
+      main: "ExVrp",
       extras: ["README.md"],
       source_url: @github_url,
-      source_ref: "v#{@version}"
+      source_ref: "v#{@version}",
+      groups_for_modules: [
+        "Problem Definition": [
+          ExVrp.Model,
+          ExVrp.Client,
+          ExVrp.Depot,
+          ExVrp.VehicleType,
+          ExVrp.ClientGroup,
+          ExVrp.SameVehicleGroup
+        ],
+        Solving: [
+          ExVrp.Solver,
+          ExVrp.StoppingCriteria,
+          ExVrp.PenaltyManager,
+          ExVrp.PenaltyManager.Params,
+          ExVrp.IteratedLocalSearch,
+          ExVrp.IteratedLocalSearch.Params
+        ],
+        Results: [
+          ExVrp.Solution,
+          ExVrp.Route,
+          ExVrp.ScheduledVisit,
+          ExVrp.IteratedLocalSearch.Result
+        ]
+      ]
     ]
   end
 end

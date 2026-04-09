@@ -123,17 +123,34 @@ $(TOOLCHAIN_STAMP):
 	@mkdir -p $(OBJ_DIR)/pyvrp/search
 	@touch $@
 
+# Header files — ALL objects depend on ALL headers so that any header
+# change triggers a full rebuild. This is conservative but safe; the
+# alternative (gcc -MMD dependency tracking) adds complexity and the
+# full rebuild takes <10s.
+HEADERS = $(wildcard c_src/*.h c_src/pyvrp/*.h c_src/pyvrp/search/*.h)
+
 # Object files depend on toolchain stamp via order-only prerequisite
 # to prevent parallel make from compiling while the stamp rule cleans obj/
-$(OBJ_DIR)/%.o: c_src/%.cpp | $(TOOLCHAIN_STAMP)
+$(OBJ_DIR)/%.o: c_src/%.cpp $(HEADERS) | $(TOOLCHAIN_STAMP)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 $(NIF_SO): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 
+# Standalone test binary for running under valgrind (no BEAM/NIF needed).
+# Usage: make test-solver && valgrind --error-exitcode=1 ./solver_test
+TEST_CXXFLAGS = -std=c++20 -O1 -g -Ic_src -Ic_src/pyvrp
+TEST_PYVRP_SRC = $(PYVRP_CORE_SRC) $(PYVRP_SEARCH_SRC)
+
+test-solver: c_src/solver_test.cpp $(TEST_PYVRP_SRC) $(HEADERS)
+	$(CXX) $(TEST_CXXFLAGS) c_src/solver_test.cpp $(TEST_PYVRP_SRC) -o solver_test -lm
+	@echo "Built solver_test. Run: ./solver_test"
+	@echo "Under valgrind: valgrind --error-exitcode=1 ./solver_test"
+
 clean:
 	rm -rf $(PRIV_DIR)/*.$(SO_EXT)
 	rm -rf $(OBJ_DIR)
+	rm -f solver_test svg_crash_test
 
-.PHONY: all clean
+.PHONY: all clean test-solver

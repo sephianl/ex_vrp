@@ -55,11 +55,24 @@ class LocalSearch
     bool wouldViolateSameVehicle(Route::Node const *U,
                                  Route const *targetRoute) const;
 
+    bool wouldViolateForbidden(Route::Node const *U,
+                               Route const *targetRoute) const;
+
+    bool isHardToPlace(Route::Node const *U) const;
+
+    void applySameVehicleRepair(Route::Node *U,
+                                CostEvaluator const &costEvaluator);
+
+    bool wouldTailSwapSplitSVG(Route::Node const *U,
+                               Route::Node const *V) const;
+
     void update(Route *U, Route *V);
 
     void search(CostEvaluator const &costEvaluator);
 
     void ensureStructuralFeasibility(CostEvaluator const &costEvaluator);
+
+    void insertConstrainedFirst(CostEvaluator const &costEvaluator);
 
     void improveWithMultiTrip(CostEvaluator const &costEvaluator);
 

@@ -62,3 +62,6 @@ priv/*.dll
 priv/*.dylib
 c_src/obj/
 checksum.exs
+
+# Valgrind core dumps
+vgcore.*

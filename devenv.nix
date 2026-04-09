@@ -29,6 +29,7 @@ in
       clang
       clang-tools # provides clang-format, clang-tidy
       llvm # provides llvm-symbolizer for ASan stack traces
+      valgrind
       cppcheck
 
       go-task
@@ -75,11 +76,24 @@ in
       ];
     };
 
-    # AddressSanitizer tests (pre-push only, catches memory bugs)
+    # AddressSanitizer tests (pre-push, catches heap OOB + use-after-free)
     asan-test = {
       enable = !config.devenv.isTesting;
       name = "asan-test";
       entry = "task test:asan";
+      pass_filenames = false;
+      stages = [ "pre-push" ];
+      types_or = [
+        "c"
+        "c++"
+      ];
+    };
+
+    # Valgrind test (pre-push, catches uninitialized reads that ASAN misses)
+    valgrind-test = {
+      enable = !config.devenv.isTesting;
+      name = "valgrind-test";
+      entry = "task test:valgrind";
       pass_filenames = false;
       stages = [ "pre-push" ];
       types_or = [

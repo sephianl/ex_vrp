@@ -86,6 +86,13 @@ public:
      */
     OperatorStatistics const &statistics() const { return stats_; }
 
+    /**
+     * Returns whether this operator moves entire route tails (everything
+     * after U and V) rather than just individual clients. Used by
+     * LocalSearch to apply broader same-vehicle-group constraint checks.
+     */
+    virtual bool affectsEntireTail() const { return false; }
+
     LocalSearchOperator(ProblemData const &data) : data(data) {};
     virtual ~LocalSearchOperator() = default;
 };

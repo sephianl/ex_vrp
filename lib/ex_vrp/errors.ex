@@ -8,7 +8,7 @@ defmodule ExVrp.NotImplementedError do
 
   defexception [:function]
 
-  @impl true
+  @impl Exception
   def message(%{function: function}) do
     "NIF function #{function} is not yet implemented. " <>
       "See README.md for implementation status."
@@ -22,7 +22,7 @@ defmodule ExVrp.SolveError do
 
   defexception [:reason]
 
-  @impl true
+  @impl Exception
   def message(%{reason: reason}) when is_binary(reason) do
     "Solver failed: #{reason}"
   end
@@ -39,7 +39,7 @@ defmodule ExVrp.ValidationError do
 
   defexception [:errors]
 
-  @impl true
+  @impl Exception
   def message(%{errors: errors}) do
     "Model validation failed:\n" <>
       Enum.map_join(errors, "\n", &"  - #{&1}")

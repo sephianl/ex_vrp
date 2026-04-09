@@ -58,6 +58,13 @@ tasks:
     cmds:
       - clang-format --dry-run --Werror {{.CPP_SRC}} {{.CPP_HEADERS}}
 
+  test:valgrind:
+    desc: Build solver test and run under valgrind (catches uninit reads, use-after-free)
+    cmds:
+      - make test-solver
+      - valgrind --error-exitcode=1 --tool=memcheck --errors-for-leak-kinds=definite --leak-check=no ./solver_test
+      - echo "Valgrind passed — no memory errors detected"
+
   # ---------------------------------------------------------------------------
   # Build Helpers
   # ---------------------------------------------------------------------------

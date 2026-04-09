@@ -229,12 +229,27 @@ bool Solution::insert(Route::Node *U,
         return false;
     };
 
+    // Reachability check: only filter when there are multiple profiles
+    // (zone restrictions). With a single profile all clients are equally
+    // reachable, and filtering can prevent VRPB/backhaul client placement.
+    auto const clientLoc = U->client();
+    auto isReachable = [&](Route const *route) -> bool
+    {
+        if (data_.numProfiles() <= 1)
+            return true;
+        auto const profile = data_.vehicleType(route->vehicleType()).profile;
+        auto const &distMatrix = data_.distanceMatrix(profile);
+        auto const startDepot
+            = data_.vehicleType(route->vehicleType()).startDepot;
+        return distMatrix(startDepot, clientLoc) < 1'000'000'000;
+    };
+
     Route::Node *UAfter = nullptr;
     auto bestCost = std::numeric_limits<Cost>::max();
 
     for (auto &route : routes)
     {
-        if (isCompatibleRoute(&route))
+        if (isCompatibleRoute(&route) && isReachable(&route))
         {
             UAfter = route[0];
             bestCost = insertCost(U, UAfter, data_, costEvaluator);
@@ -249,7 +264,8 @@ bool Solution::insert(Route::Node *U,
     {
         auto *V = &nodes[vClient];
 
-        if (!V->route() || !isCompatibleRoute(V->route()))
+        if (!V->route() || !isCompatibleRoute(V->route())
+            || !isReachable(V->route()))
             continue;
 
         auto const cost = insertCost(U, V, data_, costEvaluator);
@@ -267,7 +283,7 @@ bool Solution::insert(Route::Node *U,
 
         for (auto it = begin; it != end; ++it)
         {
-            if (!isCompatibleRoute(&*it))
+            if (!isCompatibleRoute(&*it) || !isReachable(&*it))
                 continue;
 
             if (!it->empty() && UAfter->route() == &*it)

@@ -822,7 +822,7 @@ defmodule ExVrp.SearchExchangeTest do
       model =
         model
         |> Model.set_distance_matrices([distances])
-        |> Model.set_duration_matrices([Enum.map(distances, fn row -> Enum.map(row, fn _ -> 0 end) end)])
+        |> Model.set_duration_matrices([Enum.map(distances, fn row -> Enum.map(row, fn _dist -> 0 end) end)])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -869,7 +869,7 @@ defmodule ExVrp.SearchExchangeTest do
       model =
         model
         |> Model.set_distance_matrices([distances])
-        |> Model.set_duration_matrices([Enum.map(distances, fn row -> Enum.map(row, fn _ -> 0 end) end)])
+        |> Model.set_duration_matrices([Enum.map(distances, fn row -> Enum.map(row, fn _dist -> 0 end) end)])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1260,7 +1260,7 @@ defmodule ExVrp.SearchExchangeTest do
     end
 
     test "Exchange operators with high time warp penalty" do
-      {:ok, problem_data, _} = ok_small_setup()
+      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
 
       {:ok, high_tw_cost_eval} =
         Native.create_cost_evaluator(
@@ -1372,7 +1372,7 @@ defmodule ExVrp.SearchExchangeTest do
         try do
           Native.exchange10_evaluate_nif(op, node1, node2, cost_evaluator)
         rescue
-          _ -> 0
+          _error -> 0
         end
     end
   end

@@ -159,7 +159,7 @@ defmodule ExVrp.PenaltyManagerTest do
     test "uses default values" do
       params = %PenaltyManager.Params{}
 
-      assert params.solutions_between_updates == 500
+      assert params.solutions_between_updates == 100
       assert params.penalty_increase == 1.25
       assert params.penalty_decrease == 0.85
       assert params.target_feasible == 0.65
@@ -333,9 +333,9 @@ defmodule ExVrp.PenaltyManagerTest do
 
       pm = PenaltyManager.init_from(problem_data)
 
-      # tw_penalty should be at least prize / 60 so that 1 minute of time warp
+      # tw_penalty should be at least prize / 3600 so that 1 hour of time warp
       # costs as much as one client's prize
-      min_expected_tw_penalty = prize / 60.0
+      min_expected_tw_penalty = prize / 3600.0
       assert pm.tw_penalty >= min_expected_tw_penalty
     end
 
@@ -509,7 +509,7 @@ defmodule ExVrp.PenaltyManagerTest do
         | load_penalties: new_load,
           tw_penalty: new_tw,
           dist_penalty: new_dist,
-          load_feas: Enum.map(pm.load_feas, fn _ -> [] end),
+          load_feas: Enum.map(pm.load_feas, fn _feas -> [] end),
           tw_feas: [],
           dist_feas: []
       }

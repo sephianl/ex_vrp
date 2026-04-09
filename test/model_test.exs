@@ -171,9 +171,9 @@ defmodule ExVrp.ModelTest do
         |> Model.add_client(x: 1, y: 1, required: false, group: group)
         |> Model.add_client(x: 2, y: 2, required: false, group: group)
 
-      # Group should now have both clients
+      # Group should now have both clients (in reverse/prepend order internally)
       # depot is 0, clients are 1, 2
-      assert hd(model.client_groups).clients == [1, 2]
+      assert hd(model.client_groups).clients == [2, 1]
     end
 
     test "raises when required client added to mutually exclusive group" do
@@ -292,7 +292,7 @@ defmodule ExVrp.ModelTest do
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
       assert :ok = Model.validate(model)
-      assert {:ok, _} = Model.to_problem_data(model)
+      assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
 
     test "model with no clients (empty problem)" do

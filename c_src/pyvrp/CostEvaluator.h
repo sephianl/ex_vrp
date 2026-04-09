@@ -12,6 +12,34 @@
 
 namespace pyvrp
 {
+// The following methods must be implemented for a type to be evaluatable by
+// the CostEvaluator.
+template <typename T>
+concept CostEvaluatable = requires(T arg) {
+    { arg.distanceCost() } -> std::same_as<Cost>;
+    { arg.durationCost() } -> std::same_as<Cost>;
+    { arg.fixedVehicleCost() } -> std::same_as<Cost>;
+    { arg.excessLoad() } -> std::convertible_to<std::vector<Load>>;
+    { arg.excessDistance() } -> std::same_as<Distance>;
+    { arg.timeWarp() } -> std::same_as<Duration>;
+    { arg.empty() } -> std::same_as<bool>;
+    { arg.isFeasible() } -> std::same_as<bool>;
+};
+
+// If, additionally, methods related to optional clients and prize collecting
+// are implemented we can also take that aspect into account. See the
+// CostEvaluator implementation for details.
+template <typename T>
+concept PrizeCostEvaluatable = CostEvaluatable<T> && requires(T arg) {
+    { arg.uncollectedPrizes() } -> std::same_as<Cost>;
+};
+
+// Same-vehicle group violations can be penalized when the type exposes them.
+template <typename T>
+concept SVGCostEvaluatable = CostEvaluatable<T> && requires(T arg) {
+    { arg.numSameVehicleViolations() } -> std::same_as<size_t>;
+};
+
 // The following methods must be available before a type's delta cost can be
 // evaluated by the CostEvaluator.
 template <typename T>
@@ -208,6 +236,38 @@ Cost CostEvaluator::distPenalty(Distance distance, Distance maxDistance) const
 Cost CostEvaluator::excessDistPenalty(Distance excessDistance) const
 {
     return static_cast<Cost>(excessDistance.get() * distPenalty_);
+}
+
+template <CostEvaluatable T>
+Cost CostEvaluator::penalisedCost(T const &arg) const
+{
+    if (arg.empty())
+    {
+        if constexpr (PrizeCostEvaluatable<T>)
+            return arg.uncollectedPrizes();
+        return 0;
+    }
+
+    auto const cost
+        = arg.distanceCost() + arg.durationCost() + arg.fixedVehicleCost()
+          + arg.reloadCost() + excessLoadPenalties(arg.excessLoad())
+          + twPenalty(arg.timeWarp()) + distPenalty(arg.excessDistance(), 0);
+
+    Cost total = cost;
+
+    if constexpr (PrizeCostEvaluatable<T>)
+        total += arg.uncollectedPrizes();
+
+    if constexpr (SVGCostEvaluatable<T>)
+        total += Cost(arg.numSameVehicleViolations() * 500'000);
+
+    return total;
+}
+
+template <CostEvaluatable T> Cost CostEvaluator::cost(T const &arg) const
+{
+    return arg.isFeasible() ? penalisedCost(arg)
+                            : std::numeric_limits<Cost>::max();
 }
 
 template <bool exact,

@@ -101,7 +101,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
       params = %IteratedLocalSearch.Params{}
 
       # PyVRP defaults from IteratedLocalSearchParams
-      assert params.max_no_improvement == 50_000
+      assert params.max_no_improvement == 5_000
       assert params.history_size == 500
     end
   end

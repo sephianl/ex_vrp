@@ -14,7 +14,7 @@ defmodule ExVrp.PenaltyManager do
     @moduledoc """
     Parameters for penalty management.
     """
-    defstruct solutions_between_updates: 500,
+    defstruct solutions_between_updates: 100,
               penalty_increase: 1.25,
               penalty_decrease: 0.85,
               target_feasible: 0.65,
@@ -63,7 +63,7 @@ defmodule ExVrp.PenaltyManager do
       tw_penalty: clip_penalty(tw_penalty, params),
       dist_penalty: clip_penalty(dist_penalty, params),
       params: params,
-      load_feas: Enum.map(load_penalties, fn _ -> [] end),
+      load_feas: Enum.map(load_penalties, fn _penalty -> [] end),
       tw_feas: [],
       dist_feas: []
     }
@@ -101,15 +101,12 @@ defmodule ExVrp.PenaltyManager do
     # Assuming typical time warp is ~1 hour (3600s), we need:
     # tw_penalty > avg_prize / 3600
     clients = Native.problem_data_clients_nif(problem_data)
-    prizes = Enum.map(clients, fn {_, _, _, prize} -> prize end)
+    prizes = Enum.map(clients, fn {_tw_early, _tw_late, _svc, prize} -> prize end)
     max_prize = if Enum.empty?(prizes), do: 0, else: Enum.max(prizes)
 
     init_tw =
       if max_prize > 0 do
-        # Set tw_penalty so that even small time warps are heavily penalized.
-        # We want 1 minute (60s) of time warp to cost as much as one prize.
-        # This strongly discourages any time warp violations.
-        prize_based_tw = max_prize / 60.0
+        prize_based_tw = max_prize / 3600.0
         max(init_tw, prize_based_tw)
       else
         init_tw
@@ -196,7 +193,7 @@ defmodule ExVrp.PenaltyManager do
   @spec max_cost_evaluator(t()) :: {:ok, reference()} | {:error, term()}
   def max_cost_evaluator(%__MODULE__{params: params} = pm) do
     Native.create_cost_evaluator(
-      load_penalties: Enum.map(pm.load_penalties, fn _ -> params.max_penalty end),
+      load_penalties: Enum.map(pm.load_penalties, fn _penalty -> params.max_penalty end),
       tw_penalty: params.max_penalty,
       dist_penalty: params.max_penalty
     )
@@ -268,7 +265,7 @@ defmodule ExVrp.PenaltyManager do
       | load_penalties: new_load_penalties,
         tw_penalty: new_tw_penalty,
         dist_penalty: new_dist_penalty,
-        load_feas: Enum.map(pm.load_feas, fn _ -> [] end),
+        load_feas: Enum.map(pm.load_feas, fn _feas -> [] end),
         tw_feas: [],
         dist_feas: []
     }

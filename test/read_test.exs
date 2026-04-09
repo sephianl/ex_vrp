@@ -34,10 +34,10 @@ defmodule ExVrp.ReadTest do
       assert depot.x == 2334
       assert depot.y == 726
 
-      # Check clients
       assert length(model.clients) == 4
+      clients = model.clients
 
-      model.clients
+      clients
       |> Enum.zip(tl(expected_coords))
       |> Enum.each(fn {client, {x, y}} ->
         assert client.x == x
@@ -47,7 +47,7 @@ defmodule ExVrp.ReadTest do
       # From DEMAND_SECTION
       expected_demands = [5, 5, 3, 5]
 
-      model.clients
+      clients
       |> Enum.zip(expected_demands)
       |> Enum.each(fn {client, demand} ->
         assert client.delivery == [demand]
@@ -61,7 +61,7 @@ defmodule ExVrp.ReadTest do
         {12_000, 19_500}
       ]
 
-      model.clients
+      clients
       |> Enum.zip(expected_time_windows)
       |> Enum.each(fn {client, {tw_early, tw_late}} ->
         assert client.tw_early == tw_early
@@ -75,7 +75,7 @@ defmodule ExVrp.ReadTest do
       # From SERVICE_TIME_SECTION
       expected_service = [360, 360, 420, 360]
 
-      model.clients
+      clients
       |> Enum.zip(expected_service)
       |> Enum.each(fn {client, service} ->
         assert client.service_duration == service
@@ -116,7 +116,6 @@ defmodule ExVrp.ReadTest do
       # Two vehicle types (one per depot)
       assert length(model.vehicle_types) == 2
 
-      # First depot
       [depot1, depot2] = model.depots
       assert depot1.x == 2334
       assert depot1.y == 726

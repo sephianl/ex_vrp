@@ -31,7 +31,7 @@ defmodule ExVrp.StatisticsTest do
 
       # Collect 5 iterations
       stats =
-        Enum.reduce(1..5, stats, fn _, acc ->
+        Enum.reduce(1..5, stats, fn _i, acc ->
           Statistics.collect(acc, solution, solution, solution, cost_evaluator)
         end)
 
@@ -163,19 +163,19 @@ defmodule ExVrp.StatisticsTest do
       stats = Statistics.new()
 
       stats =
-        Enum.reduce(1..5, stats, fn _, acc ->
+        Enum.reduce(1..5, stats, fn _i, acc ->
           Statistics.collect(acc, solution, solution, solution, cost_evaluator)
         end)
 
       # Slice first 2 elements
       sliced = Enum.slice(stats, 0, 2)
       assert length(sliced) == 2
-      assert sliced == Enum.take(stats.data, 2)
+      assert sliced == Enum.take(Enum.to_list(stats), 2)
 
       # Slice middle elements
       sliced_middle = Enum.slice(stats, 1, 3)
       assert length(sliced_middle) == 3
-      assert sliced_middle == Enum.slice(stats.data, 1, 3)
+      assert sliced_middle == Enum.slice(Enum.to_list(stats), 1, 3)
 
       # Slice with range
       sliced_range = Enum.slice(stats, 2..4)
@@ -197,7 +197,7 @@ defmodule ExVrp.StatisticsTest do
       stats = Statistics.new()
 
       stats =
-        Enum.reduce(1..3, stats, fn _, acc ->
+        Enum.reduce(1..3, stats, fn _i, acc ->
           Statistics.collect(acc, solution, solution, solution, cost_evaluator)
         end)
 
@@ -213,7 +213,7 @@ defmodule ExVrp.StatisticsTest do
       stats = Statistics.new()
 
       stats =
-        Enum.reduce(1..3, stats, fn _, acc ->
+        Enum.reduce(1..3, stats, fn _i, acc ->
           Statistics.collect(acc, solution, solution, solution, cost_evaluator)
         end)
 
@@ -230,7 +230,7 @@ defmodule ExVrp.StatisticsTest do
       stats = Statistics.new()
 
       stats =
-        Enum.reduce(1..10, stats, fn _, acc ->
+        Enum.reduce(1..10, stats, fn _i, acc ->
           Statistics.collect(acc, solution, solution, solution, cost_evaluator)
         end)
 
@@ -247,8 +247,10 @@ defmodule ExVrp.StatisticsTest do
       assert length(read_stats.data) == length(stats.data)
       assert read_stats.num_iterations == stats.num_iterations
 
-      # Compare data points
+      # Compare data points (stats.data is in reverse chronological order,
+      # read_stats.data is in chronological order from CSV)
       stats.data
+      |> Enum.reverse()
       |> Enum.zip(read_stats.data)
       |> Enum.each(fn {orig, read} ->
         assert orig.current_cost == read.current_cost
@@ -261,6 +263,7 @@ defmodule ExVrp.StatisticsTest do
 
       # Compare runtimes (with tolerance for float comparison)
       stats.runtimes
+      |> Enum.reverse()
       |> Enum.zip(read_stats.runtimes)
       |> Enum.each(fn {orig, read} ->
         assert_in_delta orig, read, 0.0001

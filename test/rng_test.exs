@@ -58,7 +58,7 @@ defmodule ExVrp.RNGTest do
 
       # Generate 10000 samples
       {_rng, samples} =
-        Enum.reduce(1..10_000, {rng, []}, fn _, {rng_acc, samples_acc} ->
+        Enum.reduce(1..10_000, {rng, []}, fn _i, {rng_acc, samples_acc} ->
           {new_rng, value} = RNG.rand(rng_acc)
           {new_rng, [value | samples_acc]}
         end)
@@ -104,8 +104,8 @@ defmodule ExVrp.RNGTest do
     end
 
     test "returns error for invalid state length" do
-      assert {:error, _} = RNG.from_state([1, 2, 3])
-      assert {:error, _} = RNG.from_state([1, 2, 3, 4, 5])
+      assert {:error, _reason} = RNG.from_state([1, 2, 3])
+      assert {:error, _reason} = RNG.from_state([1, 2, 3, 4, 5])
     end
   end
 
@@ -114,8 +114,8 @@ defmodule ExVrp.RNGTest do
       rng1 = RNG.new(1)
       rng2 = RNG.new(2)
 
-      {_, value1} = RNG.call(rng1)
-      {_, value2} = RNG.call(rng2)
+      {_rng1, value1} = RNG.call(rng1)
+      {_rng2, value2} = RNG.call(rng2)
 
       assert value1 != value2
     end

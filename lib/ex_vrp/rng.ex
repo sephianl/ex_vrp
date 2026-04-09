@@ -44,7 +44,7 @@ defmodule ExVrp.RNG do
     Native.create_rng_from_state_nif(state)
   end
 
-  def from_state(_), do: {:error, "state must be a 4-element list of unsigned integers"}
+  def from_state(_state), do: {:error, "state must be a 4-element list of unsigned integers"}
 
   @doc """
   Returns the minimum value the RNG can produce (0).

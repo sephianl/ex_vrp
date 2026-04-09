@@ -96,9 +96,9 @@ defmodule ExVrp.Statistics do
 
     %{
       stats
-      | runtimes: stats.runtimes ++ [runtime],
+      | runtimes: [runtime | stats.runtimes],
         num_iterations: stats.num_iterations + 1,
-        data: stats.data ++ [datum],
+        data: [datum | stats.data],
         clock: now
     }
   end
@@ -113,6 +113,7 @@ defmodule ExVrp.Statistics do
   - `opts` - Options (`:delimiter` defaults to `,`)
   """
   @spec to_csv(t(), Path.t(), keyword()) :: :ok | {:error, term()}
+  # sobelow_skip ["Traversal.FileModule"]
   def to_csv(%__MODULE__{} = stats, path, opts \\ []) do
     delimiter = Keyword.get(opts, :delimiter, ",")
 
@@ -128,7 +129,8 @@ defmodule ExVrp.Statistics do
 
     rows =
       stats.runtimes
-      |> Enum.zip(stats.data)
+      |> Enum.reverse()
+      |> Enum.zip(Enum.reverse(stats.data))
       |> Enum.map(fn {runtime, datum} ->
         [
           runtime,
@@ -155,6 +157,7 @@ defmodule ExVrp.Statistics do
   - `opts` - Options (`:delimiter` defaults to `,`)
   """
   @spec from_csv(Path.t(), keyword()) :: {:ok, t()} | {:error, term()}
+  # sobelow_skip ["Traversal.FileModule"]
   def from_csv(path, opts \\ []) do
     delimiter = Keyword.get(opts, :delimiter, ",")
 
@@ -187,7 +190,7 @@ defmodule ExVrp.Statistics do
   end
 
   defp parse_row([runtime, curr_cost, curr_feas, cand_cost, cand_feas, best_cost, best_feas]) do
-    {runtime, _} = Float.parse(runtime)
+    {runtime, _rest} = Float.parse(runtime)
 
     datum = %{
       current_cost: String.to_integer(curr_cost),
@@ -216,12 +219,12 @@ defmodule ExVrp.Statistics do
     def member?(%ExVrp.Statistics{data: data}, element), do: {:ok, element in data}
 
     def reduce(%ExVrp.Statistics{data: data}, acc, fun) do
-      Enumerable.List.reduce(data, acc, fun)
+      Enumerable.List.reduce(Enum.reverse(data), acc, fun)
     end
 
     def slice(%ExVrp.Statistics{data: data}) do
-      # Return a 3-arity function: fn list, start, length -> result end
-      {:ok, length(data), fn start, len, _step -> Enum.slice(data, start, len) end}
+      reversed = Enum.reverse(data)
+      {:ok, length(reversed), fn start, len, _step -> Enum.slice(reversed, start, len) end}
     end
   end
 end
