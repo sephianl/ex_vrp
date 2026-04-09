@@ -413,6 +413,7 @@ defmodule ExVrp.Model do
       |> validate_vehicle_capacity(model)
       |> validate_vehicle_depot_indices(model)
       |> validate_vehicle_reload_depots(model)
+      |> validate_vehicle_forbidden_windows(model)
       |> validate_matrix_dimensions(model)
       |> validate_matrix_diagonals(model)
       |> validate_client_groups(model)
@@ -580,6 +581,29 @@ defmodule ExVrp.Model do
     end
   end
 
+  defp validate_vehicle_forbidden_windows(errors, %{vehicle_types: vehicle_types}) do
+    invalid =
+      vehicle_types
+      |> Enum.with_index()
+      |> Enum.filter(fn {vt, _idx} ->
+        Enum.any?(vt.forbidden_windows, fn {s, e} ->
+          s >= e or s < vt.tw_early or e > vt.tw_late
+        end)
+      end)
+      |> Enum.map(fn {_vt, i} -> i end)
+
+    case invalid do
+      [] ->
+        errors
+
+      _indices ->
+        [
+          "Vehicle forbidden windows invalid (must have start < end and be within [tw_early, tw_late]) at indices #{inspect(invalid)}"
+          | errors
+        ]
+    end
+  end
+
   defp validate_matrix_dimensions(errors, %{distance_matrices: [], duration_matrices: []}) do
     errors
   end
@@ -713,8 +737,11 @@ defmodule ExVrp.Model do
   @spec to_problem_data(t()) :: {:ok, reference()} | {:error, term()}
   def to_problem_data(%__MODULE__{} = model) do
     case validate(model) do
-      :ok -> ExVrp.Native.create_problem_data(model)
-      {:error, _reason} = error -> error
+      :ok ->
+        ExVrp.Native.create_problem_data(model)
+
+      {:error, _reason} = error ->
+        error
     end
   end
 end
