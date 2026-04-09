@@ -73,7 +73,7 @@ defmodule ExVrp.MixProject do
   end
 
   defp make_precompiler do
-    if Mix.env() == :dev, do: nil, else: {:nif, CCPrecompiler}
+    if Mix.env() in [:dev, :test], do: nil, else: {:nif, CCPrecompiler}
   end
 
   defp make_env do
