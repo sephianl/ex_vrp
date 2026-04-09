@@ -899,14 +899,14 @@ public:
      * ProblemData
      *    A new ProblemData instance with possibly replaced data.
      */
-    ProblemData
-    replace(std::optional<std::vector<Client>> &clients,
-            std::optional<std::vector<Depot>> &depots,
-            std::optional<std::vector<VehicleType>> &vehicleTypes,
-            std::optional<std::vector<Matrix<Distance>>> &distMats,
-            std::optional<std::vector<Matrix<Duration>>> &durMats,
-            std::optional<std::vector<ClientGroup>> &groups,
-            std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups) const;
+    ProblemData replace(
+        std::optional<std::vector<Client>> &clients,
+        std::optional<std::vector<Depot>> &depots,
+        std::optional<std::vector<VehicleType>> &vehicleTypes,
+        std::optional<std::vector<Matrix<Distance>>> &distMats,
+        std::optional<std::vector<Matrix<Duration>>> &durMats,
+        std::optional<std::vector<ClientGroup>> &groups,
+        std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups) const;
 
     ProblemData(std::vector<Client> clients,
                 std::vector<Depot> depots,

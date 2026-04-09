@@ -433,8 +433,8 @@ bool Solution::insert(Route::Node *U,
             Duration maxDuration = vehType.shiftDuration;
             Duration tripBoundary
                 = vehType.twEarly + currentDuration - route.timeWarp();
-            Duration adjustedBoundary = advancePastForbidden(
-                tripBoundary, vehType.forbiddenWindows);
+            Duration adjustedBoundary
+                = advancePastForbidden(tripBoundary, vehType.forbiddenWindows);
             Duration forbiddenDelay = adjustedBoundary - tripBoundary;
 
             if (maxDuration < std::numeric_limits<Duration>::max()

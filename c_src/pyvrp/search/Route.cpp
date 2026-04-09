@@ -387,8 +387,8 @@ void Route::update()
 
             // Check forbidden window at every node (client, reload depot,
             // end depot) — not just clients.
-            auto const advanced = advancePastForbidden(
-                now, vehicleType_.forbiddenWindows);
+            auto const advanced
+                = advancePastForbidden(now, vehicleType_.forbiddenWindows);
             if (advanced != now)
             {
                 totalForbiddenDelay += advanced - now;
@@ -400,8 +400,7 @@ void Route::update()
             {
                 ProblemData::Client const &client
                     = data.location(nodes[idx]->client());
-                auto const wait
-                    = std::max<Duration>(client.twEarly - now, 0);
+                auto const wait = std::max<Duration>(client.twEarly - now, 0);
                 now += wait + client.serviceDuration;
             }
             else if (nodes[idx]->isReloadDepot())
@@ -416,13 +415,11 @@ void Route::update()
                 if (idx + 1 < nodes.size() && !nodes[idx + 1]->isDepot()
                     && !nodes[idx + 1]->isReloadDepot())
                 {
-                    auto const travel
-                        = durations(visits[idx], visits[idx + 1]);
+                    auto const travel = durations(visits[idx], visits[idx + 1]);
                     auto const arrive = now + travel;
                     ProblemData::Client const &next
                         = data.location(nodes[idx + 1]->client());
-                    auto const svcStart
-                        = std::max(arrive, next.twEarly);
+                    auto const svcStart = std::max(arrive, next.twEarly);
 
                     for (auto const &[fStart, fEnd] :
                          vehicleType_.forbiddenWindows)
