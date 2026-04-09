@@ -282,14 +282,6 @@ void ProblemData::SameVehicleGroup::addClient(size_t client)
 
 void ProblemData::SameVehicleGroup::clear() { clients_.clear(); }
 
-ProblemData::VehicleGroup::VehicleGroup(std::vector<size_t> vehicleTypeIndices,
-                                        Duration minGap)
-    : vehicleTypeIndices(std::move(vehicleTypeIndices)), minGap(minGap)
-{
-    if (minGap < 0)
-        throw std::invalid_argument("min_gap must be >= 0.");
-}
-
 ProblemData::Depot::Depot(Coordinate x,
                           Coordinate y,
                           Duration twEarly,
@@ -613,11 +605,6 @@ ProblemData::sameVehicleGroups() const
     return sameVehicleGroups_;
 }
 
-std::vector<ProblemData::VehicleGroup> const &ProblemData::vehicleGroups() const
-{
-    return vehicleGroups_;
-}
-
 std::vector<ProblemData::VehicleType> const &ProblemData::vehicleTypes() const
 {
     return vehicleTypes_;
@@ -669,8 +656,6 @@ size_t ProblemData::numSameVehicleGroups() const
 {
     return sameVehicleGroups_.size();
 }
-
-size_t ProblemData::numVehicleGroups() const { return vehicleGroups_.size(); }
 
 size_t ProblemData::numLocations() const { return numDepots() + numClients(); }
 
@@ -773,25 +758,6 @@ void ProblemData::validate() const
         }
     }
 
-    // Vehicle group checks.
-    for (auto const &group : vehicleGroups_)
-    {
-        if (group.vehicleTypeIndices.empty())
-        {
-            auto const *msg = "Empty vehicle group not understood.";
-            throw std::invalid_argument(msg);
-        }
-
-        for (auto const idx : group.vehicleTypeIndices)
-        {
-            if (idx >= vehicleTypes_.size())
-            {
-                auto const *msg
-                    = "Vehicle group references invalid vehicle type.";
-                throw std::out_of_range(msg);
-            }
-        }
-    }
 
     // Vehicle type checks.
     if (vehicleTypes_.empty())
@@ -870,8 +836,7 @@ ProblemData ProblemData::replace(
     std::optional<std::vector<Matrix<Distance>>> &distMats,
     std::optional<std::vector<Matrix<Duration>>> &durMats,
     std::optional<std::vector<ClientGroup>> &groups,
-    std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups,
-    std::optional<std::vector<VehicleGroup>> &vehicleGroups) const
+    std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups) const
 {
     return {clients.value_or(clients_),
             depots.value_or(depots_),
@@ -879,8 +844,7 @@ ProblemData ProblemData::replace(
             distMats.value_or(dists_),
             durMats.value_or(durs_),
             groups.value_or(groups_),
-            sameVehicleGroups.value_or(sameVehicleGroups_),
-            vehicleGroups.value_or(vehicleGroups_)};
+            sameVehicleGroups.value_or(sameVehicleGroups_)};
 }
 
 ProblemData::ProblemData(std::vector<Client> clients,
@@ -889,8 +853,7 @@ ProblemData::ProblemData(std::vector<Client> clients,
                          std::vector<Matrix<Distance>> distMats,
                          std::vector<Matrix<Duration>> durMats,
                          std::vector<ClientGroup> groups,
-                         std::vector<SameVehicleGroup> sameVehicleGroups,
-                         std::vector<VehicleGroup> vehicleGroups)
+                         std::vector<SameVehicleGroup> sameVehicleGroups)
     : dists_(std::move(distMats)),
       durs_(std::move(durMats)),
       clients_(std::move(clients)),
@@ -898,7 +861,6 @@ ProblemData::ProblemData(std::vector<Client> clients,
       vehicleTypes_(std::move(vehicleTypes)),
       groups_(std::move(groups)),
       sameVehicleGroups_(std::move(sameVehicleGroups)),
-      vehicleGroups_(std::move(vehicleGroups)),
       numVehicles_(std::accumulate(vehicleTypes_.begin(),
                                    vehicleTypes_.end(),
                                    0,

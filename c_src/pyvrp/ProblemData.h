@@ -13,6 +13,21 @@
 
 namespace pyvrp
 {
+
+/**
+ * Advances ``now`` past any forbidden window it falls within.
+ * Returns the (possibly advanced) time.
+ */
+inline Duration
+advancePastForbidden(Duration now,
+                     std::vector<std::pair<Duration, Duration>> const &fw)
+{
+    for (auto const &[fStart, fEnd] : fw)
+        if (now >= fStart && now < fEnd)
+            return fEnd;
+    return now;
+}
+
 /**
  * ProblemData(
  *     clients: list[Client],
@@ -329,33 +344,6 @@ public:
 
         void addClient(size_t client);
         void clear();
-    };
-
-    /**
-     * VehicleGroup(
-     *    vehicle_type_indices: list[int],
-     *    min_gap: int = 0,
-     * )
-     *
-     * Groups vehicle types that represent the same physical vehicle/driver.
-     * When routes are assigned to vehicle types in the same group, the solver
-     * enforces a minimum time gap between consecutive routes.
-     *
-     * Parameters
-     * ----------
-     * vehicle_type_indices
-     *     Indices of vehicle types belonging to this group.
-     * min_gap
-     *     Minimum time gap required between consecutive routes of vehicles
-     *     in this group. Only enforced when the group has 2+ active routes.
-     */
-    struct VehicleGroup
-    {
-        std::vector<size_t> vehicleTypeIndices;
-        Duration minGap;
-
-        VehicleGroup(std::vector<size_t> vehicleTypeIndices, Duration minGap);
-        bool operator==(VehicleGroup const &other) const = default;
     };
 
     /**
@@ -693,8 +681,6 @@ private:
     std::vector<ClientGroup> const groups_;        // Client groups
     std::vector<SameVehicleGroup> const
         sameVehicleGroups_;  // Same-vehicle groups
-    std::vector<VehicleGroup> const
-        vehicleGroups_;  // Vehicle groups (same physical driver)
 
     size_t const numVehicles_;
     size_t const numLoadDimensions_;
@@ -735,11 +721,6 @@ public:
      */
     [[nodiscard]] std::vector<SameVehicleGroup> const &
     sameVehicleGroups() const;
-
-    /**
-     * Returns a list of all vehicle groups in the problem instance.
-     */
-    [[nodiscard]] std::vector<VehicleGroup> const &vehicleGroups() const;
 
     /**
      * Returns a list of all vehicle types in the problem instance.
@@ -867,11 +848,6 @@ public:
     [[nodiscard]] size_t numSameVehicleGroups() const;
 
     /**
-     * Number of vehicle groups in this problem instance.
-     */
-    [[nodiscard]] size_t numVehicleGroups() const;
-
-    /**
      * Number of locations in this problem instance, that is, the number of
      * depots plus the number of clients in the instance.
      */
@@ -930,8 +906,7 @@ public:
             std::optional<std::vector<Matrix<Distance>>> &distMats,
             std::optional<std::vector<Matrix<Duration>>> &durMats,
             std::optional<std::vector<ClientGroup>> &groups,
-            std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups,
-            std::optional<std::vector<VehicleGroup>> &vehicleGroups) const;
+            std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups) const;
 
     ProblemData(std::vector<Client> clients,
                 std::vector<Depot> depots,
@@ -939,8 +914,7 @@ public:
                 std::vector<Matrix<Distance>> distMats,
                 std::vector<Matrix<Duration>> durMats,
                 std::vector<ClientGroup> groups = {},
-                std::vector<SameVehicleGroup> sameVehicleGroups = {},
-                std::vector<VehicleGroup> vehicleGroups = {});
+                std::vector<SameVehicleGroup> sameVehicleGroups = {});
 
     ProblemData() = delete;
 };

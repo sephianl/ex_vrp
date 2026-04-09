@@ -23,8 +23,6 @@ defmodule ExVrp.Native do
     solution_num_routes: 1,
     solution_num_clients: 1,
     solution_unassigned: 1,
-    # Gap enforcement
-    enforce_vehicle_group_gaps: 1,
     # CostEvaluator
     create_cost_evaluator_nif: 1,
     solution_penalised_cost: 2,
@@ -302,13 +300,6 @@ defmodule ExVrp.Native do
 
   @spec solution_unassigned(reference()) :: [non_neg_integer()]
   def solution_unassigned(_solution), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc """
-  Enforce vehicle group gap constraints on a solution.
-  Returns a new solution resource with route times shifted and infeasible routes removed.
-  """
-  @spec enforce_vehicle_group_gaps(reference()) :: reference()
-  def enforce_vehicle_group_gaps(_solution), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
   # CostEvaluator

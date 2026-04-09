@@ -81,7 +81,6 @@ defmodule ExVrp.Model do
   alias ExVrp.ClientGroup
   alias ExVrp.Depot
   alias ExVrp.SameVehicleGroup
-  alias ExVrp.VehicleGroup
   alias ExVrp.VehicleType
 
   @type t :: %__MODULE__{
@@ -90,7 +89,6 @@ defmodule ExVrp.Model do
           vehicle_types: [VehicleType.t()],
           client_groups: [ClientGroup.t()],
           same_vehicle_groups: [SameVehicleGroup.t()],
-          vehicle_groups: [VehicleGroup.t()],
           distance_matrices: [[[non_neg_integer()]]],
           duration_matrices: [[[non_neg_integer()]]]
         }
@@ -100,7 +98,6 @@ defmodule ExVrp.Model do
             vehicle_types: [],
             client_groups: [],
             same_vehicle_groups: [],
-            vehicle_groups: [],
             distance_matrices: [],
             duration_matrices: []
 
@@ -364,35 +361,6 @@ defmodule ExVrp.Model do
   end
 
   @doc """
-  Adds a vehicle group to the model.
-
-  Vehicle groups represent vehicle types that belong to the same physical
-  vehicle/driver. The solver enforces a minimum time gap between consecutive
-  routes assigned to vehicle types in the same group.
-
-  ## Options
-
-  - `:vehicle_types` - List of vehicle type indices (0-based) belonging to this group (required)
-  - `:min_gap` - Minimum time gap between consecutive routes (default: 0)
-
-  ## Example
-
-      model
-      |> Model.add_vehicle_type(num_available: 1, capacity: [100], tw_early: 0, tw_late: 500)
-      |> Model.add_vehicle_type(num_available: 1, capacity: [100], tw_early: 600, tw_late: 1000)
-      |> Model.add_vehicle_group(vehicle_types: [0, 1], min_gap: 100)
-
-  """
-  @spec add_vehicle_group(t(), keyword()) :: t()
-  def add_vehicle_group(%__MODULE__{} = model, opts) do
-    vehicle_type_indices = Keyword.fetch!(opts, :vehicle_types)
-    min_gap = Keyword.get(opts, :min_gap, 0)
-
-    group = %VehicleGroup{vehicle_type_indices: vehicle_type_indices, min_gap: min_gap}
-    %{model | vehicle_groups: model.vehicle_groups ++ [group]}
-  end
-
-  @doc """
   Sets custom distance matrices.
 
   If not provided, Euclidean distances are computed from coordinates.
@@ -450,7 +418,6 @@ defmodule ExVrp.Model do
       |> validate_matrix_diagonals(model)
       |> validate_client_groups(model)
       |> validate_same_vehicle_groups(model)
-      |> validate_vehicle_groups(model)
 
     case errors do
       [] -> :ok
@@ -762,28 +729,6 @@ defmodule ExVrp.Model do
     end)
   end
 
-  defp validate_vehicle_groups(errors, %{vehicle_groups: []}), do: errors
-
-  defp validate_vehicle_groups(errors, %{vehicle_groups: groups, vehicle_types: vehicle_types}) do
-    num_vehicle_types = length(vehicle_types)
-
-    Enum.reduce(Enum.with_index(groups), errors, fn {group, idx}, acc ->
-      cond do
-        group.vehicle_type_indices == [] ->
-          ["Vehicle group #{idx} is empty" | acc]
-
-        Enum.any?(group.vehicle_type_indices, fn i -> i >= num_vehicle_types end) ->
-          ["Vehicle group #{idx} has invalid vehicle type index" | acc]
-
-        group.min_gap < 0 ->
-          ["Vehicle group #{idx} has negative min_gap" | acc]
-
-        true ->
-          acc
-      end
-    end)
-  end
-
   @doc """
   Converts the model to ProblemData for the solver.
 
@@ -793,146 +738,10 @@ defmodule ExVrp.Model do
   def to_problem_data(%__MODULE__{} = model) do
     case validate(model) do
       :ok ->
-        model = merge_vehicle_group_shifts(model)
         ExVrp.Native.create_problem_data(model)
 
       {:error, _reason} = error ->
         error
     end
-  end
-
-  # ---------------------------------------------------------------------------
-  # Vehicle group shift merging
-  # ---------------------------------------------------------------------------
-
-  # Merges vehicle types in the same vehicle group into a single type with
-  # forbidden_windows. This converts separate shift vehicle types (e.g. morning
-  # shift [0,500] and afternoon shift [600,1000]) into one type with
-  # time_windows: [{0,500},{600,1000}] which auto-generates forbidden_windows.
-  # The solver then enforces shift gaps during search rather than needing
-  # post-processing.
-  defp merge_vehicle_group_shifts(%{vehicle_groups: []} = model), do: model
-
-  defp merge_vehicle_group_shifts(model) do
-    model.vehicle_groups
-    |> Enum.reduce(model, &merge_single_group/2)
-    |> then(fn m -> %{m | vehicle_groups: []} end)
-  end
-
-  defp merge_single_group(%{vehicle_type_indices: indices}, model) when length(indices) < 2, do: model
-
-  defp merge_single_group(%{vehicle_type_indices: indices, min_gap: min_gap}, model) do
-    types = Enum.map(indices, &Enum.at(model.vehicle_types, &1))
-    sorted = Enum.sort_by(types, & &1.tw_early)
-    time_windows = Enum.map(sorted, fn vt -> {vt.tw_early, vt.tw_late} end)
-    base = hd(sorted)
-
-    # Only merge shifts that have gaps AND can actually do inter-shift reloads
-    if has_gaps?(time_windows) and base.reload_depots != [] do
-      do_merge(model, sorted, time_windows, indices, min_gap)
-    else
-      model
-    end
-  end
-
-  defp has_gaps?(time_windows) do
-    time_windows
-    |> Enum.sort()
-    |> Enum.chunk_every(2, 1, :discard)
-    |> Enum.any?(fn [{_start, prev_end}, {next_start, _end}] -> next_start > prev_end end)
-  end
-
-  defp do_merge(model, sorted, time_windows, indices, min_gap) do
-    base = hd(sorted)
-
-    tw_early = elem(hd(time_windows), 0)
-    tw_late = elem(List.last(time_windows), 1)
-    span = tw_late - tw_early
-
-    original_max = sorted |> Enum.map(& &1.max_reloads) |> max_reloads_value()
-    num_shifts = length(sorted)
-
-    # Check if a reload from the earliest possible time can reach before tw_late,
-    # accounting for forbidden windows that may delay the vehicle further.
-    can_reload = earliest_after_reload(tw_early, min_gap, time_windows) < tw_late
-
-    merged_max_reloads =
-      if can_reload do
-        case original_max do
-          :infinity -> :infinity
-          n -> n + num_shifts - 1
-        end
-      else
-        case original_max do
-          :infinity -> 0
-          n -> n
-        end
-      end
-
-    merged =
-      VehicleType.new(
-        num_available: base.num_available,
-        capacity: base.capacity,
-        start_depot: base.start_depot,
-        end_depot: base.end_depot,
-        fixed_cost: base.fixed_cost,
-        time_windows: time_windows,
-        shift_duration: span,
-        max_distance: base.max_distance,
-        unit_distance_cost: base.unit_distance_cost,
-        unit_duration_cost: base.unit_duration_cost,
-        profile: base.profile,
-        start_late: base.start_late,
-        max_overtime: base.max_overtime,
-        unit_overtime_cost: base.unit_overtime_cost,
-        reload_depots: base.reload_depots,
-        max_reloads: merged_max_reloads,
-        initial_load: base.initial_load,
-        name: base.name
-      )
-
-    sorted_indices = Enum.sort(indices)
-    [first_idx | rest_indices] = sorted_indices
-
-    vehicle_types =
-      model.vehicle_types
-      |> List.replace_at(first_idx, merged)
-      |> zero_out_types(rest_indices)
-
-    %{model | vehicle_types: vehicle_types}
-  end
-
-  # Computes the earliest time a vehicle could start a second trip after
-  # completing one at tw_early and reloading for min_gap seconds.
-  # Accounts for forbidden windows that may delay the vehicle further.
-  defp earliest_after_reload(tw_early, min_gap, time_windows) do
-    after_reload = tw_early + min_gap
-    forbidden_windows = compute_forbidden_windows(time_windows)
-    advance_past_forbidden(after_reload, forbidden_windows)
-  end
-
-  defp compute_forbidden_windows(time_windows) do
-    time_windows
-    |> Enum.sort()
-    |> Enum.chunk_every(2, 1, :discard)
-    |> Enum.flat_map(fn [{_s, prev_end}, {next_start, _e}] ->
-      if next_start > prev_end, do: [{prev_end, next_start}], else: []
-    end)
-  end
-
-  defp advance_past_forbidden(time, forbidden_windows) do
-    Enum.reduce(forbidden_windows, time, fn {fw_start, fw_end}, t ->
-      if t >= fw_start and t < fw_end, do: fw_end, else: t
-    end)
-  end
-
-  defp zero_out_types(types, indices) do
-    Enum.reduce(indices, types, fn idx, acc ->
-      List.update_at(acc, idx, &%{&1 | num_available: 0})
-    end)
-  end
-
-  defp max_reloads_value(values) do
-    if :infinity in values, do: :infinity, else: Enum.max(values)
   end
 end
