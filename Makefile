@@ -93,6 +93,7 @@ PYVRP_SEARCH_SRC = \
 	c_src/pyvrp/search/RemoveOptional.cpp \
 	c_src/pyvrp/search/ReplaceGroup.cpp \
 	c_src/pyvrp/search/ReplaceOptional.cpp \
+	c_src/pyvrp/search/primitives.cpp \
 	c_src/pyvrp/search/Route.cpp \
 	c_src/pyvrp/search/SearchSpace.cpp \
 	c_src/pyvrp/search/Solution.cpp \

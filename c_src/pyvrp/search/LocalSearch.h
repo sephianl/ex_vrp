@@ -55,6 +55,14 @@ class LocalSearch
     bool wouldViolateSameVehicle(Route::Node const *U,
                                  Route const *targetRoute) const;
 
+    void applyOptionalClientMoves(Route::Node *U,
+                                  CostEvaluator const &costEvaluator);
+
+    void applyGroupMoves(Route::Node *U, CostEvaluator const &costEvaluator);
+
+    void applyDepotRemovalMove(Route::Node *U,
+                               CostEvaluator const &costEvaluator);
+
     bool wouldViolateForbidden(Route::Node const *U,
                                Route const *targetRoute) const;
 

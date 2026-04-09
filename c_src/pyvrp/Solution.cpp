@@ -409,6 +409,7 @@ template <> Cost pyvrp::CostEvaluator::penalisedCost(Solution const &sol) const
     Cost cost = sol.uncollectedPrizes();
     for (auto const &route : sol.routes())
         cost += penalisedCost(route);
+    cost += Cost(sol.numSameVehicleViolations() * 500'000);
     return cost;
 }
 

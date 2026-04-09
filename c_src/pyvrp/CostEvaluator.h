@@ -238,38 +238,6 @@ Cost CostEvaluator::excessDistPenalty(Distance excessDistance) const
     return static_cast<Cost>(excessDistance.get() * distPenalty_);
 }
 
-template <CostEvaluatable T>
-Cost CostEvaluator::penalisedCost(T const &arg) const
-{
-    if (arg.empty())
-    {
-        if constexpr (PrizeCostEvaluatable<T>)
-            return arg.uncollectedPrizes();
-        return 0;
-    }
-
-    auto const cost
-        = arg.distanceCost() + arg.durationCost() + arg.fixedVehicleCost()
-          + arg.reloadCost() + excessLoadPenalties(arg.excessLoad())
-          + twPenalty(arg.timeWarp()) + distPenalty(arg.excessDistance(), 0);
-
-    Cost total = cost;
-
-    if constexpr (PrizeCostEvaluatable<T>)
-        total += arg.uncollectedPrizes();
-
-    if constexpr (SVGCostEvaluatable<T>)
-        total += Cost(arg.numSameVehicleViolations() * 500'000);
-
-    return total;
-}
-
-template <CostEvaluatable T> Cost CostEvaluator::cost(T const &arg) const
-{
-    return arg.isFeasible() ? penalisedCost(arg)
-                            : std::numeric_limits<Cost>::max();
-}
-
 template <bool exact,
           bool skipLoad,
           typename... Args,

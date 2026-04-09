@@ -2,6 +2,7 @@
 #include "DynamicBitset.h"
 #include "Measure.h"
 #include "Trip.h"
+#include "primitives.h"
 
 #include <algorithm>
 #include <cassert>
@@ -98,10 +99,17 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
 
             applyUnaryOps(U, costEvaluator);
 
+            applyOptionalClientMoves(U, costEvaluator);
+
+            applyGroupMoves(U, costEvaluator);
+
             if (!U->route())
                 continue;
 
             applySameVehicleRepair(U, costEvaluator);
+
+            applyDepotRemovalMove(p(U), costEvaluator);
+            applyDepotRemovalMove(n(U), costEvaluator);
 
             for (auto const vClient : searchSpace_.neighboursOf(U->client()))
             {
@@ -444,6 +452,149 @@ bool LocalSearch::wouldTailSwapSplitSVG(Route::Node const *U,
     }
 
     return false;
+}
+
+void LocalSearch::applyOptionalClientMoves(Route::Node *U,
+                                           CostEvaluator const &costEvaluator)
+{
+    ProblemData::Client const &uData
+        = data.client(U->client() - data.numDepots());
+
+    if (uData.required && !U->route())
+    {
+        if (solution_.insert(U, searchSpace_, costEvaluator, true))
+        {
+            update(U->route(), U->route());
+            searchSpace_.markPromising(U);
+        }
+    }
+
+    if (uData.required || uData.group)
+        return;
+
+    if (!wouldViolateSameVehicle(U, nullptr) && !isHardToPlace(U)
+        && removeCost(U, data, costEvaluator) < 0)
+    {
+        searchSpace_.markPromising(U);
+        auto *route = U->route();
+        route->remove(U->idx());
+        update(route, route);
+    }
+
+    if (U->route())
+        return;
+
+    if (solution_.insert(U, searchSpace_, costEvaluator, false))
+    {
+        update(U->route(), U->route());
+        searchSpace_.markPromising(U);
+        return;
+    }
+
+    for (auto const vClient : searchSpace_.neighboursOf(U->client()))
+    {
+        auto *V = &solution_.nodes[vClient];
+        auto *route = V->route();
+
+        if (!route)
+            continue;
+
+        ProblemData::Client const &vData
+            = data.client(V->client() - data.numDepots());
+
+        if (!vData.required && !wouldViolateSameVehicle(V, nullptr)
+            && inplaceCost(U, V, data, costEvaluator) < 0)
+        {
+            searchSpace_.markPromising(V);
+            auto const idx = V->idx();
+            route->remove(idx);
+            route->insert(idx, U);
+            update(route, route);
+            searchSpace_.markPromising(U);
+            return;
+        }
+    }
+}
+
+void LocalSearch::applyGroupMoves(Route::Node *U,
+                                  CostEvaluator const &costEvaluator)
+{
+    ProblemData::Client const &uData
+        = data.client(U->client() - data.numDepots());
+
+    if (!uData.group)
+        return;
+
+    auto const &group = data.group(*uData.group);
+    assert(group.mutuallyExclusive);
+
+    std::vector<size_t> inSol;
+    auto const pred
+        = [&](auto client) { return solution_.nodes[client].route(); };
+    std::copy_if(group.begin(), group.end(), std::back_inserter(inSol), pred);
+
+    if (inSol.empty())
+    {
+        auto const required = group.required;
+        if (solution_.insert(U, searchSpace_, costEvaluator, required))
+        {
+            update(U->route(), U->route());
+            searchSpace_.markPromising(U);
+        }
+
+        return;
+    }
+
+    std::vector<Cost> costs;
+    for (auto const client : inSol)
+    {
+        auto cost = removeCost(&solution_.nodes[client], data, costEvaluator);
+        costs.push_back(cost);
+    }
+
+    std::vector<size_t> range(inSol.size());
+    std::iota(range.begin(), range.end(), 0);
+    std::sort(range.begin(),
+              range.end(),
+              [&costs](auto idx1, auto idx2)
+              { return costs[idx1] < costs[idx2]; });
+
+    for (auto idx = range.begin(); idx != range.end() - 1; ++idx)
+    {
+        auto const client = inSol[*idx];
+        auto const &node = solution_.nodes[client];
+        auto *route = node.route();
+
+        searchSpace_.markPromising(&node);
+        route->remove(node.idx());
+        update(route, route);
+    }
+
+    auto *V = &solution_.nodes[inSol[range.back()]];
+    if (U != V && inplaceCost(U, V, data, costEvaluator) < 0)
+    {
+        auto *route = V->route();
+        auto const idx = V->idx();
+        route->remove(idx);
+        route->insert(idx, U);
+        update(route, route);
+        searchSpace_.markPromising(U);
+    }
+}
+
+void LocalSearch::applyDepotRemovalMove(Route::Node *U,
+                                        CostEvaluator const &costEvaluator)
+{
+    if (!U->isReloadDepot())
+        return;
+
+    if (removeCost(U, data, costEvaluator) <= 0)
+    {
+        searchSpace_.markPromising(U);
+        auto *route = U->route();
+        route->remove(U->idx());
+        update(route, route);
+    }
 }
 
 void LocalSearch::applyEmptyRouteMoves(Route::Node *U,

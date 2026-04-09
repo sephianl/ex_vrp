@@ -319,33 +319,11 @@ struct LocalSearchResource
             ls->addOperator(*relocateDepot);
         }
 
-        auto const &ss = ls->searchSpace();
-
-        if (search::supports<search::RemoveOptional>(data))
-        {
-            removeOptional = std::make_unique<search::RemoveOptional>(data);
-            ls->addOperator(*removeOptional);
-        }
-
-        if (search::supports<search::ReplaceOptional>(data))
-        {
-            replaceOptional
-                = std::make_unique<search::ReplaceOptional>(data, ss);
-            ls->addOperator(*replaceOptional);
-        }
-
-        if (search::supports<search::ReplaceGroup>(data))
-        {
-            replaceGroup = std::make_unique<search::ReplaceGroup>(data);
-            ls->addOperator(*replaceGroup);
-        }
-
-        if (search::supports<search::RemoveAdjacentDepot>(data))
-        {
-            removeAdjacentDepot
-                = std::make_unique<search::RemoveAdjacentDepot>(data);
-            ls->addOperator(*removeAdjacentDepot);
-        }
+        // Note: upstream unary operators (RemoveOptional, ReplaceOptional,
+        // ReplaceGroup, RemoveAdjacentDepot) are not registered here.
+        // LocalSearch uses hand-tuned methods (applyOptionalClientMoves,
+        // applyGroupMoves, applyDepotRemovalMove) that are SVG/zone-aware
+        // and produce better solution quality.
     }
 };
 
