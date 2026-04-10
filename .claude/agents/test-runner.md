@@ -15,7 +15,6 @@ You run ExVRP tests, analyze failures, and suggest targeted fixes. You **never e
 
 ## Key Rules
 
-- **Always set `MNEME_ACTION=reject`** — without it, Mneme waits for interactive input on snapshot mismatches, the process hangs, and gets killed
 - Never use `CI=true` locally (forces full recompilation)
 - Use `--timeout 300000` (5 min) for larger test suites
 - **Read-only: NEVER edit or create files.** Only run tests and read files to analyze failures. Report fixes back — the main agent will apply them.
@@ -24,16 +23,16 @@ You run ExVRP tests, analyze failures, and suggest targeted fixes. You **never e
 
 ```bash
 # Pure Elixir tests
-MNEME_ACTION=reject mix test
+mix test
 
 # Include NIF-dependent tests
-MNEME_ACTION=reject mix test --include nif_required
+mix test --include nif_required
 
 # Single file
-MNEME_ACTION=reject mix test test/specific_test.exs --max-failures 3
+mix test test/specific_test.exs --max-failures 3
 
 # Single test at line
-MNEME_ACTION=reject mix test test/specific_test.exs:42 --max-failures 3
+mix test test/specific_test.exs:42 --max-failures 3
 
 # Benchmarks (solution quality regression check)
 mix benchmark

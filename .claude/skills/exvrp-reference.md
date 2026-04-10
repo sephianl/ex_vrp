@@ -5,7 +5,7 @@ description: Complete reference for ExVRP — architecture, model building, solv
 
 # ExVRP Reference
 
-Elixir bindings for [PyVRP](https://github.com/PyVRP/PyVRP) v0.2.2. Direct port of the Python API using the same C++ core via NIFs (Fine library).
+Elixir bindings for [PyVRP](https://github.com/PyVRP/PyVRP). Direct port of the Python API using the same C++ core via NIFs (Fine library).
 
 ## Architecture
 
@@ -47,6 +47,7 @@ Elixir bindings for [PyVRP](https://github.com/PyVRP/PyVRP) v0.2.2. Direct port 
 | `ExVrp.ClientGroup`         | `lib/ex_vrp/client_group.ex`          | Mutually exclusive / required groups                 |
 | `ExVrp.SameVehicleGroup`    | `lib/ex_vrp/same_vehicle_group.ex`    | Same-vehicle constraints                             |
 | `ExVrp.Solver`              | `lib/ex_vrp/solver.ex`                | Main solve orchestration                             |
+| `ExVrp.IslandSolver`        | `lib/ex_vrp/island_solver.ex`         | Parallel ILS with BEAM-process islands               |
 | `ExVrp.IteratedLocalSearch` | `lib/ex_vrp/iterated_local_search.ex` | ILS + Late Acceptance Hill-Climbing                  |
 | `ExVrp.PenaltyManager`      | `lib/ex_vrp/penalty_manager.ex`       | Dynamic penalty adjustment (target 65% feasibility)  |
 | `ExVrp.StoppingCriteria`    | `lib/ex_vrp/stopping_criteria.ex`     | Composable stop conditions                           |
@@ -406,6 +407,7 @@ Flags: `-std=c++20 -O3 -flto -DNDEBUG` (release), `-O1 -fsanitize=address,undefi
 | `stopping_criteria_test.exs`                                 | Stop conditions                      |
 | `penalty_manager_test.exs`                                   | Penalty dynamics                     |
 | `iterated_local_search_test.exs`                             | ILS behavior                         |
+| `island_solver_test.exs`                                     | Parallel island ILS                  |
 | `local_search_test.exs`                                      | NIF local search                     |
 | `cost_evaluator_test.exs`                                    | Cost evaluation NIF                  |
 | `problem_data_test.exs`                                      | ProblemData NIF                      |

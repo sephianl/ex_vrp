@@ -1,6 +1,6 @@
 # ExVRP — Elixir PyVRP Bindings
 
-Elixir bindings for [PyVRP](https://github.com/PyVRP/PyVRP) v0.2.2 — a state-of-the-art VRP solver. Direct port of the Python API using the same C++ core via NIFs.
+Elixir bindings for [PyVRP](https://github.com/PyVRP/PyVRP) — a state-of-the-art VRP solver. Direct port of the Python API using the same C++ core via NIFs.
 
 ## Quick Context
 
@@ -19,7 +19,6 @@ Load `.claude/skills/exvrp-reference.md` before diving into implementation — i
 
 - Enter plan mode for non-trivial changes (3+ steps or architectural decisions)
 - Delegate test runs to `test-runner` subagent — verbose NIF output pollutes main context
-- Use `exvrp-researcher` subagent for deep PyVRP C++ internals
 - Self-review diffs before presenting
 - **Always run tests (`mix test --include nif_required`) and benchmarks (`mix benchmark`) after any changes** — tests catch correctness regressions, benchmarks catch solution quality regressions across all instance sets
 
@@ -41,7 +40,6 @@ Requires C++20 compiler (gcc 11+ or clang 14+). Set `SANITIZE=1` for AddressSani
 - All solver times are integers (not floats) — seconds or distance units
 - `cost()` returns `:infinity` for infeasible solutions; `penalised_cost()` always returns a number
 - Fine library for NIF ergonomics — resources are reference-counted shared_ptrs
-- Mneme (`auto_assert`) for new test assertions
 
 ### Code Style
 
@@ -92,11 +90,9 @@ When a Zelo planner change requires ExVRP changes:
 
 ## Subagent Delegation
 
-| Trigger                          | Subagent               | Why                                                                                    |
-| -------------------------------- | ---------------------- | -------------------------------------------------------------------------------------- |
-| Run/debug tests                  | `test-runner`          | Verbose output isolation. **Read-only: never edit files**                              |
-| Understand PyVRP C++ internals   | `exvrp-researcher`     | Deep research stays isolated                                                           |
-| Clean up code after feature work | `elixir-refactor`      | Self-contained, behavior-preserving                                                    |
-| Self-review before presenting    | `elixir-reviewer`      | Enforces style rules objectively — **mandatory before presenting changes to the user** |
-| Review for runtime/perf issues   | `elixir-perf-reviewer` | Spots sequential I/O, redundant computation, hot-loop anti-patterns                    |
-| Explore unfamiliar areas         | `Explore` (built-in)   | Fast read-only search                                                                  |
+| Trigger                        | Subagent               | Why                                                                                    |
+| ------------------------------ | ---------------------- | -------------------------------------------------------------------------------------- |
+| Run/debug tests                | `test-runner`          | Verbose output isolation. **Read-only: never edit files**                              |
+| Self-review before presenting  | `elixir-reviewer`      | Enforces style rules objectively — **mandatory before presenting changes to the user** |
+| Review for runtime/perf issues | `elixir-perf-reviewer` | Spots sequential I/O, redundant computation, hot-loop anti-patterns                    |
+| Explore unfamiliar areas       | `Explore` (built-in)   | Fast read-only search                                                                  |
