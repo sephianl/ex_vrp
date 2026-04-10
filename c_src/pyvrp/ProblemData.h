@@ -13,6 +13,21 @@
 
 namespace pyvrp
 {
+
+/**
+ * Advances ``now`` past any forbidden window it falls within.
+ * Returns the (possibly advanced) time.
+ */
+inline Duration
+advancePastForbidden(Duration now,
+                     std::vector<std::pair<Duration, Duration>> const &fw)
+{
+    for (auto const &[fStart, fEnd] : fw)
+        if (now >= fStart && now < fEnd)
+            return fEnd;
+    return now;
+}
+
 /**
  * ProblemData(
  *     clients: list[Client],
@@ -573,7 +588,9 @@ public:
         Duration const maxOvertime;              // Maximum allowed overtime
         Cost const unitOvertimeCost;             // Cost per unit of overtime
         Duration const maxDuration;  // Maximum route duration, incl. overtime
-        char const *name;            // Type name (for reference)
+        std::vector<std::pair<Duration, Duration>> const
+            forbiddenWindows;  // Forbidden time windows
+        char const *name;      // Type name (for reference)
 
         VehicleType(size_t numAvailable = 1,
                     std::vector<Load> capacity = {},
@@ -594,7 +611,9 @@ public:
                     size_t maxReloads = std::numeric_limits<size_t>::max(),
                     Duration maxOvertime = 0,
                     Cost unitOvertimeCost = 0,
-                    std::string name = "");
+                    std::string name = "",
+                    std::vector<std::pair<Duration, Duration>> forbiddenWindows
+                    = {});
 
         bool operator==(VehicleType const &other) const;
 
@@ -610,25 +629,28 @@ public:
          * Returns a new ``VehicleType`` with the same data as this one, except
          * for the given parameters, which are used instead.
          */
-        VehicleType replace(std::optional<size_t> numAvailable,
-                            std::optional<std::vector<Load>> capacity,
-                            std::optional<size_t> startDepot,
-                            std::optional<size_t> endDepot,
-                            std::optional<Cost> fixedCost,
-                            std::optional<Duration> twEarly,
-                            std::optional<Duration> twLate,
-                            std::optional<Duration> shiftDuration,
-                            std::optional<Distance> maxDistance,
-                            std::optional<Cost> unitDistanceCost,
-                            std::optional<Cost> unitDurationCost,
-                            std::optional<size_t> profile,
-                            std::optional<Duration> startLate,
-                            std::optional<std::vector<Load>> initialLoad,
-                            std::optional<std::vector<size_t>> reloadDepots,
-                            std::optional<size_t> maxReloads,
-                            std::optional<Duration> maxOvertime,
-                            std::optional<Cost> unitOvertimeCost,
-                            std::optional<std::string> name) const;
+        VehicleType
+        replace(std::optional<size_t> numAvailable,
+                std::optional<std::vector<Load>> capacity,
+                std::optional<size_t> startDepot,
+                std::optional<size_t> endDepot,
+                std::optional<Cost> fixedCost,
+                std::optional<Duration> twEarly,
+                std::optional<Duration> twLate,
+                std::optional<Duration> shiftDuration,
+                std::optional<Distance> maxDistance,
+                std::optional<Cost> unitDistanceCost,
+                std::optional<Cost> unitDurationCost,
+                std::optional<size_t> profile,
+                std::optional<Duration> startLate,
+                std::optional<std::vector<Load>> initialLoad,
+                std::optional<std::vector<size_t>> reloadDepots,
+                std::optional<size_t> maxReloads,
+                std::optional<Duration> maxOvertime,
+                std::optional<Cost> unitOvertimeCost,
+                std::optional<std::string> name,
+                std::optional<std::vector<std::pair<Duration, Duration>>>
+                    forbiddenWindows) const;
 
         /**
          * Returns the maximum number of trips these vehicle can execute.

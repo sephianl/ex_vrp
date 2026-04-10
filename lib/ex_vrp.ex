@@ -148,7 +148,6 @@ defmodule ExVrp do
   """
 
   alias ExVrp.Model
-  alias ExVrp.Solution
   alias ExVrp.Solver
 
   @doc """
@@ -173,7 +172,7 @@ defmodule ExVrp do
   """
   @dialyzer {:nowarn_function, solve: 1}
   @dialyzer {:nowarn_function, solve: 2}
-  @spec solve(Model.t(), keyword()) :: {:ok, Solution.t()} | {:error, term()}
+  @spec solve(Model.t(), keyword()) :: {:ok, ExVrp.Solution.t()} | {:error, term()}
   def solve(%Model{} = model, opts \\ []) do
     Solver.solve(model, opts)
   end
@@ -191,7 +190,7 @@ defmodule ExVrp do
   """
   @dialyzer {:nowarn_function, solve!: 1}
   @dialyzer {:nowarn_function, solve!: 2}
-  @spec solve!(Model.t(), keyword()) :: Solution.t()
+  @spec solve!(Model.t(), keyword()) :: ExVrp.Solution.t()
   def solve!(%Model{} = model, opts \\ []) do
     case solve(model, opts) do
       {:ok, solution} -> solution

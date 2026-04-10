@@ -382,6 +382,74 @@ void Route::update()
     duration_ = durAfter[0].duration();
     timeWarp_ = durAfter[0].timeWarp(maxDuration());
 
+    // Account for forbidden time windows: the vehicle must be idle at the
+    // depot during these periods, so no travel, service, or reloading may
+    // occur.  We check at EVERY node (not just clients).
+    if (!vehicleType_.forbiddenWindows.empty())
+    {
+        auto const &durations = data.durationMatrix(profile());
+        auto now = durAfter[0].startEarly();
+        Duration totalForbiddenDelay = 0;
+
+        for (size_t idx = 0; idx != nodes.size(); ++idx)
+        {
+            if (idx > 0)
+                now += durations(visits[idx - 1], visits[idx]);
+
+            // Check forbidden window at every node (client, reload depot,
+            // end depot) — not just clients.
+            auto const advanced
+                = advancePastForbidden(now, vehicleType_.forbiddenWindows);
+            if (advanced != now)
+            {
+                totalForbiddenDelay += advanced - now;
+                now = advanced;
+            }
+
+            // Then advance past service/wait as appropriate.
+            if (!nodes[idx]->isDepot() && !nodes[idx]->isReloadDepot())
+            {
+                ProblemData::Client const &client
+                    = data.location(nodes[idx]->client());
+                auto const wait = std::max<Duration>(client.twEarly - now, 0);
+                now += wait + client.serviceDuration;
+            }
+            else if (nodes[idx]->isReloadDepot())
+            {
+                ProblemData::Depot const &depot
+                    = data.location(nodes[idx]->client());
+                now += depot.serviceDuration;
+
+                // Lookahead: if the next node is a client, check whether
+                // the vehicle would idle at that client's location during
+                // a forbidden window.  If so, wait at the depot instead.
+                if (idx + 1 < nodes.size() && !nodes[idx + 1]->isDepot()
+                    && !nodes[idx + 1]->isReloadDepot())
+                {
+                    auto const travel = durations(visits[idx], visits[idx + 1]);
+                    auto const arrive = now + travel;
+                    ProblemData::Client const &next
+                        = data.location(nodes[idx + 1]->client());
+                    auto const svcStart = std::max(arrive, next.twEarly);
+
+                    for (auto const &[fStart, fEnd] :
+                         vehicleType_.forbiddenWindows)
+                    {
+                        if (arrive <= fStart && svcStart >= fEnd)
+                        {
+                            auto const delay = fEnd - now;
+                            totalForbiddenDelay += delay;
+                            now = fEnd;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        duration_ += totalForbiddenDelay;
+    }
+
     auto const overtime = std::max<Duration>(duration_ - shiftDuration(), 0);
     durationCost_ = unitDurationCost() * static_cast<Cost>(duration_)
                     + unitOvertimeCost() * static_cast<Cost>(overtime);

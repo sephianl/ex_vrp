@@ -141,13 +141,26 @@ void Route::makeSchedule(ProblemData const &data)
     auto const handle
         = [&](auto const &where, size_t location, size_t trip, Duration service)
     {
+        // Wait for forbidden window at ANY location (not just clients).
+        // During a forbidden window the vehicle must be idle at the depot,
+        // so no service, travel, or reloading may start.
+        Duration forbiddenWait = 0;
+        auto const advanced
+            = advancePastForbidden(now, vehData.forbiddenWindows);
+        if (advanced != now)
+        {
+            forbiddenWait = advanced - now;
+            now = advanced;
+        }
+
         auto const wait = std::max<Duration>(where.twEarly - now, 0);
         auto const tw = std::max<Duration>(now - where.twLate, 0);
 
         now += wait;
         now -= tw;
 
-        schedule_.emplace_back(location, trip, now, now + service, wait, tw);
+        schedule_.emplace_back(
+            location, trip, now, now + service, wait + forbiddenWait, tw);
 
         now += service;
     };
@@ -170,11 +183,52 @@ void Route::makeSchedule(ProblemData const &data)
         now += wait;
         now -= tw;
 
+        // Wait for forbidden window before reload service starts.
+        Duration forbiddenWait = 0;
+        auto const advanced
+            = advancePastForbidden(now, vehData.forbiddenWindows);
+        if (advanced != now)
+        {
+            forbiddenWait = advanced - now;
+            now = advanced;
+        }
+
         // Apply depot service time for reload depots (not for the first trip)
         auto const depotService = tripIdx > 0 ? start.serviceDuration : 0;
-        schedule_.emplace_back(
-            trip.startDepot(), tripIdx, now, now + depotService, wait, tw);
-        now += depotService;
+        auto const afterService = now + depotService;
+
+        // Lookahead: if departing after reload would put the vehicle at
+        // the first client's location during a forbidden window, wait at
+        // the depot instead (the vehicle must be idle at the depot during
+        // forbidden windows, not idle at a client location).
+        Duration departDelay = 0;
+        if (tripIdx > 0 && !vehData.forbiddenWindows.empty() && !trip.empty())
+        {
+            auto const firstClient = *trip.begin();
+            auto const travel = durations(trip.startDepot(), firstClient);
+            auto const arrive = afterService + travel;
+            ProblemData::Client const &cd = data.location(firstClient);
+            auto const svcStart = std::max(arrive, cd.twEarly);
+
+            for (auto const &[fStart, fEnd] : vehData.forbiddenWindows)
+            {
+                // Would the vehicle be at the client location during
+                // [fStart, fEnd)?
+                if (arrive <= fStart && svcStart >= fEnd)
+                {
+                    departDelay = fEnd - afterService;
+                    break;
+                }
+            }
+        }
+
+        schedule_.emplace_back(trip.startDepot(),
+                               tripIdx,
+                               now,
+                               now + depotService + departDelay,
+                               wait + forbiddenWait,
+                               tw);
+        now += depotService + departDelay;
 
         size_t prevClient = trip.startDepot();
         for (auto const client : trip)
@@ -306,6 +360,24 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     timeWarp_ = ds.timeWarp(vehData.maxDuration);
 
     makeSchedule(data);
+
+    // When forbidden windows exist, the schedule includes waits that the
+    // DurationSegment calculation does not know about. Recompute the route
+    // metrics from the actual schedule so they reflect reality.
+    if (!vehData.forbiddenWindows.empty())
+    {
+        duration_
+            = schedule_.back().endService - schedule_.front().startService;
+        overtime_ = std::max<Duration>(duration_ - vehData.shiftDuration, 0);
+        durationCost_
+            = vehData.unitDurationCost * static_cast<Cost>(duration_)
+              + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
+
+        timeWarp_ = 0;
+        for (auto const &visit : schedule_)
+            timeWarp_ += visit.timeWarp;
+        timeWarp_ += std::max<Duration>(duration_ - vehData.maxDuration, 0);
+    }
 }
 
 Route::Route(Trips trips,
