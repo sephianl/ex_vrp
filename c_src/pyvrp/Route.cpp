@@ -207,7 +207,8 @@ void Route::makeSchedule(ProblemData const &data)
             auto const firstClient = *trip.begin();
             auto const travel = durations(trip.startDepot(), firstClient);
             auto const arrive = afterService + travel;
-            ProblemData::Client const &cd = data.location(firstClient);
+            ProblemData::Client const &cd
+                = data.client(firstClient - data.numDepots());
             auto const svcStart = std::max(arrive, cd.twEarly);
 
             for (auto const &[fStart, fEnd] : vehData.forbiddenWindows)

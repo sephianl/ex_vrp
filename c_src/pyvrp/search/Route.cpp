@@ -410,14 +410,14 @@ void Route::update()
             if (!nodes[idx]->isDepot() && !nodes[idx]->isReloadDepot())
             {
                 ProblemData::Client const &client
-                    = data.location(nodes[idx]->client());
+                    = data.client(nodes[idx]->client() - data.numDepots());
                 auto const wait = std::max<Duration>(client.twEarly - now, 0);
                 now += wait + client.serviceDuration;
             }
             else if (nodes[idx]->isReloadDepot())
             {
                 ProblemData::Depot const &depot
-                    = data.location(nodes[idx]->client());
+                    = data.depot(nodes[idx]->client());
                 now += depot.serviceDuration;
 
                 // Lookahead: if the next node is a client, check whether
@@ -428,8 +428,8 @@ void Route::update()
                 {
                     auto const travel = durations(visits[idx], visits[idx + 1]);
                     auto const arrive = now + travel;
-                    ProblemData::Client const &next
-                        = data.location(nodes[idx + 1]->client());
+                    ProblemData::Client const &next = data.client(
+                        nodes[idx + 1]->client() - data.numDepots());
                     auto const svcStart = std::max(arrive, next.twEarly);
 
                     for (auto const &[fStart, fEnd] :
