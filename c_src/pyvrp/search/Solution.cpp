@@ -382,9 +382,41 @@ bool Solution::insert(Route::Node *U,
     bool insertAsNewTrip = false;
     Route *newTripRoute = nullptr;
 
+    // For vehicles with forbidden windows, the regular insertion cost
+    // (from DurationSegment evaluation) doesn't include forbidden window
+    // time warp.  Check whether the best insertion route's current end
+    // time plus the client's service would cross a forbidden window.
+    // If so, inflate bestCost so multi-trip gets a fair comparison.
+    bool bestRouteHasForbidden = false;
+    if (UAfter && UAfter->route())
+    {
+        auto const &vt = data_.vehicleType(UAfter->route()->vehicleType());
+        if (!vt.forbiddenWindows.empty())
+        {
+            // Estimate route end time: twEarly + duration (before time warp)
+            auto const routeEnd = vt.twEarly + UAfter->route()->duration()
+                                  - UAfter->route()->timeWarp();
+            ProblemData::Client const &cl = data_.location(U->client());
+
+            for (auto const &[fStart, fEnd] : vt.forbiddenWindows)
+            {
+                // Would the client's service extend into the forbidden
+                // window?  Route end + travel (~1) + service > fStart.
+                if (routeEnd + cl.serviceDuration > fStart
+                    && routeEnd < fEnd)
+                {
+                    bestRouteHasForbidden = true;
+                    bestCost = std::max(bestCost, Cost(0));
+                    break;
+                }
+            }
+        }
+    }
+
     if (hasPrize && clientFitsAlone && bestCost >= 0)
     {
-        // The regular insertion didn't find an improving move (bestCost >= 0).
+        // The regular insertion didn't find an improving move (bestCost >= 0),
+        // or we inflated it because of forbidden window time warp.
         // Try inserting as a new trip on a route that supports multi-trip.
         auto const clientLoc = U->client();
         ProblemData::Client const &client = data_.location(clientLoc);
@@ -400,8 +432,9 @@ bool Solution::insert(Route::Node *U,
             if (route.numTrips() >= route.maxTrips())
                 continue;
 
-            // Skip routes that already have time warp
-            if (route.timeWarp() > 0)
+            // Skip routes that already have time warp, unless the time
+            // warp is from forbidden windows (a new trip would fix it).
+            if (route.timeWarp() > 0 && vehType.forbiddenWindows.empty())
                 continue;
 
             auto const reloadDepot = vehType.reloadDepots[0];

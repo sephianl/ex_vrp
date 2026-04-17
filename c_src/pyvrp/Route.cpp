@@ -159,6 +159,18 @@ void Route::makeSchedule(ProblemData const &data)
         now += wait;
         now -= tw;
 
+        // Check if service would extend into a forbidden window.
+        // If so, delay service start to after the forbidden window.
+        for (auto const &[fStart, fEnd] : vehData.forbiddenWindows)
+        {
+            if (now < fStart && now + service > fStart)
+            {
+                forbiddenWait += fEnd - now;
+                now = fEnd;
+                break;
+            }
+        }
+
         schedule_.emplace_back(
             location, trip, now, now + service, wait + forbiddenWait, tw);
 
@@ -195,28 +207,38 @@ void Route::makeSchedule(ProblemData const &data)
 
         // Apply depot service time for reload depots (not for the first trip)
         auto const depotService = tripIdx > 0 ? start.serviceDuration : 0;
-        auto const afterService = now + depotService;
+        auto const depotStart = now;
+        now += depotService;
+
+        // After reload service, the vehicle may now be in a forbidden
+        // window.  Wait at the depot until it ends.
+        if (tripIdx > 0 && !vehData.forbiddenWindows.empty())
+        {
+            auto const afterReload
+                = advancePastForbidden(now, vehData.forbiddenWindows);
+            if (afterReload != now)
+                now = afterReload;
+        }
 
         // Lookahead: if departing after reload would put the vehicle at
         // the first client's location during a forbidden window, wait at
         // the depot instead (the vehicle must be idle at the depot during
         // forbidden windows, not idle at a client location).
-        Duration departDelay = 0;
         if (tripIdx > 0 && !vehData.forbiddenWindows.empty() && !trip.empty())
         {
             auto const firstClient = *trip.begin();
             auto const travel = durations(trip.startDepot(), firstClient);
-            auto const arrive = afterService + travel;
+            auto const arrive = now + travel;
             ProblemData::Client const &cd = data.location(firstClient);
             auto const svcStart = std::max(arrive, cd.twEarly);
 
             for (auto const &[fStart, fEnd] : vehData.forbiddenWindows)
             {
-                // Would the vehicle be at the client location during
+                // Would the vehicle be idle at the client during
                 // [fStart, fEnd)?
-                if (arrive <= fStart && svcStart >= fEnd)
+                if (arrive < fEnd && svcStart > fStart && fEnd > now)
                 {
-                    departDelay = fEnd - afterService;
+                    now = fEnd;
                     break;
                 }
             }
@@ -224,11 +246,10 @@ void Route::makeSchedule(ProblemData const &data)
 
         schedule_.emplace_back(trip.startDepot(),
                                tripIdx,
+                               depotStart,
                                now,
-                               now + depotService + departDelay,
                                wait + forbiddenWait,
                                tw);
-        now += depotService + departDelay;
 
         size_t prevClient = trip.startDepot();
         for (auto const client : trip)
