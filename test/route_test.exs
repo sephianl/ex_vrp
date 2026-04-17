@@ -224,6 +224,21 @@ defmodule ExVrp.RouteTest do
     test "Route.visits/1", %{route: route, solution: solution} do
       assert Route.visits(route) == Solution.route_visits(solution, 0)
     end
+  end
+
+  describe "Route.schedule/1" do
+    setup do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [20], service_duration: 50, prize: 100)
+        |> Model.add_client(x: 20, y: 0, delivery: [30], service_duration: 75, prize: 150)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
+      route = Solution.route(result.best, 0)
+      %{route: route}
+    end
 
     test "Route.schedule/1", %{route: route} do
       schedule = Route.schedule(route)
@@ -241,7 +256,7 @@ defmodule ExVrp.RouteTest do
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
-      %{solution: result.best, model: model}
+      %{solution: result.best}
     end
 
     test "route distance is non-negative", %{solution: solution} do

@@ -18,7 +18,7 @@ defmodule ExVrp.SolutionTest do
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
-      %{solution: result.best, model: model}
+      %{solution: result.best}
     end
 
     test "distance returns non-negative value", %{solution: solution} do
