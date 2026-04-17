@@ -87,7 +87,7 @@ defmodule ExVrp.MixProject do
     %{"FINE_INCLUDE_DIR" => fine_dir}
   end
 
-  defp elixirc_paths(:test), do: ["lib", "dev"]
+  defp elixirc_paths(:test), do: ["lib", "dev", "credo"]
   defp elixirc_paths(:dev), do: ["lib", "dev"]
   defp elixirc_paths(_), do: ["lib"]
 
@@ -110,7 +110,7 @@ defmodule ExVrp.MixProject do
       # Mix check
       {:ex_check, "~> 0.16.0", only: [:dev, :test], runtime: false},
       # Static code analysis
-      {:credo, ">= 0.0.0", only: [:dev], runtime: false},
+      {:credo, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:dialyxir, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:sobelow, ">= 0.0.0", only: [:dev, :test], runtime: false},
