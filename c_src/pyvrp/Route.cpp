@@ -168,7 +168,7 @@ void Route::makeSchedule(ProblemData const &data)
     for (size_t tripIdx = 0; tripIdx != trips_.size(); ++tripIdx)
     {
         auto const &trip = trips_[tripIdx];
-        ProblemData::Depot const &start = data.location(trip.startDepot());
+        ProblemData::Depot const &start = data.depot(trip.startDepot());
 
         auto const earliestStart = std::max(
             start.twEarly, std::min(trip.releaseTime(), start.twLate));
@@ -207,7 +207,8 @@ void Route::makeSchedule(ProblemData const &data)
             auto const firstClient = *trip.begin();
             auto const travel = durations(trip.startDepot(), firstClient);
             auto const arrive = afterService + travel;
-            ProblemData::Client const &cd = data.location(firstClient);
+            ProblemData::Client const &cd
+                = data.client(firstClient - data.numDepots());
             auto const svcStart = std::max(arrive, cd.twEarly);
 
             for (auto const &[fStart, fEnd] : vehData.forbiddenWindows)
@@ -235,7 +236,8 @@ void Route::makeSchedule(ProblemData const &data)
         {
             now += durations(prevClient, client);
 
-            ProblemData::Client const &clientData = data.location(client);
+            ProblemData::Client const &clientData
+                = data.client(client - data.numDepots());
             handle(clientData, client, tripIdx, clientData.serviceDuration);
 
             prevClient = client;
@@ -244,7 +246,7 @@ void Route::makeSchedule(ProblemData const &data)
         now += durations(prevClient, trip.endDepot());
     }
 
-    ProblemData::Depot const &end = data.location(endDepot_);
+    ProblemData::Depot const &end = data.depot(endDepot_);
     handle(end, endDepot_, numTrips(), 0);
 }
 
@@ -267,6 +269,7 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     auto const &vehData = data.vehicleType(vehType);
     startDepot_ = vehData.startDepot;
     endDepot_ = vehData.endDepot;
+    fixedVehicleCost_ = vehData.fixedCost;
 
     validate(data);
 
@@ -317,7 +320,7 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         if (trip != trips_.rbegin())  // need to finalise before next trip,
             ds = ds.finaliseFront();  // unless this is the first one
 
-        ProblemData::Depot const &end = data.location(trip->endDepot());
+        ProblemData::Depot const &end = data.depot(trip->endDepot());
         ds = DurationSegment::merge(0, {end}, ds);
 
         size_t nextClient = trip->endDepot();
@@ -325,14 +328,15 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         {
             auto const client = *it;
             auto const edgeDuration = durations(client, nextClient);
-            ProblemData::Client const &clientData = data.location(client);
+            ProblemData::Client const &clientData
+                = data.client(client - data.numDepots());
 
             ds = DurationSegment::merge(edgeDuration, {clientData}, ds);
             nextClient = client;
         }
 
         auto const edgeDuration = durations(trip->startDepot(), nextClient);
-        ProblemData::Depot const &start = data.location(trip->startDepot());
+        ProblemData::Depot const &start = data.depot(trip->startDepot());
         // Service time and reload cost are only applied at reload depots (not
         // the first trip). In reverse iteration, trip + 1 == rend means this is
         // the first trip.
@@ -394,6 +398,7 @@ Route::Route(Trips trips,
              Duration slack,
              Cost prizes,
              Cost reloadCost,
+             Cost fixedVehicleCost,
              std::pair<Coordinate, Coordinate> centroid,
              size_t vehicleType,
              size_t startDepot,
@@ -417,6 +422,7 @@ Route::Route(Trips trips,
       slack_(slack),
       prizes_(prizes),
       reloadCost_(reloadCost),
+      fixedVehicleCost_(fixedVehicleCost),
       centroid_(centroid),
       vehicleType_(vehicleType),
       startDepot_(startDepot),
@@ -505,6 +511,8 @@ Cost Route::prizes() const { return prizes_; }
 
 Cost Route::reloadCost() const { return reloadCost_; }
 
+Cost Route::fixedVehicleCost() const { return fixedVehicleCost_; }
+
 std::pair<Coordinate, Coordinate> const &Route::centroid() const
 {
     return centroid_;
@@ -556,4 +564,24 @@ std::ostream &operator<<(std::ostream &out, Route const &route)
     }
 
     return out;
+}
+
+#include "CostEvaluator.h"
+
+template <> Cost pyvrp::CostEvaluator::penalisedCost(Route const &route) const
+{
+    if (route.empty())
+        return 0;
+
+    return route.distanceCost() + route.durationCost()
+           + route.fixedVehicleCost() + route.reloadCost()
+           + excessLoadPenalties(route.excessLoad())
+           + twPenalty(route.timeWarp())
+           + distPenalty(route.excessDistance(), 0);
+}
+
+template <> Cost pyvrp::CostEvaluator::cost(Route const &route) const
+{
+    return route.isFeasible() ? penalisedCost(route)
+                              : std::numeric_limits<Cost>::max();
 }

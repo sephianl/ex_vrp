@@ -7,6 +7,7 @@ defmodule ExVrp.Solver do
   Search with Late Acceptance Hill-Climbing.
   """
 
+  alias ExVrp.IslandSolver
   alias ExVrp.IteratedLocalSearch
   alias ExVrp.Model
   alias ExVrp.Native
@@ -23,7 +24,9 @@ defmodule ExVrp.Solver do
           num_starts: pos_integer() | :auto,
           penalty_params: PenaltyManager.Params.t(),
           ils_params: IteratedLocalSearch.Params.t(),
-          on_progress: (map() -> any()) | nil
+          on_progress: (map() -> any()) | nil,
+          strategy: :single | :island,
+          num_islands: pos_integer()
         ]
 
   @default_opts [
@@ -34,7 +37,9 @@ defmodule ExVrp.Solver do
     num_starts: :auto,
     penalty_params: nil,
     ils_params: nil,
-    on_progress: nil
+    on_progress: nil,
+    strategy: :single,
+    num_islands: nil
   ]
 
   @doc """
@@ -98,13 +103,46 @@ defmodule ExVrp.Solver do
       problem_data_time = System.monotonic_time(:millisecond) - solve_start
       Logger.info("Problem data created in #{problem_data_time}ms")
 
-      if num_starts == 1 do
-        solve_single(problem_data, base_seed, opts, solve_start)
-      else
-        Logger.info("Starting #{num_starts} parallel solves")
-        solve_parallel(problem_data, base_seed, num_starts, opts, solve_start)
+      cond do
+        opts[:strategy] == :island ->
+          stop_fn = build_stop_fn(opts)
+          solve_island(problem_data, stop_fn, opts, solve_start)
+
+        num_starts == 1 ->
+          solve_single(problem_data, base_seed, opts, solve_start)
+
+        true ->
+          Logger.info("Starting #{num_starts} parallel solves")
+          solve_parallel(problem_data, base_seed, num_starts, opts, solve_start)
       end
     end
+  end
+
+  defp solve_island(problem_data, stop_fn, opts, solve_start) do
+    island_opts = [
+      seed: opts[:seed] || :rand.uniform(1_000_000),
+      penalty_params: opts[:penalty_params] || %PenaltyManager.Params{},
+      on_progress: opts[:on_progress]
+    ]
+
+    island_opts =
+      if opts[:num_islands] do
+        Keyword.put(island_opts, :num_islands, opts[:num_islands])
+      else
+        island_opts
+      end
+
+    island_opts =
+      if opts[:max_runtime] do
+        elapsed = System.monotonic_time(:millisecond) - solve_start
+        remaining = max(opts[:max_runtime] - elapsed, 0)
+        Keyword.put(island_opts, :max_runtime_ms, remaining)
+      else
+        island_opts
+      end
+
+    result = IslandSolver.solve(problem_data, stop_fn, island_opts)
+    {:ok, result}
   end
 
   defp solve_single(problem_data, seed, opts, solve_start) do

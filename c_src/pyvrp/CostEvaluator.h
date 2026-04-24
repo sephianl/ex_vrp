@@ -2,7 +2,6 @@
 #define PYVRP_COSTEVALUATOR_H
 
 #include "Measure.h"
-#include "Solution.h"
 
 #include <cassert>
 #include <concepts>
@@ -125,8 +124,7 @@ public:
      */
     // The docstring above is written for Python, where we only expose this
     // method for Solution.
-    template <CostEvaluatable T>
-    [[nodiscard]] Cost penalisedCost(T const &arg) const;
+    template <typename T> [[nodiscard]] Cost penalisedCost(T const &arg) const;
 
     /**
      * Hand-waving some details, each solution consists of a set of non-empty
@@ -164,7 +162,7 @@ public:
      */
     // The docstring above is written for Python, where we only expose this
     // method for the Solution class.
-    template <CostEvaluatable T> [[nodiscard]] Cost cost(T const &arg) const;
+    template <typename T> [[nodiscard]] Cost cost(T const &arg) const;
 
     /**
      * Evaluates the cost delta of the given route proposal, and writes the
@@ -238,44 +236,6 @@ Cost CostEvaluator::distPenalty(Distance distance, Distance maxDistance) const
 Cost CostEvaluator::excessDistPenalty(Distance excessDistance) const
 {
     return static_cast<Cost>(excessDistance.get() * distPenalty_);
-}
-
-template <CostEvaluatable T>
-Cost CostEvaluator::penalisedCost(T const &arg) const
-{
-    if (arg.empty())
-    {
-        if constexpr (PrizeCostEvaluatable<T>)
-            return arg.uncollectedPrizes();
-        return 0;
-    }
-
-    // Standard objective plus infeasibility-related penalty terms.
-    auto const cost
-        = arg.distanceCost() + arg.durationCost() + arg.fixedVehicleCost()
-          + arg.reloadCost() + excessLoadPenalties(arg.excessLoad())
-          + twPenalty(arg.timeWarp()) + distPenalty(arg.excessDistance(), 0);
-
-    Cost total = cost;
-
-    if constexpr (PrizeCostEvaluatable<T>)
-        total += arg.uncollectedPrizes();
-
-    // Penalize same-vehicle group violations heavily — each violation means
-    // SVG members are split across routes. Use a large fixed penalty per
-    // violation to give the solver a strong gradient toward SVG feasibility.
-    if constexpr (SVGCostEvaluatable<T>)
-        total += Cost(arg.numSameVehicleViolations() * 500'000);
-
-    return total;
-}
-
-template <CostEvaluatable T> Cost CostEvaluator::cost(T const &arg) const
-{
-    // Penalties are zero when the solution is feasible, so we can fall back to
-    // penalised cost in that case.
-    return arg.isFeasible() ? penalisedCost(arg)
-                            : std::numeric_limits<Cost>::max();
 }
 
 template <bool exact,
@@ -422,6 +382,20 @@ bool CostEvaluator::deltaCost(Cost &out,
 
     return true;
 }
+class Route;
+class Solution;
+namespace search
+{
+class Route;
+}
+
+template <> Cost CostEvaluator::penalisedCost(Route const &) const;
+template <> Cost CostEvaluator::cost(Route const &) const;
+template <> Cost CostEvaluator::penalisedCost(Solution const &) const;
+template <> Cost CostEvaluator::cost(Solution const &) const;
+template <> Cost CostEvaluator::penalisedCost(search::Route const &) const;
+template <> Cost CostEvaluator::cost(search::Route const &) const;
+
 }  // namespace pyvrp
 
 #endif  // PYVRP_COSTEVALUATOR_H

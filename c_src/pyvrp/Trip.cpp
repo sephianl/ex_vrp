@@ -69,7 +69,8 @@ Trip::Trip(ProblemData const &data,
         distance_ += distances(prevClient, client);
         travel_ += durations(prevClient, client);
 
-        ProblemData::Client const &clientData = data.location(client);
+        ProblemData::Client const &clientData
+            = data.client(client - data.numDepots());
 
         service_ += clientData.serviceDuration;
         release_ = std::max(release_, clientData.releaseTime);
@@ -90,7 +91,8 @@ Trip::Trip(ProblemData const &data,
         LoadSegment segment;
         for (auto const client : visits_)
         {
-            ProblemData::Client const &clientData = data.location(client);
+            ProblemData::Client const &clientData
+                = data.client(client - data.numDepots());
             segment = LoadSegment::merge(segment, {clientData, dim});
         }
 

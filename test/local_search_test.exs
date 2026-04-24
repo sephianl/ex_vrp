@@ -440,8 +440,7 @@ defmodule ExVrp.LocalSearchTest do
           initial_solution,
           problem_data,
           cost_evaluator,
-          node_operators: [],
-          route_operators: []
+          node_operators: []
         )
 
       # Solution should be valid reference (same as input since no operators ran)
@@ -638,44 +637,6 @@ defmodule ExVrp.LocalSearchTest do
       assert result_cost <= initial_cost
     end
 
-    test "works with swap_star route operator" do
-      model = build_cvrp_model(10)
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {:ok, cost_evaluator} = create_cost_evaluator()
-      {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
-      initial_cost = Native.solution_penalised_cost(initial_solution, cost_evaluator)
-
-      {:ok, result} =
-        Native.local_search_with_operators(
-          initial_solution,
-          problem_data,
-          cost_evaluator,
-          route_operators: [:swap_star]
-        )
-
-      result_cost = Native.solution_penalised_cost(result, cost_evaluator)
-      assert result_cost <= initial_cost
-    end
-
-    test "works with swap_routes route operator" do
-      model = build_cvrp_model(10)
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {:ok, cost_evaluator} = create_cost_evaluator()
-      {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
-      initial_cost = Native.solution_penalised_cost(initial_solution, cost_evaluator)
-
-      {:ok, result} =
-        Native.local_search_with_operators(
-          initial_solution,
-          problem_data,
-          cost_evaluator,
-          route_operators: [:swap_routes]
-        )
-
-      result_cost = Native.solution_penalised_cost(result, cost_evaluator)
-      assert result_cost <= initial_cost
-    end
-
     test "works with multiple operators combined" do
       model = build_cvrp_model(15)
       {:ok, problem_data} = Model.to_problem_data(model)
@@ -688,8 +649,7 @@ defmodule ExVrp.LocalSearchTest do
           initial_solution,
           problem_data,
           cost_evaluator,
-          node_operators: [:exchange10, :exchange11, :exchange20],
-          route_operators: [:swap_star]
+          node_operators: [:exchange10, :exchange11, :exchange20]
         )
 
       result_cost = Native.solution_penalised_cost(result, cost_evaluator)
@@ -719,8 +679,7 @@ defmodule ExVrp.LocalSearchTest do
             :exchange32,
             :exchange33,
             :swap_tails
-          ],
-          route_operators: [:swap_star, :swap_routes]
+          ]
         )
 
       result_cost = Native.solution_penalised_cost(result, cost_evaluator)
@@ -870,8 +829,7 @@ defmodule ExVrp.LocalSearchTest do
           initial_solution,
           problem_data,
           cost_evaluator,
-          node_operators: [:exchange10, :exchange11],
-          route_operators: [:swap_star]
+          node_operators: [:exchange10, :exchange11]
         )
 
       for op_stats <- stats.operators do
@@ -879,28 +837,7 @@ defmodule ExVrp.LocalSearchTest do
       end
     end
 
-    test "statistics work with route operators" do
-      model = build_cvrp_model(10)
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {:ok, cost_evaluator} = create_cost_evaluator()
-      {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
-
-      stats =
-        Native.local_search_stats(
-          initial_solution,
-          problem_data,
-          cost_evaluator,
-          route_operators: [:swap_star, :swap_routes]
-        )
-
-      assert length(stats.operators) == 2
-
-      op_names = Enum.map(stats.operators, & &1.name)
-      assert :swap_star in op_names
-      assert :swap_routes in op_names
-    end
-
-    test "statistics work with mixed node and route operators" do
+    test "statistics work with multiple operator types" do
       model = build_cvrp_model(15)
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -911,11 +848,15 @@ defmodule ExVrp.LocalSearchTest do
           initial_solution,
           problem_data,
           cost_evaluator,
-          node_operators: [:exchange10, :exchange11, :exchange20],
-          route_operators: [:swap_star]
+          node_operators: [:exchange10, :exchange11, :exchange20]
         )
 
-      assert length(stats.operators) == 4
+      assert length(stats.operators) == 3
+
+      op_names = Enum.map(stats.operators, & &1.name)
+      assert :exchange10 in op_names
+      assert :exchange11 in op_names
+      assert :exchange20 in op_names
     end
 
     test "exhaustive search performs more evaluations" do
@@ -961,8 +902,7 @@ defmodule ExVrp.LocalSearchTest do
           initial_solution,
           problem_data,
           cost_evaluator,
-          node_operators: [],
-          route_operators: []
+          node_operators: []
         )
 
       assert stats.operators == []
@@ -1008,69 +948,6 @@ defmodule ExVrp.LocalSearchTest do
           problem_data,
           cost_evaluator,
           node_operators: [:exchange30, :exchange31, :exchange32, :exchange33]
-        )
-
-      result_cost = Native.solution_penalised_cost(result, cost_evaluator)
-      assert result_cost <= initial_cost
-    end
-  end
-
-  # ==========================================
-  # Route Operator Specific Tests
-  # ==========================================
-
-  describe "Route operators" do
-    test "swap_star improves multi-route solutions" do
-      model = build_cvrp_model(15)
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {:ok, cost_evaluator} = create_cost_evaluator()
-      {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
-      initial_cost = Native.solution_penalised_cost(initial_solution, cost_evaluator)
-
-      {:ok, result} =
-        Native.local_search_with_operators(
-          initial_solution,
-          problem_data,
-          cost_evaluator,
-          route_operators: [:swap_star]
-        )
-
-      result_cost = Native.solution_penalised_cost(result, cost_evaluator)
-      assert result_cost <= initial_cost
-    end
-
-    test "swap_routes can swap entire routes" do
-      model = build_cvrp_model(15)
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {:ok, cost_evaluator} = create_cost_evaluator()
-      {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
-      initial_cost = Native.solution_penalised_cost(initial_solution, cost_evaluator)
-
-      {:ok, result} =
-        Native.local_search_with_operators(
-          initial_solution,
-          problem_data,
-          cost_evaluator,
-          route_operators: [:swap_routes]
-        )
-
-      result_cost = Native.solution_penalised_cost(result, cost_evaluator)
-      assert result_cost <= initial_cost
-    end
-
-    test "combined route operators work together" do
-      model = build_cvrp_model(20)
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {:ok, cost_evaluator} = create_cost_evaluator()
-      {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
-      initial_cost = Native.solution_penalised_cost(initial_solution, cost_evaluator)
-
-      {:ok, result} =
-        Native.local_search_with_operators(
-          initial_solution,
-          problem_data,
-          cost_evaluator,
-          route_operators: [:swap_star, :swap_routes]
         )
 
       result_cost = Native.solution_penalised_cost(result, cost_evaluator)
@@ -1650,8 +1527,7 @@ defmodule ExVrp.LocalSearchTest do
           solution,
           problem_data,
           cost_evaluator,
-          node_operators: [:exchange10, :exchange11],
-          route_operators: [:swap_star, :swap_routes]
+          node_operators: [:exchange10, :exchange11]
         )
 
       improved_cost = Native.solution_penalised_cost(improved, cost_evaluator)
@@ -1686,8 +1562,7 @@ defmodule ExVrp.LocalSearchTest do
           solution,
           problem_data,
           cost_evaluator,
-          node_operators: [],
-          route_operators: []
+          node_operators: []
         )
 
       result_cost = Native.solution_penalised_cost(result, cost_evaluator)
@@ -1720,59 +1595,12 @@ defmodule ExVrp.LocalSearchTest do
           solution,
           problem_data,
           cost_evaluator,
-          node_operators: [:exchange10],
-          route_operators: []
+          node_operators: [:exchange10]
         )
 
       result_cost = Native.solution_penalised_cost(result, cost_evaluator)
       assert result_cost <= initial_cost
       assert Native.solution_is_complete(result)
-    end
-  end
-
-  # ==========================================================================
-  # PyVRP Parity: test_intensify_can_swap_routes
-  # ==========================================================================
-
-  describe "intensify with route operators (PyVRP parity)" do
-    test "swap_routes can improve solution" do
-      # Test that SwapRoutes as route operator can improve solutions
-      model =
-        Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [15])
-        |> Model.add_client(x: 20, y: 0, delivery: [15])
-        |> Model.add_client(x: 30, y: 0, delivery: [15])
-        |> Model.add_client(x: 40, y: 0, delivery: [5])
-        # Small capacity - will have excess load if it gets heavy clients
-        |> Model.add_vehicle_type(num_available: 1, capacity: [20])
-        # Large capacity - can handle all clients
-        |> Model.add_vehicle_type(num_available: 1, capacity: [60])
-
-      {:ok, problem_data} = Model.to_problem_data(model)
-
-      # High load penalty
-      {:ok, cost_evaluator} =
-        Native.create_cost_evaluator(
-          load_penalties: [100_000.0],
-          tw_penalty: 0.0,
-          dist_penalty: 0.0
-        )
-
-      {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
-      initial_cost = Native.solution_penalised_cost(solution, cost_evaluator)
-
-      {:ok, improved} =
-        Native.local_search_with_operators(
-          solution,
-          problem_data,
-          cost_evaluator,
-          node_operators: [:exchange10],
-          route_operators: [:swap_routes]
-        )
-
-      improved_cost = Native.solution_penalised_cost(improved, cost_evaluator)
-      assert improved_cost <= initial_cost
     end
   end
 

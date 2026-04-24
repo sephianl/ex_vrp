@@ -152,18 +152,17 @@ defmodule ExVrp.IteratedLocalSearch do
   def run(problem_data, penalty_manager, local_search, initial_solution, stop_fn, params \\ %Params{}, opts \\ []) do
     start_time = System.monotonic_time(:millisecond)
 
-    # Get seed from options, default to random
     seed = Keyword.get(opts, :seed, :rand.uniform(1_000_000))
     on_progress = Keyword.get(opts, :on_progress)
-
-    # Get max_runtime_ms from options for per-iteration timeout calculation
     max_runtime_ms = Keyword.get(opts, :max_runtime_ms, nil)
+    on_migration = Keyword.get(opts, :on_migration, nil)
+    send_migration = Keyword.get(opts, :send_migration, nil)
+    migration_interval = Keyword.get(opts, :migration_interval, 1000)
+    migration_quarantine = Keyword.get(opts, :migration_quarantine, 500)
 
     {:ok, cost_eval} = PenaltyManager.cost_evaluator(penalty_manager)
 
     initial_penalised_cost = Native.solution_penalised_cost(initial_solution, cost_eval)
-    # For best selection and stopping criterion, use cost() which returns :infinity for infeasible
-    # This matches PyVRP's behavior where infeasible solutions can never become "best"
     initial_cost = Native.solution_cost(initial_solution, cost_eval)
 
     state = %{
@@ -173,17 +172,14 @@ defmodule ExVrp.IteratedLocalSearch do
       cost_eval: cost_eval,
       params: params,
       best: initial_solution,
-      # Use cost() for best selection - infeasible solutions have infinite cost
       best_cost: initial_cost,
       best_penalised_cost: initial_penalised_cost,
       current: initial_solution,
       current_cost: initial_penalised_cost,
-      # Ring buffer matching PyVRP's implementation exactly
       history: RingBuffer.new(params.history_size),
       iteration: 0,
       iters_no_improvement: 0,
       initial_cost: initial_penalised_cost,
-      # Use seed for reproducible RNG in local search
       rng_seed: seed,
       start_time: start_time,
       max_runtime_ms: max_runtime_ms,
@@ -192,7 +188,12 @@ defmodule ExVrp.IteratedLocalSearch do
         restarts: 0
       },
       on_progress: on_progress,
-      last_progress_time: start_time
+      last_progress_time: start_time,
+      on_migration: on_migration,
+      send_migration: send_migration,
+      migration_interval: migration_interval,
+      migration_quarantine: migration_quarantine,
+      last_migration: 0
     }
 
     final_state = iterate(state, stop_fn)
@@ -227,9 +228,11 @@ defmodule ExVrp.IteratedLocalSearch do
     else
       state
       |> maybe_restart()
+      |> maybe_accept_migration()
       |> search_step()
       |> accept_step()
       |> update_penalty_manager()
+      |> maybe_send_migration()
       |> Map.update!(:iteration, &(&1 + 1))
       |> maybe_report_progress()
       |> iterate(stop_fn)
@@ -429,8 +432,41 @@ defmodule ExVrp.IteratedLocalSearch do
     end
   end
 
-  # Remaining time budget in milliseconds (0 means no timeout).
-  # round/1 ensures integer for NIF when max_runtime_ms is a float.
+  defp maybe_accept_migration(%{on_migration: nil} = state), do: state
+
+  defp maybe_accept_migration(state) do
+    %{iteration: iter, migration_interval: interval, migration_quarantine: quarantine, last_migration: last} = state
+
+    if rem(iter, interval) == 0 and iter - last >= quarantine do
+      accept_migration(state.on_migration.(), state)
+    else
+      state
+    end
+  end
+
+  defp accept_migration(nil, state), do: state
+
+  defp accept_migration(migrated_solution, state) do
+    migrated_cost = Native.solution_penalised_cost(migrated_solution, state.cost_eval)
+
+    if migrated_cost < state.current_cost do
+      %{state | current: migrated_solution, current_cost: migrated_cost, last_migration: state.iteration}
+    else
+      state
+    end
+  end
+
+  defp maybe_send_migration(%{send_migration: nil} = state), do: state
+
+  defp maybe_send_migration(state) do
+    if rem(state.iteration, state.migration_interval) == 0 do
+      state.send_migration.(state.best)
+      state
+    else
+      state
+    end
+  end
+
   defp remaining_timeout_ms(%{max_runtime_ms: nil}), do: 0
 
   defp remaining_timeout_ms(state) do

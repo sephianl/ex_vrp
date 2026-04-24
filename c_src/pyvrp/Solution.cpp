@@ -38,7 +38,7 @@ void Solution::evaluate(ProblemData const &data)
         durationCost_ += route.durationCost();
         excessDistance_ += route.excessDistance();
         timeWarp_ += route.timeWarp();
-        fixedVehicleCost_ += data.vehicleType(route.vehicleType()).fixedCost;
+        fixedVehicleCost_ += route.fixedVehicleCost();
         reloadCost_ += route.reloadCost();
 
         auto const &excessLoad = route.excessLoad();
@@ -177,7 +177,8 @@ Solution::Solution(ProblemData const &data, RandomNumberGenerator &rng)
     clients.reserve(data.numClients());
     for (size_t idx = data.numDepots(); idx != data.numLocations(); ++idx)
     {
-        ProblemData::Client const &clientData = data.location(idx);
+        ProblemData::Client const &clientData
+            = data.client(idx - data.numDepots());
         if (clientData.required || rng.rand() < 0.5)
             clients.push_back(idx);
     }
@@ -267,7 +268,8 @@ Solution::Solution(ProblemData const &data, std::vector<Route> routes)
          ++client)
         if (!isVisited[client])  // we need to check if the client visit
         {                        // is required if this is true
-            ProblemData::Client const &clientData = data.location(client);
+            ProblemData::Client const &clientData
+                = data.client(client - data.numDepots());
             numMissingClients_ += clientData.required;
         }
 
@@ -398,4 +400,21 @@ std::ostream &operator<<(std::ostream &out, Solution const &sol)
         out << "Route #" << idx + 1 << ": " << routes[idx] << '\n';
 
     return out;
+}
+
+#include "CostEvaluator.h"
+
+template <> Cost pyvrp::CostEvaluator::penalisedCost(Solution const &sol) const
+{
+    Cost cost = sol.uncollectedPrizes();
+    for (auto const &route : sol.routes())
+        cost += penalisedCost(route);
+    cost += Cost(sol.numSameVehicleViolations() * 500'000);
+    return cost;
+}
+
+template <> Cost pyvrp::CostEvaluator::cost(Solution const &sol) const
+{
+    return sol.isFeasible() ? penalisedCost(sol)
+                            : std::numeric_limits<Cost>::max();
 }

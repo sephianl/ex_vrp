@@ -36,13 +36,14 @@ public:
 
     pyvrp::DurationSegment duration([[maybe_unused]] size_t profile) const
     {
-        pyvrp::ProblemData::Client const &clientData = data.location(client);
+        pyvrp::ProblemData::Client const &clientData
+            = data.client(client - data.numDepots());
         return {clientData};
     }
 
     pyvrp::LoadSegment load(size_t dimension) const
     {
-        return {data.location(client), dimension};
+        return {data.client(client - data.numDepots()), dimension};
     }
 };
 }  // namespace
@@ -56,7 +57,8 @@ pyvrp::Cost pyvrp::search::insertCost(Route::Node *U,
         return 0;
 
     auto *route = V->route();
-    ProblemData::Client const &client = data.location(U->client());
+    ProblemData::Client const &client
+        = data.client(U->client() - data.numDepots());
 
     Cost deltaCost
         = Cost(route->empty()) * route->fixedVehicleCost() - client.prize;
@@ -82,7 +84,8 @@ pyvrp::Cost pyvrp::search::removeCost(Route::Node *U,
 
     if (!U->isDepot())
     {
-        ProblemData::Client const &client = data.location(U->client());
+        ProblemData::Client const &client
+            = data.client(U->client() - data.numDepots());
         deltaCost
             = client.prize
               - Cost(route->numClients() == 1) * route->fixedVehicleCost();
@@ -104,8 +107,10 @@ pyvrp::Cost pyvrp::search::inplaceCost(Route::Node *U,
         return 0;
 
     auto const *route = V->route();
-    ProblemData::Client const &uClient = data.location(U->client());
-    ProblemData::Client const &vClient = data.location(V->client());
+    ProblemData::Client const &uClient
+        = data.client(U->client() - data.numDepots());
+    ProblemData::Client const &vClient
+        = data.client(V->client() - data.numDepots());
 
     Cost deltaCost = vClient.prize - uClient.prize;
 

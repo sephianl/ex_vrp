@@ -72,6 +72,7 @@ NIF_SRC = c_src/ex_vrp_nif.cpp
 
 # PyVRP core sources (from latest main branch)
 PYVRP_CORE_SRC = \
+	c_src/pyvrp/Activity.cpp \
 	c_src/pyvrp/CostEvaluator.cpp \
 	c_src/pyvrp/DurationSegment.cpp \
 	c_src/pyvrp/DynamicBitset.cpp \
@@ -85,15 +86,18 @@ PYVRP_CORE_SRC = \
 # PyVRP search sources
 PYVRP_SEARCH_SRC = \
 	c_src/pyvrp/search/LocalSearch.cpp \
+	c_src/pyvrp/search/neighbourhood.cpp \
 	c_src/pyvrp/search/PerturbationManager.cpp \
 	c_src/pyvrp/search/RelocateWithDepot.cpp \
+	c_src/pyvrp/search/RemoveAdjacentDepot.cpp \
+	c_src/pyvrp/search/RemoveOptional.cpp \
+	c_src/pyvrp/search/ReplaceGroup.cpp \
+	c_src/pyvrp/search/ReplaceOptional.cpp \
+	c_src/pyvrp/search/primitives.cpp \
 	c_src/pyvrp/search/Route.cpp \
 	c_src/pyvrp/search/SearchSpace.cpp \
 	c_src/pyvrp/search/Solution.cpp \
-	c_src/pyvrp/search/SwapRoutes.cpp \
-	c_src/pyvrp/search/SwapStar.cpp \
-	c_src/pyvrp/search/SwapTails.cpp \
-	c_src/pyvrp/search/primitives.cpp
+	c_src/pyvrp/search/SwapTails.cpp
 
 ALL_SRC = $(NIF_SRC) $(PYVRP_CORE_SRC) $(PYVRP_SEARCH_SRC)
 
