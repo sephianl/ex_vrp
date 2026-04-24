@@ -60,6 +60,11 @@ jobs:
         run: |
           devenv shell mix test
 
+      - name: Run benchmark regression tests
+        timeout-minutes: 5
+        run: |
+          devenv shell mix test test/benchmark_regression_test.exs --include benchmark --only benchmark
+
       - name: Run production benchmarks
         timeout-minutes: 20
         run: |

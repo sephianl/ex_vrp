@@ -2,36 +2,50 @@ defmodule ExVrp.Benchmark do
   @moduledoc """
   Benchmark suite for ex_vrp solver.
 
-  Runs benchmarks on VRPLIB instances and compares solution quality
-  against known best solutions.
+  Runs benchmarks on VRPLIB instances with multiple seeds and reports
+  solution quality regressions against known expected distances (seed=42).
   """
 
   alias ExVrp.Read
   alias ExVrp.Solver
   alias ExVrp.StoppingCriteria
 
-  @data_dir Path.join(:code.priv_dir(:ex_vrp), "benchmark_data")
+  require Logger
 
-  # Instance config: {filename, round_func, solution_file}
-  # round_func values derived from PyVRP's conftest.py and test files
+  @data_dir Path.join(:code.priv_dir(:ex_vrp), "benchmark_data")
+  @seeds [42, 1, 1337]
+
   @instances %{
-    ok_small: {"OkSmall.txt", :none, "OkSmall.sol"},
-    e_n22_k4: {"E-n22-k4.txt", :dimacs, nil},
-    rc208: {"RC208.vrp", :dimacs, "RC208.sol"},
-    pr11a: {"PR11A.vrp", :trunc, nil},
-    c201: {"C201R0.25.vrp", :dimacs, "C201R0.25.sol"},
-    x101: {"X-n101-50-k13.vrp", :round, nil},
-    x115: {"X115-HVRP.vrp", :exact, "X115-HVRP.sol"},
-    pr01: {"PR01.vrp", :none, nil},
-    small_vrpspd: {"SmallVRPSPD.vrp", :round, nil},
-    p06: {"p06-2-50.vrp", :dimacs, nil},
-    gtsp: {"50pr439.gtsp", :round, nil},
-    pr107: {"pr107.tsp", :dimacs, nil}
+    small_vrpspd: {"SmallVRPSPD.vrp", :round},
+    ok_small: {"OkSmall.txt", :none},
+    e_n22_k4: {"E-n22-k4.txt", :dimacs},
+    p06: {"p06-2-50.vrp", :dimacs},
+    pr01: {"PR01.vrp", :none},
+    pr107: {"pr107.tsp", :dimacs},
+    rc208: {"RC208.vrp", :dimacs},
+    x101: {"X-n101-50-k13.vrp", :round},
+    gtsp: {"50pr439.gtsp", :round},
+    c201: {"C201R0.25.vrp", :dimacs},
+    x115: {"X115-HVRP.vrp", :exact},
+    pr11a: {"PR11A.vrp", :trunc}
   }
 
-  @doc """
-  Returns list of all available benchmark instance names.
-  """
+  @expected_distances %{
+    small_vrpspd: 82,
+    ok_small: 9155,
+    e_n22_k4: 3743,
+    p06: 829,
+    pr01: 1627,
+    pr107: 443_004,
+    rc208: 7870,
+    x101: 19_467,
+    gtsp: 45_235,
+    c201: 10_773,
+    x115: 17_368_625,
+    pr11a: 6881
+  }
+
+  def expected_distances, do: @expected_distances
   def available_instances, do: Map.keys(@instances)
 
   @doc """
@@ -39,187 +53,126 @@ defmodule ExVrp.Benchmark do
 
   ## Options
 
-  - `:iterations` - Number of solver iterations per benchmark run (default: 100)
-  - `:save` - Path to save JSON results (optional)
+  - `:iterations` - Number of solver iterations per run (default: 1000)
+  - `:save` - Path to save JSON results
 
   ## Examples
 
       ExVrp.Benchmark.run(:all)
-      ExVrp.Benchmark.run([:ok_small, :rc208], iterations: 50)
+      ExVrp.Benchmark.run([:ok_small, :rc208], iterations: 500)
 
   """
   def run(instances, opts \\ []) do
-    iterations = Keyword.get(opts, :iterations, 100)
+    iterations = Keyword.get(opts, :iterations, 1000)
     save_path = Keyword.get(opts, :save)
 
     instance_list =
-      if instances == :all do
-        Map.keys(@instances)
-      else
-        instances
-      end
+      if instances == :all, do: @instances |> Map.keys() |> Enum.sort(), else: instances
 
-    # First, run once to collect solution quality metrics
-    IO.puts("\nCollecting solution quality metrics (seed=42, iterations=#{iterations})...\n")
-    solution_metrics = collect_solution_metrics(instance_list, iterations)
+    IO.puts("\nRunning benchmarks (seeds=#{inspect(@seeds)}, iterations=#{iterations})...\n")
 
-    # Print solution quality report
-    print_solution_report(solution_metrics, instance_list)
+    prev_level = Logger.level()
+    Logger.configure(level: :warning)
+    results = collect_results(instance_list, iterations)
+    Logger.configure(level: prev_level)
 
-    # Build benchmark scenarios for timing
-    scenarios = build_scenarios(instance_list, iterations)
+    print_report(results, iterations)
 
-    # Run with Benchee for timing
-    IO.puts("\nRunning timing benchmarks...\n")
-
-    results =
-      Benchee.run(scenarios,
-        warmup: 1,
-        time: 5,
-        memory_time: 0,
-        formatters: [Benchee.Formatters.Console]
-      )
-
-    if save_path, do: save_results(results, solution_metrics, save_path)
+    if save_path, do: save_json(results, save_path)
     results
   end
 
-  defp collect_solution_metrics(instances, iterations) do
-    for name <- instances,
-        Map.has_key?(@instances, name),
-        into: %{} do
-      {file, round_func, sol_file} = @instances[name]
+  defp collect_results(instances, iterations) do
+    for name <- instances, Map.has_key?(@instances, name) do
+      {file, round_func} = @instances[name]
       path = Path.join(@data_dir, file)
+      model = Read.read(path, round_func: round_func)
 
       IO.write("  #{name}...")
 
-      model = Read.read(path, round_func: round_func)
-      stop = StoppingCriteria.max_iterations(iterations)
-      {:ok, result} = Solver.solve(model, stop: stop, seed: 42)
-
-      bks =
-        if sol_file do
-          raw_cost = parse_solution_cost(Path.join(@data_dir, sol_file))
-          scale_bks(raw_cost, round_func)
+      seed_results =
+        for seed <- @seeds do
+          stop = StoppingCriteria.max_iterations(iterations)
+          {:ok, result} = Solver.solve(model, stop: stop, seed: seed, num_starts: 1)
+          {seed, result.best.distance, result.best.is_feasible}
         end
 
-      IO.puts(" done (distance: #{result.best.distance})")
+      best = seed_results |> Enum.map(&elem(&1, 1)) |> Enum.min()
+      all_feasible = Enum.all?(seed_results, &elem(&1, 2))
 
-      {name,
-       %{
-         distance: result.best.distance,
-         feasible: result.best.is_feasible,
-         iterations: result.num_iterations,
-         routes: length(result.best.routes),
-         runtime_ms: result.runtime,
-         bks: bks
-       }}
+      IO.puts(" best=#{best} (all_feasible=#{all_feasible})")
+
+      {name, %{seed_results: seed_results, best: best, all_feasible: all_feasible}}
     end
   end
 
-  defp print_solution_report(metrics, instances) do
+  defp print_report(results, iterations) do
     IO.puts("")
-    IO.puts("╔══════════════════════════════════════════════════════════════════════╗")
-    IO.puts("║                      Solution Quality Report                         ║")
-    IO.puts("╠══════════════╦══════════════╦══════════╦════════════╦════════════════╣")
-    IO.puts("║ Instance     ║ Distance     ║ Feasible ║ Routes     ║ vs BKS         ║")
-    IO.puts("╠══════════════╬══════════════╬══════════╬════════════╬════════════════╣")
+    IO.puts("Regression Report (seeds=#{inspect(@seeds)}, iterations=#{iterations})")
+    IO.puts(String.duplicate("-", 72))
 
-    for name <- instances, Map.has_key?(metrics, name) do
-      m = metrics[name]
-      bks_comparison = format_bks_comparison(m.distance, m.bks)
+    IO.puts(
+      "#{rpad("Instance", 14)} #{lpad("Seed 42", 10)} #{lpad("Expected", 10)} #{rpad("Quality", 11)} #{lpad("Best", 10)} #{rpad("Feasible", 8)}"
+    )
 
-      IO.puts(
-        "║ #{pad(to_string(name), 12)} ║ #{pad_num(m.distance, 12)} ║ #{pad(to_string(m.feasible), 8)} ║ #{pad_num(m.routes, 10)} ║ #{pad(bks_comparison, 14)} ║"
-      )
-    end
+    IO.puts(String.duplicate("-", 72))
 
-    IO.puts("╚══════════════╩══════════════╩══════════╩════════════╩════════════════╝")
+    {pass, fail} =
+      Enum.reduce(results, {0, 0}, fn {name, m}, {p, f} ->
+        expected = @expected_distances[name]
+
+        seed_42_dist =
+          Enum.find_value(m.seed_results, fn
+            {42, dist, _} -> dist
+            _ -> nil
+          end)
+
+        quality =
+          cond do
+            seed_42_dist == expected and m.all_feasible -> "ok"
+            seed_42_dist != expected -> "REGRESSED"
+            not m.all_feasible -> "INFEASIBLE"
+          end
+
+        feasible_count = Enum.count(m.seed_results, &elem(&1, 2))
+        feasible_str = "#{feasible_count}/#{length(@seeds)}"
+
+        IO.puts(
+          "#{rpad(to_string(name), 14)} #{lpad(to_string(seed_42_dist), 10)} #{lpad(to_string(expected), 10)} #{rpad(quality, 11)} #{lpad(to_string(m.best), 10)} #{rpad(feasible_str, 8)}"
+        )
+
+        if quality == "ok", do: {p + 1, f}, else: {p, f + 1}
+      end)
+
+    IO.puts(String.duplicate("-", 72))
+
+    IO.puts("Quality: #{pass}/#{pass + fail} passed")
     IO.puts("")
-  end
 
-  defp format_bks_comparison(_distance, nil), do: "N/A"
-
-  defp format_bks_comparison(distance, bks) when is_number(distance) and is_number(bks) do
-    gap = (distance - bks) / bks * 100
-
-    cond do
-      abs(gap) < 0.01 -> "0.0% (optimal)"
-      gap > 0 -> "+#{Float.round(gap, 1)}%"
-      true -> "#{Float.round(gap, 1)}%"
-    end
-  end
-
-  defp format_bks_comparison(_, _), do: "N/A"
-
-  defp pad(str, width), do: String.pad_trailing(str, width)
-
-  defp pad_num(num, width) when is_integer(num) do
-    num |> Integer.to_string() |> String.pad_leading(width)
-  end
-
-  defp pad_num(num, width) when is_float(num) do
-    num |> Float.round(2) |> Float.to_string() |> String.pad_leading(width)
-  end
-
-  defp pad_num(num, width), do: num |> to_string() |> String.pad_leading(width)
-
-  defp build_scenarios(instances, iterations) do
-    for name <- instances, Map.has_key?(@instances, name), into: %{} do
-      {file, round_func, _sol_file} = @instances[name]
-      path = Path.join(@data_dir, file)
-
-      scenario_fn = fn ->
-        model = Read.read(path, round_func: round_func)
-        stop = StoppingCriteria.max_iterations(iterations)
-        {:ok, _result} = Solver.solve(model, stop: stop, seed: 42)
-      end
-
-      {to_string(name), scenario_fn}
-    end
-  end
-
-  defp parse_solution_cost(sol_path) do
-    with {:ok, content} <- File.read(sol_path),
-         [_, cost_str] <- Regex.run(~r/Cost\s+(\d+(?:\.\d+)?)/i, content),
-         {val, _} <- Float.parse(cost_str) do
-      val
+    if fail > 0 do
+      IO.puts("BENCHMARK REGRESSION DETECTED")
     else
-      _ -> nil
+      IO.puts("All benchmarks passed.")
     end
+
+    IO.puts("")
   end
 
-  # Scale BKS value to match the rounding function applied to instance data
-  defp scale_bks(nil, _round_func), do: nil
+  defp rpad(str, width), do: String.pad_trailing(str, width)
+  defp lpad(str, width), do: String.pad_leading(str, width)
 
-  defp scale_bks(cost, :dimacs), do: trunc(cost * 10)
-  defp scale_bks(cost, :exact), do: round(cost * 1000)
-  defp scale_bks(cost, :round), do: round(cost)
-  defp scale_bks(cost, :trunc), do: trunc(cost)
-  defp scale_bks(cost, :none), do: cost
-  defp scale_bks(cost, _), do: cost
-
-  defp save_results(benchee_results, solution_metrics, path) do
+  defp save_json(results, path) do
     data =
-      for scenario <- benchee_results.scenarios, into: %{} do
-        name = scenario.name
-        stats = scenario.run_time_data.statistics
-        sol_metrics = Map.get(solution_metrics, String.to_atom(name), %{})
+      for {name, m} <- results, into: %{} do
+        seeds =
+          for {seed, dist, feasible} <- m.seed_results, into: %{} do
+            {to_string(seed), %{distance: dist, feasible: feasible}}
+          end
 
-        {name,
-         %{
-           timing: %{
-             mean_ms: stats.average / 1_000_000,
-             median_ms: stats.median / 1_000_000,
-             std_dev_ratio: stats.std_dev_ratio,
-             ips: stats.ips
-           },
-           solution: sol_metrics
-         }}
+        {to_string(name), %{best: m.best, all_feasible: m.all_feasible, seeds: seeds}}
       end
 
-    json = Jason.encode!(data, pretty: true)
-    File.write!(path, json)
-    IO.puts("\nResults saved to #{path}")
+    File.write!(path, Jason.encode!(data, pretty: true))
+    IO.puts("Results saved to #{path}")
   end
 end
