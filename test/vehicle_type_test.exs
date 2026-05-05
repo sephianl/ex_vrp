@@ -145,28 +145,22 @@ defmodule ExVrp.VehicleTypeTest do
       assert vt.forbidden_windows == [{500, 600}]
     end
 
-    test "invalid windows (start >= end) are filtered out" do
-      vt = VehicleType.new(num_available: 1, capacity: [100], time_windows: [{500, 100}, {0, 1000}])
-
-      assert vt.tw_early == 0
-      assert vt.tw_late == 1000
-      assert vt.forbidden_windows == []
+    test "raises on invalid window (start > end)" do
+      assert_raise ArgumentError, ~r/invalid time window/, fn ->
+        VehicleType.new(num_available: 1, capacity: [100], time_windows: [{500, 100}])
+      end
     end
 
-    test "zero-width windows are filtered out" do
-      vt = VehicleType.new(num_available: 1, capacity: [100], time_windows: [{500, 500}, {0, 1000}])
-
-      assert vt.tw_early == 0
-      assert vt.tw_late == 1000
-      assert vt.forbidden_windows == []
+    test "raises on zero-width window (start == end)" do
+      assert_raise ArgumentError, ~r/invalid time window/, fn ->
+        VehicleType.new(num_available: 1, capacity: [100], time_windows: [{500, 500}])
+      end
     end
 
-    test "all-invalid windows results in zero-width vehicle" do
-      vt = VehicleType.new(num_available: 1, capacity: [100], time_windows: [{500, 100}, {200, 200}])
-
-      assert vt.tw_early == 0
-      assert vt.tw_late == 0
-      assert vt.forbidden_windows == []
+    test "raises on empty time_windows list" do
+      assert_raise ArgumentError, ~r/non-empty list/, fn ->
+        VehicleType.new(num_available: 1, capacity: [100], time_windows: [])
+      end
     end
   end
 

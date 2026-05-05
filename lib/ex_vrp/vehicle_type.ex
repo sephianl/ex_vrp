@@ -94,31 +94,22 @@ defmodule ExVrp.VehicleType do
     validate_no_legacy_options!(opts)
     {time_windows, rest} = Keyword.pop(opts, :time_windows, [{0, :infinity}])
 
-    valid_windows =
+    validate_time_windows!(time_windows)
+
+    windows =
       time_windows
-      |> Enum.filter(fn
-        {s, :infinity} when is_integer(s) and s >= 0 -> true
-        {s, e} when is_integer(s) and is_integer(e) and s >= 0 and e > s -> true
-        _invalid -> false
-      end)
       |> Enum.sort_by(fn {s, _end} -> s end)
       |> merge_windows()
 
-    case valid_windows do
-      [] ->
-        struct!(__MODULE__, Keyword.merge(rest, tw_early: 0, tw_late: 0, forbidden_windows: []))
+    tw_early = elem(hd(windows), 0)
+    tw_late = elem(List.last(windows), 1)
 
-      windows ->
-        tw_early = elem(hd(windows), 0)
-        tw_late = elem(List.last(windows), 1)
+    forbidden =
+      windows
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.map(fn [{_s, gap_start}, {gap_end, _e}] -> {gap_start, gap_end} end)
 
-        forbidden =
-          windows
-          |> Enum.chunk_every(2, 1, :discard)
-          |> Enum.map(fn [{_s, gap_start}, {gap_end, _e}] -> {gap_start, gap_end} end)
-
-        struct!(__MODULE__, Keyword.merge(rest, tw_early: tw_early, tw_late: tw_late, forbidden_windows: forbidden))
-    end
+    struct!(__MODULE__, Keyword.merge(rest, tw_early: tw_early, tw_late: tw_late, forbidden_windows: forbidden))
   end
 
   defp validate_no_legacy_options!(opts) do
@@ -130,6 +121,24 @@ defmodule ExVrp.VehicleType do
       raise ArgumentError,
             "#{inspect(found)} cannot be set directly, use :time_windows instead"
     end
+  end
+
+  defp validate_time_windows!(time_windows) do
+    if time_windows == [] do
+      raise ArgumentError, ":time_windows must be a non-empty list of {start, end} tuples"
+    end
+
+    Enum.each(time_windows, fn
+      {s, :infinity} when is_integer(s) and s >= 0 ->
+        :ok
+
+      {s, e} when is_integer(s) and is_integer(e) and s >= 0 and e > s ->
+        :ok
+
+      other ->
+        raise ArgumentError,
+              "invalid time window: #{inspect(other)}, expected {start, end} where start >= 0 and end > start"
+    end)
   end
 
   defp merge_windows([]), do: []
