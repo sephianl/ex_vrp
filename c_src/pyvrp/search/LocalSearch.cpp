@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
-#include <cstdio>
 #include <cstring>
 #include <numeric>
 
@@ -71,34 +70,12 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
 
     // Strip clients from trips where forbidden window delays push
     // service past tw_late.
-    {
-        size_t before = 0;
-        for (auto c = data.numDepots(); c != data.numLocations(); ++c)
-            if (solution_.nodes[c].route()) before++;
-        stripForbiddenWindowViolations();
-        size_t after = 0;
-        for (auto c = data.numDepots(); c != data.numLocations(); ++c)
-            if (solution_.nodes[c].route()) after++;
-        (void)before;
-        (void)after;
-    }
+    stripForbiddenWindowViolations();
 
     // Re-insert stripped clients: stripFW may remove clients from bad
     // trip orderings (e.g. C4 first), but improveWithMultiTrip can
     // insert them at earlier trip boundaries in the correct time order.
-    {
-        size_t before = 0;
-        for (auto c = data.numDepots(); c != data.numLocations(); ++c)
-            if (!solution_.nodes[c].route()) before++;
-        if (before > 0)
-            fprintf(stderr, "[op final] %zu unassigned, calling multiTrip retry\n", before);
-        improveWithMultiTrip(costEvaluator, true);  // skip feasibility
-        size_t after = 0;
-        for (auto c = data.numDepots(); c != data.numLocations(); ++c)
-            if (!solution_.nodes[c].route()) after++;
-        if (before > 0)
-            fprintf(stderr, "[op final] multiTrip retry: %zu->%zu unassigned\n", before, after);
-    }
+    improveWithMultiTrip(costEvaluator, true);  // skip feasibility
 
     return solution_.unload();
 }
@@ -136,32 +113,10 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
     // Final safety net: remove clients from trips where forbidden window
     // delays push service past tw_late.  The DurationSegment-based search
     // can't predict these violations, so we fix them here.
-    {
-        size_t before = 0;
-        for (auto c = data.numDepots(); c != data.numLocations(); ++c)
-            if (solution_.nodes[c].route()) before++;
-        stripForbiddenWindowViolations();
-        size_t after = 0;
-        for (auto c = data.numDepots(); c != data.numLocations(); ++c)
-            if (solution_.nodes[c].route()) after++;
-        if (before != after)
-            fprintf(stderr, "[search] stripFW: %zu->%zu\n", before, after);
-    }
+    stripForbiddenWindowViolations();
 
     // Re-insert stripped clients at earlier trip boundaries.
-    {
-        size_t before = 0;
-        for (auto c = data.numDepots(); c != data.numLocations(); ++c)
-            if (!solution_.nodes[c].route()) before++;
-        if (before > 0)
-            fprintf(stderr, "[search] %zu unassigned, calling multiTrip retry\n", before);
-        improveWithMultiTrip(costEvaluator, true);  // skip feasibility
-        size_t after = 0;
-        for (auto c = data.numDepots(); c != data.numLocations(); ++c)
-            if (!solution_.nodes[c].route()) after++;
-        if (before > 0)
-            fprintf(stderr, "[search] multiTrip retry: %zu->%zu unassigned\n", before, after);
-    }
+    improveWithMultiTrip(costEvaluator, true);  // skip feasibility
 
     return solution_.unload();
 }
@@ -1021,8 +976,7 @@ void LocalSearch::repairForbiddenWindowRoutes(
             if (node->isDepot() || node->isReloadDepot())
                 continue;
 
-            ProblemData::Client const &cl
-                = data.location(node->client());
+            ProblemData::Client const &cl = data.location(node->client());
             auto const wait = std::max<Duration>(cl.twEarly - now, 0);
             auto const serviceEnd = now + wait + cl.serviceDuration;
 
@@ -1086,7 +1040,7 @@ void LocalSearch::repairForbiddenWindowRoutes(
                     }
                 }
             }
-            found:
+        found:
             Route::Node depotNode(reloadDepot);
             route.insert(firstLateIdx, &depotNode);
         }
@@ -1095,8 +1049,7 @@ void LocalSearch::repairForbiddenWindowRoutes(
 }
 
 void LocalSearch::improveWithMultiTrip(
-    [[maybe_unused]] CostEvaluator const &costEvaluator,
-    bool skipFeasibility)
+    [[maybe_unused]] CostEvaluator const &costEvaluator, bool skipFeasibility)
 {
     // This function tries to insert unassigned clients with prizes by creating
     // new trips. Unlike the main local search insert logic, this is a one-time
@@ -1123,7 +1076,8 @@ void LocalSearch::improveWithMultiTrip(
             candidates.push_back(client);
     }
 
-    std::sort(candidates.begin(), candidates.end(),
+    std::sort(candidates.begin(),
+              candidates.end(),
               [&](size_t a, size_t b) -> bool
               {
                   ProblemData::Client const &ca = data.location(a);
@@ -1148,8 +1102,7 @@ void LocalSearch::improveWithMultiTrip(
                 bool skip = false;
                 for (auto member : group.clients())
                 {
-                    if (member != client
-                        && solution_.nodes[member].route())
+                    if (member != client && solution_.nodes[member].route())
                     {
                         skip = true;
                         break;
@@ -1182,14 +1135,7 @@ void LocalSearch::improveWithMultiTrip(
             // skipFeasibility is true — the route may be infeasible due to
             // bad trip ordering, but inserting at correct positions reduces TW.
             if (!skipFeasibility && !route.isFeasible())
-            {
-                fprintf(stderr, "[multiTrip] skip route vt=%zu: exLoad=%d exDist=%d twDS=%lld tw=%lld\n",
-                        route.vehicleType(), route.hasExcessLoad(),
-                        route.hasExcessDistance(),
-                        (long long)route.timeWarpDS().get(),
-                        (long long)route.timeWarp().get());
                 continue;
-            }
 
             // Check if client fits alone in a trip
             bool clientFits = true;
@@ -1276,8 +1222,7 @@ void LocalSearch::improveWithMultiTrip(
             {
                 Duration arrive
                     = vehType.twEarly + durMatrix(vehType.startDepot, client);
-                arrive = advancePastForbidden(
-                    arrive, vehType.forbiddenWindows);
+                arrive = advancePastForbidden(arrive, vehType.forbiddenWindows);
                 if (arrive <= clientData.twLate)
                     canInsertAtBeginning = true;
             }
@@ -1304,8 +1249,8 @@ void LocalSearch::improveWithMultiTrip(
                         ProblemData::Depot const &dp
                             = data.location(node->client());
                         depart += dp.serviceDuration;
-                        depart = advancePastForbidden(
-                            depart, vehType.forbiddenWindows);
+                        depart = advancePastForbidden(depart,
+                                                      vehType.forbiddenWindows);
                     }
                     Duration arrive
                         = depart + durMatrix(node->client(), client);
@@ -1322,8 +1267,7 @@ void LocalSearch::improveWithMultiTrip(
                 {
                     ProblemData::Client const &cl
                         = data.location(node->client());
-                    auto const wait
-                        = std::max<Duration>(cl.twEarly - now, 0);
+                    auto const wait = std::max<Duration>(cl.twEarly - now, 0);
                     now += wait + cl.serviceDuration;
                 }
                 else if (node->isReloadDepot())
@@ -1331,8 +1275,7 @@ void LocalSearch::improveWithMultiTrip(
                     ProblemData::Depot const &dp
                         = data.location(node->client());
                     now += dp.serviceDuration;
-                    now = advancePastForbidden(
-                        now, vehType.forbiddenWindows);
+                    now = advancePastForbidden(now, vehType.forbiddenWindows);
                 }
             }
 
