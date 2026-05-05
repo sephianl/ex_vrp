@@ -52,8 +52,7 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [3, 6],
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         |> Model.set_duration_matrices([matrix])
         |> Model.set_distance_matrices([matrix])
@@ -89,8 +88,7 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [3, 6],
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         |> Model.set_duration_matrices([matrix])
         |> Model.set_distance_matrices([matrix])
@@ -162,8 +160,7 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
           capacity: [3, 6, 9],
           reload_depots: [0],
           max_reloads: :infinity,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         |> Model.set_duration_matrices([matrix])
         |> Model.set_distance_matrices([matrix])
@@ -218,8 +215,7 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
           capacity: [2, 100, 100],
           reload_depots: [0],
           max_reloads: :infinity,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         |> Model.set_duration_matrices([matrix])
         |> Model.set_distance_matrices([matrix])
@@ -263,8 +259,7 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: capacity,
-          tw_early: 0,
-          tw_late: 10_000
+          time_windows: [{0, 10_000}]
         )
         |> Model.set_duration_matrices([matrix])
         |> Model.set_distance_matrices([matrix])

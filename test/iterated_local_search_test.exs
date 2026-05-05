@@ -251,7 +251,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
       model =
         Model.new()
         |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_vehicle_type(num_available: 2, capacity: [100], tw_early: 0, tw_late: 1000)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 1000}])
         |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 100)
         |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 50, tw_late: 200)
         |> Model.add_client(x: 30, y: 0, delivery: [10], tw_early: 100, tw_late: 300)
@@ -457,7 +457,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 100)
         |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 50, tw_late: 200)
         |> Model.add_client(x: 30, y: 0, delivery: [10], tw_early: 100, tw_late: 300)
-        |> Model.add_vehicle_type(num_available: 2, capacity: [100], tw_early: 0, tw_late: 400)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 400}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 200)
 

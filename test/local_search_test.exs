@@ -164,7 +164,7 @@ defmodule ExVrp.LocalSearchTest do
         |> Model.add_depot(x: 0, y: 0)
         |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 100)
         |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 50, tw_late: 200)
-        |> Model.add_vehicle_type(num_available: 2, capacity: [100], tw_early: 0, tw_late: 300)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 300}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1387,7 +1387,7 @@ defmodule ExVrp.LocalSearchTest do
         |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
         |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
         |> Model.add_client(x: 30, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
-        |> Model.add_vehicle_type(num_available: 2, capacity: [100], tw_early: 0, tw_late: 500)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 500}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -1546,7 +1546,7 @@ defmodule ExVrp.LocalSearchTest do
         |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
         |> Model.add_client(x: 30, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
         |> Model.add_client(x: 40, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
-        |> Model.add_vehicle_type(num_available: 2, capacity: [100], tw_early: 0, tw_late: 500)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 500}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 

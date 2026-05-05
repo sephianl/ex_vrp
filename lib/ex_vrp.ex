@@ -24,7 +24,7 @@ defmodule ExVrp do
       model =
         ExVrp.Model.new()
         |> ExVrp.Model.add_depot(x: 0, y: 0)
-        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
         |> ExVrp.Model.add_client(x: 10, y: 10, delivery: [20])
         |> ExVrp.Model.add_client(x: 20, y: 0, delivery: [30])
         |> ExVrp.Model.add_client(x: 0, y: 20, delivery: [25])
@@ -65,8 +65,7 @@ defmodule ExVrp do
         |> ExVrp.Model.add_vehicle_type(
           num_available: 3,
           capacity: [100],
-          tw_early: 0,
-          tw_late: 28_800
+          time_windows: [{0, 28_800}]
         )
         |> ExVrp.Model.add_client(
           x: 10, y: 10,
@@ -117,6 +116,7 @@ defmodule ExVrp do
         |> ExVrp.Model.add_vehicle_type(
           num_available: 1,
           capacity: [50],
+          time_windows: [{0, 28_800}],
           reload_depots: [0],
           max_reloads: 3
         )

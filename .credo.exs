@@ -196,7 +196,13 @@
           {Credo.Check.Refactor.UtcNowTruncate, []},
           {Credo.Check.Warning.LeakyEnvironment, []},
           {Credo.Check.Warning.MapGetUnsafePass, []},
-          {Credo.Check.Warning.MixEnv, []}
+          {Credo.Check.Warning.MixEnv, []},
+
+          # Sephia credo
+          {SephiaCredo.Checks.AppendInLoop, []},
+          {SephiaCredo.Checks.NoDateTimeOperatorCompare, []},
+          {SephiaCredo.Checks.UnusedSetupKeysInTests, []},
+          {SephiaCredo.Checks.UnusedSetupKeysPerTest, []}
         ],
         disabled: [
           #

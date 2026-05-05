@@ -63,11 +63,13 @@ defmodule ExVrp.VehicleType do
 
   ## Optional Options
 
+  - `:time_windows` - List of `{start, end}` tuples representing operating windows
+    (default: `[{0, :infinity}]`). Overlapping/adjacent windows are merged automatically.
+    Example: `[{0, 500}, {600, 1000}]` becomes `tw_early: 0, tw_late: 1000,
+    forbidden_windows: [{500, 600}]`.
   - `:start_depot` - Index of starting depot (default: `0`)
   - `:end_depot` - Index of ending depot (default: `0`)
   - `:fixed_cost` - Fixed cost for using this vehicle (default: `0`)
-  - `:tw_early` - Earliest departure time (default: `0`)
-  - `:tw_late` - Latest return time (default: `:infinity`)
   - `:shift_duration` - Maximum shift duration (default: `:infinity`)
   - `:max_distance` - Maximum distance allowed (default: `:infinity`)
   - `:unit_distance_cost` - Cost per unit distance (default: `1`)
@@ -80,63 +82,62 @@ defmodule ExVrp.VehicleType do
   - `:max_reloads` - Maximum number of reloads per route (default: `:infinity`)
   - `:initial_load` - Initial load per dimension (default: `[]`)
   - `:name` - Vehicle type name (default: `""`)
-  - `:time_windows` - List of `{start, end}` tuples representing multiple operating
-    windows. Automatically converted to `:tw_early`, `:tw_late`, and `:forbidden_windows`.
-    Mutually exclusive with `:tw_early`, `:tw_late`, and `:forbidden_windows`.
-    Example: `[{0, 500}, {600, 1000}]` becomes `tw_early: 0, tw_late: 1000,
-    forbidden_windows: [{500, 600}]`. Overlapping/adjacent windows are merged automatically.
-  - `:forbidden_windows` - List of `{start, end}` tuples for periods when the vehicle
-    cannot service clients (default: `[]`). Each window must be within `[tw_early, tw_late]`.
+
+  ## Raises
+
+  - `ArgumentError` if `:time_windows` contains invalid tuples (start >= end or negative start)
+  - `ArgumentError` if `:time_windows` is an empty list
+  - `ArgumentError` if legacy options `:tw_early`, `:tw_late`, or `:forbidden_windows` are passed
 
   ## Examples
 
-      iex> ExVrp.VehicleType.new(num_available: 3, capacity: [100, 50])
-      %ExVrp.VehicleType{num_available: 3, capacity: [100, 50], ...}
+      iex> ExVrp.VehicleType.new(num_available: 3, capacity: [100, 50], time_windows: [{0, 28_800}])
+      %ExVrp.VehicleType{num_available: 3, capacity: [100, 50], tw_early: 0, tw_late: 28_800, ...}
 
   """
   @spec new(keyword()) :: t()
   def new(opts) do
-    opts |> expand_time_windows() |> then(&struct!(__MODULE__, &1))
-  end
+    validate_no_legacy_options!(opts)
+    {time_windows, rest} = Keyword.pop(opts, :time_windows, [{0, :infinity}])
 
-  defp expand_time_windows(opts) do
-    case Keyword.pop(opts, :time_windows) do
-      {nil, opts} -> opts
-      {time_windows, rest} -> apply_time_windows(time_windows, rest)
-    end
-  end
+    validate_time_windows!(time_windows)
 
-  defp apply_time_windows(time_windows, rest) do
-    validate_time_windows!(time_windows, rest)
+    windows =
+      time_windows
+      |> Enum.sort_by(fn {s, _end} -> s end)
+      |> merge_windows()
 
-    merged = time_windows |> Enum.sort() |> merge_windows()
-
-    tw_early = elem(hd(merged), 0)
-    tw_late = elem(List.last(merged), 1)
+    tw_early = elem(hd(windows), 0)
+    tw_late = elem(List.last(windows), 1)
 
     forbidden =
-      merged
+      windows
       |> Enum.chunk_every(2, 1, :discard)
       |> Enum.map(fn [{_s, gap_start}, {gap_end, _e}] -> {gap_start, gap_end} end)
 
-    rest
-    |> Keyword.put(:tw_early, tw_early)
-    |> Keyword.put(:tw_late, tw_late)
-    |> Keyword.put(:forbidden_windows, forbidden)
+    struct!(__MODULE__, Keyword.merge(rest, tw_early: tw_early, tw_late: tw_late, forbidden_windows: forbidden))
   end
 
-  defp validate_time_windows!(time_windows, rest) do
-    if Keyword.has_key?(rest, :tw_early) or Keyword.has_key?(rest, :tw_late) or
-         Keyword.has_key?(rest, :forbidden_windows) do
-      raise ArgumentError,
-            "cannot specify :time_windows together with :tw_early, :tw_late, or :forbidden_windows"
-    end
+  defp validate_no_legacy_options!(opts) do
+    legacy = [:tw_early, :tw_late, :forbidden_windows]
 
+    found = Enum.filter(legacy, &Keyword.has_key?(opts, &1))
+
+    if found != [] do
+      raise ArgumentError,
+            "#{inspect(found)} cannot be set directly, use :time_windows instead"
+    end
+  end
+
+  defp validate_time_windows!(time_windows) do
     if time_windows == [] do
       raise ArgumentError, ":time_windows must be a non-empty list of {start, end} tuples"
     end
 
     Enum.each(time_windows, fn
+      {s, :infinity} when is_integer(s) and s >= 0 ->
+        :ok
+
       {s, e} when is_integer(s) and is_integer(e) and s >= 0 and e > s ->
         :ok
 
@@ -150,13 +151,20 @@ defmodule ExVrp.VehicleType do
 
   defp merge_windows([first | rest]) do
     rest
-    |> Enum.reduce([first], fn {s, e}, [{_cs, ce} | _acc] = all ->
-      if s <= ce do
-        [{elem(hd(all), 0), max(ce, e)} | tl(all)]
+    |> Enum.reduce([first], fn {s, e}, [{cs, ce} | tail] ->
+      if lte(s, ce) do
+        [{cs, max_end(ce, e)} | tail]
       else
-        [{s, e} | all]
+        [{s, e}, {cs, ce} | tail]
       end
     end)
     |> Enum.reverse()
   end
+
+  defp lte(_s, :infinity), do: true
+  defp lte(s, ce), do: s <= ce
+
+  defp max_end(:infinity, _other), do: :infinity
+  defp max_end(_other, :infinity), do: :infinity
+  defp max_end(a, b), do: max(a, b)
 end

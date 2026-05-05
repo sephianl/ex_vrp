@@ -8,14 +8,13 @@ defmodule ExVrp.VehicleTypeTest do
 
   describe "new/1" do
     test "creates vehicle type with required fields" do
-      vt = VehicleType.new(num_available: 3, capacity: [100])
+      vt = VehicleType.new(num_available: 3, capacity: [100], time_windows: [{0, 28_800}])
 
       assert vt.num_available == 3
       assert vt.capacity == [100]
     end
 
     test "creates vehicle type with all fields" do
-      # Ported from PyVRP test_vehicle_type_constructor
       vt =
         VehicleType.new(
           num_available: 7,
@@ -23,8 +22,7 @@ defmodule ExVrp.VehicleTypeTest do
           end_depot: 43,
           capacity: [13],
           fixed_cost: 3,
-          tw_early: 17,
-          tw_late: 19,
+          time_windows: [{17, 19}],
           shift_duration: 23,
           max_distance: 31,
           unit_distance_cost: 37,
@@ -68,19 +66,27 @@ defmodule ExVrp.VehicleTypeTest do
     end
 
     test "supports multi-dimensional capacity" do
-      # Ported from PyVRP test - vehicles can have multiple capacity dimensions
-      vt = VehicleType.new(num_available: 2, capacity: [100, 50, 25])
+      vt = VehicleType.new(num_available: 2, capacity: [100, 50, 25], time_windows: [{0, 28_800}])
 
       assert vt.capacity == [100, 50, 25]
     end
 
+    test "defaults to infinity time window when not specified" do
+      vt = VehicleType.new(num_available: 1, capacity: [100])
+
+      assert vt.tw_early == 0
+      assert vt.tw_late == :infinity
+    end
+
     test "raises on missing required fields" do
       assert_raise ArgumentError, fn ->
-        VehicleType.new(num_available: 1)
+        VehicleType.new(capacity: [100], time_windows: [{0, 1000}])
       end
+    end
 
-      assert_raise ArgumentError, fn ->
-        VehicleType.new(capacity: [100])
+    test "raises when using legacy tw_early/tw_late options" do
+      assert_raise ArgumentError, ~r/use :time_windows instead/, fn ->
+        VehicleType.new(num_available: 1, capacity: [100], tw_early: 0, tw_late: 1000)
       end
     end
   end
@@ -139,54 +145,22 @@ defmodule ExVrp.VehicleTypeTest do
       assert vt.forbidden_windows == [{500, 600}]
     end
 
-    test "raises when combined with tw_early" do
-      assert_raise ArgumentError, ~r/cannot specify :time_windows together with/, fn ->
-        VehicleType.new(num_available: 1, capacity: [100], time_windows: [{0, 500}], tw_early: 0)
-      end
-    end
-
-    test "raises when combined with tw_late" do
-      assert_raise ArgumentError, ~r/cannot specify :time_windows together with/, fn ->
-        VehicleType.new(num_available: 1, capacity: [100], time_windows: [{0, 500}], tw_late: 500)
-      end
-    end
-
-    test "raises when combined with forbidden_windows" do
-      assert_raise ArgumentError, ~r/cannot specify :time_windows together with/, fn ->
-        VehicleType.new(
-          num_available: 1,
-          capacity: [100],
-          time_windows: [{0, 500}],
-          forbidden_windows: [{100, 200}]
-        )
-      end
-    end
-
-    test "raises on empty list" do
-      assert_raise ArgumentError, ~r/non-empty list/, fn ->
-        VehicleType.new(num_available: 1, capacity: [100], time_windows: [])
-      end
-    end
-
-    test "raises on invalid window tuple" do
+    test "raises on invalid window (start > end)" do
       assert_raise ArgumentError, ~r/invalid time window/, fn ->
         VehicleType.new(num_available: 1, capacity: [100], time_windows: [{500, 100}])
       end
     end
 
-    test "forbidden_windows field works directly without time_windows" do
-      vt =
-        VehicleType.new(
-          num_available: 1,
-          capacity: [100],
-          tw_early: 0,
-          tw_late: 1000,
-          forbidden_windows: [{500, 600}]
-        )
+    test "raises on zero-width window (start == end)" do
+      assert_raise ArgumentError, ~r/invalid time window/, fn ->
+        VehicleType.new(num_available: 1, capacity: [100], time_windows: [{500, 500}])
+      end
+    end
 
-      assert vt.tw_early == 0
-      assert vt.tw_late == 1000
-      assert vt.forbidden_windows == [{500, 600}]
+    test "raises on empty time_windows list" do
+      assert_raise ArgumentError, ~r/non-empty list/, fn ->
+        VehicleType.new(num_available: 1, capacity: [100], time_windows: [])
+      end
     end
   end
 
