@@ -60,13 +60,13 @@ defmodule ExVrp.VehicleType do
 
   - `:num_available` - Number of vehicles of this type available
   - `:capacity` - List of capacity values per dimension
-  - `:time_windows` - List of `{start, end}` tuples representing operating windows.
-    Invalid windows (where start >= end) are filtered out automatically.
-    Example: `[{0, 500}, {600, 1000}]` becomes `tw_early: 0, tw_late: 1000,
-    forbidden_windows: [{500, 600}]`. Overlapping/adjacent windows are merged automatically.
 
   ## Optional Options
 
+  - `:time_windows` - List of `{start, end}` tuples representing operating windows
+    (default: `[{0, :infinity}]`). Overlapping/adjacent windows are merged automatically.
+    Example: `[{0, 500}, {600, 1000}]` becomes `tw_early: 0, tw_late: 1000,
+    forbidden_windows: [{500, 600}]`.
   - `:start_depot` - Index of starting depot (default: `0`)
   - `:end_depot` - Index of ending depot (default: `0`)
   - `:fixed_cost` - Fixed cost for using this vehicle (default: `0`)
@@ -82,6 +82,12 @@ defmodule ExVrp.VehicleType do
   - `:max_reloads` - Maximum number of reloads per route (default: `:infinity`)
   - `:initial_load` - Initial load per dimension (default: `[]`)
   - `:name` - Vehicle type name (default: `""`)
+
+  ## Raises
+
+  - `ArgumentError` if `:time_windows` contains invalid tuples (start >= end or negative start)
+  - `ArgumentError` if `:time_windows` is an empty list
+  - `ArgumentError` if legacy options `:tw_early`, `:tw_late`, or `:forbidden_windows` are passed
 
   ## Examples
 
