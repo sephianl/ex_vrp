@@ -163,8 +163,7 @@ defmodule ExVrp.SolveTest do
         |> Model.add_vehicle_type(
           num_available: 5,
           capacity: [1000],
-          tw_early: 0,
-          tw_late: shift_duration
+          time_windows: [{0, shift_duration}]
         )
 
       # Add 20 optional clients with high prizes and tight time windows
@@ -261,16 +260,14 @@ defmodule ExVrp.SolveTest do
         )
         |> Model.add_vehicle_type(
           num_available: 1,
-          tw_early: 0,
-          tw_late: 900,
+          time_windows: [{0, 900}],
           shift_duration: 900,
           capacity: [100_000, 50, 1, 50],
           reload_depots: [0]
         )
         |> Model.add_vehicle_type(
           num_available: 1,
-          tw_early: 10_800,
-          tw_late: 11_700,
+          time_windows: [{10_800, 11_700}],
           shift_duration: 900,
           capacity: [100_000, 50, 1, 50],
           reload_depots: [0]
@@ -362,16 +359,14 @@ defmodule ExVrp.SolveTest do
         )
         |> Model.add_vehicle_type(
           num_available: 1,
-          tw_early: 0,
-          tw_late: 400,
+          time_windows: [{0, 400}],
           shift_duration: 400,
           capacity: [100, 100, 100],
           reload_depots: [0]
         )
         |> Model.add_vehicle_type(
           num_available: 1,
-          tw_early: 400,
-          tw_late: 1000,
+          time_windows: [{400, 1000}],
           shift_duration: 600,
           capacity: [100, 100, 100],
           reload_depots: [0]
@@ -498,7 +493,7 @@ defmodule ExVrp.SolveTest do
     |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
     |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
     |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-    |> Model.add_vehicle_type(num_available: 3, capacity: [10], tw_early: 0, tw_late: 45_000)
+    |> Model.add_vehicle_type(num_available: 3, capacity: [10], time_windows: [{0, 45_000}])
     |> Model.set_distance_matrices([distances])
     |> Model.set_duration_matrices([distances])
   end

@@ -536,7 +536,7 @@ defmodule ExVrp.RouteTest do
         |> Model.add_depot(x: 0, y: 0)
         |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 100)
         |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 50, tw_late: 150)
-        |> Model.add_vehicle_type(num_available: 1, capacity: [100], tw_early: 0, tw_late: 200)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100], time_windows: [{0, 200}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
       solution = result.best
@@ -668,7 +668,7 @@ defmodule ExVrp.RouteTest do
         Model.new()
         |> Model.add_depot(x: 0, y: 0)
         |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_vehicle_type(num_available: 1, capacity: [100], tw_early: 0, tw_late: 2000)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100], time_windows: [{0, 2000}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
       solution = result.best
@@ -1102,7 +1102,7 @@ defmodule ExVrp.RouteTest do
         |> Model.add_depot(x: 0, y: 0)
         |> Model.add_client(x: 10, y: 0, delivery: [40], tw_early: 0, tw_late: 100)
         |> Model.add_client(x: 20, y: 0, delivery: [40], tw_early: 50, tw_late: 200)
-        |> Model.add_vehicle_type(num_available: 2, capacity: [50], tw_early: 0, tw_late: 300)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [50], time_windows: [{0, 300}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(200))
       solution = result.best

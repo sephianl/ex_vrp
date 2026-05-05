@@ -572,7 +572,7 @@ defmodule ExVrp.SearchExchangeTest do
         |> Model.add_depot(x: 0, y: 0)
         |> Model.add_client(x: 1, y: 0, tw_early: 0, tw_late: 5, delivery: [0])
         |> Model.add_client(x: 2, y: 0, tw_early: 0, tw_late: 5, delivery: [0])
-        |> Model.add_vehicle_type(num_available: 1, capacity: [10], tw_early: 0, tw_late: 10)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [10], time_windows: [{0, 10}])
         |> Model.set_distance_matrices([distances])
         |> Model.set_duration_matrices([durations])
 
@@ -1402,7 +1402,7 @@ defmodule ExVrp.SearchExchangeTest do
       |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
       |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
       |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-      |> Model.add_vehicle_type(num_available: 3, capacity: [10], tw_early: 0, tw_late: 45_000)
+      |> Model.add_vehicle_type(num_available: 3, capacity: [10], time_windows: [{0, 45_000}])
       |> Model.set_distance_matrices([distances])
       # Same as distance for OkSmall
       |> Model.set_duration_matrices([distances])

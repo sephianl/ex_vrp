@@ -663,8 +663,7 @@ defmodule ExVrp.SearchRouteTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [10],
-          tw_early: 0,
-          tw_late: 45_000,
+          time_windows: [{0, 45_000}],
           shift_duration: 5000,
           max_overtime: 1000,
           unit_overtime_cost: 10
@@ -1020,7 +1019,7 @@ defmodule ExVrp.SearchRouteTest do
         |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
         |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
         |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-        |> Model.add_vehicle_type(num_available: 3, capacity: [10], initial_load: [5], tw_early: 0, tw_late: 45_000)
+        |> Model.add_vehicle_type(num_available: 3, capacity: [10], initial_load: [5], time_windows: [{0, 45_000}])
         |> Model.set_distance_matrices([build_ok_small_distances()])
         |> Model.set_duration_matrices([build_ok_small_distances()])
 
@@ -1048,8 +1047,7 @@ defmodule ExVrp.SearchRouteTest do
       |> Model.add_vehicle_type(
         num_available: 3,
         capacity: [10],
-        tw_early: 0,
-        tw_late: 45_000,
+        time_windows: [{0, 45_000}],
         reload_depots: [0],
         max_reloads: 1
       )
@@ -1078,7 +1076,7 @@ defmodule ExVrp.SearchRouteTest do
       |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
       |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
       |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-      |> Model.add_vehicle_type(num_available: 3, capacity: [10], tw_early: 0, tw_late: 45_000)
+      |> Model.add_vehicle_type(num_available: 3, capacity: [10], time_windows: [{0, 45_000}])
       |> Model.set_distance_matrices([distances])
       |> Model.set_duration_matrices([distances])
 

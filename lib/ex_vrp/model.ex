@@ -11,7 +11,7 @@ defmodule ExVrp.Model do
       model =
         ExVrp.Model.new()
         |> ExVrp.Model.add_depot(x: 0, y: 0)
-        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
         |> ExVrp.Model.add_client(x: 1, y: 1, delivery: [10])
         |> ExVrp.Model.add_client(x: 2, y: 2, delivery: [20])
         |> ExVrp.Model.add_client(x: 3, y: 1, delivery: [15])
@@ -35,7 +35,7 @@ defmodule ExVrp.Model do
         |> ExVrp.Model.add_depot(x: 0, y: 0)
         |> ExVrp.Model.add_client(x: 1, y: 0, delivery: [10])
         |> ExVrp.Model.add_client(x: 2, y: 0, delivery: [20])
-        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
         |> ExVrp.Model.set_distance_matrices([distances])
         |> ExVrp.Model.set_duration_matrices([distances])
 
@@ -44,7 +44,7 @@ defmodule ExVrp.Model do
   Vehicles and clients can have multiple capacity dimensions (e.g. weight and volume):
 
       model
-      |> ExVrp.Model.add_vehicle_type(num_available: 3, capacity: [1000, 50])
+      |> ExVrp.Model.add_vehicle_type(num_available: 3, capacity: [1000, 50], time_windows: [{0, 28_800}])
       |> ExVrp.Model.add_client(x: 1, y: 1, delivery: [200, 10])
 
   ## Client Groups
@@ -268,7 +268,7 @@ defmodule ExVrp.Model do
   ## Example
 
       model
-      |> ExVrp.Model.add_vehicle_type(num_available: 3, capacity: [100])
+      |> ExVrp.Model.add_vehicle_type(num_available: 3, capacity: [100], time_windows: [{0, 28_800}])
 
   """
   @spec add_vehicle_type(t(), keyword()) :: t()
@@ -330,7 +330,7 @@ defmodule ExVrp.Model do
         |> Model.add_depot(x: 0, y: 0)
         |> Model.add_client(x: 1, y: 1)
         |> Model.add_client(x: 2, y: 2)
-        |> Model.add_vehicle_type(num_available: 2)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
 
       [c1, c2] = model.clients
       model = Model.add_same_vehicle_group(model, [c1, c2], name: "group1")

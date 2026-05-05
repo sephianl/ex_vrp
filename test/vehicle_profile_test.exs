@@ -62,8 +62,7 @@ defmodule ExVrp.VehicleProfileTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
-          tw_early: 0,
-          tw_late: 500,
+          time_windows: [{0, 500}],
           profile: 0,
           name: "bicycle"
         )
@@ -71,8 +70,7 @@ defmodule ExVrp.VehicleProfileTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
-          tw_early: 0,
-          tw_late: 500,
+          time_windows: [{0, 500}],
           profile: 1,
           name: "car"
         )
@@ -158,8 +156,7 @@ defmodule ExVrp.VehicleProfileTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
-          tw_early: 0,
-          tw_late: 500,
+          time_windows: [{0, 500}],
           profile: 1,
           name: "car"
         )
@@ -222,8 +219,7 @@ defmodule ExVrp.VehicleProfileTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
-          tw_early: 0,
-          tw_late: 100,
+          time_windows: [{0, 100}],
           profile: 0,
           name: "cheap"
         )
@@ -231,8 +227,7 @@ defmodule ExVrp.VehicleProfileTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
-          tw_early: 500,
-          tw_late: 1000,
+          time_windows: [{500, 1000}],
           profile: 1,
           name: "expensive"
         )
