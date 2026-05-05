@@ -74,7 +74,7 @@ defmodule ExVrp.Solver do
 
       model = Model.new()
       |> Model.add_depot(x: 0, y: 0)
-      |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+      |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
       |> Model.add_client(x: 10, y: 0, delivery: [20])
 
       {:ok, result} = Solver.solve(model, max_iterations: 1000)

@@ -371,8 +371,7 @@ defmodule ExVrp.SameVehicleGroupTest do
           capacity: [100],
           reload_depots: [0],
           max_reloads: 2,
-          tw_early: 0,
-          tw_late: 500
+          time_windows: [{0, 500}]
         )
 
       [c1, c2] = model.clients
@@ -424,15 +423,13 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [2],
-          tw_early: 0,
-          tw_late: 500,
+          time_windows: [{0, 500}],
           name: "v0"
         )
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [2],
-          tw_early: 500,
-          tw_late: 1000,
+          time_windows: [{500, 1000}],
           name: "v0"
         )
         |> Model.set_duration_matrices([duration_matrix])
@@ -494,15 +491,13 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [1000],
-          tw_early: 0,
-          tw_late: 250,
+          time_windows: [{0, 250}],
           name: "v0"
         )
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [1000],
-          tw_early: 500,
-          tw_late: 800,
+          time_windows: [{500, 800}],
           name: "v0"
         )
         |> Model.set_duration_matrices([duration_matrix])
@@ -554,15 +549,13 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [2000],
-          tw_early: 450,
-          tw_late: 6750,
+          time_windows: [{450, 6750}],
           name: "v0"
         )
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [2000],
-          tw_early: 450,
-          tw_late: 6750,
+          time_windows: [{450, 6750}],
           name: "v1"
         )
         |> Model.set_duration_matrices([duration_matrix])
@@ -619,8 +612,7 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [2000],
-          tw_early: 0,
-          tw_late: 28_800,
+          time_windows: [{0, 28_800}],
           reload_depots: [0],
           max_reloads: :infinity,
           name: "v0"

@@ -68,7 +68,7 @@ defmodule ExVrp.ProblemDataTest do
         Model.new()
         |> Model.add_depot(x: 0, y: 0)
         |> Model.add_client(x: 10, y: 0, delivery: [20], tw_early: 0, tw_late: 100)
-        |> Model.add_vehicle_type(num_available: 1, capacity: [100], tw_early: 0, tw_late: 200)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100], time_windows: [{0, 200}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -334,8 +334,7 @@ defmodule ExVrp.ProblemDataTest do
           num_available: 7,
           capacity: [13],
           fixed_cost: 100,
-          tw_early: 0,
-          tw_late: 1000,
+          time_windows: [{0, 1000}],
           shift_duration: 500,
           max_distance: 10_000,
           unit_distance_cost: 2,

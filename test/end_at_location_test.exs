@@ -39,8 +39,7 @@ defmodule ExVrp.EndAtLocationTest do
           capacity: [100],
           start_depot: 0,
           end_depot: 1,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         |> Model.set_distance_matrices([duration_matrix])
         |> Model.set_duration_matrices([duration_matrix])
@@ -84,8 +83,7 @@ defmodule ExVrp.EndAtLocationTest do
           capacity: [20],
           start_depot: 0,
           end_depot: 1,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         |> Model.set_distance_matrices([duration_matrix])
         |> Model.set_duration_matrices([duration_matrix])
@@ -134,8 +132,7 @@ defmodule ExVrp.EndAtLocationTest do
           capacity: [20],
           start_depot: 0,
           end_depot: 1,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         # Vehicle type 1: ends at depot 2
         |> Model.add_vehicle_type(
@@ -143,8 +140,7 @@ defmodule ExVrp.EndAtLocationTest do
           capacity: [20],
           start_depot: 0,
           end_depot: 2,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         |> Model.set_distance_matrices([duration_matrix])
         |> Model.set_duration_matrices([duration_matrix])
@@ -189,8 +185,7 @@ defmodule ExVrp.EndAtLocationTest do
           capacity: [100],
           start_depot: 0,
           end_depot: 0,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         |> Model.set_distance_matrices([duration_matrix])
         |> Model.set_duration_matrices([duration_matrix])
@@ -235,8 +230,7 @@ defmodule ExVrp.EndAtLocationTest do
           capacity: [20],
           start_depot: 0,
           end_depot: 0,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         # Vehicle type 1: ends at depot 1
         |> Model.add_vehicle_type(
@@ -244,8 +238,7 @@ defmodule ExVrp.EndAtLocationTest do
           capacity: [20],
           start_depot: 0,
           end_depot: 1,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         |> Model.set_distance_matrices([duration_matrix])
         |> Model.set_duration_matrices([duration_matrix])
@@ -288,16 +281,14 @@ defmodule ExVrp.EndAtLocationTest do
           capacity: [20],
           start_depot: 0,
           end_depot: 0,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [20],
           start_depot: 0,
           end_depot: 1,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
         |> Model.set_distance_matrices([duration_matrix])
         |> Model.set_duration_matrices([duration_matrix])

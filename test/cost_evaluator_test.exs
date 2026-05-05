@@ -176,7 +176,7 @@ defmodule ExVrp.CostEvaluatorTest do
         |> Model.add_depot(x: 0, y: 0)
         # Very tight time window
         |> Model.add_client(x: 100, y: 0, delivery: [10], tw_early: 0, tw_late: 10)
-        |> Model.add_vehicle_type(num_available: 1, capacity: [100], tw_early: 0, tw_late: 1000)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100], time_windows: [{0, 1000}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
