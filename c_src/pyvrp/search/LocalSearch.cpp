@@ -671,17 +671,16 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
         searchSpace_.markPromising(U);
         auto *route = U->route();
         auto const &vt = data.vehicleType(route->vehicleType());
-        bool hadForbiddenTW
-            = !vt.forbiddenWindows.empty() && route->timeWarpDS() > 0;
 
         route->remove(U->idx());
         update(route, route);
 
-        // When a route has forbidden-window time warp, removal reduces
-        // TW but re-insertion recreates it — causing an infinite
-        // oscillation.  Return without re-inserting; the client stays
-        // unassigned and the search converges.
-        if (hadForbiddenTW)
+        // When a route has forbidden windows, the DS-based delta
+        // evaluation can't account for forbidden-window costs.
+        // Removing looks improving (DS doesn't see the penalty) but
+        // re-insertion recreates the same situation — causing an
+        // infinite oscillation.  Skip re-insertion entirely.
+        if (!vt.forbiddenWindows.empty())
             return;
     }
 

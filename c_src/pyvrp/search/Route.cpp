@@ -1,7 +1,6 @@
 #include "Route.h"
 
 #include <cmath>
-#include <cstdio>
 #include <numbers>
 #include <ostream>
 #include <utility>
@@ -410,7 +409,8 @@ void Route::update()
                     if (idx > 0)
                     {
                         // Vehicle arrived at depot during forbidden window.
-                        // It wasn't at the depot from fStart to now — violation.
+                        // It wasn't at the depot from fStart to now —
+                        // violation.
                         for (auto const &[fStart, fEnd] :
                              vehicleType_.forbiddenWindows)
                         {
@@ -441,8 +441,7 @@ void Route::update()
                 // arrivalTime until now (after service).  Any overlap
                 // with a forbidden window is a constraint violation —
                 // the vehicle should be at the depot instead.
-                for (auto const &[fStart, fEnd] :
-                     vehicleType_.forbiddenWindows)
+                for (auto const &[fStart, fEnd] : vehicleType_.forbiddenWindows)
                 {
                     auto const oStart = std::max(arrivalTime, fStart);
                     auto const oEnd = std::min(now, fEnd);
