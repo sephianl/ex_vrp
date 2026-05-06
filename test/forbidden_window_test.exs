@@ -228,7 +228,7 @@ defmodule ExVrp.ForbiddenWindowTest do
         |> Model.set_distance_matrices([duration_matrix])
 
       {:ok, result} =
-        Solver.solve(model, stop: StoppingCriteria.max_runtime(5), seed: 42)
+        Solver.solve(model, stop: StoppingCriteria.max_runtime(2), seed: 42)
 
       solution = result.best
       assert Solution.feasible?(solution)
@@ -267,7 +267,7 @@ defmodule ExVrp.ForbiddenWindowTest do
         )
 
       {:ok, result} =
-        Solver.solve(model, stop: StoppingCriteria.max_runtime(5), seed: 42)
+        Solver.solve(model, stop: StoppingCriteria.max_runtime(2), seed: 42)
 
       solution = result.best
       assert Solution.feasible?(solution)
@@ -663,66 +663,91 @@ defmodule ExVrp.ForbiddenWindowTest do
       end
     end
 
-    @tag timeout: 30_000
-    test "no timeout with forbidden windows across multiple seeds" do
-      model =
-        Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1500, service_duration: 20)
-        |> Model.add_client(
-          x: 5,
-          y: 0,
-          delivery: [50],
-          tw_early: 0,
-          tw_late: 1500,
-          service_duration: 100,
-          required: false,
-          prize: 80_000
-        )
-        |> Model.add_client(
-          x: 10,
-          y: 0,
-          delivery: [50],
-          tw_early: 0,
-          tw_late: 1500,
-          service_duration: 100,
-          required: false,
-          prize: 80_000
-        )
-        |> Model.add_client(
-          x: 15,
-          y: 0,
-          delivery: [50],
-          tw_early: 0,
-          tw_late: 1500,
-          service_duration: 100,
-          required: false,
-          prize: 80_000
-        )
-        |> Model.add_client(
-          x: 20,
-          y: 0,
-          delivery: [50],
-          tw_early: 0,
-          tw_late: 1500,
-          service_duration: 100,
-          required: false,
-          prize: 80_000
-        )
-        |> Model.add_vehicle_type(
-          num_available: 1,
-          capacity: [100],
-          time_windows: [{0, 400}, {600, 1500}],
-          reload_depots: [0],
-          max_reloads: 10
-        )
+    defp forbidden_window_multi_seed_model do
+      Model.new()
+      |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1500, service_duration: 20)
+      |> Model.add_client(
+        x: 5,
+        y: 0,
+        delivery: [50],
+        tw_early: 0,
+        tw_late: 1500,
+        service_duration: 100,
+        required: false,
+        prize: 80_000
+      )
+      |> Model.add_client(
+        x: 10,
+        y: 0,
+        delivery: [50],
+        tw_early: 0,
+        tw_late: 1500,
+        service_duration: 100,
+        required: false,
+        prize: 80_000
+      )
+      |> Model.add_client(
+        x: 15,
+        y: 0,
+        delivery: [50],
+        tw_early: 0,
+        tw_late: 1500,
+        service_duration: 100,
+        required: false,
+        prize: 80_000
+      )
+      |> Model.add_client(
+        x: 20,
+        y: 0,
+        delivery: [50],
+        tw_early: 0,
+        tw_late: 1500,
+        service_duration: 100,
+        required: false,
+        prize: 80_000
+      )
+      |> Model.add_vehicle_type(
+        num_available: 1,
+        capacity: [100],
+        time_windows: [{0, 400}, {600, 1500}],
+        reload_depots: [0],
+        max_reloads: 10
+      )
+    end
 
-      for seed <- [1, 7, 42, 99, 123] do
-        {:ok, result} =
-          Solver.solve(model, stop: StoppingCriteria.max_runtime(3), seed: seed)
+    test "no timeout with forbidden windows seed 1" do
+      {:ok, result} =
+        Solver.solve(forbidden_window_multi_seed_model(), stop: StoppingCriteria.max_runtime(1), seed: 1)
 
-        solution = result.best
-        assert Solution.feasible?(solution), "Infeasible with seed #{seed}"
-      end
+      assert Solution.feasible?(result.best), "Infeasible with seed 1"
+    end
+
+    test "no timeout with forbidden windows seed 7" do
+      {:ok, result} =
+        Solver.solve(forbidden_window_multi_seed_model(), stop: StoppingCriteria.max_runtime(1), seed: 7)
+
+      assert Solution.feasible?(result.best), "Infeasible with seed 7"
+    end
+
+    test "no timeout with forbidden windows seed 42" do
+      {:ok, result} =
+        Solver.solve(forbidden_window_multi_seed_model(), stop: StoppingCriteria.max_runtime(1), seed: 42)
+
+      assert Solution.feasible?(result.best), "Infeasible with seed 42"
+    end
+
+    test "no timeout with forbidden windows seed 99" do
+      {:ok, result} =
+        Solver.solve(forbidden_window_multi_seed_model(), stop: StoppingCriteria.max_runtime(1), seed: 99)
+
+      assert Solution.feasible?(result.best), "Infeasible with seed 99"
+    end
+
+    test "no timeout with forbidden windows seed 123" do
+      {:ok, result} =
+        Solver.solve(forbidden_window_multi_seed_model(), stop: StoppingCriteria.max_runtime(1), seed: 123)
+
+      assert Solution.feasible?(result.best), "Infeasible with seed 123"
     end
   end
 
