@@ -387,7 +387,6 @@ bool Solution::insert(Route::Node *U,
     // time warp.  Check whether the best insertion route's current end
     // time plus the client's service would cross a forbidden window.
     // If so, inflate bestCost so multi-trip gets a fair comparison.
-    bool bestRouteHasForbidden = false;
     if (UAfter && UAfter->route())
     {
         auto const &vt = data_.vehicleType(UAfter->route()->vehicleType());
@@ -404,7 +403,6 @@ bool Solution::insert(Route::Node *U,
                 // window?  Route end + travel (~1) + service > fStart.
                 if (routeEnd + cl.serviceDuration > fStart && routeEnd < fEnd)
                 {
-                    bestRouteHasForbidden = true;
                     bestCost = std::max(bestCost, Cost(0));
                     break;
                 }

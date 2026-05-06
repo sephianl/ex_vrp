@@ -1563,8 +1563,7 @@ void LocalSearch::stripInfeasibleForbiddenWindowClients()
             }
         }
 
-        if (changed)
-            route.update();
+        route.update();
     }
 }
 
