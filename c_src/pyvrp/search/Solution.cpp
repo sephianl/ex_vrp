@@ -402,8 +402,7 @@ bool Solution::insert(Route::Node *U,
             {
                 // Would the client's service extend into the forbidden
                 // window?  Route end + travel (~1) + service > fStart.
-                if (routeEnd + cl.serviceDuration > fStart
-                    && routeEnd < fEnd)
+                if (routeEnd + cl.serviceDuration > fStart && routeEnd < fEnd)
                 {
                     bestRouteHasForbidden = true;
                     bestCost = std::max(bestCost, Cost(0));
