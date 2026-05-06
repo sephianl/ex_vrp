@@ -85,10 +85,16 @@ defmodule ExVrp.ProductionBenchmarkTest do
     timeout_ms = max(5_000, round(n / 20) * 1_000)
 
     results =
-      Enum.map(@seeds, fn seed ->
-        {:ok, result} = ExVrp.solve(model, max_runtime: timeout_ms, seed: seed, num_starts: 1)
-        {seed, result}
-      end)
+      @seeds
+      |> Task.async_stream(
+        fn seed ->
+          {:ok, result} = ExVrp.solve(model, max_runtime: timeout_ms, seed: seed, num_starts: 1)
+          {seed, result}
+        end,
+        max_concurrency: length(@seeds),
+        timeout: timeout_ms + 30_000
+      )
+      |> Enum.map(fn {:ok, res} -> res end)
 
     # Require feasibility and at least 70% of plannable clients.
     # Prize-collecting problems may not serve all clients when fleet
@@ -100,7 +106,7 @@ defmodule ExVrp.ProductionBenchmarkTest do
         r.best.is_feasible and r.best.num_clients >= min_clients
       end)
 
-    min_required = length(@seeds) - 1
+    min_required = length(@seeds)
 
     assert feasible >= min_required,
            format_failures(results, plannable, length(model.clients), feasible)
