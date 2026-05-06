@@ -312,6 +312,12 @@ private:
     Duration timeWarp_;
     Cost reloadCost_;
 
+    // DurationSegment-only values (before forbidden window corrections).
+    // Used for consistent delta evaluation in local search, since
+    // Proposal::duration() also uses DurationSegment without forbidden windows.
+    Cost durationCostDS_;
+    Duration timeWarpDS_;
+
     std::vector<Node> depots_;  // start, end, and reload depots (in that order)
 
     std::vector<Node *> nodes;   // Nodes in this route, including depots
@@ -509,9 +515,28 @@ public:
     [[nodiscard]] inline Duration timeWarp() const;
 
     /**
+     * @return Duration cost computed from DurationSegment only (without
+     *         forbidden window corrections). Used for consistent delta
+     *         evaluation in local search.
+     */
+    [[nodiscard]] inline Cost durationCostDS() const;
+
+    /**
+     * @return Time warp computed from DurationSegment only (without
+     *         forbidden window corrections). Used for consistent delta
+     *         evaluation in local search.
+     */
+    [[nodiscard]] inline Duration timeWarpDS() const;
+
+    /**
      * @return The routing profile of the vehicle servicing this route.
      */
     [[nodiscard]] inline size_t profile() const;
+
+    /**
+     * @return Whether the vehicle servicing this route has forbidden windows.
+     */
+    [[nodiscard]] inline bool hasForbiddenWindows() const;
 
     /**
      * True if this route has no client visits, false otherwise.
@@ -988,7 +1013,24 @@ Duration Route::timeWarp() const
     return timeWarp_;
 }
 
+Cost Route::durationCostDS() const
+{
+    assert(!dirty);
+    return durationCostDS_;
+}
+
+Duration Route::timeWarpDS() const
+{
+    assert(!dirty);
+    return timeWarpDS_;
+}
+
 size_t Route::profile() const { return vehicleType_.profile; }
+
+bool Route::hasForbiddenWindows() const
+{
+    return !vehicleType_.forbiddenWindows.empty();
+}
 
 bool Route::empty() const { return numClients() == 0; }
 

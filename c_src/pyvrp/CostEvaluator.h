@@ -294,8 +294,11 @@ bool CostEvaluator::deltaCost(Cost &out, T<Args...> const &proposal) const
         if constexpr (!skipLoad)
             out -= excessLoadPenalties(route->excessLoad());
 
-        out -= route->durationCost();
-        out -= twPenalty(route->timeWarp());
+        // Use DS-only values: proposal.duration() returns DurationSegment
+        // values without forbidden window awareness, so the subtracted
+        // route cost must also be DS-only to keep the delta consistent.
+        out -= route->durationCostDS();
+        out -= twPenalty(route->timeWarpDS());
     }
 
     if (route->hasDistanceCost())
@@ -348,8 +351,8 @@ bool CostEvaluator::deltaCost(Cost &out,
         if constexpr (!skipLoad)
             out -= excessLoadPenalties(uRoute->excessLoad());
 
-        out -= uRoute->durationCost();
-        out -= twPenalty(uRoute->timeWarp());
+        out -= uRoute->durationCostDS();
+        out -= twPenalty(uRoute->timeWarpDS());
     }
 
     auto const *vRoute = vProposal.route();
@@ -361,8 +364,8 @@ bool CostEvaluator::deltaCost(Cost &out,
         if constexpr (!skipLoad)
             out -= excessLoadPenalties(vRoute->excessLoad());
 
-        out -= vRoute->durationCost();
-        out -= twPenalty(vRoute->timeWarp());
+        out -= vRoute->durationCostDS();
+        out -= twPenalty(vRoute->timeWarpDS());
     }
 
     if (uRoute->hasDistanceCost())

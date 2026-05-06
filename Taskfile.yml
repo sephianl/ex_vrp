@@ -62,6 +62,7 @@ tasks:
     desc: Build solver test and run under valgrind (catches uninit reads, use-after-free)
     cmds:
       - make test-solver
+      - defer: rm -f solver_test
       - valgrind --error-exitcode=1 --tool=memcheck --errors-for-leak-kinds=definite --leak-check=no ./solver_test
       - echo "Valgrind passed — no memory errors detected"
 

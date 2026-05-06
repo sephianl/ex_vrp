@@ -112,9 +112,22 @@ class LocalSearch
     // and first members of required groups, to ensure they get inserted.
     void markMissingAsPromising();
 
+    // Repairs routes with forbidden window violations by moving late
+    // clients to new trips.  One-time pass after main search.
+    void repairForbiddenWindowRoutes(CostEvaluator const &costEvaluator);
+
     // Tries to insert unassigned clients with prizes by creating new trips.
     // This is a one-time pass after the main search, not iterative.
-    void improveWithMultiTrip(CostEvaluator const &costEvaluator);
+    void improveWithMultiTrip(CostEvaluator const &costEvaluator,
+                              bool skipFeasibility = false);
+
+    // Final safety net: removes clients from routes where forbidden window
+    // delays push service past tw_late.  Runs after all other post-processing.
+    void stripForbiddenWindowViolations();
+
+    // Last-resort: strip non-required clients from routes that remain
+    // infeasible due to forbidden window time warp.
+    void stripInfeasibleForbiddenWindowClients();
 
 public:
     /**

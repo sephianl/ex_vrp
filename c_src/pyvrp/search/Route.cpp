@@ -371,14 +371,26 @@ void Route::update()
     duration_ = durAfter[0].duration();
     timeWarp_ = durAfter[0].timeWarp(maxDuration());
 
+    // Save DurationSegment-only values before forbidden window corrections.
+    // Proposal::duration() also uses DurationSegment without forbidden window
+    // awareness, so delta evaluation must subtract these DS-only values (not
+    // the corrected ones) to keep the delta consistent.
+    auto const durationDS = duration_;
+    timeWarpDS_ = timeWarp_;
+
     // Account for forbidden time windows: the vehicle must be idle at the
     // depot during these periods, so no travel, service, or reloading may
     // occur.  We check at EVERY node (not just clients).
+    //
+    // Violations at non-depot locations (vehicle idle or serving at a client
+    // during a forbidden window) are added to timeWarp_ so the solver treats
+    // them as hard constraint violations, forcing a depot return.
     if (!vehicleType_.forbiddenWindows.empty())
     {
         auto const &durations = data.durationMatrix(profile());
         auto now = durAfter[0].startEarly();
         Duration totalForbiddenDelay = 0;
+        Duration forbiddenTimeWarp = 0;
 
         for (size_t idx = 0; idx != nodes.size(); ++idx)
         {
@@ -391,7 +403,28 @@ void Route::update()
                 = advancePastForbidden(now, vehicleType_.forbiddenWindows);
             if (advanced != now)
             {
-                totalForbiddenDelay += advanced - now;
+                auto const delay = advanced - now;
+                if (nodes[idx]->isDepot() || nodes[idx]->isReloadDepot())
+                {
+                    if (idx > 0)
+                    {
+                        // Vehicle arrived at depot during forbidden window.
+                        // It wasn't at the depot from fStart to now —
+                        // violation.
+                        for (auto const &[fStart, fEnd] :
+                             vehicleType_.forbiddenWindows)
+                        {
+                            if (now >= fStart && now < fEnd)
+                            {
+                                forbiddenTimeWarp += now - fStart;
+                                break;
+                            }
+                        }
+                    }
+                    totalForbiddenDelay += delay;
+                }
+                else
+                    forbiddenTimeWarp += delay;
                 now = advanced;
             }
 
@@ -400,8 +433,22 @@ void Route::update()
             {
                 ProblemData::Client const &client
                     = data.location(nodes[idx]->client());
-                auto const wait = std::max<Duration>(client.twEarly - now, 0);
+                auto const arrivalTime = now;
+                auto const wait
+                    = client.twEarly > now ? client.twEarly - now : Duration(0);
                 now += wait + client.serviceDuration;
+
+                // The vehicle is physically at this client from
+                // arrivalTime until now (after service).  Any overlap
+                // with a forbidden window is a constraint violation —
+                // the vehicle should be at the depot instead.
+                for (auto const &[fStart, fEnd] : vehicleType_.forbiddenWindows)
+                {
+                    auto const oStart = std::max(arrivalTime, fStart);
+                    auto const oEnd = std::min(now, fEnd);
+                    if (oStart < oEnd)
+                        forbiddenTimeWarp += oEnd - oStart;
+                }
             }
             else if (nodes[idx]->isReloadDepot())
             {
@@ -409,9 +456,20 @@ void Route::update()
                     = data.location(nodes[idx]->client());
                 now += depot.serviceDuration;
 
+                // After reload service, the vehicle may now be in a
+                // forbidden window.  Wait at the depot until it ends.
+                auto const afterReload
+                    = advancePastForbidden(now, vehicleType_.forbiddenWindows);
+                if (afterReload != now)
+                {
+                    totalForbiddenDelay += afterReload - now;
+                    now = afterReload;
+                }
+
                 // Lookahead: if the next node is a client, check whether
-                // the vehicle would idle at that client's location during
-                // a forbidden window.  If so, wait at the depot instead.
+                // the vehicle would be present at that client's location
+                // during a forbidden window (idle or serving).  If so,
+                // wait at the depot instead.
                 if (idx + 1 < nodes.size() && !nodes[idx + 1]->isDepot()
                     && !nodes[idx + 1]->isReloadDepot())
                 {
@@ -420,15 +478,21 @@ void Route::update()
                     ProblemData::Client const &next
                         = data.location(nodes[idx + 1]->client());
                     auto const svcStart = std::max(arrive, next.twEarly);
+                    auto const svcEnd = svcStart + next.serviceDuration;
 
                     for (auto const &[fStart, fEnd] :
                          vehicleType_.forbiddenWindows)
                     {
-                        if (arrive <= fStart && svcStart >= fEnd)
+                        // Vehicle would be at the client during
+                        // [fStart, fEnd): arriving/serving overlaps the
+                        // forbidden window.
+                        if (arrive < fEnd && svcEnd > fStart)
                         {
-                            auto const delay = fEnd - now;
-                            totalForbiddenDelay += delay;
-                            now = fEnd;
+                            if (fEnd > now)
+                            {
+                                totalForbiddenDelay += fEnd - now;
+                                now = fEnd;
+                            }
                             break;
                         }
                     }
@@ -437,11 +501,33 @@ void Route::update()
         }
 
         duration_ += totalForbiddenDelay;
+        timeWarp_ += forbiddenTimeWarp;
+
+        // The DS-based timeWarp_ was computed without forbidden delays.
+        // If the delays push the vehicle's end time past twLate, the
+        // additional excess must be added to timeWarp_.
+        auto const dsEndTime = durAfter[0].startEarly() + durationDS;
+        auto const dsEndExcess = dsEndTime > vehicleType_.twLate
+                                     ? dsEndTime - vehicleType_.twLate
+                                     : Duration(0);
+        auto const actualEndExcess = now > vehicleType_.twLate
+                                         ? now - vehicleType_.twLate
+                                         : Duration(0);
+        if (actualEndExcess > dsEndExcess)
+            timeWarp_ += actualEndExcess - dsEndExcess;
     }
 
-    auto const overtime = std::max<Duration>(duration_ - shiftDuration(), 0);
+    auto const overtime = duration_ > shiftDuration()
+                              ? duration_ - shiftDuration()
+                              : Duration(0);
     durationCost_ = unitDurationCost() * static_cast<Cost>(duration_)
                     + unitOvertimeCost() * static_cast<Cost>(overtime);
+
+    auto const overtimeDS = durationDS > shiftDuration()
+                                ? durationDS - shiftDuration()
+                                : Duration(0);
+    durationCostDS_ = unitDurationCost() * static_cast<Cost>(durationDS)
+                      + unitOvertimeCost() * static_cast<Cost>(overtimeDS);
 
     // Calculate reload cost from all reload depots (excludes start/end depots)
     reloadCost_ = 0;
