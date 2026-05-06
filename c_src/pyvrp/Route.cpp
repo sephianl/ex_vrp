@@ -232,11 +232,13 @@ void Route::makeSchedule(ProblemData const &data)
             ProblemData::Client const &cd = data.location(firstClient);
             auto const svcStart = std::max(arrive, cd.twEarly);
 
+            auto const svcEnd = svcStart + cd.serviceDuration;
             for (auto const &[fStart, fEnd] : vehData.forbiddenWindows)
             {
-                // Would the vehicle be idle at the client during
-                // [fStart, fEnd)?
-                if (arrive < fEnd && svcStart > fStart && fEnd > now)
+                // Would the vehicle be present at the client during
+                // [fStart, fEnd)? Check if arrival/service overlaps
+                // the forbidden window.
+                if (arrive < fEnd && svcEnd > fStart && fEnd > now)
                 {
                     now = fEnd;
                     break;

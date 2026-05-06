@@ -77,6 +77,10 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
     // insert them at earlier trip boundaries in the correct time order.
     improveWithMultiTrip(costEvaluator, true);  // skip feasibility
 
+    // Last resort: if any route with forbidden windows is still
+    // infeasible, strip non-required clients until feasible.
+    stripInfeasibleForbiddenWindowClients();
+
     return solution_.unload();
 }
 
@@ -117,6 +121,10 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
 
     // Re-insert stripped clients at earlier trip boundaries.
     improveWithMultiTrip(costEvaluator, true);  // skip feasibility
+
+    // Last resort: if any route with forbidden windows is still
+    // infeasible, strip non-required clients until feasible.
+    stripInfeasibleForbiddenWindowClients();
 
     return solution_.unload();
 }
@@ -1279,20 +1287,46 @@ void LocalSearch::improveWithMultiTrip(
             }
 
             Route::Node depot = {reloadDepot};
+            size_t clientIdx, depotIdx;
             if (!foundBoundary && canInsertAtBeginning)
             {
                 // Insert at beginning: client first, then reload
                 // after it, so the new client starts the first trip.
                 bestRoute->insert(1, U);
                 bestRoute->insert(2, &depot);
+                clientIdx = 1;
+                depotIdx = 2;
             }
             else
             {
                 // Normal: reload before client at trip boundary.
                 bestRoute->insert(insertIdx, U);
                 bestRoute->insert(insertIdx, &depot);
+                clientIdx = insertIdx + 1;
+                depotIdx = insertIdx;
             }
             bestRoute->update();
+
+            // If the insertion made the route infeasible (e.g. the new
+            // trip's service exceeds tw_late after forbidden window
+            // delays), undo the insertion.
+            if (!bestRoute->isFeasible())
+            {
+                // Remove client first (it's after the depot node),
+                // then the depot node.
+                if (clientIdx > depotIdx)
+                {
+                    bestRoute->remove(clientIdx);
+                    bestRoute->remove(depotIdx);
+                }
+                else
+                {
+                    bestRoute->remove(depotIdx);
+                    bestRoute->remove(clientIdx);
+                }
+                bestRoute->update();
+                continue;
+            }
 
             searchSpace_.markPromising(U);
         }
@@ -1335,6 +1369,33 @@ void LocalSearch::stripForbiddenWindowViolations()
                         = data.location(node->client());
                     now += depot.serviceDuration;
                     now = advancePastForbidden(now, vehType.forbiddenWindows);
+
+                    // Lookahead: if next node is a client whose presence
+                    // at that location would overlap a forbidden window,
+                    // wait at the depot.  Mirrors Route::update() logic.
+                    if (idx + 1 < route.size() && !route[idx + 1]->isDepot()
+                        && !route[idx + 1]->isReloadDepot())
+                    {
+                        auto const travel = durations(node->client(),
+                                                      route[idx + 1]->client());
+                        auto const arrive = now + travel;
+                        ProblemData::Client const &next
+                            = data.location(route[idx + 1]->client());
+                        auto const svcStart = std::max(arrive, next.twEarly);
+                        auto const svcEnd = svcStart + next.serviceDuration;
+
+                        for (auto const &[fStart, fEnd] :
+                             vehType.forbiddenWindows)
+                        {
+                            if (arrive < fEnd && svcEnd > fStart)
+                            {
+                                auto const delay = fEnd - now;
+                                if (delay > 0)
+                                    now = fEnd;
+                                break;
+                            }
+                        }
+                    }
                 }
                 continue;
             }
@@ -1344,7 +1405,7 @@ void LocalSearch::stripForbiddenWindowViolations()
             now += wait;
 
             auto const serviceEnd = now + cl.serviceDuration;
-            if (serviceEnd > vehType.twLate)
+            if (serviceEnd > vehType.twLate && !cl.required)
                 toRemove.push_back(node->client());
 
             now = serviceEnd;
@@ -1387,6 +1448,123 @@ void LocalSearch::stripForbiddenWindowViolations()
         }
 
         route.update();
+    }
+}
+
+void LocalSearch::stripInfeasibleForbiddenWindowClients()
+{
+    for (auto &route : solution_.routes)
+    {
+        if (route.empty() || route.isFeasible())
+            continue;
+
+        auto const &vehType = data.vehicleType(route.vehicleType());
+        if (vehType.forbiddenWindows.empty())
+            continue;
+
+        // Route is infeasible and has forbidden windows.  Strip
+        // non-required clients one at a time (worst overlap first)
+        // until feasible or no more optional clients remain.
+        bool changed = true;
+        while (changed && !route.isFeasible())
+        {
+            changed = false;
+
+            auto const &durations = data.durationMatrix(vehType.profile);
+            Duration now = vehType.twEarly;
+            size_t worstClient = 0;
+            Duration worstOverlap = 0;
+
+            for (size_t idx = 0; idx < route.size(); ++idx)
+            {
+                auto *node = route[idx];
+                if (idx > 0)
+                    now += durations(route[idx - 1]->client(), node->client());
+
+                now = advancePastForbidden(now, vehType.forbiddenWindows);
+
+                if (node->isDepot() || node->isReloadDepot())
+                {
+                    if (node->isReloadDepot())
+                    {
+                        ProblemData::Depot const &dp
+                            = data.location(node->client());
+                        now += dp.serviceDuration;
+                        now = advancePastForbidden(now,
+                                                   vehType.forbiddenWindows);
+                    }
+                    continue;
+                }
+
+                ProblemData::Client const &cl = data.location(node->client());
+                if (cl.required)
+                {
+                    auto const wait = std::max<Duration>(cl.twEarly - now, 0);
+                    now += wait + cl.serviceDuration;
+                    continue;
+                }
+
+                auto const wait = std::max<Duration>(cl.twEarly - now, 0);
+                auto const svcStart = now + wait;
+                auto const svcEnd = svcStart + cl.serviceDuration;
+
+                // Measure total forbidden window overlap for this client.
+                Duration overlap = 0;
+                for (auto const &[fStart, fEnd] : vehType.forbiddenWindows)
+                {
+                    auto const oStart = std::max(svcStart, fStart);
+                    auto const oEnd = std::min(svcEnd, fEnd);
+                    if (oStart < oEnd)
+                        overlap += oEnd - oStart;
+                }
+                // Also count exceeding twLate as overlap.
+                if (svcEnd > vehType.twLate)
+                    overlap += svcEnd - vehType.twLate;
+
+                if (overlap > worstOverlap)
+                {
+                    worstOverlap = overlap;
+                    worstClient = node->client();
+                }
+
+                now = svcEnd;
+            }
+
+            if (worstOverlap > 0)
+            {
+                auto *U = &solution_.nodes[worstClient];
+                if (U->route() == &route)
+                {
+                    route.remove(U->idx());
+                    route.update();
+                    changed = true;
+                }
+            }
+        }
+
+        // Clean up orphaned reload depots.
+        bool cleaned = true;
+        while (cleaned)
+        {
+            cleaned = false;
+            for (size_t idx = 1; idx < route.size() - 1; ++idx)
+            {
+                if (!route[idx]->isReloadDepot())
+                    continue;
+                bool orphaned = (idx + 1 >= route.size() - 1)
+                                || route[idx + 1]->isDepot()
+                                || route[idx + 1]->isReloadDepot();
+                if (orphaned)
+                {
+                    route.remove(idx);
+                    cleaned = true;
+                    break;
+                }
+            }
+        }
+
+        if (changed)
+            route.update();
     }
 }
 

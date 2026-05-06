@@ -466,8 +466,9 @@ void Route::update()
                 }
 
                 // Lookahead: if the next node is a client, check whether
-                // the vehicle would idle at that client's location during
-                // a forbidden window.  If so, wait at the depot instead.
+                // the vehicle would be present at that client's location
+                // during a forbidden window (idle or serving).  If so,
+                // wait at the depot instead.
                 if (idx + 1 < nodes.size() && !nodes[idx + 1]->isDepot()
                     && !nodes[idx + 1]->isReloadDepot())
                 {
@@ -476,14 +477,15 @@ void Route::update()
                     ProblemData::Client const &next
                         = data.location(nodes[idx + 1]->client());
                     auto const svcStart = std::max(arrive, next.twEarly);
+                    auto const svcEnd = svcStart + next.serviceDuration;
 
                     for (auto const &[fStart, fEnd] :
                          vehicleType_.forbiddenWindows)
                     {
-                        // Vehicle would be idle at the client during
-                        // [fStart, fEnd): either arriving before/during
-                        // the window and waiting past it.
-                        if (arrive < fEnd && svcStart > fStart)
+                        // Vehicle would be at the client during
+                        // [fStart, fEnd): arriving/serving overlaps the
+                        // forbidden window.
+                        if (arrive < fEnd && svcEnd > fStart)
                         {
                             auto const delay = fEnd - now;
                             if (delay > 0)
@@ -500,6 +502,17 @@ void Route::update()
 
         duration_ += totalForbiddenDelay;
         timeWarp_ += forbiddenTimeWarp;
+
+        // The DS-based timeWarp_ was computed without forbidden delays.
+        // If the delays push the vehicle's end time past twLate, the
+        // additional excess must be added to timeWarp_.
+        auto const dsEndTime = durAfter[0].startEarly() + durationDS;
+        auto const dsEndExcess
+            = std::max<Duration>(dsEndTime - vehicleType_.twLate, 0);
+        auto const actualEndExcess
+            = std::max<Duration>(now - vehicleType_.twLate, 0);
+        if (actualEndExcess > dsEndExcess)
+            timeWarp_ += actualEndExcess - dsEndExcess;
     }
 
     auto const overtime = std::max<Duration>(duration_ - shiftDuration(), 0);
