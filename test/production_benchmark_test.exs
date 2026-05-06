@@ -85,10 +85,16 @@ defmodule ExVrp.ProductionBenchmarkTest do
     timeout_ms = max(5_000, round(n / 20) * 1_000)
 
     results =
-      Enum.map(@seeds, fn seed ->
-        {:ok, result} = ExVrp.solve(model, max_runtime: timeout_ms, seed: seed, num_starts: 1)
-        {seed, result}
-      end)
+      @seeds
+      |> Task.async_stream(
+        fn seed ->
+          {:ok, result} = ExVrp.solve(model, max_runtime: timeout_ms, seed: seed, num_starts: 1)
+          {seed, result}
+        end,
+        max_concurrency: System.schedulers_online(),
+        timeout: timeout_ms + 30_000
+      )
+      |> Enum.map(fn {:ok, res} -> res end)
 
     # Require feasibility and at least 70% of plannable clients.
     # Prize-collecting problems may not serve all clients when fleet
@@ -107,13 +113,21 @@ defmodule ExVrp.ProductionBenchmarkTest do
   end
 
   defp format_failures(results, plannable, total, feasible) do
+    min_clients = min(400, plannable)
+
     details =
       Enum.map_join(results, "\n", fn {seed, r} ->
-        status = if r.best.is_feasible, do: "OK", else: "INFEASIBLE"
+        status =
+          cond do
+            not r.best.is_feasible -> "INFEASIBLE"
+            r.best.num_clients < min_clients -> "TOO_FEW (need #{min_clients})"
+            true -> "OK"
+          end
+
         "  seed=#{seed}: #{status}, #{r.best.num_clients}/#{plannable} clients (#{total} total)"
       end)
 
-    "only #{feasible}/#{length(@seeds)} seeds feasible (need #{length(@seeds) - 1}):\n#{details}"
+    "only #{feasible}/#{length(@seeds)} seeds pass (need #{length(@seeds) - 1}):\n#{details}"
   end
 
   # --- Helpers ---

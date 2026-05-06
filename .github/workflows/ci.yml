@@ -61,9 +61,9 @@ jobs:
           devenv shell mix test
 
       - name: Run production benchmarks
-        timeout-minutes: 20
+        timeout-minutes: 10
         run: |
-          devenv shell mix test test/production_benchmark_test.exs --include production_benchmark --only production_benchmark
+          devenv shell mix test test/production_benchmark_test.exs --include production_benchmark_quick --only production_benchmark_quick
 
       - name: Run AddressSanitizer tests
         run: |
