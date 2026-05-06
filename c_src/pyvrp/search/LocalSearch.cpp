@@ -1389,8 +1389,7 @@ void LocalSearch::stripForbiddenWindowViolations()
                         {
                             if (arrive < fEnd && svcEnd > fStart)
                             {
-                                auto const delay = fEnd - now;
-                                if (delay > 0)
+                                if (fEnd > now)
                                     now = fEnd;
                                 break;
                             }

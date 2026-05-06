@@ -487,10 +487,9 @@ void Route::update()
                         // forbidden window.
                         if (arrive < fEnd && svcEnd > fStart)
                         {
-                            auto const delay = fEnd - now;
-                            if (delay > 0)
+                            if (fEnd > now)
                             {
-                                totalForbiddenDelay += delay;
+                                totalForbiddenDelay += fEnd - now;
                                 now = fEnd;
                             }
                             break;
