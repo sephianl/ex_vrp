@@ -149,12 +149,13 @@ void Route::makeSchedule(ProblemData const &data)
             = advancePastForbidden(now, vehData.forbiddenWindows);
         if (advanced != now)
         {
-            forbiddenWait = advanced - now;
+            forbiddenWait = advanced > now ? advanced - now : Duration(0);
             now = advanced;
         }
 
-        auto const wait = std::max<Duration>(where.twEarly - now, 0);
-        auto const tw = std::max<Duration>(now - where.twLate, 0);
+        auto const wait
+            = where.twEarly > now ? where.twEarly - now : Duration(0);
+        auto const tw = now > where.twLate ? now - where.twLate : Duration(0);
 
         now += wait;
         now -= tw;
@@ -165,7 +166,7 @@ void Route::makeSchedule(ProblemData const &data)
         {
             if (now < fStart && now + service > fStart)
             {
-                forbiddenWait += fEnd - now;
+                forbiddenWait += fEnd > now ? fEnd - now : Duration(0);
                 now = fEnd;
                 break;
             }
@@ -189,8 +190,9 @@ void Route::makeSchedule(ProblemData const &data)
                                      ? std::min(start.twLate, vehData.startLate)
                                      : start.twLate;
 
-        auto const wait = std::max<Duration>(earliestStart - now, 0);
-        auto const tw = std::max<Duration>(now - latestStart, 0);
+        auto const wait
+            = earliestStart > now ? earliestStart - now : Duration(0);
+        auto const tw = now > latestStart ? now - latestStart : Duration(0);
 
         now += wait;
         now -= tw;
@@ -201,7 +203,7 @@ void Route::makeSchedule(ProblemData const &data)
             = advancePastForbidden(now, vehData.forbiddenWindows);
         if (advanced != now)
         {
-            forbiddenWait = advanced - now;
+            forbiddenWait = advanced > now ? advanced - now : Duration(0);
             now = advanced;
         }
 
@@ -372,7 +374,9 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     ds = DurationSegment::merge(0, {vehData, vehData.startLate}, ds);
 
     duration_ = ds.duration();
-    overtime_ = std::max<Duration>(duration_ - vehData.shiftDuration, 0);
+    overtime_ = duration_ > vehData.shiftDuration
+                    ? duration_ - vehData.shiftDuration
+                    : Duration(0);
     durationCost_ = vehData.unitDurationCost * static_cast<Cost>(duration_)
                     + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
     startTime_ = ds.startEarly();
@@ -388,7 +392,9 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     {
         duration_
             = schedule_.back().endService - schedule_.front().startService;
-        overtime_ = std::max<Duration>(duration_ - vehData.shiftDuration, 0);
+        overtime_ = duration_ > vehData.shiftDuration
+                        ? duration_ - vehData.shiftDuration
+                        : Duration(0);
         durationCost_
             = vehData.unitDurationCost * static_cast<Cost>(duration_)
               + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
@@ -396,7 +402,8 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         timeWarp_ = 0;
         for (auto const &visit : schedule_)
             timeWarp_ += visit.timeWarp;
-        timeWarp_ += std::max<Duration>(duration_ - vehData.maxDuration, 0);
+        if (duration_ > vehData.maxDuration)
+            timeWarp_ += duration_ - vehData.maxDuration;
     }
 }
 

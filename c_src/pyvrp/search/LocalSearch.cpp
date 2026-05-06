@@ -984,7 +984,7 @@ void LocalSearch::repairForbiddenWindowRoutes(
                 continue;
 
             ProblemData::Client const &cl = data.location(node->client());
-            auto const wait = std::max<Duration>(cl.twEarly - now, 0);
+            auto const wait = cl.twEarly > now ? cl.twEarly - now : Duration(0);
             auto const serviceEnd = now + wait + cl.serviceDuration;
 
             if (serviceEnd > fStart)
@@ -1274,7 +1274,8 @@ void LocalSearch::improveWithMultiTrip(
                 {
                     ProblemData::Client const &cl
                         = data.location(node->client());
-                    auto const wait = std::max<Duration>(cl.twEarly - now, 0);
+                    auto const wait
+                        = cl.twEarly > now ? cl.twEarly - now : Duration(0);
                     now += wait + cl.serviceDuration;
                 }
                 else if (node->isReloadDepot())
@@ -1400,7 +1401,7 @@ void LocalSearch::stripForbiddenWindowViolations()
             }
 
             ProblemData::Client const &cl = data.location(node->client());
-            auto const wait = std::max<Duration>(cl.twEarly - now, 0);
+            auto const wait = cl.twEarly > now ? cl.twEarly - now : Duration(0);
             now += wait;
 
             auto const serviceEnd = now + cl.serviceDuration;
@@ -1498,12 +1499,14 @@ void LocalSearch::stripInfeasibleForbiddenWindowClients()
                 ProblemData::Client const &cl = data.location(node->client());
                 if (cl.required)
                 {
-                    auto const wait = std::max<Duration>(cl.twEarly - now, 0);
+                    auto const wait
+                        = cl.twEarly > now ? cl.twEarly - now : Duration(0);
                     now += wait + cl.serviceDuration;
                     continue;
                 }
 
-                auto const wait = std::max<Duration>(cl.twEarly - now, 0);
+                auto const wait
+                    = cl.twEarly > now ? cl.twEarly - now : Duration(0);
                 auto const svcStart = now + wait;
                 auto const svcEnd = svcStart + cl.serviceDuration;
 

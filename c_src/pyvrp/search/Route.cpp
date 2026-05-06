@@ -434,7 +434,8 @@ void Route::update()
                 ProblemData::Client const &client
                     = data.location(nodes[idx]->client());
                 auto const arrivalTime = now;
-                auto const wait = std::max<Duration>(client.twEarly - now, 0);
+                auto const wait
+                    = client.twEarly > now ? client.twEarly - now : Duration(0);
                 now += wait + client.serviceDuration;
 
                 // The vehicle is physically at this client from
@@ -506,19 +507,25 @@ void Route::update()
         // If the delays push the vehicle's end time past twLate, the
         // additional excess must be added to timeWarp_.
         auto const dsEndTime = durAfter[0].startEarly() + durationDS;
-        auto const dsEndExcess
-            = std::max<Duration>(dsEndTime - vehicleType_.twLate, 0);
-        auto const actualEndExcess
-            = std::max<Duration>(now - vehicleType_.twLate, 0);
+        auto const dsEndExcess = dsEndTime > vehicleType_.twLate
+                                     ? dsEndTime - vehicleType_.twLate
+                                     : Duration(0);
+        auto const actualEndExcess = now > vehicleType_.twLate
+                                         ? now - vehicleType_.twLate
+                                         : Duration(0);
         if (actualEndExcess > dsEndExcess)
             timeWarp_ += actualEndExcess - dsEndExcess;
     }
 
-    auto const overtime = std::max<Duration>(duration_ - shiftDuration(), 0);
+    auto const overtime = duration_ > shiftDuration()
+                              ? duration_ - shiftDuration()
+                              : Duration(0);
     durationCost_ = unitDurationCost() * static_cast<Cost>(duration_)
                     + unitOvertimeCost() * static_cast<Cost>(overtime);
 
-    auto const overtimeDS = std::max<Duration>(durationDS - shiftDuration(), 0);
+    auto const overtimeDS = durationDS > shiftDuration()
+                                ? durationDS - shiftDuration()
+                                : Duration(0);
     durationCostDS_ = unitDurationCost() * static_cast<Cost>(durationDS)
                       + unitOvertimeCost() * static_cast<Cost>(overtimeDS);
 
