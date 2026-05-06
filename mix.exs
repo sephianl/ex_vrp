@@ -1,7 +1,7 @@
 defmodule ExVrp.MixProject do
   use Mix.Project
 
-  @version "0.4.1"
+  @version "0.5.1"
   @github_url "https://github.com/sephianl/ex_vrp"
 
   def project do
@@ -111,6 +111,7 @@ defmodule ExVrp.MixProject do
       {:ex_check, "~> 0.16.0", only: [:dev, :test], runtime: false},
       # Static code analysis
       {:credo, ">= 0.0.0", only: [:dev, :test], runtime: false},
+      {:sephia_credo, "~> 0.1", only: [:dev, :test], runtime: false},
       {:dialyxir, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:sobelow, ">= 0.0.0", only: [:dev, :test], runtime: false},

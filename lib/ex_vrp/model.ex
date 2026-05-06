@@ -11,7 +11,7 @@ defmodule ExVrp.Model do
       model =
         ExVrp.Model.new()
         |> ExVrp.Model.add_depot(x: 0, y: 0)
-        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
         |> ExVrp.Model.add_client(x: 1, y: 1, delivery: [10])
         |> ExVrp.Model.add_client(x: 2, y: 2, delivery: [20])
         |> ExVrp.Model.add_client(x: 3, y: 1, delivery: [15])
@@ -35,7 +35,7 @@ defmodule ExVrp.Model do
         |> ExVrp.Model.add_depot(x: 0, y: 0)
         |> ExVrp.Model.add_client(x: 1, y: 0, delivery: [10])
         |> ExVrp.Model.add_client(x: 2, y: 0, delivery: [20])
-        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
         |> ExVrp.Model.set_distance_matrices([distances])
         |> ExVrp.Model.set_duration_matrices([distances])
 
@@ -44,7 +44,7 @@ defmodule ExVrp.Model do
   Vehicles and clients can have multiple capacity dimensions (e.g. weight and volume):
 
       model
-      |> ExVrp.Model.add_vehicle_type(num_available: 3, capacity: [1000, 50])
+      |> ExVrp.Model.add_vehicle_type(num_available: 3, capacity: [1000, 50], time_windows: [{0, 28_800}])
       |> ExVrp.Model.add_client(x: 1, y: 1, delivery: [200, 10])
 
   ## Client Groups
@@ -268,7 +268,7 @@ defmodule ExVrp.Model do
   ## Example
 
       model
-      |> ExVrp.Model.add_vehicle_type(num_available: 3, capacity: [100])
+      |> ExVrp.Model.add_vehicle_type(num_available: 3, capacity: [100], time_windows: [{0, 28_800}])
 
   """
   @spec add_vehicle_type(t(), keyword()) :: t()
@@ -330,7 +330,7 @@ defmodule ExVrp.Model do
         |> Model.add_depot(x: 0, y: 0)
         |> Model.add_client(x: 1, y: 1)
         |> Model.add_client(x: 2, y: 2)
-        |> Model.add_vehicle_type(num_available: 2)
+        |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
 
       [c1, c2] = model.clients
       model = Model.add_same_vehicle_group(model, [c1, c2], name: "group1")
@@ -413,6 +413,7 @@ defmodule ExVrp.Model do
       |> validate_vehicle_capacity(model)
       |> validate_vehicle_depot_indices(model)
       |> validate_vehicle_reload_depots(model)
+      |> validate_vehicle_forbidden_windows(model)
       |> validate_matrix_dimensions(model)
       |> validate_matrix_diagonals(model)
       |> validate_client_groups(model)
@@ -580,6 +581,29 @@ defmodule ExVrp.Model do
     end
   end
 
+  defp validate_vehicle_forbidden_windows(errors, %{vehicle_types: vehicle_types}) do
+    invalid =
+      vehicle_types
+      |> Enum.with_index()
+      |> Enum.filter(fn {vt, _idx} ->
+        Enum.any?(vt.forbidden_windows, fn {s, e} ->
+          s >= e or s < vt.tw_early or e > vt.tw_late
+        end)
+      end)
+      |> Enum.map(fn {_vt, i} -> i end)
+
+    case invalid do
+      [] ->
+        errors
+
+      _indices ->
+        [
+          "Vehicle forbidden windows invalid (must have start < end and be within [tw_early, tw_late]) at indices #{inspect(invalid)}"
+          | errors
+        ]
+    end
+  end
+
   defp validate_matrix_dimensions(errors, %{distance_matrices: [], duration_matrices: []}) do
     errors
   end
@@ -713,8 +737,11 @@ defmodule ExVrp.Model do
   @spec to_problem_data(t()) :: {:ok, reference()} | {:error, term()}
   def to_problem_data(%__MODULE__{} = model) do
     case validate(model) do
-      :ok -> ExVrp.Native.create_problem_data(model)
-      {:error, _reason} = error -> error
+      :ok ->
+        ExVrp.Native.create_problem_data(model)
+
+      {:error, _reason} = error ->
+        error
     end
   end
 end

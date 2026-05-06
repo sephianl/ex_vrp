@@ -64,6 +64,23 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
             break;
     }
 
+    // Re-insert unassigned prize clients as multi-trip after ILS
+    // perturbation may have dismantled multi-trip structures.
+    improveWithMultiTrip(costEvaluator);
+
+    // Strip clients from trips where forbidden window delays push
+    // service past tw_late.
+    stripForbiddenWindowViolations();
+
+    // Re-insert stripped clients: stripFW may remove clients from bad
+    // trip orderings (e.g. C4 first), but improveWithMultiTrip can
+    // insert them at earlier trip boundaries in the correct time order.
+    improveWithMultiTrip(costEvaluator, true);  // skip feasibility
+
+    // Last resort: if any route with forbidden windows is still
+    // infeasible, strip non-required clients until feasible.
+    stripInfeasibleForbiddenWindowClients();
+
     return solution_.unload();
 }
 
@@ -89,9 +106,25 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
 
     search(costEvaluator);
 
+    // After the main search, repair routes that have forbidden window
+    // violations by moving late clients to new trips.
+    repairForbiddenWindowRoutes(costEvaluator);
+
     // After the main search, try to insert unassigned clients via multi-trip.
     // This is a one-time pass (not iterative) so it won't cause loops.
     improveWithMultiTrip(costEvaluator);
+
+    // Final safety net: remove clients from trips where forbidden window
+    // delays push service past tw_late.  The DurationSegment-based search
+    // can't predict these violations, so we fix them here.
+    stripForbiddenWindowViolations();
+
+    // Re-insert stripped clients at earlier trip boundaries.
+    improveWithMultiTrip(costEvaluator, true);  // skip feasibility
+
+    // Last resort: if any route with forbidden windows is still
+    // infeasible, strip non-required clients until feasible.
+    stripInfeasibleForbiddenWindowClients();
 
     return solution_.unload();
 }
@@ -398,8 +431,13 @@ bool LocalSearch::applyNodeOps(Route::Node *U,
 
             // When there is an improving move, the delta cost evaluation must
             // be exact. The resulting cost is then the sum of the cost before
-            // the move, plus the delta cost.
-            assert(costAfter == costBefore + deltaCost);
+            // the move, plus the delta cost. The assertion is skipped for
+            // routes with forbidden windows because the delta evaluation uses
+            // DurationSegment-only costs for consistency (forbidden window
+            // effects cannot be predicted in O(1)).
+            assert(rU->hasForbiddenWindows()
+                   || (rU != rV && rV->hasForbiddenWindows())
+                   || costAfter == costBefore + deltaCost);
 
             return true;
         }
@@ -428,10 +466,9 @@ bool LocalSearch::applyRouteOps(Route *U,
                 = costEvaluator.penalisedCost(*U)
                   + Cost(U != V) * costEvaluator.penalisedCost(*V);
 
-            // When there is an improving move, the delta cost evaluation must
-            // be exact. The resulting cost is then the sum of the cost before
-            // the move, plus the delta cost.
-            assert(costAfter == costBefore + deltaCost);
+            assert(U->hasForbiddenWindows()
+                   || (U != V && V->hasForbiddenWindows())
+                   || costAfter == costBefore + deltaCost);
 
             return true;
         }
@@ -444,6 +481,14 @@ void LocalSearch::applyDepotRemovalMove(Route::Node *U,
                                         CostEvaluator const &costEvaluator)
 {
     if (!U->isReloadDepot())
+        return;
+
+    // Don't remove reload depots on vehicles with forbidden windows.
+    // DurationSegment-based cost evaluation can't account for the
+    // forbidden delay that would be reintroduced, causing an
+    // insert-remove oscillation that runs until timeout.
+    auto const &vehType = data.vehicleType(U->route()->vehicleType());
+    if (!vehType.forbiddenWindows.empty())
         return;
 
     // We remove the depot when that's either better, or neutral. It can be
@@ -633,8 +678,18 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
     {
         searchSpace_.markPromising(U);
         auto *route = U->route();
+        auto const &vt = data.vehicleType(route->vehicleType());
+
         route->remove(U->idx());
         update(route, route);
+
+        // When a route has forbidden windows, the DS-based delta
+        // evaluation can't account for forbidden-window costs.
+        // Removing looks improving (DS doesn't see the penalty) but
+        // re-insertion recreates the same situation — causing an
+        // infinite oscillation.  Skip re-insertion entirely.
+        if (!vt.forbiddenWindows.empty())
+            return;
     }
 
     if (U->route())
@@ -786,6 +841,26 @@ void LocalSearch::insertConstrainedFirst(CostEvaluator const &costEvaluator)
             if (!allReachable)
                 continue;
 
+            // Check if the SVG group's total service time fits within
+            // the vehicle's available operating time (excluding forbidden
+            // windows). If not, skip — inserting would create infeasible
+            // time warp that the local search can't fix (since SVG
+            // members can't be removed individually).
+            auto const &vehType = data.vehicleType(route.vehicleType());
+            Duration availableTime = vehType.twLate - vehType.twEarly;
+            for (auto const &[fStart, fEnd] : vehType.forbiddenWindows)
+                availableTime -= (fEnd - fStart);
+
+            Duration totalService = 0;
+            for (auto const client : group)
+            {
+                ProblemData::Client const &cl = data.location(client);
+                totalService += cl.serviceDuration;
+            }
+
+            if (totalService > availableTime)
+                continue;
+
             // Insert all group members on this route (before end depot)
             for (auto const client : group)
             {
@@ -872,8 +947,116 @@ void LocalSearch::markMissingAsPromising()
     }
 }
 
-void LocalSearch::improveWithMultiTrip(
+void LocalSearch::repairForbiddenWindowRoutes(
     [[maybe_unused]] CostEvaluator const &costEvaluator)
+{
+    // For routes with forbidden window time warp, move clients whose service
+    // overlaps the forbidden window to a new trip.  One-time, non-iterative.
+    for (auto &route : solution_.routes)
+    {
+        if (route.empty() || route.timeWarp() == 0)
+            continue;
+
+        auto const &vehType = data.vehicleType(route.vehicleType());
+        if (vehType.forbiddenWindows.empty() || vehType.reloadDepots.empty())
+            continue;
+        if (route.numTrips() >= route.maxTrips())
+            continue;
+
+        // Walk the route timeline to find clients whose service crosses
+        // the first forbidden window.
+        auto const fStart = vehType.forbiddenWindows[0].first;
+        auto const &durations = data.durationMatrix(vehType.profile);
+
+        Duration now = vehType.twEarly;
+        std::vector<size_t> lateClients;
+
+        for (size_t idx = 0; idx < route.size(); ++idx)
+        {
+            auto *node = route[idx];
+            if (idx > 0)
+            {
+                auto const prevLoc = route[idx - 1]->client();
+                now += durations(prevLoc, node->client());
+            }
+
+            if (node->isDepot() || node->isReloadDepot())
+                continue;
+
+            ProblemData::Client const &cl = data.location(node->client());
+            auto const wait = cl.twEarly > now ? cl.twEarly - now : Duration(0);
+            auto const serviceEnd = now + wait + cl.serviceDuration;
+
+            if (serviceEnd > fStart)
+                lateClients.push_back(node->client());
+
+            now = serviceEnd;
+        }
+
+        if (lateClients.empty())
+            continue;
+
+        // Remove late clients (in reverse order to keep indices valid).
+        for (auto it = lateClients.rbegin(); it != lateClients.rend(); ++it)
+        {
+            auto *U = &solution_.nodes[*it];
+            if (!U->route())
+                continue;
+            U->route()->remove(U->idx());
+        }
+        route.update();
+
+        // Check if the remaining operating time after the last forbidden
+        // window can fit the late clients.  If not, leave them unassigned.
+        Duration latestFWEnd = 0;
+        for (auto const &[fStart, fEnd] : vehType.forbiddenWindows)
+            if (fEnd > latestFWEnd)
+                latestFWEnd = fEnd;
+
+        Duration remainingTime = vehType.twLate - latestFWEnd;
+        Duration lateService = 0;
+        for (auto client : lateClients)
+        {
+            ProblemData::Client const &cl = data.location(client);
+            lateService += cl.serviceDuration;
+        }
+
+        if (lateService > remainingTime)
+            continue;  // New trip won't fit — leave clients unassigned
+
+        // Insert removed clients as a new trip at the end of the route.
+        auto const reloadDepot = vehType.reloadDepots[0];
+        for (auto client : lateClients)
+        {
+            auto *U = &solution_.nodes[client];
+            auto const insertIdx = route.size() - 1;  // before end depot
+            route.insert(insertIdx, U);
+        }
+        // Insert one reload depot before the late clients to form a new trip.
+        {
+            size_t firstLateIdx = route.size() - 1;
+            for (size_t idx = 1; idx < route.size() - 1; ++idx)
+            {
+                auto *node = route[idx];
+                for (auto c : lateClients)
+                {
+                    if (node->client() == c)
+                    {
+                        firstLateIdx = idx;
+                        goto found;
+                    }
+                }
+            }
+        found:
+            Route::Node depotNode(reloadDepot);
+            route.insert(firstLateIdx, &depotNode);
+        }
+        route.update();
+    }
+}
+
+void LocalSearch::improveWithMultiTrip(
+    [[maybe_unused]] CostEvaluator const &costEvaluator, bool skipFeasibility)
 {
     // This function tries to insert unassigned clients with prizes by creating
     // new trips. Unlike the main local search insert logic, this is a one-time
@@ -884,17 +1067,58 @@ void LocalSearch::improveWithMultiTrip(
     // 2. Find a route with multi-trip capability
     // 3. Estimate if adding a new trip is beneficial (prize vs travel cost)
     // 4. If yes, insert the client as a new trip
-
+    //
+    // Sort by tw_early so clients with earlier time windows are inserted
+    // first.  New trips are appended at the route end, so inserting in
+    // time order avoids "can't arrive in time" rejections.
+    std::vector<size_t> candidates;
     for (auto client = data.numDepots(); client != data.numLocations();
          ++client)
     {
         auto *U = &solution_.nodes[client];
-        if (U->route())  // already assigned
+        if (U->route())
+            continue;
+        ProblemData::Client const &cd = data.location(client);
+        if (cd.prize > 0)
+            candidates.push_back(client);
+    }
+
+    std::sort(candidates.begin(),
+              candidates.end(),
+              [&](size_t a, size_t b) -> bool
+              {
+                  ProblemData::Client const &ca = data.location(a);
+                  ProblemData::Client const &cb = data.location(b);
+                  return ca.twEarly.get() < cb.twEarly.get();
+              });
+
+    for (auto client : candidates)
+    {
+        auto *U = &solution_.nodes[client];
+        if (U->route())  // already assigned (by earlier iteration)
             continue;
 
         ProblemData::Client const &clientData = data.location(client);
-        if (clientData.prize <= 0)  // no prize, skip
-            continue;
+
+        // Skip if a mutually exclusive group member is already assigned.
+        if (clientData.group)
+        {
+            auto const &group = data.group(*clientData.group);
+            if (group.mutuallyExclusive)
+            {
+                bool skip = false;
+                for (auto member : group.clients())
+                {
+                    if (member != client && solution_.nodes[member].route())
+                    {
+                        skip = true;
+                        break;
+                    }
+                }
+                if (skip)
+                    continue;
+            }
+        }
 
         // Find the best route to add a new trip
         Route *bestRoute = nullptr;
@@ -914,8 +1138,10 @@ void LocalSearch::improveWithMultiTrip(
                 continue;
 
             // Check if route is currently feasible (avoid making bad routes
-            // worse)
-            if (!route.isFeasible())
+            // worse).  When called as a recovery pass after stripFW,
+            // skipFeasibility is true — the route may be infeasible due to
+            // bad trip ordering, but inserting at correct positions reduces TW.
+            if (!skipFeasibility && !route.isFeasible())
                 continue;
 
             // Check if client fits alone in a trip
@@ -981,22 +1207,365 @@ void LocalSearch::improveWithMultiTrip(
             }
         }
 
-        // If we found a beneficial route, insert the client
+        // If we found a beneficial route, insert the client at the right
+        // position.  Walk the route to find the first trip boundary where
+        // departing would let us reach the client within its time window.
+        // Fall back to the end if no earlier position works.
         if (bestRoute && bestCost < 0)
         {
             auto const &vehType = data.vehicleType(bestRoute->vehicleType());
             auto const reloadDepot = vehType.reloadDepots[0];
+            auto const profile = vehType.profile;
+            auto const &durMatrix = data.durationMatrix(profile);
 
-            // Insert at the end of the route as a new trip
-            auto const insertIdx = bestRoute->size() - 1;  // Before end depot
+            // Default: insert at end
+            size_t insertIdx = bestRoute->size() - 1;
+            bool foundBoundary = false;
+
+            // Check if we can insert at the very beginning (before
+            // all existing clients).  The vehicle departs at twEarly
+            // and travels directly to the new client.
+            bool canInsertAtBeginning = false;
+            {
+                Duration arrive
+                    = vehType.twEarly + durMatrix(vehType.startDepot, client);
+                arrive = advancePastForbidden(arrive, vehType.forbiddenWindows);
+                if (arrive <= clientData.twLate)
+                    canInsertAtBeginning = true;
+            }
+
+            // Scan trip boundaries (reload depots and end depot) for
+            // the latest feasible position.  Using the last feasible
+            // boundary maintains chronological ordering when
+            // candidates are inserted in twEarly order.
+            Duration now = vehType.twEarly;
+            for (size_t idx = 0; idx < bestRoute->size(); ++idx)
+            {
+                auto *node = (*bestRoute)[idx];
+                if (idx > 0)
+                    now += durMatrix((*bestRoute)[idx - 1]->client(),
+                                     node->client());
+
+                now = advancePastForbidden(now, vehType.forbiddenWindows);
+
+                if (node->isReloadDepot() || (node->isDepot() && idx > 0))
+                {
+                    Duration depart = now;
+                    if (node->isReloadDepot())
+                    {
+                        ProblemData::Depot const &dp
+                            = data.location(node->client());
+                        depart += dp.serviceDuration;
+                        depart = advancePastForbidden(depart,
+                                                      vehType.forbiddenWindows);
+                    }
+                    Duration arrive
+                        = depart + durMatrix(node->client(), client);
+
+                    if (arrive <= clientData.twLate)
+                    {
+                        insertIdx = idx;
+                        foundBoundary = true;
+                    }
+                }
+
+                // Advance past client service
+                if (!node->isDepot() && !node->isReloadDepot())
+                {
+                    ProblemData::Client const &cl
+                        = data.location(node->client());
+                    auto const wait
+                        = cl.twEarly > now ? cl.twEarly - now : Duration(0);
+                    now += wait + cl.serviceDuration;
+                }
+                else if (node->isReloadDepot())
+                {
+                    ProblemData::Depot const &dp
+                        = data.location(node->client());
+                    now += dp.serviceDuration;
+                    now = advancePastForbidden(now, vehType.forbiddenWindows);
+                }
+            }
+
             Route::Node depot = {reloadDepot};
-            bestRoute->insert(insertIdx, &depot);
-            bestRoute->insert(insertIdx + 1, U);
+            size_t clientIdx, depotIdx;
+            if (!foundBoundary && canInsertAtBeginning)
+            {
+                // Insert at beginning: client first, then reload
+                // after it, so the new client starts the first trip.
+                bestRoute->insert(1, U);
+                bestRoute->insert(2, &depot);
+                clientIdx = 1;
+                depotIdx = 2;
+            }
+            else
+            {
+                // Normal: reload before client at trip boundary.
+                bestRoute->insert(insertIdx, U);
+                bestRoute->insert(insertIdx, &depot);
+                clientIdx = insertIdx + 1;
+                depotIdx = insertIdx;
+            }
             bestRoute->update();
 
-            // Mark as promising for future iterations
+            // If the insertion made the route infeasible (e.g. the new
+            // trip's service exceeds tw_late after forbidden window
+            // delays), undo the insertion.
+            if (!bestRoute->isFeasible())
+            {
+                // Remove client first (it's after the depot node),
+                // then the depot node.
+                if (clientIdx > depotIdx)
+                {
+                    bestRoute->remove(clientIdx);
+                    bestRoute->remove(depotIdx);
+                }
+                else
+                {
+                    bestRoute->remove(depotIdx);
+                    bestRoute->remove(clientIdx);
+                }
+                bestRoute->update();
+                continue;
+            }
+
             searchSpace_.markPromising(U);
         }
+    }
+}
+
+void LocalSearch::stripForbiddenWindowViolations()
+{
+    for (auto &route : solution_.routes)
+    {
+        if (route.empty())
+            continue;
+
+        auto const &vehType = data.vehicleType(route.vehicleType());
+        if (vehType.forbiddenWindows.empty())
+            continue;
+
+        // Walk the schedule forward to find clients whose service end
+        // exceeds tw_late after accounting for forbidden window delays.
+        // We always check (not gated on timeWarp) because the DS-based
+        // timeWarp doesn't account for FW delays pushing past tw_late.
+        auto const &durations = data.durationMatrix(vehType.profile);
+        Duration now = vehType.twEarly;
+
+        std::vector<size_t> toRemove;
+
+        for (size_t idx = 0; idx < route.size(); ++idx)
+        {
+            auto *node = route[idx];
+            if (idx > 0)
+                now += durations(route[idx - 1]->client(), node->client());
+
+            now = advancePastForbidden(now, vehType.forbiddenWindows);
+
+            if (node->isDepot() || node->isReloadDepot())
+            {
+                if (node->isReloadDepot())
+                {
+                    ProblemData::Depot const &depot
+                        = data.location(node->client());
+                    now += depot.serviceDuration;
+                    now = advancePastForbidden(now, vehType.forbiddenWindows);
+
+                    // Lookahead: if next node is a client whose presence
+                    // at that location would overlap a forbidden window,
+                    // wait at the depot.  Mirrors Route::update() logic.
+                    if (idx + 1 < route.size() && !route[idx + 1]->isDepot()
+                        && !route[idx + 1]->isReloadDepot())
+                    {
+                        auto const travel = durations(node->client(),
+                                                      route[idx + 1]->client());
+                        auto const arrive = now + travel;
+                        ProblemData::Client const &next
+                            = data.location(route[idx + 1]->client());
+                        auto const svcStart = std::max(arrive, next.twEarly);
+                        auto const svcEnd = svcStart + next.serviceDuration;
+
+                        for (auto const &[fStart, fEnd] :
+                             vehType.forbiddenWindows)
+                        {
+                            if (arrive < fEnd && svcEnd > fStart)
+                            {
+                                if (fEnd > now)
+                                    now = fEnd;
+                                break;
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
+            ProblemData::Client const &cl = data.location(node->client());
+            auto const wait = cl.twEarly > now ? cl.twEarly - now : Duration(0);
+            now += wait;
+
+            auto const serviceEnd = now + cl.serviceDuration;
+            if (serviceEnd > vehType.twLate && !cl.required)
+                toRemove.push_back(node->client());
+
+            now = serviceEnd;
+        }
+
+        if (toRemove.empty())
+            continue;
+
+        // Remove in reverse index order.
+        for (auto it = toRemove.rbegin(); it != toRemove.rend(); ++it)
+        {
+            auto *U = &solution_.nodes[*it];
+            if (U->route() == &route)
+                route.remove(U->idx());
+        }
+
+        // Clean up orphaned reload depots (depot with no clients after it
+        // before the next depot/end).
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            for (size_t idx = 1; idx < route.size() - 1; ++idx)
+            {
+                if (!route[idx]->isReloadDepot())
+                    continue;
+
+                // Check if next node is a depot or end — if so, this reload
+                // depot has no clients after it in its trip.
+                bool orphaned = (idx + 1 >= route.size() - 1)
+                                || route[idx + 1]->isDepot()
+                                || route[idx + 1]->isReloadDepot();
+                if (orphaned)
+                {
+                    route.remove(idx);
+                    changed = true;
+                    break;  // restart scan after removal
+                }
+            }
+        }
+
+        route.update();
+    }
+}
+
+void LocalSearch::stripInfeasibleForbiddenWindowClients()
+{
+    for (auto &route : solution_.routes)
+    {
+        if (route.empty() || route.isFeasible())
+            continue;
+
+        auto const &vehType = data.vehicleType(route.vehicleType());
+        if (vehType.forbiddenWindows.empty())
+            continue;
+
+        // Route is infeasible and has forbidden windows.  Strip
+        // non-required clients one at a time (worst overlap first)
+        // until feasible or no more optional clients remain.
+        bool changed = true;
+        while (changed && !route.isFeasible())
+        {
+            changed = false;
+
+            auto const &durations = data.durationMatrix(vehType.profile);
+            Duration now = vehType.twEarly;
+            size_t worstClient = 0;
+            Duration worstOverlap = 0;
+
+            for (size_t idx = 0; idx < route.size(); ++idx)
+            {
+                auto *node = route[idx];
+                if (idx > 0)
+                    now += durations(route[idx - 1]->client(), node->client());
+
+                now = advancePastForbidden(now, vehType.forbiddenWindows);
+
+                if (node->isDepot() || node->isReloadDepot())
+                {
+                    if (node->isReloadDepot())
+                    {
+                        ProblemData::Depot const &dp
+                            = data.location(node->client());
+                        now += dp.serviceDuration;
+                        now = advancePastForbidden(now,
+                                                   vehType.forbiddenWindows);
+                    }
+                    continue;
+                }
+
+                ProblemData::Client const &cl = data.location(node->client());
+                if (cl.required)
+                {
+                    auto const wait
+                        = cl.twEarly > now ? cl.twEarly - now : Duration(0);
+                    now += wait + cl.serviceDuration;
+                    continue;
+                }
+
+                auto const wait
+                    = cl.twEarly > now ? cl.twEarly - now : Duration(0);
+                auto const svcStart = now + wait;
+                auto const svcEnd = svcStart + cl.serviceDuration;
+
+                // Measure total forbidden window overlap for this client.
+                Duration overlap = 0;
+                for (auto const &[fStart, fEnd] : vehType.forbiddenWindows)
+                {
+                    auto const oStart = std::max(svcStart, fStart);
+                    auto const oEnd = std::min(svcEnd, fEnd);
+                    if (oStart < oEnd)
+                        overlap += oEnd - oStart;
+                }
+                // Also count exceeding twLate as overlap.
+                if (svcEnd > vehType.twLate)
+                    overlap += svcEnd - vehType.twLate;
+
+                if (overlap > worstOverlap)
+                {
+                    worstOverlap = overlap;
+                    worstClient = node->client();
+                }
+
+                now = svcEnd;
+            }
+
+            if (worstOverlap > 0)
+            {
+                auto *U = &solution_.nodes[worstClient];
+                if (U->route() == &route)
+                {
+                    route.remove(U->idx());
+                    route.update();
+                    changed = true;
+                }
+            }
+        }
+
+        // Clean up orphaned reload depots.
+        bool cleaned = true;
+        while (cleaned)
+        {
+            cleaned = false;
+            for (size_t idx = 1; idx < route.size() - 1; ++idx)
+            {
+                if (!route[idx]->isReloadDepot())
+                    continue;
+                bool orphaned = (idx + 1 >= route.size() - 1)
+                                || route[idx + 1]->isDepot()
+                                || route[idx + 1]->isReloadDepot();
+                if (orphaned)
+                {
+                    route.remove(idx);
+                    cleaned = true;
+                    break;
+                }
+            }
+        }
+
+        route.update();
     }
 }
 

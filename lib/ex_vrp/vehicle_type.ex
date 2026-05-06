@@ -25,7 +25,8 @@ defmodule ExVrp.VehicleType do
           reload_depots: [non_neg_integer()],
           max_reloads: non_neg_integer() | :infinity,
           initial_load: [non_neg_integer()],
-          name: String.t()
+          name: String.t(),
+          forbidden_windows: [{non_neg_integer(), non_neg_integer()}]
         }
 
   @enforce_keys [:num_available, :capacity]
@@ -48,7 +49,8 @@ defmodule ExVrp.VehicleType do
     reload_depots: [],
     max_reloads: :infinity,
     initial_load: [],
-    name: ""
+    name: "",
+    forbidden_windows: []
   ]
 
   @doc """
@@ -61,11 +63,13 @@ defmodule ExVrp.VehicleType do
 
   ## Optional Options
 
+  - `:time_windows` - List of `{start, end}` tuples representing operating windows
+    (default: `[{0, :infinity}]`). Overlapping/adjacent windows are merged automatically.
+    Example: `[{0, 500}, {600, 1000}]` becomes `tw_early: 0, tw_late: 1000,
+    forbidden_windows: [{500, 600}]`.
   - `:start_depot` - Index of starting depot (default: `0`)
   - `:end_depot` - Index of ending depot (default: `0`)
   - `:fixed_cost` - Fixed cost for using this vehicle (default: `0`)
-  - `:tw_early` - Earliest departure time (default: `0`)
-  - `:tw_late` - Latest return time (default: `:infinity`)
   - `:shift_duration` - Maximum shift duration (default: `:infinity`)
   - `:max_distance` - Maximum distance allowed (default: `:infinity`)
   - `:unit_distance_cost` - Cost per unit distance (default: `1`)
@@ -79,14 +83,88 @@ defmodule ExVrp.VehicleType do
   - `:initial_load` - Initial load per dimension (default: `[]`)
   - `:name` - Vehicle type name (default: `""`)
 
+  ## Raises
+
+  - `ArgumentError` if `:time_windows` contains invalid tuples (start >= end or negative start)
+  - `ArgumentError` if `:time_windows` is an empty list
+  - `ArgumentError` if legacy options `:tw_early`, `:tw_late`, or `:forbidden_windows` are passed
+
   ## Examples
 
-      iex> ExVrp.VehicleType.new(num_available: 3, capacity: [100, 50])
-      %ExVrp.VehicleType{num_available: 3, capacity: [100, 50], ...}
+      iex> ExVrp.VehicleType.new(num_available: 3, capacity: [100, 50], time_windows: [{0, 28_800}])
+      %ExVrp.VehicleType{num_available: 3, capacity: [100, 50], tw_early: 0, tw_late: 28_800, ...}
 
   """
   @spec new(keyword()) :: t()
   def new(opts) do
-    struct!(__MODULE__, opts)
+    validate_no_legacy_options!(opts)
+    {time_windows, rest} = Keyword.pop(opts, :time_windows, [{0, :infinity}])
+
+    validate_time_windows!(time_windows)
+
+    windows =
+      time_windows
+      |> Enum.sort_by(fn {s, _end} -> s end)
+      |> merge_windows()
+
+    tw_early = elem(hd(windows), 0)
+    tw_late = elem(List.last(windows), 1)
+
+    forbidden =
+      windows
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.map(fn [{_s, gap_start}, {gap_end, _e}] -> {gap_start, gap_end} end)
+
+    struct!(__MODULE__, Keyword.merge(rest, tw_early: tw_early, tw_late: tw_late, forbidden_windows: forbidden))
   end
+
+  defp validate_no_legacy_options!(opts) do
+    legacy = [:tw_early, :tw_late, :forbidden_windows]
+
+    found = Enum.filter(legacy, &Keyword.has_key?(opts, &1))
+
+    if found != [] do
+      raise ArgumentError,
+            "#{inspect(found)} cannot be set directly, use :time_windows instead"
+    end
+  end
+
+  defp validate_time_windows!(time_windows) do
+    if time_windows == [] do
+      raise ArgumentError, ":time_windows must be a non-empty list of {start, end} tuples"
+    end
+
+    Enum.each(time_windows, fn
+      {s, :infinity} when is_integer(s) and s >= 0 ->
+        :ok
+
+      {s, e} when is_integer(s) and is_integer(e) and s >= 0 and e > s ->
+        :ok
+
+      other ->
+        raise ArgumentError,
+              "invalid time window: #{inspect(other)}, expected {start, end} where start >= 0 and end > start"
+    end)
+  end
+
+  defp merge_windows([]), do: []
+
+  defp merge_windows([first | rest]) do
+    rest
+    |> Enum.reduce([first], fn {s, e}, [{cs, ce} | tail] ->
+      if lte(s, ce) do
+        [{cs, max_end(ce, e)} | tail]
+      else
+        [{s, e}, {cs, ce} | tail]
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  defp lte(_s, :infinity), do: true
+  defp lte(s, ce), do: s <= ce
+
+  defp max_end(:infinity, _other), do: :infinity
+  defp max_end(_other, :infinity), do: :infinity
+  defp max_end(a, b), do: max(a, b)
 end

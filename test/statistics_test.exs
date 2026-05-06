@@ -369,8 +369,7 @@ defmodule ExVrp.StatisticsTest do
       |> Model.add_vehicle_type(
         num_available: 3,
         capacity: [10],
-        tw_early: 0,
-        tw_late: 45_000
+        time_windows: [{0, 45_000}]
       )
       |> Model.set_distance_matrices([distances])
       |> Model.set_duration_matrices([distances])

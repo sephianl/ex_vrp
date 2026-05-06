@@ -348,25 +348,27 @@ bool ProblemData::Depot::operator==(Depot const &other) const
     // clang-format on
 }
 
-ProblemData::VehicleType::VehicleType(size_t numAvailable,
-                                      std::vector<Load> capacity,
-                                      size_t startDepot,
-                                      size_t endDepot,
-                                      Cost fixedCost,
-                                      Duration twEarly,
-                                      Duration twLate,
-                                      Duration shiftDuration,
-                                      Distance maxDistance,
-                                      Cost unitDistanceCost,
-                                      Cost unitDurationCost,
-                                      size_t profile,
-                                      std::optional<Duration> startLate,
-                                      std::vector<Load> initialLoad,
-                                      std::vector<size_t> reloadDepots,
-                                      size_t maxReloads,
-                                      Duration maxOvertime,
-                                      Cost unitOvertimeCost,
-                                      std::string name)
+ProblemData::VehicleType::VehicleType(
+    size_t numAvailable,
+    std::vector<Load> capacity,
+    size_t startDepot,
+    size_t endDepot,
+    Cost fixedCost,
+    Duration twEarly,
+    Duration twLate,
+    Duration shiftDuration,
+    Distance maxDistance,
+    Cost unitDistanceCost,
+    Cost unitDurationCost,
+    size_t profile,
+    std::optional<Duration> startLate,
+    std::vector<Load> initialLoad,
+    std::vector<size_t> reloadDepots,
+    size_t maxReloads,
+    Duration maxOvertime,
+    Cost unitOvertimeCost,
+    std::string name,
+    std::vector<std::pair<Duration, Duration>> forbiddenWindows)
     : numAvailable(numAvailable),
       startDepot(startDepot),
       endDepot(endDepot),
@@ -393,10 +395,11 @@ ProblemData::VehicleType::VehicleType(size_t numAvailable,
                                                - shiftDuration
                       ? shiftDuration + maxOvertime
                       : std::numeric_limits<Duration>::max()),
+      forbiddenWindows(std::move(forbiddenWindows)),
       name(duplicate(name.data()))
 {
-    if (numAvailable == 0)
-        throw std::invalid_argument("num_available must be > 0.");
+    if (numAvailable < 0)
+        throw std::invalid_argument("num_available must be => 0.");
 
     if (std::any_of(capacity.begin(), capacity.end(), isNegative<Load>))
         throw std::invalid_argument("capacity amounts must be >= 0.");
@@ -437,6 +440,17 @@ ProblemData::VehicleType::VehicleType(size_t numAvailable,
 
     if (unitOvertimeCost < 0)
         throw std::invalid_argument("unit_overtime_cost must be >= 0.");
+
+    for (auto const &[fStart, fEnd] : this->forbiddenWindows)
+    {
+        if (fStart >= fEnd)
+            throw std::invalid_argument(
+                "forbidden window start must be < end.");
+
+        if (fStart < twEarly || fEnd > twLate)
+            throw std::invalid_argument(
+                "forbidden window must be within vehicle time window.");
+    }
 }
 
 ProblemData::VehicleType::VehicleType(VehicleType const &vehicleType)
@@ -459,6 +473,7 @@ ProblemData::VehicleType::VehicleType(VehicleType const &vehicleType)
       maxOvertime(vehicleType.maxOvertime),
       unitOvertimeCost(vehicleType.unitOvertimeCost),
       maxDuration(vehicleType.maxDuration),
+      forbiddenWindows(vehicleType.forbiddenWindows),
       name(duplicate(vehicleType.name))
 {
 }
@@ -483,6 +498,7 @@ ProblemData::VehicleType::VehicleType(VehicleType &&vehicleType)
       maxOvertime(vehicleType.maxOvertime),
       unitOvertimeCost(vehicleType.unitOvertimeCost),
       maxDuration(vehicleType.maxDuration),
+      forbiddenWindows(std::move(vehicleType.forbiddenWindows)),
       name(vehicleType.name)  // we can steal
 {
     vehicleType.name = nullptr;  // stolen
@@ -509,7 +525,9 @@ ProblemData::VehicleType ProblemData::VehicleType::replace(
     std::optional<size_t> maxReloads,
     std::optional<Duration> maxOvertime,
     std::optional<Cost> unitOvertimeCost,
-    std::optional<std::string> name) const
+    std::optional<std::string> name,
+    std::optional<std::vector<std::pair<Duration, Duration>>> forbiddenWindows)
+    const
 {
     return {numAvailable.value_or(this->numAvailable),
             capacity.value_or(this->capacity),
@@ -529,7 +547,8 @@ ProblemData::VehicleType ProblemData::VehicleType::replace(
             maxReloads.value_or(this->maxReloads),
             maxOvertime.value_or(this->maxOvertime),
             unitOvertimeCost.value_or(this->unitOvertimeCost),
-            name.value_or(this->name)};
+            name.value_or(this->name),
+            forbiddenWindows.value_or(this->forbiddenWindows)};
 }
 
 size_t ProblemData::VehicleType::maxTrips() const
@@ -560,6 +579,7 @@ bool ProblemData::VehicleType::operator==(VehicleType const &other) const
         && maxReloads == other.maxReloads
         && maxOvertime == other.maxOvertime
         && unitOvertimeCost == other.unitOvertimeCost
+        && forbiddenWindows == other.forbiddenWindows
         && std::strcmp(name, other.name) == 0;
     // clang-format on
 }

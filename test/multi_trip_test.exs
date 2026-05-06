@@ -152,8 +152,7 @@ defmodule ExVrp.MultiTripTest do
           capacity: [100],
           reload_depots: [0],
           max_reloads: :infinity,
-          tw_early: 0,
-          tw_late: 2000
+          time_windows: [{0, 2000}]
         )
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
@@ -190,8 +189,7 @@ defmodule ExVrp.MultiTripTest do
           capacity: [100],
           reload_depots: [0],
           max_reloads: 5,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
@@ -223,8 +221,7 @@ defmodule ExVrp.MultiTripTest do
           capacity: [100],
           reload_depots: [0],
           max_reloads: 1,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
@@ -255,8 +252,7 @@ defmodule ExVrp.MultiTripTest do
           capacity: [100],
           reload_depots: [0],
           max_reloads: :infinity,
-          tw_early: 0,
-          tw_late: 2000
+          time_windows: [{0, 2000}]
         )
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
@@ -289,8 +285,7 @@ defmodule ExVrp.MultiTripTest do
           capacity: [100],
           reload_depots: [0],
           max_reloads: :infinity,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
@@ -317,8 +312,7 @@ defmodule ExVrp.MultiTripTest do
           capacity: [100],
           reload_depots: [0],
           max_reloads: 5,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
@@ -361,8 +355,7 @@ defmodule ExVrp.MultiTripTest do
           capacity: [1000],
           reload_depots: [0],
           max_reloads: :infinity,
-          tw_early: 0,
-          tw_late: 10_000
+          time_windows: [{0, 10_000}]
         )
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
@@ -403,8 +396,7 @@ defmodule ExVrp.MultiTripTest do
           capacity: [1000],
           reload_depots: [0],
           max_reloads: :infinity,
-          tw_early: 0,
-          tw_late: 10_000
+          time_windows: [{0, 10_000}]
         )
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
@@ -529,8 +521,7 @@ defmodule ExVrp.MultiTripTest do
           capacity: [1000, 1000, 1000],
           reload_depots: [0],
           max_reloads: :infinity,
-          tw_early: 0,
-          tw_late: 86_400,
+          time_windows: [{0, 86_400}],
           shift_duration: 86_400,
           name: "v0"
         )
@@ -566,8 +557,7 @@ defmodule ExVrp.MultiTripTest do
           capacity: [1000, 100],
           reload_depots: [0],
           max_reloads: 5,
-          tw_early: 0,
-          tw_late: 1000
+          time_windows: [{0, 1000}]
         )
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
@@ -595,8 +585,7 @@ defmodule ExVrp.MultiTripTest do
           end_depot: 0,
           reload_depots: [1],
           max_reloads: 5,
-          tw_early: 0,
-          tw_late: 2000
+          time_windows: [{0, 2000}]
         )
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
@@ -809,8 +798,7 @@ defmodule ExVrp.MultiTripTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
-          tw_early: 0,
-          tw_late: 130,
+          time_windows: [{0, 130}],
           shift_duration: 130,
           reload_depots: [0],
           max_reloads: :infinity
@@ -850,8 +838,7 @@ defmodule ExVrp.MultiTripTest do
           num_available: 1,
           # Capacity (50) < demand (100), so multi-trip would be needed
           capacity: [50],
-          tw_early: 0,
-          tw_late: 130,
+          time_windows: [{0, 130}],
           shift_duration: 130,
           reload_depots: [0],
           max_reloads: :infinity
@@ -892,8 +879,7 @@ defmodule ExVrp.MultiTripTest do
           # But this client can never be served even with multi-trip
           # because demand (100) > capacity (50)
           capacity: [50],
-          tw_early: 0,
-          tw_late: 1000,
+          time_windows: [{0, 1000}],
           # This is the key - shift_duration limits the route duration
           shift_duration: 130,
           reload_depots: [0],
@@ -936,8 +922,7 @@ defmodule ExVrp.MultiTripTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [1000],
-          tw_early: 0,
-          tw_late: 3600,
+          time_windows: [{0, 3600}],
           shift_duration: 3600,
           reload_depots: [0],
           max_reloads: :infinity
@@ -987,8 +972,7 @@ defmodule ExVrp.MultiTripTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
-          tw_early: 0,
-          tw_late: 130,
+          time_windows: [{0, 130}],
           shift_duration: 130,
           reload_depots: [0],
           max_reloads: :infinity
@@ -1036,8 +1020,7 @@ defmodule ExVrp.MultiTripTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
-          tw_early: 0,
-          tw_late: 1000,
+          time_windows: [{0, 1000}],
           shift_duration: 1000,
           reload_depots: [0],
           max_reloads: :infinity
@@ -1106,8 +1089,7 @@ defmodule ExVrp.MultiTripTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
-          tw_early: 0,
-          tw_late: 200,
+          time_windows: [{0, 200}],
           shift_duration: 200,
           reload_depots: [0],
           max_reloads: :infinity
@@ -1178,8 +1160,7 @@ defmodule ExVrp.MultiTripTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
-          tw_early: 0,
-          tw_late: 500,
+          time_windows: [{0, 500}],
           shift_duration: 500,
           name: "v0",
           reload_depots: [0],
@@ -1189,8 +1170,7 @@ defmodule ExVrp.MultiTripTest do
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
-          tw_early: 600,
-          tw_late: 1000,
+          time_windows: [{600, 1000}],
           shift_duration: 400,
           name: "v0",
           reload_depots: [0],

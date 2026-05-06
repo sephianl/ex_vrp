@@ -680,6 +680,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     std::vector<int64_t> reload_depots_vec;
     int64_t max_reloads = std::numeric_limits<int64_t>::max();
     std::vector<int64_t> initial_load_vec;
+    std::vector<std::pair<int64_t, int64_t>> forbidden_windows_raw;
     std::string name;
 
     ERL_NIF_TERM key, value;
@@ -846,6 +847,29 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                     }
                 }
             }
+            else if (key_str == "forbidden_windows")
+            {
+                unsigned len;
+                if (enif_get_list_length(env, value, &len))
+                {
+                    forbidden_windows_raw.reserve(len);
+                    ERL_NIF_TERM head, tail = value;
+                    for (unsigned i = 0; i < len; i++)
+                    {
+                        enif_get_list_cell(env, tail, &head, &tail);
+                        int arity;
+                        const ERL_NIF_TERM *elems;
+                        if (enif_get_tuple(env, head, &arity, &elems)
+                            && arity == 2)
+                        {
+                            int64_t start = 0, end = 0;
+                            nif_get_int64(env, elems[0], &start);
+                            nif_get_int64(env, elems[1], &end);
+                            forbidden_windows_raw.push_back({start, end});
+                        }
+                    }
+                }
+            }
             else if (key_str == "name")
             {
                 name = decode_binary_to_string(env, value);
@@ -877,6 +901,12 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     for (auto d : reload_depots_vec)
         reload_depots.push_back(static_cast<size_t>(d));
 
+    // Convert forbidden_windows to vector<pair<Duration, Duration>>
+    std::vector<std::pair<Duration, Duration>> forbidden_windows;
+    forbidden_windows.reserve(forbidden_windows_raw.size());
+    for (auto const &[s, e] : forbidden_windows_raw)
+        forbidden_windows.push_back({Duration(s), Duration(e)});
+
     return ProblemData::VehicleType(static_cast<size_t>(num_available),
                                     std::move(capacity_loads),
                                     static_cast<size_t>(start_depot),
@@ -895,7 +925,8 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                                     static_cast<size_t>(max_reloads),
                                     Duration(max_overtime),
                                     Cost(unit_overtime_cost),
-                                    std::move(name));
+                                    std::move(name),
+                                    std::move(forbidden_windows));
 }
 
 // Decode distance/duration matrix from nested list

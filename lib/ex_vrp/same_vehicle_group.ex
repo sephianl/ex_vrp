@@ -18,7 +18,7 @@ defmodule ExVrp.SameVehicleGroup do
         |> ExVrp.Model.add_client(x: 1, y: 1)
         |> ExVrp.Model.add_client(x: 2, y: 2)
         |> ExVrp.Model.add_client(x: 3, y: 3)
-        |> ExVrp.Model.add_vehicle_type(num_available: 2)
+        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
 
       # Get client references
       [c1, c2, c3] = model.clients
