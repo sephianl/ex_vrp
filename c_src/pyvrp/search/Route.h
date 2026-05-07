@@ -970,7 +970,8 @@ Duration Route::duration() const
 Duration Route::overtime() const
 {
     assert(!dirty);
-    return std::max<Duration>(duration() - shiftDuration(), 0);
+    auto const dur = duration();
+    return dur > shiftDuration() ? dur - shiftDuration() : Duration(0);
 }
 
 Cost Route::durationCost() const
@@ -1209,7 +1210,8 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
         merge(merge, std::forward<decltype(args)>(args)...);
 
         auto const duration = ds.duration();
-        auto const overtime = std::max<Duration>(duration - shiftDuration, 0);
+        auto const overtime
+            = duration > shiftDuration ? duration - shiftDuration : Duration(0);
         auto const cost = unitDurationCost * static_cast<Cost>(duration)
                           + unitOvertimeCost * static_cast<Cost>(overtime);
         auto const timeWarp = ds.timeWarp(maxDuration);

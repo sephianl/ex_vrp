@@ -353,7 +353,9 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     ds = DurationSegment::merge(0, {vehData, vehData.startLate}, ds);
 
     duration_ = ds.duration();
-    overtime_ = std::max<Duration>(duration_ - vehData.shiftDuration, 0);
+    overtime_ = duration_ > vehData.shiftDuration
+                    ? duration_ - vehData.shiftDuration
+                    : Duration(0);
     durationCost_ = vehData.unitDurationCost * static_cast<Cost>(duration_)
                     + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
     startTime_ = ds.startEarly();
@@ -369,7 +371,9 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     {
         duration_
             = schedule_.back().endService - schedule_.front().startService;
-        overtime_ = std::max<Duration>(duration_ - vehData.shiftDuration, 0);
+        overtime_ = duration_ > vehData.shiftDuration
+                        ? duration_ - vehData.shiftDuration
+                        : Duration(0);
         durationCost_
             = vehData.unitDurationCost * static_cast<Cost>(duration_)
               + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
@@ -377,7 +381,9 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         timeWarp_ = 0;
         for (auto const &visit : schedule_)
             timeWarp_ += visit.timeWarp;
-        timeWarp_ += std::max<Duration>(duration_ - vehData.maxDuration, 0);
+        timeWarp_ += duration_ > vehData.maxDuration
+                         ? duration_ - vehData.maxDuration
+                         : Duration(0);
     }
 }
 
