@@ -427,7 +427,7 @@ bool LocalSearch::applyBinaryOps(Route::Node *U,
                            + Cost(rU != rV) * costEvaluator.penalisedCost(*rV)
                      : costEvaluator.penalisedCost(*rV);
 
-            assert(rU->hasForbiddenWindows()
+            assert(!rU || rU->hasForbiddenWindows()
                    || (rU != rV && rV->hasForbiddenWindows())
                    || costAfter == costBefore + deltaCost);
 
