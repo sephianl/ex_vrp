@@ -482,15 +482,13 @@ PYBIND11_MODULE(_pyvrp, m)
                 if (idx >= data.numLocations())
                     throw py::index_error();
 
-                auto const proxy = data.location(idx);
                 if (idx < data.numDepots())
-                    return proxy.depot;
+                    return &data.depot(idx);
                 else
-                    return proxy.client;
+                    return &data.client(idx - data.numDepots());
             },
             py::arg("idx"),
-            py::return_value_policy::reference_internal,
-            DOC(pyvrp, ProblemData, location))
+            py::return_value_policy::reference_internal)
         .def("clients",
              &ProblemData::clients,
              py::return_value_policy::reference_internal,
@@ -519,10 +517,6 @@ PYBIND11_MODULE(_pyvrp, m)
              &ProblemData::durationMatrices,
              py::return_value_policy::reference_internal,
              DOC(pyvrp, ProblemData, durationMatrices))
-        .def("centroid",
-             &ProblemData::centroid,
-             py::return_value_policy::reference_internal,
-             DOC(pyvrp, ProblemData, centroid))
         .def("group",
              &ProblemData::group,
              py::arg("group"),

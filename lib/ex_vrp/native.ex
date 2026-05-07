@@ -38,7 +38,6 @@ defmodule ExVrp.Native do
     problem_data_num_vehicle_types: 1,
     problem_data_num_vehicles: 1,
     problem_data_has_time_windows_nif: 1,
-    problem_data_centroid_nif: 1,
     problem_data_num_profiles_nif: 1,
     # ProblemData extraction
     problem_data_clients_nif: 1,
@@ -174,13 +173,6 @@ defmodule ExVrp.Native do
     exchange32_apply_nif: 3,
     exchange33_evaluate_nif: 4,
     exchange33_apply_nif: 3,
-    # Route operators
-    create_swap_star_nif: 2,
-    swap_star_evaluate_nif: 4,
-    swap_star_apply_nif: 3,
-    create_swap_routes_nif: 1,
-    swap_routes_evaluate_nif: 4,
-    swap_routes_apply_nif: 3,
     create_swap_tails_nif: 1,
     create_relocate_with_depot_nif: 1,
     swap_tails_evaluate_nif: 4,
@@ -188,10 +180,6 @@ defmodule ExVrp.Native do
     relocate_with_depot_evaluate_nif: 4,
     relocate_with_depot_apply_nif: 3,
     relocate_with_depot_supports_nif: 1,
-    # Primitive cost functions
-    insert_cost_nif: 4,
-    remove_cost_nif: 3,
-    inplace_cost_nif: 4,
     # RNG
     create_rng_from_seed_nif: 1,
     create_rng_from_state_nif: 1,
@@ -412,12 +400,6 @@ defmodule ExVrp.Native do
   def problem_data_has_time_windows_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
-  Gets the centroid (average x, y) of all client locations.
-  """
-  @spec problem_data_centroid_nif(reference()) :: {float(), float()}
-  def problem_data_centroid_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc """
   Gets the number of profiles (distance/duration matrix sets).
   """
   @spec problem_data_num_profiles_nif(reference()) :: non_neg_integer()
@@ -539,10 +521,6 @@ defmodule ExVrp.Native do
     - `:exchange33` / `:swap33` - Exchange 3 nodes for 3
     - `:swap_tails` - Swap route tails
     - `:relocate_with_depot` - Relocate with depot reload (multi-trip)
-
-  - `:route_operators` - List of route operator names:
-    - `:swap_star` - SWAP* operator (Vidal et al.)
-    - `:swap_routes` - Swap entire routes
 
   - `:exhaustive` - Whether to run exhaustive search (default: false)
   """
@@ -1124,26 +1102,8 @@ defmodule ExVrp.Native do
   def exchange33_apply_nif(_op, _u, _v), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
-  # Route Operator NIFs (SwapStar, SwapRoutes, SwapTails, RelocateWithDepot)
+  # Route Operator NIFs (SwapTails, RelocateWithDepot)
   # ---------------------------------------------------------------------------
-
-  @doc "Creates a SwapStar operator with overlap_tolerance (0.0 to 1.0, use 1.0 to check all route pairs)."
-  def create_swap_star_nif(_problem_data, _overlap_tolerance), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Evaluates SwapStar move cost between two routes."
-  def swap_star_evaluate_nif(_op, _route1, _route2, _evaluator), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Applies SwapStar move between two routes."
-  def swap_star_apply_nif(_op, _route1, _route2), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Creates a SwapRoutes operator."
-  def create_swap_routes_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Evaluates SwapRoutes move cost between two routes."
-  def swap_routes_evaluate_nif(_op, _route1, _route2, _evaluator), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Applies SwapRoutes move between two routes."
-  def swap_routes_apply_nif(_op, _route1, _route2), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Creates a SwapTails operator."
   def create_swap_tails_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
@@ -1166,32 +1126,6 @@ defmodule ExVrp.Native do
   @doc "Checks if RelocateWithDepot is supported for the given problem data."
   @spec relocate_with_depot_supports_nif(reference()) :: boolean()
   def relocate_with_depot_supports_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
-
-  # ---------------------------------------------------------------------------
-  # Primitive Cost Functions
-  # ---------------------------------------------------------------------------
-
-  @doc """
-  Computes the delta cost of inserting node U after node V in V's route.
-
-  Returns 0 if the move is not possible (e.g., inserting a depot).
-  """
-  def insert_cost_nif(_u_node, _v_node, _problem_data, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc """
-  Computes the delta cost of removing node U from its route.
-
-  Returns 0 if the move is not possible (e.g., removing a depot, node not in route).
-  """
-  def remove_cost_nif(_u_node, _problem_data, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc """
-  Computes the delta cost of inserting node U in place of node V.
-
-  U must not be in a route, V must be in a route.
-  Returns 0 if the move is not possible.
-  """
-  def inplace_cost_nif(_u_node, _v_node, _problem_data, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
   # RandomNumberGenerator NIFs

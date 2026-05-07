@@ -65,3 +65,7 @@ checksum.exs
 
 # Valgrind core dumps
 vgcore.*
+
+# Standalone test binary built via `make test-solver`
+/solver_test
+/svg_crash_test
