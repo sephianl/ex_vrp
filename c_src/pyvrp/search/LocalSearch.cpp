@@ -28,19 +28,19 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
 
     markMissingAsPromising();
 
-    // Set up timeout tracking
-    if (timeout_ms > 0)
-    {
-        has_timeout_ = true;
-        timeout_deadline_ = std::chrono::steady_clock::now()
-                            + std::chrono::milliseconds(timeout_ms);
-    }
-    else
-    {
-        has_timeout_ = false;
-    }
+    // Set up timeout tracking.  Always apply a safety deadline to
+    // prevent infinite loops caused by oscillating moves (e.g.
+    // forbidden-window cost evaluation inaccuracies in multi-trip
+    // instances).  The default of 5 seconds is generous — normal
+    // invocations complete in < 5 ms.
+    static constexpr int64_t SAFETY_TIMEOUT_MS = 5000;
+    has_timeout_ = true;
+    timeout_deadline_ = std::chrono::steady_clock::now()
+                        + std::chrono::milliseconds(
+                            timeout_ms > 0 ? timeout_ms : SAFETY_TIMEOUT_MS);
 
-    while (true)
+    static constexpr int MAX_OUTER_ITERS = 15;
+    for (int outerIter = 0; outerIter < MAX_OUTER_ITERS; ++outerIter)
     {
         search(costEvaluator);
 
@@ -144,8 +144,12 @@ void LocalSearch::search(CostEvaluator const &costEvaluator)
 
     markMissingAsPromising();
 
+    // Safety limit on search steps. The DS-based cost evaluation is
+    // inexact for routes with forbidden windows, so moves can appear
+    // improving but actually oscillate. Normal convergence happens
+    // in < 10 steps; 50 provides ample headroom.
     searchCompleted_ = false;
-    for (int step = 0; !searchCompleted_; ++step)
+    for (int step = 0; !searchCompleted_ && step < 15; ++step)
     {
         // Check timeout
         if (has_timeout_
@@ -225,8 +229,11 @@ void LocalSearch::intensify(CostEvaluator const &costEvaluator)
     if (routeOps.empty())
         return;
 
+    static constexpr int MAX_INTENSIFY_STEPS = 15;
+    int intensifyStep = 0;
+
     searchCompleted_ = false;
-    while (!searchCompleted_)
+    while (!searchCompleted_ && intensifyStep++ < MAX_INTENSIFY_STEPS)
     {
         // Check timeout
         if (has_timeout_
