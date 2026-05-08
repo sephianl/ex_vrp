@@ -20,7 +20,9 @@ defmodule ExVrp.PerturbationManager do
       pm = ExVrp.PerturbationManager.shuffle(pm, rng)
       num = ExVrp.PerturbationManager.num_perturbations(pm)
       assert num >= 1 and num <= 25
+
   """
+
   alias ExVrp.Native
 
   @type t :: %__MODULE__{
@@ -28,6 +30,7 @@ defmodule ExVrp.PerturbationManager do
           min_perturbations: non_neg_integer(),
           max_perturbations: non_neg_integer()
         }
+
   defstruct [:ref, :min_perturbations, :max_perturbations]
 
   @doc """
@@ -49,13 +52,20 @@ defmodule ExVrp.PerturbationManager do
       iex> pm = ExVrp.PerturbationManager.new(min: 5, max: 10)
       iex> pm.min_perturbations
       5
+
   """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
     min = Keyword.get(opts, :min, 1)
     max = Keyword.get(opts, :max, 25)
+
     ref = Native.create_perturbation_manager_nif(min, max)
-    %__MODULE__{ref: ref, min_perturbations: min, max_perturbations: max}
+
+    %__MODULE__{
+      ref: ref,
+      min_perturbations: min,
+      max_perturbations: max
+    }
   end
 
   @doc """
@@ -81,6 +91,7 @@ defmodule ExVrp.PerturbationManager do
       pm = ExVrp.PerturbationManager.shuffle(pm, rng)
       num = ExVrp.PerturbationManager.num_perturbations(pm)
       assert num >= 1 and num <= 10
+
   """
   @spec shuffle(t(), reference()) :: t()
   def shuffle(%__MODULE__{ref: ref} = pm, rng) when is_reference(rng) do

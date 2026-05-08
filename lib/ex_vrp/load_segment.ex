@@ -15,10 +15,13 @@ defmodule ExVrp.LoadSegment do
       ls2 = ExVrp.LoadSegment.new(0, 5, 5, 0)
       merged = ExVrp.LoadSegment.merge(ls1, ls2)
       ExVrp.LoadSegment.excess_load(merged, 12)
+
   """
+
   alias ExVrp.Native
 
   @type t :: reference()
+
   @doc """
   Creates a new load segment.
 
@@ -78,13 +81,17 @@ defmodule ExVrp.LoadSegment do
     Native.load_segment_delivery_nif(segment)
   end
 
-  @doc "Returns the amount picked up from clients on this segment."
+  @doc """
+  Returns the amount picked up from clients on this segment.
+  """
   @spec pickup(t()) :: integer()
   def pickup(segment) do
     Native.load_segment_pickup_nif(segment)
   end
 
-  @doc "Returns the maximum load encountered on this segment."
+  @doc """
+  Returns the maximum load encountered on this segment.
+  """
   @spec load(t()) :: integer()
   def load(segment) do
     Native.load_segment_load_nif(segment)

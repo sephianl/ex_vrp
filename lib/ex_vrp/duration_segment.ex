@@ -15,11 +15,15 @@ defmodule ExVrp.DurationSegment do
       ds2 = ExVrp.DurationSegment.new(0, 5, 3, 6, 0)
       merged = ExVrp.DurationSegment.merge(4, ds1, ds2)
       ExVrp.DurationSegment.time_warp(merged)
+
   """
+
   alias ExVrp.Native
 
   @type t :: reference()
+
   @int_max 9_223_372_036_854_775_807
+
   @doc """
   Creates a new duration segment.
 
@@ -34,16 +38,7 @@ defmodule ExVrp.DurationSegment do
   - `cum_time_warp` - Cumulative time warp of other trips (default 0)
   - `prev_end_late` - Latest end time of previous trip (default INT_MAX)
   """
-  @spec new(
-          integer(),
-          integer(),
-          integer(),
-          integer(),
-          integer(),
-          integer(),
-          integer(),
-          integer()
-        ) :: t()
+  @spec new(integer(), integer(), integer(), integer(), integer(), integer(), integer(), integer()) :: t()
   def new(
         duration,
         time_warp,
@@ -84,7 +79,9 @@ defmodule ExVrp.DurationSegment do
     Native.duration_segment_merge_nif(edge_duration, first, second)
   end
 
-  @doc "Returns the total duration of the whole segment."
+  @doc """
+  Returns the total duration of the whole segment.
+  """
   @spec duration(t()) :: integer()
   def duration(segment) do
     Native.duration_segment_duration_nif(segment)
@@ -101,37 +98,49 @@ defmodule ExVrp.DurationSegment do
     Native.duration_segment_time_warp_nif(segment, max_duration)
   end
 
-  @doc "Returns the earliest start time for the current trip."
+  @doc """
+  Returns the earliest start time for the current trip.
+  """
   @spec start_early(t()) :: integer()
   def start_early(segment) do
     Native.duration_segment_start_early_nif(segment)
   end
 
-  @doc "Returns the latest start time for the current trip."
+  @doc """
+  Returns the latest start time for the current trip.
+  """
   @spec start_late(t()) :: integer()
   def start_late(segment) do
     Native.duration_segment_start_late_nif(segment)
   end
 
-  @doc "Returns the earliest end time of the current trip."
+  @doc """
+  Returns the earliest end time of the current trip.
+  """
   @spec end_early(t()) :: integer()
   def end_early(segment) do
     Native.duration_segment_end_early_nif(segment)
   end
 
-  @doc "Returns the latest end time of the current trip."
+  @doc """
+  Returns the latest end time of the current trip.
+  """
   @spec end_late(t()) :: integer()
   def end_late(segment) do
     Native.duration_segment_end_late_nif(segment)
   end
 
-  @doc "Returns the latest end time of the previous trip."
+  @doc """
+  Returns the latest end time of the previous trip.
+  """
   @spec prev_end_late(t()) :: integer()
   def prev_end_late(segment) do
     Native.duration_segment_prev_end_late_nif(segment)
   end
 
-  @doc "Returns the release time of clients on the current trip."
+  @doc """
+  Returns the release time of clients on the current trip.
+  """
   @spec release_time(t()) :: integer()
   def release_time(segment) do
     Native.duration_segment_release_time_nif(segment)

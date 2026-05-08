@@ -19,14 +19,20 @@ defmodule ExVrp.ClientGroup do
       {model, group} = Model.add_client_group(model, required: false)
       model = Model.add_client(model, x: 1, y: 1, group: group)
       model = Model.add_client(model, x: 2, y: 2, group: group)
+
   """
+
   @type t :: %__MODULE__{
           clients: [non_neg_integer()],
           required: boolean(),
           mutually_exclusive: boolean(),
           name: String.t()
         }
-  defstruct clients: [], required: true, mutually_exclusive: false, name: ""
+
+  defstruct clients: [],
+            required: true,
+            mutually_exclusive: false,
+            name: ""
 
   @doc """
   Creates a new client group.
@@ -46,6 +52,7 @@ defmodule ExVrp.ClientGroup do
 
       iex> ExVrp.ClientGroup.new(required: true, name: "priority")
       %ExVrp.ClientGroup{clients: [], required: true, mutually_exclusive: false, name: "priority"}
+
   """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do

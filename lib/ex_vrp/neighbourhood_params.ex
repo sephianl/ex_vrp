@@ -30,7 +30,9 @@ defmodule ExVrp.NeighbourhoodParams do
       iex> params = ExVrp.NeighbourhoodParams.new(num_neighbours: 40)
       iex> params.num_neighbours
       40
+
   """
+
   @type t :: %__MODULE__{
           weight_wait_time: float(),
           weight_time_warp: float(),
@@ -38,6 +40,7 @@ defmodule ExVrp.NeighbourhoodParams do
           symmetric_proximity: boolean(),
           symmetric_neighbours: boolean()
         }
+
   defstruct weight_wait_time: 0.2,
             weight_time_warp: 1.0,
             num_neighbours: 60,
@@ -78,6 +81,7 @@ defmodule ExVrp.NeighbourhoodParams do
         symmetric_proximity: true,
         symmetric_neighbours: true
       }
+
   """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do

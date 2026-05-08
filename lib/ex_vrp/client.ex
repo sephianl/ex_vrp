@@ -5,6 +5,7 @@ defmodule ExVrp.Client do
   A client has coordinates, demand (delivery/pickup amounts), time windows,
   service duration, and optional grouping constraints.
   """
+
   @type t :: %__MODULE__{
           x: number(),
           y: number(),
@@ -19,6 +20,7 @@ defmodule ExVrp.Client do
           group: non_neg_integer() | nil,
           name: String.t()
         }
+
   @enforce_keys [:x, :y]
   defstruct [
     :x,
@@ -60,6 +62,7 @@ defmodule ExVrp.Client do
 
       iex> ExVrp.Client.new(x: 1, y: 2, delivery: [10])
       %ExVrp.Client{x: 1, y: 2, delivery: [10], ...}
+
   """
   @spec new(keyword()) :: t()
   def new(opts) do

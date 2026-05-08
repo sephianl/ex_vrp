@@ -13,6 +13,7 @@ defmodule ExVrp.IteratedLocalSearch do
   comparison with historical solutions, not just the current solution. This
   allows temporary worsening moves to escape local optima.
   """
+
   alias ExVrp.Native
   alias ExVrp.PenaltyManager
   alias ExVrp.Solution
@@ -20,11 +21,22 @@ defmodule ExVrp.IteratedLocalSearch do
   require Logger
 
   defmodule Params do
-    @moduledoc "Parameters for Iterated Local Search."
-    defstruct max_no_improvement: 5000, history_size: 500
-    @type t :: %__MODULE__{max_no_improvement: pos_integer(), history_size: pos_integer()}
+    @moduledoc """
+    Parameters for Iterated Local Search.
+    """
+    defstruct max_no_improvement: 5_000,
+              # Number of iterations without improvement before restart
+              # Size of the late acceptance history buffer
+              history_size: 500
+
+    @type t :: %__MODULE__{
+            max_no_improvement: pos_integer(),
+            history_size: pos_integer()
+          }
   end
 
+  # Ring buffer that matches PyVRP's RingBuffer behavior exactly
+  # Key insight: skip() advances index without storing, keeping old element
   defmodule RingBuffer do
     @moduledoc false
     defstruct buffer: [], idx: 0, maxlen: 0
@@ -37,16 +49,19 @@ defmodule ExVrp.IteratedLocalSearch do
       new(maxlen)
     end
 
+    # Returns the element at current position (will be overwritten on append)
     def peek(%__MODULE__{buffer: buffer, idx: idx, maxlen: maxlen}) do
       Enum.at(buffer, rem(idx, maxlen))
     end
 
+    # Append value at current position and advance index
     def append(%__MODULE__{buffer: buffer, idx: idx, maxlen: maxlen} = rb, value) do
       pos = rem(idx, maxlen)
       new_buffer = List.replace_at(buffer, pos, value)
       %{rb | buffer: new_buffer, idx: idx + 1}
     end
 
+    # Advance index without storing (keeps old value)
     def skip(%__MODULE__{idx: idx} = rb) do
       %{rb | idx: idx + 1}
     end
@@ -72,6 +87,7 @@ defmodule ExVrp.IteratedLocalSearch do
             num_iterations: non_neg_integer(),
             runtime: non_neg_integer()
           }
+
     @doc """
     Returns the cost of the best solution.
 
@@ -86,30 +102,36 @@ defmodule ExVrp.IteratedLocalSearch do
       end
     end
 
-    @doc "Returns whether the best solution is feasible."
+    @doc """
+    Returns whether the best solution is feasible.
+    """
     @spec feasible?(t()) :: boolean()
     def feasible?(%__MODULE__{best: best}) do
       best.is_feasible
     end
 
-    @doc "Returns a summary string of the result."
+    @doc """
+    Returns a summary string of the result.
+    """
     @spec summary(t()) :: String.t()
     def summary(%__MODULE__{} = result) do
-      "Solution results
-================
-Feasible: #{result.best.is_feasible}
-Cost: #{cost(result)}
-Routes: #{length(result.best.routes)}
-Clients: #{result.best.num_clients}
-Distance: #{result.best.distance}
-Duration: #{result.best.duration}
-Iterations: #{result.num_iterations}
-Runtime: #{result.runtime}ms
-"
+      """
+      Solution results
+      ================
+      Feasible: #{result.best.is_feasible}
+      Cost: #{cost(result)}
+      Routes: #{length(result.best.routes)}
+      Clients: #{result.best.num_clients}
+      Distance: #{result.best.distance}
+      Duration: #{result.best.duration}
+      Iterations: #{result.num_iterations}
+      Runtime: #{result.runtime}ms
+      """
     end
   end
 
   @type stop_fn :: (non_neg_integer() -> boolean())
+
   @doc """
   Runs the Iterated Local Search algorithm.
 
@@ -126,22 +148,22 @@ Runtime: #{result.runtime}ms
 
   A Result struct containing the best solution found and statistics.
   """
-  @spec run(
-          reference(),
-          PenaltyManager.t(),
-          reference(),
-          reference(),
-          stop_fn(),
-          Params.t(),
-          keyword()
-        ) :: Result.t()
+  @spec run(reference(), PenaltyManager.t(), reference(), reference(), stop_fn(), Params.t(), keyword()) :: Result.t()
   def run(problem_data, penalty_manager, local_search, initial_solution, stop_fn, params \\ %Params{}, opts \\ []) do
     start_time = System.monotonic_time(:millisecond)
+
+    # Get seed from options, default to random
     seed = Keyword.get(opts, :seed, :rand.uniform(1_000_000))
     on_progress = Keyword.get(opts, :on_progress)
+
+    # Get max_runtime_ms from options for per-iteration timeout calculation
     max_runtime_ms = Keyword.get(opts, :max_runtime_ms, nil)
+
     {:ok, cost_eval} = PenaltyManager.cost_evaluator(penalty_manager)
+
     initial_penalised_cost = Native.solution_penalised_cost(initial_solution, cost_eval)
+    # For best selection and stopping criterion, use cost() which returns :infinity for infeasible
+    # This matches PyVRP's behavior where infeasible solutions can never become "best"
     initial_cost = Native.solution_cost(initial_solution, cost_eval)
 
     state = %{
@@ -151,23 +173,30 @@ Runtime: #{result.runtime}ms
       cost_eval: cost_eval,
       params: params,
       best: initial_solution,
+      # Use cost() for best selection - infeasible solutions have infinite cost
       best_cost: initial_cost,
       best_penalised_cost: initial_penalised_cost,
       current: initial_solution,
       current_cost: initial_penalised_cost,
+      # Ring buffer matching PyVRP's implementation exactly
       history: RingBuffer.new(params.history_size),
       iteration: 0,
       iters_no_improvement: 0,
       initial_cost: initial_penalised_cost,
+      # Use seed for reproducible RNG in local search
       rng_seed: seed,
       start_time: start_time,
       max_runtime_ms: max_runtime_ms,
-      stats: %{improvements: 0, restarts: 0},
+      stats: %{
+        improvements: 0,
+        restarts: 0
+      },
       on_progress: on_progress,
       last_progress_time: start_time
     }
 
     final_state = iterate(state, stop_fn)
+
     runtime = System.monotonic_time(:millisecond) - start_time
 
     %Result{
@@ -182,13 +211,17 @@ Runtime: #{result.runtime}ms
     }
   end
 
+  # Main iteration loop
   defp iterate(state, stop_fn) do
+    # Log progress every 100 iterations
     if rem(state.iteration, 100) == 0 and state.iteration > 0 do
       Logger.info(
         "ILS iteration #{state.iteration}, best_cost=#{state.best_cost}, iters_no_improvement=#{state.iters_no_improvement}"
       )
     end
 
+    # Use best_cost for stopping criterion - this is cost() which returns infinity
+    # for infeasible solutions, matching PyVRP's behavior
     if stop_fn.(state.best_cost) do
       state
     else
@@ -203,8 +236,12 @@ Runtime: #{result.runtime}ms
     end
   end
 
+  # Restart from best if no improvement for too long
   defp maybe_restart(%{iters_no_improvement: iters, params: params} = state) do
     if iters >= params.max_no_improvement do
+      # On restart: if the best is infeasible, rebuild a fresh initial
+      # solution with a different seed. This gives the solver a completely
+      # new starting point instead of cycling from the same infeasible state.
       {restart_sol, restart_cost} =
         if state.best_cost == :infinity do
           restart_seed = state.rng_seed + state.stats.restarts + 1
@@ -212,14 +249,7 @@ Runtime: #{result.runtime}ms
           {:ok, max_eval} = PenaltyManager.max_cost_evaluator(state.penalty_manager)
           {:ok, empty} = Native.create_solution_from_routes(state.problem_data, [])
 
-          {:ok, fresh} =
-            Native.local_search_search_run(
-              restart_ls,
-              empty,
-              max_eval,
-              remaining_timeout_ms(state)
-            )
-
+          {:ok, fresh} = Native.local_search_search_run(restart_ls, empty, max_eval, remaining_timeout_ms(state))
           {fresh, Native.solution_penalised_cost(fresh, state.cost_eval)}
         else
           {state.best, Native.solution_penalised_cost(state.best, state.cost_eval)}
@@ -238,9 +268,13 @@ Runtime: #{result.runtime}ms
     end
   end
 
+  # Apply local search to generate candidate
   defp search_step(state) do
     timeout_ms = remaining_timeout_ms(state)
 
+    # Use persistent LocalSearch for performance
+    # RNG is stored in the LocalSearch resource and advances across calls,
+    # matching PyVRP's behavior
     {:ok, candidate} =
       Native.local_search_run(
         state.local_search,
@@ -250,9 +284,17 @@ Runtime: #{result.runtime}ms
       )
 
     candidate_cost = Native.solution_penalised_cost(candidate, state.cost_eval)
-    Map.merge(state, %{candidate: candidate, candidate_cost: candidate_cost})
+
+    Map.merge(state, %{
+      candidate: candidate,
+      candidate_cost: candidate_cost
+    })
   end
 
+  # Late Acceptance Hill-Climbing acceptance criterion
+  # This matches PyVRP's implementation exactly:
+  # - cost() for best selection (infeasible = infinity)
+  # - penalised_cost() for LAHC acceptance
   defp accept_step(state) do
     %{
       candidate: candidate,
@@ -271,15 +313,7 @@ Runtime: #{result.runtime}ms
     late_cost = compute_late_cost(late, new_best, state.cost_eval)
 
     {new_current, new_curr_cost} =
-      accept_candidate(
-        candidate,
-        cand_cost,
-        current,
-        curr_cost,
-        state.best_cost,
-        candidate_obj_cost,
-        late_cost
-      )
+      accept_candidate(candidate, cand_cost, current, curr_cost, state.best_cost, candidate_obj_cost, late_cost)
 
     new_history = update_history(history, new_current, new_curr_cost, late, late_cost)
 
@@ -296,6 +330,9 @@ Runtime: #{result.runtime}ms
     }
   end
 
+  # Update best if candidate improves. Use cost() (infinity for infeasible)
+  # so feasible always beats infeasible. When both are infeasible, fall back
+  # to penalisedCost so the solver tracks progress toward feasibility.
   defp update_best(state, candidate_obj_cost) do
     %{candidate: candidate, candidate_cost: cand_cost, best: best, best_cost: best_cost} = state
     iters_no_improvement = state.iters_no_improvement + 1
@@ -307,6 +344,9 @@ Runtime: #{result.runtime}ms
 
       best_cost == :infinity and candidate_obj_cost == :infinity and
           cand_cost < state.best_penalised_cost ->
+        # Both infeasible but candidate is closer to feasibility.
+        # Update best for better restart point but DON'T reset
+        # iters_no_improvement — we still want restarts to trigger.
         stats = Map.update!(state.stats, :improvements, &(&1 + 1))
         {candidate, :infinity, cand_cost, iters_no_improvement, stats}
 
@@ -315,14 +355,15 @@ Runtime: #{result.runtime}ms
     end
   end
 
-  defp compute_late_cost(nil, best, cost_eval) do
-    Native.solution_penalised_cost(best, cost_eval)
-  end
+  # PyVRP lines 157-159: late_cost from history.peek() or best
+  defp compute_late_cost(nil, best, cost_eval), do: Native.solution_penalised_cost(best, cost_eval)
 
-  defp compute_late_cost(late, _best, cost_eval) do
-    Native.solution_penalised_cost(late, cost_eval)
-  end
+  defp compute_late_cost(late, _best, cost_eval), do: Native.solution_penalised_cost(late, cost_eval)
 
+  # Accept if better than late or current. Also always accept the first
+  # feasible solution when the current best is infeasible — the transition
+  # from infeasible to feasible is always an improvement even if penalised
+  # cost is higher (uncollected prizes inflate cost of feasible solutions).
   defp accept_candidate(candidate, cand_cost, current, curr_cost, best_cost, candidate_obj_cost, late_cost) do
     first_feasible? = best_cost == :infinity and candidate_obj_cost != :infinity
 
@@ -333,21 +374,21 @@ Runtime: #{result.runtime}ms
     end
   end
 
-  defp update_history(history, current, _curr_cost, nil = _late, _late_cost) do
-    RingBuffer.append(history, current)
-  end
+  # PyVRP lines 171-174: Update history
+  # - append(current) if curr_cost < late_cost OR late is nil
+  # - skip() otherwise
+  defp update_history(history, current, _curr_cost, nil = _late, _late_cost), do: RingBuffer.append(history, current)
 
-  defp update_history(history, current, curr_cost, _late, late_cost) when curr_cost < late_cost do
-    RingBuffer.append(history, current)
-  end
+  defp update_history(history, current, curr_cost, _late, late_cost) when curr_cost < late_cost,
+    do: RingBuffer.append(history, current)
 
-  defp update_history(history, _current, _curr_cost, _late, _late_cost) do
-    RingBuffer.skip(history)
-  end
+  defp update_history(history, _current, _curr_cost, _late, _late_cost), do: RingBuffer.skip(history)
 
+  # Update penalty manager with candidate solution
   defp update_penalty_manager(state) do
     new_pm = PenaltyManager.register(state.penalty_manager, state.candidate)
 
+    # If penalties changed, update cost evaluator
     if new_pm == state.penalty_manager do
       state
     else
@@ -356,13 +397,8 @@ Runtime: #{result.runtime}ms
     end
   end
 
-  defp maybe_report_progress(%{on_progress: nil} = state) do
-    state
-  end
-
-  defp maybe_report_progress(%{on_progress: f} = state) when not is_function(f, 1) do
-    state
-  end
+  defp maybe_report_progress(%{on_progress: nil} = state), do: state
+  defp maybe_report_progress(%{on_progress: f} = state) when not is_function(f, 1), do: state
 
   defp maybe_report_progress(state) do
     now = System.monotonic_time(:millisecond)
@@ -393,15 +429,16 @@ Runtime: #{result.runtime}ms
     end
   end
 
-  defp remaining_timeout_ms(%{max_runtime_ms: nil}) do
-    0
-  end
+  # Remaining time budget in milliseconds (0 means no timeout).
+  # round/1 ensures integer for NIF when max_runtime_ms is a float.
+  defp remaining_timeout_ms(%{max_runtime_ms: nil}), do: 0
 
   defp remaining_timeout_ms(state) do
     elapsed_ms = System.monotonic_time(:millisecond) - state.start_time
     max(round(state.max_runtime_ms) - elapsed_ms, 1)
   end
 
+  # Build Solution struct from solution reference
   defp build_solution(solution_ref, problem_data, state) do
     %Solution{
       routes: Native.solution_routes(solution_ref),

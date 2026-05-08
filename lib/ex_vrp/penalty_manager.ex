@@ -7,10 +7,13 @@ defmodule ExVrp.PenaltyManager do
   rate (default 65%). This balances exploration between feasible and infeasible
   solution space.
   """
+
   alias ExVrp.Native
 
   defmodule Params do
-    @moduledoc "Parameters for penalty management."
+    @moduledoc """
+    Parameters for penalty management.
+    """
     defstruct solutions_between_updates: 100,
               penalty_increase: 1.25,
               penalty_decrease: 0.85,
@@ -39,6 +42,7 @@ defmodule ExVrp.PenaltyManager do
           tw_feas: [boolean()],
           dist_feas: [boolean()]
         }
+
   defstruct [
     :load_penalties,
     :tw_penalty,
@@ -49,7 +53,9 @@ defmodule ExVrp.PenaltyManager do
     dist_feas: []
   ]
 
-  @doc "Creates a new PenaltyManager with explicit initial penalties."
+  @doc """
+  Creates a new PenaltyManager with explicit initial penalties.
+  """
   @spec new([float()], float(), float(), Params.t()) :: t()
   def new(load_penalties, tw_penalty, dist_penalty, params \\ %Params{}) do
     %__MODULE__{
@@ -73,24 +79,30 @@ defmodule ExVrp.PenaltyManager do
   def init_from(problem_data, params \\ %Params{}) do
     num_dims = Native.problem_data_num_load_dims(problem_data)
     num_locs = Native.problem_data_num_locations(problem_data)
+
     edge_costs = compute_min_edge_costs(problem_data)
     min_distances = compute_min_matrix(problem_data, &Native.problem_data_distance_matrix_nif/2)
     min_durations = compute_min_matrix(problem_data, &Native.problem_data_duration_matrix_nif/2)
+
     avg_cost = matrix_avg(edge_costs, num_locs)
     avg_distance = matrix_avg(min_distances, num_locs)
     avg_duration = matrix_avg(min_durations, num_locs)
+
+    # For load penalty, use max_penalty since we don't have easy access to
+    # pickup/delivery data here. The penalty manager will adapt during search.
     init_load = List.duplicate(params.max_penalty, num_dims)
     init_tw = avg_cost / max(avg_duration, 1.0)
     init_dist = avg_cost / max(avg_distance, 1.0)
+
+    # For prize-collecting problems, ensure tw_penalty is high enough relative
+    # to prizes. Otherwise the solver may prefer keeping clients with time warp
+    # violations over removing them.
+    # We want: tw_penalty * typical_time_warp > avg_prize
+    # Assuming typical time warp is ~1 hour (3600s), we need:
+    # tw_penalty > avg_prize / 3600
     clients = Native.problem_data_clients_nif(problem_data)
     prizes = Enum.map(clients, fn {_tw_early, _tw_late, _svc, prize} -> prize end)
-
-    max_prize =
-      if Enum.empty?(prizes) do
-        0
-      else
-        Enum.max(prizes)
-      end
+    max_prize = if Enum.empty?(prizes), do: 0, else: Enum.max(prizes)
 
     init_tw =
       if max_prize > 0 do
@@ -118,25 +130,30 @@ defmodule ExVrp.PenaltyManager do
     dur_mat = Native.problem_data_duration_matrix_nif(problem_data, profile)
 
     Enum.zip_with(dist_mat, dur_mat, fn row_dist, row_dur ->
-      Enum.zip_with(row_dist, row_dur, fn d, t -> unit_dist * d + unit_dur * t end)
+      Enum.zip_with(row_dist, row_dur, fn d, t ->
+        unit_dist * d + unit_dur * t
+      end)
     end)
   end
 
   defp compute_min_matrix(problem_data, matrix_fn) do
     num_profiles = Native.problem_data_num_profiles_nif(problem_data)
-    0..(num_profiles - 1) |> Enum.map(&matrix_fn.(problem_data, &1)) |> elementwise_min_matrices()
+
+    0..(num_profiles - 1)
+    |> Enum.map(&matrix_fn.(problem_data, &1))
+    |> elementwise_min_matrices()
   end
 
-  defp elementwise_min_matrices([single]) do
-    single
-  end
+  defp elementwise_min_matrices([single]), do: single
 
   defp elementwise_min_matrices([first | rest]) do
     Enum.reduce(rest, first, &elementwise_min/2)
   end
 
   defp elementwise_min(mat_a, mat_b) do
-    Enum.zip_with(mat_a, mat_b, fn row_a, row_b -> Enum.zip_with(row_a, row_b, &min/2) end)
+    Enum.zip_with(mat_a, mat_b, fn row_a, row_b ->
+      Enum.zip_with(row_a, row_b, &min/2)
+    end)
   end
 
   defp matrix_avg(matrix, num_locs) do
@@ -144,16 +161,22 @@ defmodule ExVrp.PenaltyManager do
   end
 
   defp matrix_sum(matrix) do
-    Enum.reduce(matrix, 0, fn row, acc -> acc + Enum.sum(row) end)
+    Enum.reduce(matrix, 0, fn row, acc ->
+      acc + Enum.sum(row)
+    end)
   end
 
-  @doc "Returns the current penalties as a tuple."
+  @doc """
+  Returns the current penalties as a tuple.
+  """
   @spec penalties(t()) :: {[float()], float(), float()}
   def penalties(%__MODULE__{} = pm) do
     {pm.load_penalties, pm.tw_penalty, pm.dist_penalty}
   end
 
-  @doc "Creates a CostEvaluator using the current penalty values."
+  @doc """
+  Creates a CostEvaluator using the current penalty values.
+  """
   @spec cost_evaluator(t()) :: {:ok, reference()} | {:error, term()}
   def cost_evaluator(%__MODULE__{} = pm) do
     Native.create_cost_evaluator(
@@ -185,8 +208,11 @@ defmodule ExVrp.PenaltyManager do
   """
   @spec register(t(), reference()) :: t()
   def register(%__MODULE__{} = pm, solution_ref) do
+    # Get feasibility info from solution
     is_feasible = Native.solution_is_feasible(solution_ref)
 
+    # For now, treat all dimensions the same based on overall feasibility
+    # A more accurate implementation would check each dimension separately
     pm
     |> register_load_feasibility(is_feasible)
     |> register_tw_feasibility(is_feasible)
@@ -194,7 +220,10 @@ defmodule ExVrp.PenaltyManager do
     |> maybe_update_penalties()
   end
 
+  # Private functions
+
   defp register_load_feasibility(%__MODULE__{load_feas: load_feas} = pm, is_feasible) do
+    # Add feasibility to each dimension's list
     new_load_feas = Enum.map(load_feas, fn dim_feas -> [is_feasible | dim_feas] end)
     %{pm | load_feas: new_load_feas}
   end
@@ -216,14 +245,21 @@ defmodule ExVrp.PenaltyManager do
   end
 
   defp update_penalties(%__MODULE__{params: params} = pm) do
+    # Update load penalties for each dimension
     new_load_penalties =
       pm.load_penalties
       |> Enum.zip(pm.load_feas)
-      |> Enum.map(fn {penalty, feas_list} -> compute_new_penalty(penalty, feas_list, params) end)
+      |> Enum.map(fn {penalty, feas_list} ->
+        compute_new_penalty(penalty, feas_list, params)
+      end)
 
+    # Update time window penalty
     new_tw_penalty = compute_new_penalty(pm.tw_penalty, pm.tw_feas, params)
+
+    # Update distance penalty
     new_dist_penalty = compute_new_penalty(pm.dist_penalty, pm.dist_feas, params)
 
+    # Reset feasibility tracking
     %{
       pm
       | load_penalties: new_load_penalties,
@@ -245,12 +281,15 @@ defmodule ExVrp.PenaltyManager do
       new_penalty =
         cond do
           feas_rate < params.target_feasible - params.feas_tolerance ->
+            # Too few feasible - increase penalty
             current_penalty * params.penalty_increase
 
           feas_rate > params.target_feasible + params.feas_tolerance ->
+            # Too many feasible - decrease penalty
             current_penalty * params.penalty_decrease
 
           true ->
+            # Within tolerance - no change
             current_penalty
         end
 
@@ -263,6 +302,8 @@ defmodule ExVrp.PenaltyManager do
   end
 
   defp clip_penalty(penalty, params) do
-    penalty |> max(params.min_penalty) |> min(params.max_penalty)
+    penalty
+    |> max(params.min_penalty)
+    |> min(params.max_penalty)
   end
 end
