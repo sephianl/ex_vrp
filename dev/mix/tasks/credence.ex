@@ -12,6 +12,7 @@ defmodule Mix.Tasks.Credence do
   """
   use Mix.Task
 
+  @dialyzer :no_return
   @switches [exit: :boolean, fix: :boolean]
 
   @impl Mix.Task
@@ -46,8 +47,12 @@ defmodule Mix.Tasks.Credence do
         original = originals[path]
 
         case Credence.fix(original) do
-          %{code: ^original} -> false
-          %{code: fixed} -> File.write!(path, fixed) || true
+          %{code: ^original} ->
+            false
+
+          %{code: fixed} ->
+            File.write!(path, fixed)
+            true
         end
       rescue
         _ -> false
