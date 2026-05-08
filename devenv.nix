@@ -43,6 +43,14 @@ in
       files = ".ex[s]?$";
       entry = "mix format";
     };
+    mix-credence-fix = {
+      enable = !config.devenv.isTesting;
+      name = "mix-credence-fix";
+      entry = "mix credence --fix";
+      pass_filenames = false;
+      stages = [ "pre-commit" ];
+      files = ".ex[s]?$";
+    };
     mix-check = {
       enable = !config.devenv.isTesting;
       name = "mix-check";

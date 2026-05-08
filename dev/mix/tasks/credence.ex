@@ -4,52 +4,133 @@ defmodule Mix.Tasks.Credence do
   @moduledoc """
   Runs Credence semantic analysis on all Elixir source files.
 
-  By default, only reports issues from fixable rules (those that `mix credence --fix`
-  can auto-correct). Use `--all` to include unfixable rules too.
-
   ## Usage
 
-      mix credence              # Analyze fixable-rule issues only
-      mix credence --all        # Analyze all rules (fixable + unfixable)
-      mix credence --fix        # Auto-fix fixable issues in place
+      mix credence              # Analyze and report all issues
+      mix credence --fix        # Auto-fix, format, compile-verify, revert broken
       mix credence --exit       # Exit with non-zero status if issues found
   """
   use Mix.Task
 
-  @switches [fix: :boolean, exit: :boolean, all: :boolean]
-  @credence_opts [phases: [:syntax, :pattern]]
+  @switches [exit: :boolean, fix: :boolean]
 
   @impl Mix.Task
   def run(args) do
     {opts, _, _} = OptionParser.parse(args, switches: @switches)
 
-    fixable_rules = fixable_rule_names()
+    if opts[:fix] do
+      run_fix()
+    else
+      run_analyze(opts)
+    end
+  end
 
+  defp run_fix do
     files = source_files()
-    results = Enum.map(files, &process_file(&1, opts, fixable_rules))
+    originals = Map.new(files, fn path -> {path, File.read!(path)} end)
 
-    total_issues = results |> Enum.map(&elem(&1, 1)) |> Enum.sum()
-    fixed_count = results |> Enum.map(&elem(&1, 2)) |> Enum.sum()
+    changed = apply_fixes(files, originals)
 
-    print_summary(total_issues, fixed_count, opts)
+    if changed == [] do
+      Mix.shell().info("Credence: no fixable issues found")
+    else
+      Mix.Task.rerun("format", changed)
+      reverted = revert_broken(changed, originals)
+      report_fix_results(changed, reverted)
+    end
+  end
+
+  defp apply_fixes(files, originals) do
+    Enum.filter(files, fn path ->
+      try do
+        original = originals[path]
+
+        case Credence.fix(original) do
+          %{code: ^original} -> false
+          %{code: fixed} -> File.write!(path, fixed) || true
+        end
+      rescue
+        _ -> false
+      end
+    end)
+  end
+
+  defp revert_broken(changed, originals) do
+    parse_broken =
+      Enum.filter(changed, fn path ->
+        content = File.read!(path)
+
+        case Code.string_to_quoted(content) do
+          {:ok, _} -> false
+          {:error, _} -> true
+        end
+      end)
+
+    Enum.each(parse_broken, &File.write!(&1, originals[&1]))
+
+    compile_broken = revert_until_clean(changed -- parse_broken, originals)
+
+    parse_broken ++ compile_broken
+  end
+
+  defp revert_until_clean(candidates, originals, reverted \\ []) do
+    if candidates == [] do
+      reverted
+    else
+      {output, status} =
+        System.cmd("mix", ["compile", "--no-deps-check"], stderr_to_stdout: true)
+
+      if status == 0 do
+        reverted
+      else
+        broken = extract_error_files(output, candidates)
+
+        if broken == [] do
+          reverted
+        else
+          Enum.each(broken, &File.write!(&1, originals[&1]))
+          revert_until_clean(candidates -- broken, originals, reverted ++ broken)
+        end
+      end
+    end
+  end
+
+  defp extract_error_files(output, candidates) do
+    candidate_set = MapSet.new(candidates)
+
+    ~r"└─ ([^:\s]+\.ex)"
+    |> Regex.scan(output)
+    |> Enum.map(fn [_, path] -> path end)
+    |> Enum.uniq()
+    |> Enum.filter(&MapSet.member?(candidate_set, &1))
+  end
+
+  defp report_fix_results(changed, reverted) do
+    fixed_count = length(changed) - length(reverted)
+
+    Enum.each(reverted, fn path ->
+      Mix.shell().error("  #{path}: reverted (fix broke compilation)")
+    end)
+
+    if fixed_count > 0, do: Mix.shell().info("Credence: fixed #{fixed_count} file(s)")
+    if reverted != [], do: Mix.shell().error("Credence: reverted #{length(reverted)} file(s)")
+  end
+
+  defp run_analyze(opts) do
+    total_issues =
+      source_files()
+      |> Enum.map(&analyze_file/1)
+      |> Enum.sum()
+
+    if total_issues == 0 do
+      Mix.shell().info("Credence: no issues found")
+    else
+      Mix.shell().info("Credence: #{total_issues} issue(s) found")
+    end
 
     if opts[:exit] && total_issues > 0 do
       Mix.raise("Credence found #{total_issues} issue(s)")
     end
-  end
-
-  defp fixable_rule_names do
-    Credence.Pattern.default_rules()
-    |> Enum.filter(fn mod ->
-      function_exported?(mod, :fixable?, 0) and mod.fixable?()
-    end)
-    |> MapSet.new(fn mod ->
-      mod
-      |> Module.split()
-      |> List.last()
-      |> Macro.underscore()
-      |> String.to_atom()
-    end)
   end
 
   defp source_files do
@@ -58,56 +139,21 @@ defmodule Mix.Tasks.Credence do
     |> Enum.sort()
   end
 
-  defp process_file(path, opts, fixable_rules) do
+  defp analyze_file(path) do
     code = File.read!(path)
 
-    if opts[:fix] do
-      fix_file(path, code)
-    else
-      analyze_file(path, code, opts, fixable_rules)
+    case Credence.analyze(code) do
+      %{valid: true} ->
+        0
+
+      %{issues: issues} ->
+        Enum.each(issues, &print_issue(path, &1))
+        length(issues)
     end
   rescue
     e ->
       Mix.shell().error("  #{path}: error — #{Exception.message(e)}")
-      {path, 0, 0}
-  end
-
-  defp analyze_file(path, code, opts, fixable_rules) do
-    case Credence.analyze(code, @credence_opts) do
-      %{valid: true} ->
-        {path, 0, 0}
-
-      %{issues: issues} ->
-        filtered =
-          if opts[:all] do
-            issues
-          else
-            Enum.filter(issues, &MapSet.member?(fixable_rules, &1.rule))
-          end
-
-        Enum.each(filtered, &print_issue(path, &1))
-        {path, length(filtered), 0}
-    end
-  end
-
-  defp fix_file(path, code) do
-    case Credence.fix(code, @credence_opts) do
-      %{code: ^code, issues: issues} ->
-        Enum.each(issues, &print_issue(path, &1))
-        {path, length(issues), 0}
-
-      %{code: fixed, issues: remaining} ->
-        File.write!(path, fixed)
-        Enum.each(remaining, &print_issue(path, &1))
-        {path, length(remaining), max(count_original_issues(code) - length(remaining), 0)}
-    end
-  end
-
-  defp count_original_issues(code) do
-    case Credence.analyze(code, @credence_opts) do
-      %{issues: issues} -> length(issues)
-      _ -> 0
-    end
+      0
   end
 
   defp print_issue(path, %{rule: rule, message: message, meta: meta}) do
@@ -117,18 +163,5 @@ defmodule Mix.Tasks.Credence do
 
   defp print_issue(path, %{rule: rule, message: message}) do
     Mix.shell().info("  #{path}: [#{rule}] #{String.trim(message)}")
-  end
-
-  defp print_summary(total_issues, fixed_count, opts) do
-    cond do
-      total_issues == 0 && fixed_count == 0 ->
-        Mix.shell().info("Credence: no issues found")
-
-      opts[:fix] && fixed_count > 0 ->
-        Mix.shell().info("Credence: fixed #{fixed_count} issue(s), #{total_issues} remaining")
-
-      true ->
-        Mix.shell().info("Credence: #{total_issues} issue(s) found")
-    end
   end
 end
