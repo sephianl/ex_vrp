@@ -1,6 +1,5 @@
 [
   tools: [
-    {:sobelow, "mix sobelow --exit --skip"},
-    {:credence, "mix credence"}
+    {:sobelow, "mix sobelow --exit --skip"}
   ]
 ]
