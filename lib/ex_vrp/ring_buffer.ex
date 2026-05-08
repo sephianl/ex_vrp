@@ -13,16 +13,13 @@ defmodule ExVrp.RingBuffer do
       buffer = ExVrp.RingBuffer.append(buffer, :a)
       buffer = ExVrp.RingBuffer.append(buffer, :b)
       ExVrp.RingBuffer.peek(buffer)  # => :a (next to be overwritten)
-
   """
-
   @type t :: %__MODULE__{
           maxlen: pos_integer(),
           buffer: list(),
           head: non_neg_integer(),
           size: non_neg_integer()
         }
-
   defstruct [:maxlen, :buffer, :head, :size]
 
   @doc """
@@ -31,16 +28,10 @@ defmodule ExVrp.RingBuffer do
   ## Example
 
       buffer = ExVrp.RingBuffer.new(3)
-
   """
   @spec new(pos_integer()) :: t()
   def new(maxlen) when is_integer(maxlen) and maxlen > 0 do
-    %__MODULE__{
-      maxlen: maxlen,
-      buffer: List.duplicate(nil, maxlen),
-      head: 0,
-      size: 0
-    }
+    %__MODULE__{maxlen: maxlen, buffer: List.duplicate(nil, maxlen), head: 0, size: 0}
   end
 
   @doc """
@@ -53,7 +44,6 @@ defmodule ExVrp.RingBuffer do
     new_buffer = List.replace_at(rb.buffer, rb.head, value)
     new_head = rem(rb.head + 1, rb.maxlen)
     new_size = min(rb.size + 1, rb.maxlen)
-
     %{rb | buffer: new_buffer, head: new_head, size: new_size}
   end
 
@@ -64,8 +54,6 @@ defmodule ExVrp.RingBuffer do
   """
   @spec peek(t()) :: term() | nil
   def peek(%__MODULE__{} = rb) do
-    # If the buffer is not full, the next slot is unwritten (nil)
-    # If it is full, the next slot is the oldest value (will be overwritten)
     if rb.size < rb.maxlen do
       nil
     else
@@ -84,23 +72,21 @@ defmodule ExVrp.RingBuffer do
     %{rb | head: new_head}
   end
 
-  @doc """
-  Clears the buffer, resetting it to its initial state.
-  """
+  @doc "Clears the buffer, resetting it to its initial state."
   @spec clear(t()) :: t()
   def clear(%__MODULE__{maxlen: maxlen}) do
     new(maxlen)
   end
 
-  @doc """
-  Returns the maximum length of the buffer.
-  """
+  @doc "Returns the maximum length of the buffer."
   @spec maxlen(t()) :: pos_integer()
-  def maxlen(%__MODULE__{maxlen: maxlen}), do: maxlen
+  def maxlen(%__MODULE__{maxlen: maxlen}) do
+    maxlen
+  end
 
-  @doc """
-  Returns the current number of items in the buffer.
-  """
+  @doc "Returns the current number of items in the buffer."
   @spec length(t()) :: non_neg_integer()
-  def length(%__MODULE__{size: size}), do: size
+  def length(%__MODULE__{size: size}) do
+    size
+  end
 end

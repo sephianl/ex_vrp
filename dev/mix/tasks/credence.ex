@@ -12,7 +12,6 @@ defmodule Mix.Tasks.Credence do
   """
   use Mix.Task
 
-  @dialyzer :no_return
   @switches [exit: :boolean, fix: :boolean]
 
   @impl Mix.Task
@@ -46,7 +45,7 @@ defmodule Mix.Tasks.Credence do
       try do
         original = originals[path]
 
-        case Credence.fix(original) do
+        case apply(Credence, :fix, [original]) do
           %{code: ^original} ->
             false
 
@@ -147,7 +146,7 @@ defmodule Mix.Tasks.Credence do
   defp analyze_file(path) do
     code = File.read!(path)
 
-    case Credence.analyze(code) do
+    case apply(Credence, :analyze, [code]) do
       %{valid: true} ->
         0
 

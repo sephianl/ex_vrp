@@ -24,19 +24,11 @@ defmodule ExVrp.Read do
 
       # With rounding
       model = ExVrp.Read.read("instances/RC208.vrp", round_func: :round)
-
   """
-
   alias ExVrp.Model
 
   @type round_func :: :none | :round | :trunc | :dimacs | :exact | (float() -> integer())
-
-  # Maximum value for integers representing unreachable edges.
-  # PyVRP default is 1 << 44 = 17_592_186_044_416
-  # This must match PyVRP for bit-identical results.
-  # See: https://pyvrp.org/setup/faq.html
   @max_value Bitwise.bsl(1, 44)
-
   @doc """
   Reads a VRPLIB format file and returns an ExVrp.Model.
 
@@ -48,31 +40,42 @@ defmodule ExVrp.Read do
 
       model = ExVrp.Read.read("instances/OkSmall.txt")
       model = ExVrp.Read.read("instances/E-n22-k4.vrp", round_func: :dimacs)
-
   """
   @spec read(String.t() | Path.t(), keyword()) :: Model.t()
   def read(path, opts \\ []) do
     round_func = Keyword.get(opts, :round_func, :none)
     round_fn = get_round_func(round_func)
-
-    path
-    |> File.read!()
-    |> parse_instance()
-    |> build_model(round_fn)
+    path |> File.read!() |> parse_instance() |> build_model(round_fn)
   end
 
-  # Get the rounding function
-  # All functions must return integers since C++ expects int64 values.
-  # :none still truncates floats to integers, it just doesn't scale them.
-  defp get_round_func(:none), do: &trunc/1
-  defp get_round_func(:round), do: &round/1
-  defp get_round_func(:trunc), do: &trunc/1
-  defp get_round_func(:dimacs), do: fn x -> trunc(10 * x) end
-  defp get_round_func(:exact), do: fn x -> round(1000 * x) end
-  defp get_round_func(func) when is_function(func, 1), do: func
-  defp get_round_func(other), do: raise(ArgumentError, "Unknown round_func: #{inspect(other)}")
+  defp get_round_func(:none) do
+    &trunc/1
+  end
 
-  # Parse a VRPLIB format file into a map of sections
+  defp get_round_func(:round) do
+    &round/1
+  end
+
+  defp get_round_func(:trunc) do
+    &trunc/1
+  end
+
+  defp get_round_func(:dimacs) do
+    fn x -> trunc(10 * x) end
+  end
+
+  defp get_round_func(:exact) do
+    fn x -> round(1000 * x) end
+  end
+
+  defp get_round_func(func) when is_function(func, 1) do
+    func
+  end
+
+  defp get_round_func(other) do
+    raise ArgumentError, "Unknown round_func: #{inspect(other)}"
+  end
+
   defp parse_instance(content) do
     lines =
       content
@@ -83,39 +86,33 @@ defmodule ExVrp.Read do
     parse_lines(lines, %{})
   end
 
-  defp parse_lines([], acc), do: acc
+  defp parse_lines([], acc) do
+    acc
+  end
 
   defp parse_lines([line | rest], acc) do
     cond do
-      # Key-value pairs (e.g., "NAME : OkSmall")
       String.contains?(line, ":") and not String.ends_with?(line, "_SECTION") ->
         [key, value] = String.split(line, ":", parts: 2)
         key = key |> String.trim() |> String.downcase() |> String.to_atom()
         value = parse_value(String.trim(value))
         parse_lines(rest, Map.put(acc, key, value))
 
-      # Section headers (e.g., "NODE_COORD_SECTION")
       String.ends_with?(line, "_SECTION") ->
         section_name =
-          line
-          |> String.trim_trailing("_SECTION")
-          |> String.downcase()
-          |> String.to_atom()
+          line |> String.trim_trailing("_SECTION") |> String.downcase() |> String.to_atom()
 
         {section_data, remaining} = parse_section(rest, section_name)
         parse_lines(remaining, Map.put(acc, section_name, section_data))
 
-      # EOF marker
       String.upcase(line) == "EOF" ->
         acc
 
-      # Unknown line - skip
       true ->
         parse_lines(rest, acc)
     end
   end
 
-  # Parse a value (number or string)
   defp parse_value(value) do
     case Integer.parse(value) do
       {int, ""} ->
@@ -129,7 +126,6 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Parse a section until we hit a new section or EOF
   defp parse_section(lines, section_name) do
     {section_lines, remaining} =
       Enum.split_while(lines, fn line ->
@@ -140,22 +136,15 @@ defmodule ExVrp.Read do
     {data, remaining}
   end
 
-  # Parse section data based on section type
   defp parse_section_data(:edge_weight, lines) do
-    # Parse matrix data (can be multi-row)
     flat =
-      Enum.flat_map(lines, fn line ->
-        line
-        |> String.split()
-        |> Enum.map(&parse_number/1)
-      end)
+      Enum.flat_map(lines, fn line -> line |> String.split() |> Enum.map(&parse_number/1) end)
 
     size = trunc(:math.sqrt(length(flat)))
 
     if size * size == length(flat) do
       Enum.chunk_every(flat, size)
     else
-      # Handle non-square (triangular, etc.) - for now assume square
       [flat]
     end
   end
@@ -220,8 +209,6 @@ defmodule ExVrp.Read do
     end)
   end
 
-  # CAPACITY_SECTION: vehicle_id capacity_value
-  # Returns {vehicle_id, capacity} pairs
   defp parse_section_data(:capacity, lines) do
     Enum.map(lines, fn line ->
       [vehicle_idx | capacity_values] = line |> String.split() |> Enum.map(&parse_number/1)
@@ -229,7 +216,6 @@ defmodule ExVrp.Read do
     end)
   end
 
-  # VEHICLES_MAX_DURATION_SECTION: vehicle_id duration
   defp parse_section_data(:vehicles_max_duration, lines) do
     Enum.map(lines, fn line ->
       [vehicle_idx, duration] = line |> String.split() |> Enum.map(&parse_number/1)
@@ -237,7 +223,6 @@ defmodule ExVrp.Read do
     end)
   end
 
-  # VEHICLES_MAX_DISTANCE_SECTION: vehicle_id distance
   defp parse_section_data(:vehicles_max_distance, lines) do
     Enum.map(lines, fn line ->
       [vehicle_idx, distance] = line |> String.split() |> Enum.map(&parse_number/1)
@@ -245,7 +230,6 @@ defmodule ExVrp.Read do
     end)
   end
 
-  # VEHICLES_FIXED_COST_SECTION: vehicle_id cost
   defp parse_section_data(:vehicles_fixed_cost, lines) do
     Enum.map(lines, fn line ->
       [vehicle_idx, cost] = line |> String.split() |> Enum.map(&parse_number/1)
@@ -253,7 +237,6 @@ defmodule ExVrp.Read do
     end)
   end
 
-  # VEHICLES_UNIT_DISTANCE_COST_SECTION: vehicle_id cost
   defp parse_section_data(:vehicles_unit_distance_cost, lines) do
     Enum.map(lines, fn line ->
       [vehicle_idx, cost] = line |> String.split() |> Enum.map(&parse_number/1)
@@ -262,7 +245,6 @@ defmodule ExVrp.Read do
   end
 
   defp parse_section_data(_section, lines) do
-    # Default: return list of parsed lines
     Enum.map(lines, fn line ->
       parts = String.split(line)
       Enum.map(parts, &parse_number/1)
@@ -284,7 +266,6 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Build an ExVrp.Model from parsed instance data
   defp build_model(instance, round_fn) do
     dimension = Map.get(instance, :dimension, 0)
     num_depots = length(Map.get(instance, :depot, [1]))
@@ -293,7 +274,6 @@ defmodule ExVrp.Read do
     depot_indices = instance |> Map.get(:depot, [1]) |> Enum.map(&(&1 - 1))
     {distances, durations} = build_matrices(instance, dimension, round_fn)
     time_windows = build_time_windows(instance, round_fn)
-
     model = add_depots(coords, depot_indices)
     model = add_client_groups(model, instance)
 
@@ -309,10 +289,19 @@ defmodule ExVrp.Read do
 
     model = add_clients(model, coords, depot_indices, dimension, client_data)
 
-    vehicle_info = collect_vehicle_info(instance, num_clients, num_depots, dimension, depot_indices, round_fn)
+    vehicle_info =
+      collect_vehicle_info(instance, num_clients, num_depots, dimension, depot_indices, round_fn)
+
     model = add_vehicle_types(model, vehicle_info, time_windows, depot_indices)
 
-    add_profile_matrices(model, vehicle_info.allowed_clients, distances, durations, client_data, num_depots, dimension,
+    add_profile_matrices(
+      model,
+      vehicle_info.allowed_clients,
+      distances,
+      durations,
+      client_data,
+      num_depots,
+      dimension,
       instance: instance
     )
   end
@@ -325,7 +314,11 @@ defmodule ExVrp.Read do
   end
 
   defp add_client_groups(model, instance) do
-    groups = instance |> Map.get(:mutually_exclusive_group, []) |> Enum.filter(fn g -> length(g) > 1 end)
+    groups =
+      instance
+      |> Map.get(:mutually_exclusive_group, [])
+      |> Enum.filter(fn g -> match?([_first, _second | _rest], g) end)
+
     instance_type = Map.get(instance, :type)
     is_gtsp = is_binary(instance_type) and String.upcase(instance_type) == "GTSP"
 
@@ -345,7 +338,7 @@ defmodule ExVrp.Read do
   defp build_client_to_group_map(instance) do
     instance
     |> Map.get(:mutually_exclusive_group, [])
-    |> Enum.filter(fn g -> length(g) > 1 end)
+    |> Enum.filter(fn g -> match?([_, _ | _], g) end)
     |> Enum.with_index()
     |> Enum.flat_map(fn {members, group_idx} ->
       Enum.map(members, fn client_idx -> {client_idx, group_idx} end)
@@ -410,9 +403,7 @@ defmodule ExVrp.Read do
       end)
 
     depot_time_windows =
-      Enum.map(depot_indices, fn depot_idx ->
-        Map.get(time_windows, depot_idx, {0, :infinity})
-      end)
+      Enum.map(depot_indices, fn depot_idx -> Map.get(time_windows, depot_idx, {0, :infinity}) end)
 
     {model, _profile_map_final} =
       Enum.reduce(type_groups, {model, %{}}, fn {type_key, vehicles}, {m, profile_map} ->
@@ -423,7 +414,9 @@ defmodule ExVrp.Read do
   end
 
   defp add_single_vehicle_type(model, profile_map, type_key, vehicles, depot_time_windows) do
-    {cap, depot, max_dist, shift_dur, fixed_cost, unit_dist_cost, reload, _max_reload, allowed} = type_key
+    {cap, depot, max_dist, shift_dur, fixed_cost, unit_dist_cost, reload, _max_reload, allowed} =
+      type_key
+
     num_available = length(vehicles)
 
     vehicle_indices =
@@ -468,12 +461,7 @@ defmodule ExVrp.Read do
   defp add_profile_matrices(model, allowed_clients, distances, durations, client_data, num_depots, dimension,
          instance: instance
        ) do
-    unique_allowed =
-      allowed_clients
-      |> Enum.uniq()
-      |> Enum.with_index()
-      |> Map.new()
-
+    unique_allowed = allowed_clients |> Enum.uniq() |> Enum.with_index() |> Map.new()
     is_vrpb = Map.get(instance, :type, "") == "VRPB"
     all_clients = Enum.to_list(num_depots..(dimension - 1))
 
@@ -518,10 +506,18 @@ defmodule ExVrp.Read do
   end
 
   defp maybe_apply_vrpb(%{is_vrpb: true} = ctx) do
-    apply_vrpb_modifications(ctx.distances, ctx.durations, ctx.demands, ctx.backhauls, ctx.num_depots)
+    apply_vrpb_modifications(
+      ctx.distances,
+      ctx.durations,
+      ctx.demands,
+      ctx.backhauls,
+      ctx.num_depots
+    )
   end
 
-  defp maybe_apply_vrpb(ctx), do: {ctx.distances, ctx.durations}
+  defp maybe_apply_vrpb(ctx) do
+    {ctx.distances, ctx.durations}
+  end
 
   defp extract_raw_coords(instance) do
     case Map.get(instance, :node_coord) do
@@ -542,14 +538,10 @@ defmodule ExVrp.Read do
 
   defp build_matrices(instance, dimension, round_fn) do
     edge_weight_type =
-      instance
-      |> Map.get(:edge_weight_type, "EXPLICIT")
-      |> to_string()
-      |> String.upcase()
+      instance |> Map.get(:edge_weight_type, "EXPLICIT") |> to_string() |> String.upcase()
 
     raw_coords = extract_raw_coords(instance)
     distances = build_distance_matrix(edge_weight_type, instance, raw_coords, dimension, round_fn)
-
     {distances, distances}
   end
 
@@ -560,9 +552,9 @@ defmodule ExVrp.Read do
     |> apply_rounding(round_fn)
   end
 
-  defp build_distance_matrix("EUC_2D", _instance, raw_coords, _dimension, round_fn) do
-    for {x1, y1} <- raw_coords do
-      for {x2, y2} <- raw_coords do
+  defp build_distance_matrix("EUC_2D", _instance, coords, _dimension, round_fn) do
+    for {x1, y1} <- coords do
+      for {x2, y2} <- coords do
         compute_euclidean_distance({x1, y1}, {x2, y2}, round_fn)
       end
     end
@@ -572,8 +564,13 @@ defmodule ExVrp.Read do
     raise ArgumentError, "Unsupported edge weight type: #{other}"
   end
 
-  defp parse_edge_weights([[_head | _tail] | _rest] = matrix, _dimension), do: matrix
-  defp parse_edge_weights(flat_list, dimension), do: Enum.chunk_every(flat_list, dimension)
+  defp parse_edge_weights([[_head | _tail] | _rest] = matrix, _dimension) do
+    matrix
+  end
+
+  defp parse_edge_weights(flat_list, dimension) do
+    Enum.chunk_every(flat_list, dimension)
+  end
 
   defp apply_rounding(matrix, round_fn) do
     Enum.map(matrix, fn row -> Enum.map(row, round_fn) end)
@@ -585,7 +582,6 @@ defmodule ExVrp.Read do
     round_fn.(:math.sqrt(dx * dx + dy * dy))
   end
 
-  # Build time windows map
   defp build_time_windows(instance, round_fn) do
     case Map.get(instance, :time_window) do
       nil ->
@@ -598,56 +594,36 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Build demands map (location_idx -> [demand values])
   defp build_demands(instance, round_fn) do
     demands = Map.get(instance, :demand) || Map.get(instance, :linehaul)
 
     case demands do
-      nil ->
-        %{}
-
-      list ->
-        Map.new(list, fn {idx, values} ->
-          {idx - 1, Enum.map(values, round_fn)}
-        end)
+      nil -> %{}
+      list -> Map.new(list, fn {idx, values} -> {idx - 1, Enum.map(values, round_fn)} end)
     end
   end
 
-  # Build backhauls map
   defp build_backhauls(instance, round_fn) do
     case Map.get(instance, :backhaul) do
-      nil ->
-        %{}
-
-      list ->
-        Map.new(list, fn {idx, values} ->
-          {idx - 1, Enum.map(values, round_fn)}
-        end)
+      nil -> %{}
+      list -> Map.new(list, fn {idx, values} -> {idx - 1, Enum.map(values, round_fn)} end)
     end
   end
 
-  # Build service times map
   defp build_service_times(instance, dimension, round_fn) do
     case Map.get(instance, :service_time) do
       nil ->
         %{}
 
       list when is_list(list) ->
-        Map.new(list, fn {idx, [value | _rest]} ->
-          {idx - 1, round_fn.(value)}
-        end)
+        Map.new(list, fn {idx, [value | _rest]} -> {idx - 1, round_fn.(value)} end)
 
       value when is_number(value) ->
-        # Uniform service time for all clients
         num_depots = length(Map.get(instance, :depot, [1]))
-
-        Map.new(num_depots..(dimension - 1), fn idx ->
-          {idx, round_fn.(value)}
-        end)
+        Map.new(num_depots..(dimension - 1), fn idx -> {idx, round_fn.(value)} end)
     end
   end
 
-  # Build prizes map
   defp build_prizes(instance, round_fn) do
     case Map.get(instance, :prize) do
       nil -> %{}
@@ -655,7 +631,6 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Build release times map
   defp build_release_times(instance, round_fn) do
     case Map.get(instance, :release_time) do
       nil -> %{}
@@ -663,21 +638,17 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Get capacity for each vehicle
-  # Capacity can be:
-  # - nil: no capacity constraint
-  # - integer: same capacity for all vehicles
-  # - list of {vehicle_id, capacity_values}: per-vehicle capacities
   defp get_capacity(instance, num_vehicles, round_fn) do
-    instance
-    |> Map.get(:capacity)
-    |> parse_capacity(num_vehicles, round_fn)
+    instance |> Map.get(:capacity) |> parse_capacity(num_vehicles, round_fn)
   end
 
-  defp parse_capacity(nil, num_vehicles, _round_fn), do: List.duplicate([@max_value], num_vehicles)
+  defp parse_capacity(nil, num_vehicles, _round_fn) do
+    List.duplicate([@max_value], num_vehicles)
+  end
 
-  defp parse_capacity(cap, num_vehicles, round_fn) when is_number(cap),
-    do: List.duplicate([round_fn.(cap)], num_vehicles)
+  defp parse_capacity(cap, num_vehicles, round_fn) when is_number(cap) do
+    List.duplicate([round_fn.(cap)], num_vehicles)
+  end
 
   defp parse_capacity([{_vid, values} | _rest] = caps, _num_vehicles, round_fn) when is_list(values) do
     caps
@@ -685,13 +656,13 @@ defmodule ExVrp.Read do
     |> Enum.map(fn {_vid, cap_values} -> Enum.map(cap_values, round_fn) end)
   end
 
-  defp parse_capacity(caps, _num_vehicles, round_fn) when is_list(caps), do: Enum.map(caps, fn c -> [round_fn.(c)] end)
+  defp parse_capacity(caps, _num_vehicles, round_fn) when is_list(caps) do
+    Enum.map(caps, fn c -> [round_fn.(c)] end)
+  end
 
-  # Get depot for each vehicle
   defp get_vehicles_depots(instance, num_vehicles, depot_indices) do
     case Map.get(instance, :vehicles_depot) do
       nil ->
-        # All vehicles at first depot
         first_depot = hd(depot_indices)
         List.duplicate(first_depot, num_vehicles)
 
@@ -702,43 +673,35 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Get max distances for each vehicle
-  # Use :infinity as default - this gets converted to INT64_MAX in the NIF.
-  # Using @max_value (2^44) would cause overflow when combined with MAX_VALUE distances.
   defp get_max_distances(instance, num_vehicles, round_fn) do
     instance
     |> Map.get(:vehicles_max_distance)
     |> parse_vehicle_values(num_vehicles, round_fn, :infinity)
   end
 
-  # Get shift durations for each vehicle
-  # Use :infinity as default - this gets converted to INT64_MAX in the NIF.
   defp get_shift_durations(instance, num_vehicles, round_fn) do
     instance
     |> Map.get(:vehicles_max_duration)
     |> parse_vehicle_values(num_vehicles, round_fn, :infinity)
   end
 
-  # Get fixed costs for each vehicle
   defp get_fixed_costs(instance, num_vehicles, round_fn) do
-    instance
-    |> Map.get(:vehicles_fixed_cost)
-    |> parse_vehicle_values(num_vehicles, round_fn, 0)
+    instance |> Map.get(:vehicles_fixed_cost) |> parse_vehicle_values(num_vehicles, round_fn, 0)
   end
 
-  # Get unit distance costs for each vehicle
-  # Note: unit distance costs are not rounded to prevent double scaling
   defp get_unit_distance_costs(instance, num_vehicles) do
     instance
     |> Map.get(:vehicles_unit_distance_cost)
     |> parse_vehicle_values(num_vehicles, &Function.identity/1, 1)
   end
 
-  # Generic parser for vehicle-indexed values (max_distance, shift_duration, fixed_cost, etc.)
-  defp parse_vehicle_values(nil, num_vehicles, _round_fn, default), do: List.duplicate(default, num_vehicles)
+  defp parse_vehicle_values(nil, num_vehicles, _round_fn, default) do
+    List.duplicate(default, num_vehicles)
+  end
 
-  defp parse_vehicle_values(val, num_vehicles, round_fn, _default) when is_number(val),
-    do: List.duplicate(round_fn.(val), num_vehicles)
+  defp parse_vehicle_values(val, num_vehicles, round_fn, _default) when is_number(val) do
+    List.duplicate(round_fn.(val), num_vehicles)
+  end
 
   defp parse_vehicle_values([{_vid, _val} | _rest] = list, _num_vehicles, round_fn, _default) do
     list
@@ -746,21 +709,17 @@ defmodule ExVrp.Read do
     |> Enum.map(fn {_vid, val} -> round_fn.(val) end)
   end
 
-  defp parse_vehicle_values(list, _num_vehicles, round_fn, _default) when is_list(list), do: Enum.map(list, round_fn)
+  defp parse_vehicle_values(list, _num_vehicles, round_fn, _default) when is_list(list) do
+    Enum.map(list, round_fn)
+  end
 
-  # Get reload depots for each vehicle
   defp get_reload_depots(instance, num_vehicles) do
     case Map.get(instance, :vehicles_reload_depot) do
       nil ->
         List.duplicate([], num_vehicles)
 
       list ->
-        # Create a map of vehicle -> reload depots
-        reload_map =
-          Map.new(list, fn {veh, depots} ->
-            # Convert to 0-indexed
-            {veh - 1, Enum.map(depots, &(&1 - 1))}
-          end)
+        reload_map = Map.new(list, fn {veh, depots} -> {veh - 1, Enum.map(depots, &(&1 - 1))} end)
 
         for veh <- 0..(num_vehicles - 1) do
           Map.get(reload_map, veh, [])
@@ -768,7 +727,6 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Get max reloads for each vehicle
   defp get_max_reloads(instance, num_vehicles) do
     case Map.get(instance, :vehicles_max_reloads) do
       nil -> List.duplicate(:infinity, num_vehicles)
@@ -777,7 +735,6 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Get allowed clients for each vehicle
   defp get_allowed_clients(instance, num_vehicles, num_depots, dimension) do
     all_clients = Enum.to_list(num_depots..(dimension - 1))
 
@@ -786,12 +743,8 @@ defmodule ExVrp.Read do
         List.duplicate(all_clients, num_vehicles)
 
       list ->
-        # Create a map of vehicle -> allowed clients
         allowed_map =
-          Map.new(list, fn {veh, clients} ->
-            # Convert to 0-indexed
-            {veh - 1, Enum.map(clients, &(&1 - 1))}
-          end)
+          Map.new(list, fn {veh, clients} -> {veh - 1, Enum.map(clients, &(&1 - 1))} end)
 
         for veh <- 0..(num_vehicles - 1) do
           Map.get(allowed_map, veh, all_clients)
@@ -799,9 +752,7 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Apply VRPB modifications to matrices (linehaul before backhaul constraint)
   defp apply_vrpb_modifications(distances, durations, demands, backhauls, _num_depots) do
-    # Identify linehaul and backhaul clients
     linehaul_clients =
       demands
       |> Enum.filter(fn {_idx, vals} -> Enum.any?(vals, &(&1 > 0)) end)
@@ -812,27 +763,24 @@ defmodule ExVrp.Read do
       |> Enum.filter(fn {_idx, vals} -> Enum.any?(vals, &(&1 > 0)) end)
       |> MapSet.new(fn {idx, _vals} -> idx end)
 
-    # Set MAX_VALUE for:
-    # - depot (0) to backhaul clients
-    # - backhaul to linehaul clients
     {modify_matrix(distances, linehaul_clients, backhaul_clients),
      modify_matrix(durations, linehaul_clients, backhaul_clients)}
   end
 
   defp modify_matrix(matrix, linehaul_clients, backhaul_clients) do
-    matrix
-    |> Enum.with_index()
-    |> Enum.map(&modify_row(&1, linehaul_clients, backhaul_clients))
+    matrix |> Enum.with_index() |> Enum.map(&modify_row(&1, linehaul_clients, backhaul_clients))
   end
 
   defp modify_row({row, from_idx}, linehaul, backhaul) do
-    row
-    |> Enum.with_index()
-    |> Enum.map(&modify_cell(&1, from_idx, linehaul, backhaul))
+    row |> Enum.with_index() |> Enum.map(&modify_cell(&1, from_idx, linehaul, backhaul))
   end
 
   defp modify_cell({val, to_idx}, 0, _linehaul, backhaul) do
-    if MapSet.member?(backhaul, to_idx), do: @max_value, else: val
+    if MapSet.member?(backhaul, to_idx) do
+      @max_value
+    else
+      val
+    end
   end
 
   defp modify_cell({val, to_idx}, from_idx, linehaul, backhaul) do
@@ -845,26 +793,23 @@ defmodule ExVrp.Read do
 
   defp apply_allowed_clients_restrictions(distances, durations, allowed, _dim, num_depots) do
     allowed_set = MapSet.new(Enum.to_list(0..(num_depots - 1)) ++ allowed)
-
     {restrict_matrix(distances, allowed_set), restrict_matrix(durations, allowed_set)}
   end
 
   defp restrict_matrix(matrix, allowed_set) do
-    matrix
-    |> Enum.with_index()
-    |> Enum.map(&restrict_row(&1, allowed_set))
+    matrix |> Enum.with_index() |> Enum.map(&restrict_row(&1, allowed_set))
   end
 
   defp restrict_row({row, from_idx}, allowed_set) do
-    row
-    |> Enum.with_index()
-    |> Enum.map(&restrict_cell(&1, from_idx, allowed_set))
+    row |> Enum.with_index() |> Enum.map(&restrict_cell(&1, from_idx, allowed_set))
   end
 
-  defp restrict_cell({_val, idx}, idx, _allowed), do: 0
+  defp restrict_cell({_val, idx}, idx, _allowed) do
+    0
+  end
 
-  defp restrict_cell({val, to_idx}, from_idx, allowed) do
-    if MapSet.member?(allowed, from_idx) and MapSet.member?(allowed, to_idx) do
+  defp restrict_cell({val, to_idx}, idx, allowed) do
+    if MapSet.member?(allowed, idx) and MapSet.member?(allowed, to_idx) do
       val
     else
       @max_value

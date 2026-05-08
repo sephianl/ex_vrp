@@ -74,9 +74,7 @@ defmodule ExVrp.Model do
         :ok -> :ready
         {:error, reasons} -> IO.inspect(reasons)
       end
-
   """
-
   alias ExVrp.Client
   alias ExVrp.ClientGroup
   alias ExVrp.Depot
@@ -92,7 +90,6 @@ defmodule ExVrp.Model do
           distance_matrices: [[[non_neg_integer()]]],
           duration_matrices: [[[non_neg_integer()]]]
         }
-
   defstruct clients: [],
             depots: [],
             vehicle_types: [],
@@ -101,43 +98,37 @@ defmodule ExVrp.Model do
             distance_matrices: [],
             duration_matrices: []
 
-  @doc """
-  Creates a new empty model.
-  """
+  @doc "Creates a new empty model."
   @spec new() :: t()
   def new do
     %__MODULE__{}
   end
 
-  @doc """
-  Returns the number of depots in the model.
-  """
+  @doc "Returns the number of depots in the model."
   @spec num_depots(t()) :: non_neg_integer()
-  def num_depots(%__MODULE__{depots: depots}), do: length(depots)
-
-  @doc """
-  Returns the number of clients in the model.
-  """
-  @spec num_clients(t()) :: non_neg_integer()
-  def num_clients(%__MODULE__{clients: clients}), do: length(clients)
-
-  @doc """
-  Returns the total number of vehicles in the model.
-  """
-  @spec num_vehicles(t()) :: non_neg_integer()
-  def num_vehicles(%__MODULE__{vehicle_types: types}) do
-    Enum.sum(Enum.map(types, & &1.num_available))
+  def num_depots(%__MODULE__{depots: depots}) do
+    length(depots)
   end
 
-  @doc """
-  Returns the number of vehicle types in the model.
-  """
-  @spec num_vehicle_types(t()) :: non_neg_integer()
-  def num_vehicle_types(%__MODULE__{vehicle_types: types}), do: length(types)
+  @doc "Returns the number of clients in the model."
+  @spec num_clients(t()) :: non_neg_integer()
+  def num_clients(%__MODULE__{clients: clients}) do
+    length(clients)
+  end
 
-  @doc """
-  Returns the total number of locations (depots + clients) in the model.
-  """
+  @doc "Returns the total number of vehicles in the model."
+  @spec num_vehicles(t()) :: non_neg_integer()
+  def num_vehicles(%__MODULE__{vehicle_types: types}) do
+    Enum.reduce(types, 0, fn el, acc -> acc + (& &1.num_available).(el) end)
+  end
+
+  @doc "Returns the number of vehicle types in the model."
+  @spec num_vehicle_types(t()) :: non_neg_integer()
+  def num_vehicle_types(%__MODULE__{vehicle_types: types}) do
+    length(types)
+  end
+
+  @doc "Returns the total number of locations (depots + clients) in the model."
   @spec num_locations(t()) :: non_neg_integer()
   def num_locations(%__MODULE__{depots: depots, clients: clients}) do
     length(depots) + length(clients)
@@ -166,19 +157,15 @@ defmodule ExVrp.Model do
 
   - `ArgumentError` if group index is invalid
   - `ArgumentError` if required client is added to mutually exclusive group
-
   """
   @spec add_client(t(), keyword()) :: t()
   def add_client(%__MODULE__{clients: clients, depots: depots, client_groups: groups} = model, opts) do
     group_idx = Keyword.get(opts, :group)
     required = Keyword.get(opts, :required, true)
 
-    # Validation: check group exists and required/mutually_exclusive compatibility
     groups =
       if group_idx == nil do
         groups
-
-        # Compute client index (depots + existing clients)
       else
         group = Enum.at(groups, group_idx)
 
@@ -191,14 +178,10 @@ defmodule ExVrp.Model do
         end
 
         client_idx = length(depots) + length(clients)
-
-        # Update group with new client
         List.update_at(groups, group_idx, &ClientGroup.add_client(&1, client_idx))
       end
 
-    # Create client (with group index stored)
     client = Client.new(opts)
-
     %{model | clients: clients ++ [client], client_groups: groups}
   end
 
@@ -215,7 +198,6 @@ defmodule ExVrp.Model do
 
       model
       |> ExVrp.Model.add_depot(x: 0, y: 0)
-
   """
   @spec add_depot(t(), keyword()) :: t()
   def add_depot(
@@ -225,7 +207,6 @@ defmodule ExVrp.Model do
     depot = Depot.new(opts)
     new_depots = depots ++ [depot]
 
-    # Recalculate group indices if clients exist
     new_groups =
       if clients == [] do
         groups
@@ -233,7 +214,6 @@ defmodule ExVrp.Model do
         recalculate_group_indices(groups, clients, length(new_depots))
       end
 
-    # Rebuild same-vehicle groups with shifted client indices
     new_svg =
       Enum.map(svg, fn group ->
         new_clients = Enum.map(group.clients, &(&1 + 1))
@@ -244,12 +224,10 @@ defmodule ExVrp.Model do
   end
 
   defp recalculate_group_indices(groups, clients, num_depots) do
-    # Clear all groups
     cleared = Enum.map(groups, &ClientGroup.clear/1)
 
-    # Re-add clients to their groups with new indices
     clients
-    |> Enum.with_index()
+    |> Stream.with_index()
     |> Enum.reduce(cleared, fn {client, i}, acc ->
       if client.group == nil do
         acc
@@ -269,7 +247,6 @@ defmodule ExVrp.Model do
 
       model
       |> ExVrp.Model.add_vehicle_type(num_available: 3, capacity: [100], time_windows: [{0, 28_800}])
-
   """
   @spec add_vehicle_type(t(), keyword()) :: t()
   def add_vehicle_type(%__MODULE__{vehicle_types: vehicle_types} = model, opts) do
@@ -294,7 +271,6 @@ defmodule ExVrp.Model do
       {model, group} = Model.add_client_group(model, required: false)
       model = Model.add_client(model, x: 1, y: 1, group: group)
       model = Model.add_client(model, x: 2, y: 2, group: group)
-
   """
   @spec add_client_group(t(), keyword()) :: {t(), non_neg_integer()}
   def add_client_group(%__MODULE__{client_groups: groups} = model, opts \\ []) do
@@ -352,7 +328,6 @@ defmodule ExVrp.Model do
           raise ArgumentError, "Client not in model"
         end
 
-        # Client indices are offset by the number of depots
         num_depots + idx
       end)
 
@@ -369,7 +344,6 @@ defmodule ExVrp.Model do
 
       model
       |> ExVrp.Model.set_distance_matrices([matrix1, matrix2])
-
   """
   @spec set_distance_matrices(t(), [[[non_neg_integer()]]]) :: t()
   def set_distance_matrices(%__MODULE__{} = model, matrices) do
@@ -385,7 +359,6 @@ defmodule ExVrp.Model do
 
       model
       |> ExVrp.Model.set_duration_matrices([matrix1, matrix2])
-
   """
   @spec set_duration_matrices(t(), [[[non_neg_integer()]]]) :: t()
   def set_duration_matrices(%__MODULE__{} = model, matrices) do
@@ -429,13 +402,17 @@ defmodule ExVrp.Model do
     ["Model must have at least one depot" | errors]
   end
 
-  defp validate_has_depots(errors, _model), do: errors
+  defp validate_has_depots(errors, _model) do
+    errors
+  end
 
   defp validate_has_vehicle_types(errors, %{vehicle_types: []}) do
     ["Model must have at least one vehicle type" | errors]
   end
 
-  defp validate_has_vehicle_types(errors, _model), do: errors
+  defp validate_has_vehicle_types(errors, _model) do
+    errors
+  end
 
   defp validate_capacity_dimensions(errors, %{vehicle_types: []}) do
     errors
@@ -451,8 +428,11 @@ defmodule ExVrp.Model do
       |> Enum.map(fn {_client, i} -> i end)
 
     case invalid_indices do
-      [] -> errors
-      _indices -> ["Clients #{inspect(invalid_indices)} have mismatched capacity dimensions" | errors]
+      [] ->
+        errors
+
+      _indices ->
+        ["Clients #{inspect(invalid_indices)} have mismatched capacity dimensions" | errors]
     end
   end
 
@@ -464,8 +444,14 @@ defmodule ExVrp.Model do
       |> Enum.map(fn {_client, i} -> i end)
 
     case invalid do
-      [] -> errors
-      _indices -> ["Client time windows invalid (tw_late < tw_early) at indices #{inspect(invalid)}" | errors]
+      [] ->
+        errors
+
+      _indices ->
+        [
+          "Client time windows invalid (tw_late < tw_early) at indices #{inspect(invalid)}"
+          | errors
+        ]
     end
   end
 
@@ -486,7 +472,9 @@ defmodule ExVrp.Model do
     invalid =
       clients
       |> Enum.with_index()
-      |> Enum.filter(fn {c, _idx} -> Enum.any?(c.delivery, &(&1 < 0)) or Enum.any?(c.pickup, &(&1 < 0)) end)
+      |> Enum.filter(fn {c, _idx} ->
+        Enum.any?(c.delivery, &(&1 < 0)) or Enum.any?(c.pickup, &(&1 < 0))
+      end)
       |> Enum.map(fn {_client, i} -> i end)
 
     case invalid do
@@ -516,8 +504,14 @@ defmodule ExVrp.Model do
       |> Enum.map(fn {_depot, i} -> i end)
 
     case invalid do
-      [] -> errors
-      _indices -> ["Depot time windows invalid (tw_late < tw_early) at indices #{inspect(invalid)}" | errors]
+      [] ->
+        errors
+
+      _indices ->
+        [
+          "Depot time windows invalid (tw_late < tw_early) at indices #{inspect(invalid)}"
+          | errors
+        ]
     end
   end
 
@@ -529,8 +523,11 @@ defmodule ExVrp.Model do
       |> Enum.map(fn {_vt, i} -> i end)
 
     case invalid do
-      [] -> errors
-      _indices -> ["Vehicle type num_available must be > 0 at indices #{inspect(invalid)}" | errors]
+      [] ->
+        errors
+
+      _indices ->
+        ["Vehicle type num_available must be > 0 at indices #{inspect(invalid)}" | errors]
     end
   end
 
@@ -570,14 +567,15 @@ defmodule ExVrp.Model do
     invalid =
       vehicle_types
       |> Enum.with_index()
-      |> Enum.filter(fn {vt, _idx} ->
-        Enum.any?(vt.reload_depots, &(&1 >= num_depots))
-      end)
+      |> Enum.filter(fn {vt, _idx} -> Enum.any?(vt.reload_depots, &(&1 >= num_depots)) end)
       |> Enum.map(fn {_vt, i} -> i end)
 
     case invalid do
-      [] -> errors
-      _indices -> ["Vehicle type has invalid reload depot index at indices #{inspect(invalid)}" | errors]
+      [] ->
+        errors
+
+      _indices ->
+        ["Vehicle type has invalid reload depot index at indices #{inspect(invalid)}" | errors]
     end
   end
 
@@ -633,19 +631,24 @@ defmodule ExVrp.Model do
     length(matrix) == expected_size and Enum.all?(matrix, &row_valid?(&1, expected_size))
   end
 
-  defp matrix_valid?(_matrix, _expected_size), do: false
+  defp matrix_valid?(_matrix, _expected_size) do
+    false
+  end
 
-  defp row_valid?(row, expected_size) when is_list(row), do: length(row) == expected_size
-  defp row_valid?(_row, _expected_size), do: false
+  defp row_valid?(row, expected_size) when is_list(row) do
+    length(row) == expected_size
+  end
+
+  defp row_valid?(_row, _expected_size) do
+    false
+  end
 
   defp validate_matrix_diagonals(errors, %{distance_matrices: [], duration_matrices: []}) do
     errors
   end
 
   defp validate_matrix_diagonals(errors, %{distance_matrices: dist, duration_matrices: dur}) do
-    errors
-    |> check_diagonal(dist, "Distance")
-    |> check_diagonal(dur, "Duration")
+    errors |> check_diagonal(dist, "Distance") |> check_diagonal(dur, "Duration")
   end
 
   defp check_diagonal(errors, matrices, name) do
@@ -662,7 +665,9 @@ defmodule ExVrp.Model do
     |> Enum.any?(fn {row, i} -> is_list(row) and Enum.at(row, i, 0) != 0 end)
   end
 
-  defp has_nonzero_diagonal?(_matrix), do: false
+  defp has_nonzero_diagonal?(_matrix) do
+    false
+  end
 
   defp validate_client_groups(errors, %{client_groups: [], clients: _clients}) do
     errors
@@ -672,15 +677,11 @@ defmodule ExVrp.Model do
     num_clients = length(clients)
     num_depots = length(depots)
 
-    Enum.reduce(Enum.with_index(groups), errors, fn {group, idx}, acc ->
+    Enum.reduce(Stream.with_index(groups), errors, fn {group, idx}, acc ->
       cond do
-        # Check all client indices are valid (must be >= num_depots and < num_locs)
-        Enum.any?(group.clients, fn ci ->
-          ci < num_depots or ci >= num_depots + num_clients
-        end) ->
+        Enum.any?(group.clients, fn ci -> ci < num_depots or ci >= num_depots + num_clients end) ->
           ["Group #{idx} has invalid client index" | acc]
 
-        # Required clients can't be in mutually exclusive groups
         group.mutually_exclusive and
             Enum.any?(group.clients, fn ci ->
               client_list_idx = ci - num_depots
@@ -707,19 +708,14 @@ defmodule ExVrp.Model do
     num_clients = length(clients)
     num_depots = length(depots)
 
-    Enum.reduce(Enum.with_index(groups), errors, fn {group, idx}, acc ->
+    Enum.reduce(Stream.with_index(groups), errors, fn {group, idx}, acc ->
       cond do
-        # Empty same-vehicle groups are not allowed
         group.clients == [] ->
           ["Same-vehicle group #{idx} is empty" | acc]
 
-        # Check all client indices are valid (must be >= num_depots and < num_locs)
-        Enum.any?(group.clients, fn ci ->
-          ci < num_depots or ci >= num_depots + num_clients
-        end) ->
+        Enum.any?(group.clients, fn ci -> ci < num_depots or ci >= num_depots + num_clients end) ->
           ["Same-vehicle group #{idx} has invalid client index" | acc]
 
-        # Check for duplicate clients within the group
         length(group.clients) != length(Enum.uniq(group.clients)) ->
           ["Same-vehicle group #{idx} has duplicate clients" | acc]
 
@@ -737,11 +733,8 @@ defmodule ExVrp.Model do
   @spec to_problem_data(t()) :: {:ok, reference()} | {:error, term()}
   def to_problem_data(%__MODULE__{} = model) do
     case validate(model) do
-      :ok ->
-        ExVrp.Native.create_problem_data(model)
-
-      {:error, _reason} = error ->
-        error
+      :ok -> ExVrp.Native.create_problem_data(model)
+      {:error, _reason} = error -> error
     end
   end
 end

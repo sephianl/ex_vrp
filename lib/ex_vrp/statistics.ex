@@ -10,9 +10,7 @@ defmodule ExVrp.Statistics do
       stats = ExVrp.Statistics.new()
       stats = ExVrp.Statistics.collect(stats, current, candidate, best, cost_evaluator)
       Enum.each(stats, fn datum -> IO.inspect(datum) end)
-
   """
-
   alias ExVrp.Native
 
   @type datum :: %{
@@ -23,7 +21,6 @@ defmodule ExVrp.Statistics do
           best_cost: integer(),
           best_feas: boolean()
         }
-
   @type t :: %__MODULE__{
           runtimes: [float()],
           num_iterations: non_neg_integer(),
@@ -31,12 +28,7 @@ defmodule ExVrp.Statistics do
           clock: integer(),
           collect_stats: boolean()
         }
-
-  defstruct runtimes: [],
-            num_iterations: 0,
-            data: [],
-            clock: nil,
-            collect_stats: true
+  defstruct runtimes: [], num_iterations: 0, data: [], clock: nil, collect_stats: true
 
   @doc """
   Creates a new Statistics object.
@@ -59,11 +51,11 @@ defmodule ExVrp.Statistics do
     }
   end
 
-  @doc """
-  Returns whether this Statistics object is collecting data.
-  """
+  @doc "Returns whether this Statistics object is collecting data."
   @spec collecting?(t()) :: boolean()
-  def collecting?(%__MODULE__{collect_stats: collect_stats}), do: collect_stats
+  def collecting?(%__MODULE__{collect_stats: collect_stats}) do
+    collect_stats
+  end
 
   @doc """
   Collects iteration statistics.
@@ -81,16 +73,16 @@ defmodule ExVrp.Statistics do
     stats
   end
 
-  def collect(%__MODULE__{} = stats, current, candidate, best, cost_evaluator) do
+  def collect(%__MODULE__{} = stats, current, candidate, best, cost_eval) do
     now = System.monotonic_time(:microsecond)
     runtime = (now - stats.clock) / 1_000_000.0
 
     datum = %{
-      current_cost: Native.solution_penalised_cost(current, cost_evaluator),
+      current_cost: Native.solution_penalised_cost(current, cost_eval),
       current_feas: Native.solution_is_feasible(current),
-      candidate_cost: Native.solution_penalised_cost(candidate, cost_evaluator),
+      candidate_cost: Native.solution_penalised_cost(candidate, cost_eval),
       candidate_feas: Native.solution_is_feasible(candidate),
-      best_cost: Native.solution_penalised_cost(best, cost_evaluator),
+      best_cost: Native.solution_penalised_cost(best, cost_eval),
       best_feas: Native.solution_is_feasible(best)
     }
 
@@ -113,7 +105,6 @@ defmodule ExVrp.Statistics do
   - `opts` - Options (`:delimiter` defaults to `,`)
   """
   @spec to_csv(t(), Path.t(), keyword()) :: :ok | {:error, term()}
-  # sobelow_skip ["Traversal.FileModule"]
   def to_csv(%__MODULE__{} = stats, path, opts \\ []) do
     delimiter = Keyword.get(opts, :delimiter, ",")
 
@@ -144,7 +135,6 @@ defmodule ExVrp.Statistics do
       end)
 
     content = Enum.map_join([header | rows], "\n", &Enum.join(&1, delimiter))
-
     File.write(path, content <> "\n")
   end
 
@@ -157,22 +147,15 @@ defmodule ExVrp.Statistics do
   - `opts` - Options (`:delimiter` defaults to `,`)
   """
   @spec from_csv(Path.t(), keyword()) :: {:ok, t()} | {:error, term()}
-  # sobelow_skip ["Traversal.FileModule"]
   def from_csv(path, opts \\ []) do
     delimiter = Keyword.get(opts, :delimiter, ",")
 
     case File.read(path) do
       {:ok, content} ->
         [_header | rows] =
-          content
-          |> String.trim()
-          |> String.split("\n")
-          |> Enum.map(&String.split(&1, delimiter))
+          content |> String.trim() |> String.split("\n") |> Enum.map(&String.split(&1, delimiter))
 
-        {runtimes, data} =
-          rows
-          |> Enum.map(&parse_row/1)
-          |> Enum.unzip()
+        {runtimes, data} = rows |> Enum.map(&parse_row/1) |> Enum.unzip()
 
         stats = %__MODULE__{
           runtimes: runtimes,
@@ -204,19 +187,38 @@ defmodule ExVrp.Statistics do
     {runtime, datum}
   end
 
-  defp bool_to_int(true), do: 1
-  defp bool_to_int(false), do: 0
+  defp bool_to_int(true) do
+    1
+  end
 
-  defp int_to_bool("1"), do: true
-  defp int_to_bool("0"), do: false
-  defp int_to_bool(1), do: true
-  defp int_to_bool(0), do: false
+  defp bool_to_int(false) do
+    0
+  end
 
-  # Implement Enumerable protocol for iterating over data
-  defimpl Enumerable do
-    def count(%ExVrp.Statistics{data: data}), do: {:ok, length(data)}
+  defp int_to_bool("1") do
+    true
+  end
 
-    def member?(%ExVrp.Statistics{data: data}, element), do: {:ok, element in data}
+  defp int_to_bool("0") do
+    false
+  end
+
+  defp int_to_bool(1) do
+    true
+  end
+
+  defp int_to_bool(0) do
+    false
+  end
+
+  defimpl(Enumerable) do
+    def count(%ExVrp.Statistics{data: data}) do
+      {:ok, length(data)}
+    end
+
+    def member?(%ExVrp.Statistics{data: data}, element) do
+      {:ok, element in data}
+    end
 
     def reduce(%ExVrp.Statistics{data: data}, acc, fun) do
       Enumerable.List.reduce(Enum.reverse(data), acc, fun)

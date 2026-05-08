@@ -23,9 +23,7 @@ defmodule ExVrp.StoppingCriteria do
       ])
 
       {:ok, result} = Solver.solve(model, stop: stop)
-
   """
-
   @type t :: %__MODULE__{
           type:
             :max_iterations
@@ -35,9 +33,7 @@ defmodule ExVrp.StoppingCriteria do
             | :first_feasible,
           state: map()
         }
-
   @type stop_fn :: (non_neg_integer() -> boolean())
-
   defstruct [:type, :state]
 
   @doc """
@@ -48,14 +44,10 @@ defmodule ExVrp.StoppingCriteria do
   ## Example
 
       StoppingCriteria.max_iterations(1000)
-
   """
   @spec max_iterations(non_neg_integer()) :: t()
   def max_iterations(max) when is_integer(max) and max >= 0 do
-    %__MODULE__{
-      type: :max_iterations,
-      state: %{max: max, current: 0}
-    }
+    %__MODULE__{type: :max_iterations, state: %{max: max, current: 0}}
   end
 
   def max_iterations(max) when is_integer(max) do
@@ -72,14 +64,10 @@ defmodule ExVrp.StoppingCriteria do
   ## Example
 
       StoppingCriteria.max_runtime(60.0)  # 60 seconds
-
   """
   @spec max_runtime(number()) :: t()
   def max_runtime(max_seconds) when is_number(max_seconds) and max_seconds >= 0 do
-    %__MODULE__{
-      type: :max_runtime,
-      state: %{max_ms: round(max_seconds * 1000), start_time: nil}
-    }
+    %__MODULE__{type: :max_runtime, state: %{max_ms: round(max_seconds * 1000), start_time: nil}}
   end
 
   def max_runtime(max_seconds) when is_number(max_seconds) do
@@ -97,14 +85,10 @@ defmodule ExVrp.StoppingCriteria do
   ## Example
 
       StoppingCriteria.no_improvement(100)  # Stop after 100 iterations without improvement
-
   """
   @spec no_improvement(non_neg_integer()) :: t()
   def no_improvement(max_no_improvement) when is_integer(max_no_improvement) and max_no_improvement >= 0 do
-    %__MODULE__{
-      type: :no_improvement,
-      state: %{max: max_no_improvement, current: 0}
-    }
+    %__MODULE__{type: :no_improvement, state: %{max: max_no_improvement, current: 0}}
   end
 
   def no_improvement(max_no_improvement) when is_integer(max_no_improvement) do
@@ -125,7 +109,6 @@ defmodule ExVrp.StoppingCriteria do
         StoppingCriteria.max_iterations(1000),
         StoppingCriteria.max_runtime(60.0)
       ])
-
   """
   @spec multiple_criteria([t()]) :: t()
   def multiple_criteria([]) do
@@ -133,17 +116,14 @@ defmodule ExVrp.StoppingCriteria do
   end
 
   def multiple_criteria(criteria) when is_list(criteria) do
-    %__MODULE__{
-      type: :multiple_criteria,
-      state: %{criteria: criteria}
-    }
+    %__MODULE__{type: :multiple_criteria, state: %{criteria: criteria}}
   end
 
-  @doc """
-  Alias for `multiple_criteria/1` for convenience.
-  """
+  @doc "Alias for `multiple_criteria/1` for convenience."
   @spec any([t()]) :: t()
-  def any(criteria), do: multiple_criteria(criteria)
+  def any(criteria) do
+    multiple_criteria(criteria)
+  end
 
   @doc """
   Creates a combined criterion that stops when ALL of the sub-criteria are met.
@@ -158,10 +138,7 @@ defmodule ExVrp.StoppingCriteria do
   end
 
   def all(criteria) when is_list(criteria) do
-    %__MODULE__{
-      type: :all,
-      state: %{criteria: criteria}
-    }
+    %__MODULE__{type: :all, state: %{criteria: criteria}}
   end
 
   @doc """
@@ -172,14 +149,10 @@ defmodule ExVrp.StoppingCriteria do
   ## Example
 
       StoppingCriteria.first_feasible()
-
   """
   @spec first_feasible() :: t()
   def first_feasible do
-    %__MODULE__{
-      type: :first_feasible,
-      state: %{}
-    }
+    %__MODULE__{type: :first_feasible, state: %{}}
   end
 
   @doc """
@@ -193,7 +166,6 @@ defmodule ExVrp.StoppingCriteria do
 
       # Stop when feasible or after 1000 iterations, whichever comes first
       stop = StoppingCriteria.first_feasible_or(StoppingCriteria.max_iterations(1000))
-
   """
   @spec first_feasible_or(t()) :: t()
   def first_feasible_or(%__MODULE__{} = other_criteria) do
@@ -213,27 +185,21 @@ defmodule ExVrp.StoppingCriteria do
       stop_fn.(1000)  # => false (first call)
       # ... after 100 calls ...
       stop_fn.(1000)  # => true
-
   """
   @spec to_stop_fn(t()) :: stop_fn()
   def to_stop_fn(%__MODULE__{} = criteria) do
-    # Eagerly initialize start_time so max_runtime covers total solve time
-    # (including setup), not just ILS iteration time.
     criteria = maybe_init_start_time(criteria)
     {:ok, agent} = Agent.start_link(fn -> {criteria, nil, true} end)
     fn best_cost -> Agent.get_and_update(agent, &check_stop(&1, best_cost)) end
   end
 
   defp check_stop({crit, prev_cost, is_first_call}, best_cost) do
-    # First call establishes baseline - not counted as "no improvement"
-    # This matches PyVRP's behavior
     improved = is_first_call or best_cost < prev_cost
     context = %{improved: improved, best_cost: best_cost}
     {should_stop, new_crit} = should_stop?(crit, context)
     {should_stop, {new_crit, best_cost, false}}
   end
 
-  # Initialize start_time on first call for max_runtime criteria
   defp maybe_init_start_time(%__MODULE__{type: :max_runtime, state: %{start_time: nil} = state} = criteria) do
     %{criteria | state: %{state | start_time: System.monotonic_time(:millisecond)}}
   end
@@ -243,7 +209,9 @@ defmodule ExVrp.StoppingCriteria do
     %{criteria | state: %{state | criteria: updated_criteria}}
   end
 
-  defp maybe_init_start_time(criteria), do: criteria
+  defp maybe_init_start_time(criteria) do
+    criteria
+  end
 
   @doc """
   Checks if the stopping criterion has been met.
@@ -268,47 +236,38 @@ defmodule ExVrp.StoppingCriteria do
   def should_stop?(%__MODULE__{type: :no_improvement, state: state} = criteria, context) do
     improved = Map.get(context, :improved, false)
 
-    new_current = if improved, do: 0, else: state.current + 1
-    should_stop = new_current >= state.max
+    new_current =
+      if improved do
+        0
+      else
+        state.current + 1
+      end
 
+    should_stop = new_current >= state.max
     {should_stop, %{criteria | state: %{state | current: new_current}}}
   end
 
   def should_stop?(%__MODULE__{type: :multiple_criteria, state: state} = criteria, context) do
-    results =
-      Enum.map(state.criteria, fn sub_criteria ->
-        should_stop?(sub_criteria, context)
-      end)
-
+    results = Enum.map(state.criteria, fn sub_criteria -> should_stop?(sub_criteria, context) end)
     any_stop = Enum.any?(results, fn {stop?, _updated} -> stop? end)
     final_criteria = Enum.map(results, fn {_stop?, updated} -> updated end)
-
     {any_stop, %{criteria | state: %{criteria: final_criteria}}}
   end
 
   def should_stop?(%__MODULE__{type: :first_feasible} = criteria, context) do
-    # In PyVRP, feasibility is determined by cost being finite
-    # Our ILS passes :infinity for infeasible solutions (via solution_cost)
     best_cost = Map.get(context, :best_cost, :infinity)
-    # :infinity is not an integer
     is_feasible = is_integer(best_cost)
     {is_feasible, criteria}
   end
 
-  # Legacy support for :any and :all types
   def should_stop?(%__MODULE__{type: :any} = criteria, context) do
     should_stop?(%{criteria | type: :multiple_criteria}, context)
   end
 
   def should_stop?(%__MODULE__{type: :all, state: state} = criteria, context) do
-    results =
-      Enum.map(state.criteria, fn sub_criteria ->
-        should_stop?(sub_criteria, context)
-      end)
-
+    results = Enum.map(state.criteria, fn sub_criteria -> should_stop?(sub_criteria, context) end)
     all_stop = Enum.all?(results, fn {stop?, _updated} -> stop? end)
     final_criteria = Enum.map(results, fn {_stop?, updated} -> updated end)
-
     {all_stop, %{criteria | state: %{criteria: final_criteria}}}
   end
 end

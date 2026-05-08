@@ -5,9 +5,7 @@ defmodule ExVrp.NotImplementedError do
   This error is temporary during development and will be removed
   once all C++ bindings are complete.
   """
-
   defexception [:function]
-
   @impl Exception
   def message(%{function: function}) do
     "NIF function #{function} is not yet implemented. " <>
@@ -16,12 +14,8 @@ defmodule ExVrp.NotImplementedError do
 end
 
 defmodule ExVrp.SolveError do
-  @moduledoc """
-  Raised when the solver fails to find a solution.
-  """
-
+  @moduledoc "Raised when the solver fails to find a solution."
   defexception [:reason]
-
   @impl Exception
   def message(%{reason: reason}) when is_binary(reason) do
     "Solver failed: #{reason}"
@@ -33,15 +27,10 @@ defmodule ExVrp.SolveError do
 end
 
 defmodule ExVrp.ValidationError do
-  @moduledoc """
-  Raised when model validation fails.
-  """
-
+  @moduledoc "Raised when model validation fails."
   defexception [:errors]
-
   @impl Exception
   def message(%{errors: errors}) do
-    "Model validation failed:\n" <>
-      Enum.map_join(errors, "\n", &"  - #{&1}")
+    "Model validation failed:\n" <> Enum.map_join(errors, "\n", &"  - #{&1}")
   end
 end

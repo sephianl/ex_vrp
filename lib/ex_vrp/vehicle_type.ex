@@ -5,7 +5,6 @@ defmodule ExVrp.VehicleType do
   Vehicle types define the characteristics of vehicles in the fleet,
   including capacity, costs, time windows, and depot assignments.
   """
-
   @type t :: %__MODULE__{
           num_available: pos_integer(),
           start_depot: non_neg_integer(),
@@ -28,7 +27,6 @@ defmodule ExVrp.VehicleType do
           name: String.t(),
           forbidden_windows: [{non_neg_integer(), non_neg_integer()}]
         }
-
   @enforce_keys [:num_available, :capacity]
   defstruct [
     :num_available,
@@ -93,20 +91,13 @@ defmodule ExVrp.VehicleType do
 
       iex> ExVrp.VehicleType.new(num_available: 3, capacity: [100, 50], time_windows: [{0, 28_800}])
       %ExVrp.VehicleType{num_available: 3, capacity: [100, 50], tw_early: 0, tw_late: 28_800, ...}
-
   """
   @spec new(keyword()) :: t()
   def new(opts) do
     validate_no_legacy_options!(opts)
     {time_windows, rest} = Keyword.pop(opts, :time_windows, [{0, :infinity}])
-
     validate_time_windows!(time_windows)
-
-    windows =
-      time_windows
-      |> Enum.sort_by(fn {s, _end} -> s end)
-      |> merge_windows()
-
+    windows = time_windows |> Enum.sort_by(fn {s, _end} -> s end) |> merge_windows()
     tw_early = elem(hd(windows), 0)
     tw_late = elem(List.last(windows), 1)
 
@@ -115,12 +106,14 @@ defmodule ExVrp.VehicleType do
       |> Enum.chunk_every(2, 1, :discard)
       |> Enum.map(fn [{_s, gap_start}, {gap_end, _e}] -> {gap_start, gap_end} end)
 
-    struct!(__MODULE__, Keyword.merge(rest, tw_early: tw_early, tw_late: tw_late, forbidden_windows: forbidden))
+    struct!(
+      __MODULE__,
+      Keyword.merge(rest, tw_early: tw_early, tw_late: tw_late, forbidden_windows: forbidden)
+    )
   end
 
   defp validate_no_legacy_options!(opts) do
     legacy = [:tw_early, :tw_late, :forbidden_windows]
-
     found = Enum.filter(legacy, &Keyword.has_key?(opts, &1))
 
     if found != [] do
@@ -147,7 +140,9 @@ defmodule ExVrp.VehicleType do
     end)
   end
 
-  defp merge_windows([]), do: []
+  defp merge_windows([]) do
+    []
+  end
 
   defp merge_windows([first | rest]) do
     rest
@@ -161,10 +156,23 @@ defmodule ExVrp.VehicleType do
     |> Enum.reverse()
   end
 
-  defp lte(_s, :infinity), do: true
-  defp lte(s, ce), do: s <= ce
+  defp lte(_s, :infinity) do
+    true
+  end
 
-  defp max_end(:infinity, _other), do: :infinity
-  defp max_end(_other, :infinity), do: :infinity
-  defp max_end(a, b), do: max(a, b)
+  defp lte(s, ce) do
+    s <= ce
+  end
+
+  defp max_end(:infinity, _other) do
+    :infinity
+  end
+
+  defp max_end(_other, :infinity) do
+    :infinity
+  end
+
+  defp max_end(a, other) do
+    max(a, other)
+  end
 end

@@ -6,7 +6,6 @@ defmodule ExVrp.Trip do
   In simple VRP, a route has exactly one trip. Multi-trip VRP
   allows vehicles to return to depots mid-route for reloading.
   """
-
   @type t :: %__MODULE__{
           visits: [non_neg_integer()],
           start_depot: non_neg_integer(),
@@ -16,7 +15,6 @@ defmodule ExVrp.Trip do
           delivery: [non_neg_integer()],
           pickup: [non_neg_integer()]
         }
-
   defstruct visits: [],
             start_depot: 0,
             end_depot: 0,

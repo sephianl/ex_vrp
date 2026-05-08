@@ -25,14 +25,8 @@ defmodule ExVrp.SameVehicleGroup do
 
       # Clients c1 and c2 must be on the same vehicle if visited
       model = ExVrp.Model.add_same_vehicle_group(model, [c1, c2], name: "group1")
-
   """
-
-  @type t :: %__MODULE__{
-          clients: [non_neg_integer()],
-          name: String.t()
-        }
-
+  @type t :: %__MODULE__{clients: [non_neg_integer()], name: String.t()}
   defstruct clients: [], name: ""
 
   @doc """
@@ -45,10 +39,7 @@ defmodule ExVrp.SameVehicleGroup do
   """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
-    %__MODULE__{
-      clients: Keyword.get(opts, :clients, []),
-      name: Keyword.get(opts, :name, "")
-    }
+    %__MODULE__{clients: Keyword.get(opts, :clients, []), name: Keyword.get(opts, :name, "")}
   end
 
   @doc """
@@ -65,23 +56,21 @@ defmodule ExVrp.SameVehicleGroup do
     %{group | clients: [client_idx | clients]}
   end
 
-  @doc """
-  Clears all clients from the group.
-  """
+  @doc "Clears all clients from the group."
   @spec clear(t()) :: t()
   def clear(%__MODULE__{} = group) do
     %{group | clients: []}
   end
 
-  @doc """
-  Returns the number of clients in the group.
-  """
+  @doc "Returns the number of clients in the group."
   @spec size(t()) :: non_neg_integer()
-  def size(%__MODULE__{clients: clients}), do: length(clients)
+  def size(%__MODULE__{clients: clients}) do
+    length(clients)
+  end
 
-  @doc """
-  Returns true if the group has no clients.
-  """
+  @doc "Returns true if the group has no clients."
   @spec empty?(t()) :: boolean()
-  def empty?(%__MODULE__{clients: clients}), do: clients == []
+  def empty?(%__MODULE__{clients: clients}) do
+    clients == []
+  end
 end

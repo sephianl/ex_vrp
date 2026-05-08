@@ -4,7 +4,6 @@ defmodule ExVrp.Depot do
 
   Depots are locations where vehicles start and/or end their routes.
   """
-
   @type t :: %__MODULE__{
           x: number(),
           y: number(),
@@ -14,7 +13,6 @@ defmodule ExVrp.Depot do
           reload_cost: non_neg_integer(),
           name: String.t()
         }
-
   @enforce_keys [:x, :y]
   defstruct [
     :x,
@@ -46,7 +44,6 @@ defmodule ExVrp.Depot do
 
       iex> ExVrp.Depot.new(x: 0, y: 0)
       %ExVrp.Depot{x: 0, y: 0, ...}
-
   """
   @spec new(keyword()) :: t()
   def new(opts) do
