@@ -123,26 +123,30 @@ defmodule ExVrp.MinimiseFleet do
   defp maybe_reduce_fleet(fleet, _routes_used), do: fleet
 
   defp compute_lower_bound(%Model{clients: clients, vehicle_types: [vehicle_type]}) do
-    # Compute bound based on packing demands in vehicles
-    num_dims = max(length(vehicle_type.capacity), 1)
-
-    # Account for multi-trip: max_trips multiplies effective capacity
+    capacities = if vehicle_type.capacity == [], do: [1], else: vehicle_type.capacity
+    num_dims = length(capacities)
     max_trips = compute_max_trips(vehicle_type)
+    zeros = List.duplicate(0, num_dims)
 
-    Enum.reduce(0..(num_dims - 1), 1, fn dim, best ->
-      {delivery_sum, pickup_sum} =
-        Enum.reduce(clients, {0, 0}, fn c, {d, p} ->
-          {d + Enum.at(c.delivery, dim, 0), p + Enum.at(c.pickup, dim, 0)}
-        end)
+    {delivery_sums, pickup_sums} =
+      Enum.reduce(clients, {zeros, zeros}, fn c, {d_acc, p_acc} ->
+        {add_dimensions(d_acc, c.delivery), add_dimensions(p_acc, c.pickup)}
+      end)
 
-      demand = max(delivery_sum, pickup_sum)
-      capacity = Enum.at(vehicle_type.capacity, dim, 1)
+    [delivery_sums, pickup_sums, capacities]
+    |> Enum.zip()
+    |> Enum.reduce(1, fn {d_sum, p_sum, capacity}, best ->
+      demand = max(d_sum, p_sum)
       effective_capacity = capacity * max_trips
 
       dim_bound = if effective_capacity > 0, do: ceil(demand / effective_capacity), else: 0
       max(dim_bound, best)
     end)
   end
+
+  defp add_dimensions([], _vals), do: []
+  defp add_dimensions(acc, []), do: acc
+  defp add_dimensions([a | acc_rest], [v | vals_rest]), do: [a + v | add_dimensions(acc_rest, vals_rest)]
 
   defp compute_max_trips(%VehicleType{max_reloads: max_reloads}) do
     case max_reloads do

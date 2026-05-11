@@ -659,6 +659,7 @@ defmodule ExVrp.Model do
   defp validate_client_groups(errors, %{client_groups: groups, clients: clients, depots: depots}) do
     num_clients = length(clients)
     num_depots = length(depots)
+    clients_tuple = List.to_tuple(clients)
 
     Enum.reduce(Stream.with_index(groups), errors, fn {group, idx}, acc ->
       cond do
@@ -674,7 +675,7 @@ defmodule ExVrp.Model do
               client_list_idx = ci - num_depots
 
               if client_list_idx >= 0 and client_list_idx < num_clients do
-                Enum.at(clients, client_list_idx).required
+                elem(clients_tuple, client_list_idx).required
               else
                 false
               end

@@ -169,21 +169,24 @@ defmodule ExVrp.Neighbourhood do
     # Get unique edge cost combinations: {unit_dist, unit_dur, profile}
     unique_costs = Enum.uniq(vehicle_types)
 
+    distances_tuple = List.to_tuple(distances)
+    durations_tuple = List.to_tuple(durations)
+
     # Compute edge costs for first combination
     [{unit_dist, unit_dur, profile} | rest] = unique_costs
 
     initial_costs =
       Nx.add(
-        Nx.multiply(unit_dist, Enum.at(distances, profile)),
-        Nx.multiply(unit_dur, Enum.at(durations, profile))
+        Nx.multiply(unit_dist, elem(distances_tuple, profile)),
+        Nx.multiply(unit_dur, elem(durations_tuple, profile))
       )
 
     # Take minimum across all vehicle type combinations
     Enum.reduce(rest, initial_costs, fn {ud, ut, p}, acc ->
       costs =
         Nx.add(
-          Nx.multiply(ud, Enum.at(distances, p)),
-          Nx.multiply(ut, Enum.at(durations, p))
+          Nx.multiply(ud, elem(distances_tuple, p)),
+          Nx.multiply(ut, elem(durations_tuple, p))
         )
 
       Nx.min(acc, costs)
