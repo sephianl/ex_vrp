@@ -101,43 +101,31 @@ defmodule ExVrp.Model do
             distance_matrices: [],
             duration_matrices: []
 
-  @doc """
-  Creates a new empty model.
-  """
+  @doc "Creates a new empty model."
   @spec new() :: t()
   def new do
     %__MODULE__{}
   end
 
-  @doc """
-  Returns the number of depots in the model.
-  """
+  @doc "Returns the number of depots in the model."
   @spec num_depots(t()) :: non_neg_integer()
   def num_depots(%__MODULE__{depots: depots}), do: length(depots)
 
-  @doc """
-  Returns the number of clients in the model.
-  """
+  @doc "Returns the number of clients in the model."
   @spec num_clients(t()) :: non_neg_integer()
   def num_clients(%__MODULE__{clients: clients}), do: length(clients)
 
-  @doc """
-  Returns the total number of vehicles in the model.
-  """
+  @doc "Returns the total number of vehicles in the model."
   @spec num_vehicles(t()) :: non_neg_integer()
   def num_vehicles(%__MODULE__{vehicle_types: types}) do
-    Enum.sum(Enum.map(types, & &1.num_available))
+    Enum.reduce(types, 0, fn t, acc -> acc + t.num_available end)
   end
 
-  @doc """
-  Returns the number of vehicle types in the model.
-  """
+  @doc "Returns the number of vehicle types in the model."
   @spec num_vehicle_types(t()) :: non_neg_integer()
   def num_vehicle_types(%__MODULE__{vehicle_types: types}), do: length(types)
 
-  @doc """
-  Returns the total number of locations (depots + clients) in the model.
-  """
+  @doc "Returns the total number of locations (depots + clients) in the model."
   @spec num_locations(t()) :: non_neg_integer()
   def num_locations(%__MODULE__{depots: depots, clients: clients}) do
     length(depots) + length(clients)
@@ -249,7 +237,7 @@ defmodule ExVrp.Model do
 
     # Re-add clients to their groups with new indices
     clients
-    |> Enum.with_index()
+    |> Stream.with_index()
     |> Enum.reduce(cleared, fn {client, i}, acc ->
       if client.group == nil do
         acc
@@ -672,7 +660,7 @@ defmodule ExVrp.Model do
     num_clients = length(clients)
     num_depots = length(depots)
 
-    Enum.reduce(Enum.with_index(groups), errors, fn {group, idx}, acc ->
+    Enum.reduce(Stream.with_index(groups), errors, fn {group, idx}, acc ->
       cond do
         # Check all client indices are valid (must be >= num_depots and < num_locs)
         Enum.any?(group.clients, fn ci ->
@@ -707,7 +695,7 @@ defmodule ExVrp.Model do
     num_clients = length(clients)
     num_depots = length(depots)
 
-    Enum.reduce(Enum.with_index(groups), errors, fn {group, idx}, acc ->
+    Enum.reduce(Stream.with_index(groups), errors, fn {group, idx}, acc ->
       cond do
         # Empty same-vehicle groups are not allowed
         group.clients == [] ->

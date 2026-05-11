@@ -226,7 +226,7 @@ defmodule ExVrp.Neighbourhood do
     groups = Native.problem_data_groups_nif(problem_data)
 
     Enum.reduce(groups, proximity, fn {clients, mutually_exclusive}, acc ->
-      if mutually_exclusive and length(clients) > 1 do
+      if mutually_exclusive and match?([_first, _second | _rest], clients) do
         # Clients in mutually exclusive groups cannot neighbour each other.
         # Use max float (not infinity) to ensure these clients are ordered
         # before the depots.
@@ -349,7 +349,7 @@ defmodule ExVrp.Neighbourhood do
     # Set adj[i, j] = 1 for each j in neighbours[i]
     adj =
       neighbours
-      |> Enum.with_index()
+      |> Stream.with_index()
       |> Enum.reduce(adj, fn {nbrs, i}, acc -> set_adj_row(acc, nbrs, i) end)
 
     # Symmetrize: adj = adj | adj.T

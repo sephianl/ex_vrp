@@ -185,7 +185,7 @@ defmodule ExVrp.Solver do
       end)
 
     total_runtime = System.monotonic_time(:millisecond) - solve_start
-    total_iterations = Enum.sum(Enum.map(results, & &1.num_iterations))
+    total_iterations = Enum.reduce(results, 0, fn r, acc -> acc + r.num_iterations end)
 
     Logger.info(
       "Parallel solve complete: #{num_starts} starts, " <>

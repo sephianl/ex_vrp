@@ -71,9 +71,7 @@ defmodule ExVrp.ScheduledVisit do
     }
   end
 
-  @doc """
-  Returns the service duration (end_service - start_service).
-  """
+  @doc "Returns the service duration (end_service - start_service)."
   @spec service_duration(t()) :: non_neg_integer()
   def service_duration(%__MODULE__{start_service: start, end_service: end_service}) do
     end_service - start
@@ -88,9 +86,7 @@ defmodule ExVrp.ScheduledVisit do
   @spec has_time_warp?(t()) :: boolean()
   def has_time_warp?(%__MODULE__{time_warp: tw}), do: tw > 0
 
-  @doc """
-  Returns true if the vehicle had to wait at this location.
-  """
+  @doc "Returns true if the vehicle had to wait at this location."
   @spec has_wait?(t()) :: boolean()
   def has_wait?(%__MODULE__{wait_duration: wd}), do: wd > 0
 end

@@ -21,9 +21,7 @@ defmodule ExVrp.IteratedLocalSearch do
   require Logger
 
   defmodule Params do
-    @moduledoc """
-    Parameters for Iterated Local Search.
-    """
+    @moduledoc "Parameters for Iterated Local Search."
     defstruct max_no_improvement: 5_000,
               # Number of iterations without improvement before restart
               # Size of the late acceptance history buffer
@@ -102,17 +100,13 @@ defmodule ExVrp.IteratedLocalSearch do
       end
     end
 
-    @doc """
-    Returns whether the best solution is feasible.
-    """
+    @doc "Returns whether the best solution is feasible."
     @spec feasible?(t()) :: boolean()
     def feasible?(%__MODULE__{best: best}) do
       best.is_feasible
     end
 
-    @doc """
-    Returns a summary string of the result.
-    """
+    @doc "Returns a summary string of the result."
     @spec summary(t()) :: String.t()
     def summary(%__MODULE__{} = result) do
       """

@@ -11,9 +11,7 @@ defmodule ExVrp.PenaltyManager do
   alias ExVrp.Native
 
   defmodule Params do
-    @moduledoc """
-    Parameters for penalty management.
-    """
+    @moduledoc "Parameters for penalty management."
     defstruct solutions_between_updates: 100,
               penalty_increase: 1.25,
               penalty_decrease: 0.85,
@@ -53,9 +51,7 @@ defmodule ExVrp.PenaltyManager do
     dist_feas: []
   ]
 
-  @doc """
-  Creates a new PenaltyManager with explicit initial penalties.
-  """
+  @doc "Creates a new PenaltyManager with explicit initial penalties."
   @spec new([float()], float(), float(), Params.t()) :: t()
   def new(load_penalties, tw_penalty, dist_penalty, params \\ %Params{}) do
     %__MODULE__{
@@ -166,17 +162,13 @@ defmodule ExVrp.PenaltyManager do
     end)
   end
 
-  @doc """
-  Returns the current penalties as a tuple.
-  """
+  @doc "Returns the current penalties as a tuple."
   @spec penalties(t()) :: {[float()], float(), float()}
   def penalties(%__MODULE__{} = pm) do
     {pm.load_penalties, pm.tw_penalty, pm.dist_penalty}
   end
 
-  @doc """
-  Creates a CostEvaluator using the current penalty values.
-  """
+  @doc "Creates a CostEvaluator using the current penalty values."
   @spec cost_evaluator(t()) :: {:ok, reference()} | {:error, term()}
   def cost_evaluator(%__MODULE__{} = pm) do
     Native.create_cost_evaluator(

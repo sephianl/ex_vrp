@@ -40,21 +40,17 @@ defmodule ExVrp.RNG do
 
   """
   @spec from_state([non_neg_integer()]) :: {:ok, t()} | {:error, term()}
-  def from_state(state) when is_list(state) and length(state) == 4 do
+  def from_state([_s0, _s1, _s2, _s3] = state) do
     Native.create_rng_from_state_nif(state)
   end
 
   def from_state(_state), do: {:error, "state must be a 4-element list of unsigned integers"}
 
-  @doc """
-  Returns the minimum value the RNG can produce (0).
-  """
+  @doc "Returns the minimum value the RNG can produce (0)."
   @spec min() :: non_neg_integer()
   def min, do: Native.rng_min_nif()
 
-  @doc """
-  Returns the maximum value the RNG can produce (2^32 - 1).
-  """
+  @doc "Returns the maximum value the RNG can produce (2^32 - 1)."
   @spec max() :: non_neg_integer()
   def max, do: Native.rng_max_nif()
 

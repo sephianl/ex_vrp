@@ -107,8 +107,8 @@ defmodule ExVrp.VehicleType do
       |> Enum.sort_by(fn {s, _end} -> s end)
       |> merge_windows()
 
-    tw_early = elem(hd(windows), 0)
-    tw_late = elem(List.last(windows), 1)
+    [{tw_early, _first_end} | _rest] = windows
+    [{_last_start, tw_late} | _earlier] = Enum.reverse(windows)
 
     forbidden =
       windows
