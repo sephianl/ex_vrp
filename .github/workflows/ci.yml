@@ -13,6 +13,8 @@ jobs:
       DEVENV_NO_GIT_HOOKS: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Nix
         uses: cachix/install-nix-action@v27
@@ -82,5 +84,5 @@ jobs:
       - name: Reach change-safety analysis
         if: github.event_name == 'pull_request'
         run: |
-          git fetch --no-tags --depth=50 origin main:refs/remotes/origin/main
+          git fetch --no-tags origin main:refs/remotes/origin/main
           devenv shell mix reach.check --changed --base origin/main
