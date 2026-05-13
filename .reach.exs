@@ -15,10 +15,7 @@
       "ExVrp.PerturbationManager",
       "ExVrp.StoppingCriteria"
     ],
-    # Model + Native are grouped: Native references Model.t() in its @spec, and
-    # Model calls Native — bundling avoids a spurious layer cycle.
     model: [
-      "ExVrp.Native",
       "ExVrp.Model",
       "ExVrp.Client",
       "ExVrp.ClientGroup",
@@ -40,6 +37,8 @@
       "ExVrp.Statistics",
       "ExVrp.Errors"
     ],
+    # NIF leaf — no outbound deps; anything may call into it.
+    native: ["ExVrp.Native"],
     runtime: ["ExVrp.Application"]
   ],
   deps: [
@@ -50,9 +49,15 @@
       {:io, :solver},
       {:io, :search},
       {:utility, :solver},
-      {:utility, :search}
-      # `utility -> model` is intentionally allowed: DynamicBitset/RNG/Statistics
-      # are thin wrappers over ExVrp.Native (which lives in :model).
+      {:utility, :search},
+      {:utility, :model},
+      {:utility, :io},
+      {:native, :api},
+      {:native, :solver},
+      {:native, :search},
+      {:native, :model},
+      {:native, :io},
+      {:native, :utility}
     ]
   ],
   source: [
