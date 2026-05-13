@@ -41,7 +41,9 @@ defmodule ExVrp.ValidationError do
 
   @impl Exception
   def message(%{errors: errors}) do
-    "Model validation failed:\n" <>
-      Enum.map_join(errors, "\n", &"  - #{&1}")
+    IO.iodata_to_binary([
+      "Model validation failed:\n",
+      Enum.map_intersperse(errors, "\n", &["  - ", &1])
+    ])
   end
 end
