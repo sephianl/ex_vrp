@@ -86,7 +86,6 @@ defmodule ExVrp.ReloadCostTest do
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
 
       solution = result.best
-      # Check the first route
       route_reload_cost = Solution.route_reload_cost(solution, 0)
       assert route_reload_cost > 0, "Expected non-zero route reload cost"
     end

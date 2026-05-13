@@ -63,6 +63,8 @@ defmodule ExVrp.Solution do
 
   """
 
+  alias ExVrp.Native
+
   @type t :: %__MODULE__{
           routes: [[non_neg_integer()]],
           solution_ref: reference() | nil,
@@ -108,7 +110,7 @@ defmodule ExVrp.Solution do
   def cost(%__MODULE__{distance: distance}), do: distance
 
   def cost(%__MODULE__{solution_ref: solution_ref}, cost_evaluator) do
-    ExVrp.Native.solution_cost(solution_ref, cost_evaluator)
+    Native.solution_cost(solution_ref, cost_evaluator)
   end
 
   @doc """
@@ -116,7 +118,7 @@ defmodule ExVrp.Solution do
   """
   @spec penalised_cost(t(), reference()) :: non_neg_integer()
   def penalised_cost(%__MODULE__{solution_ref: solution_ref}, cost_evaluator) do
-    ExVrp.Native.solution_penalised_cost(solution_ref, cost_evaluator)
+    Native.solution_penalised_cost(solution_ref, cost_evaluator)
   end
 
   @doc """
@@ -174,9 +176,9 @@ defmodule ExVrp.Solution do
         visits: visits,
         solution_ref: ref,
         route_idx: idx,
-        vehicle_type: ExVrp.Native.solution_route_vehicle_type(ref, idx),
-        start_depot: ExVrp.Native.solution_route_start_depot(ref, idx),
-        end_depot: ExVrp.Native.solution_route_end_depot(ref, idx)
+        vehicle_type: Native.solution_route_vehicle_type(ref, idx),
+        start_depot: Native.solution_route_start_depot(ref, idx),
+        end_depot: Native.solution_route_end_depot(ref, idx)
       }
     end)
   end
@@ -207,7 +209,7 @@ defmodule ExVrp.Solution do
   """
   @spec group_feasible?(t()) :: boolean()
   def group_feasible?(%__MODULE__{solution_ref: solution_ref}) do
-    ExVrp.Native.solution_is_group_feasible(solution_ref)
+    Native.solution_is_group_feasible(solution_ref)
   end
 
   @doc """
@@ -215,7 +217,7 @@ defmodule ExVrp.Solution do
   """
   @spec unassigned(t()) :: [non_neg_integer()]
   def unassigned(%__MODULE__{solution_ref: solution_ref}) do
-    ExVrp.Native.solution_unassigned(solution_ref)
+    Native.solution_unassigned(solution_ref)
   end
 
   # ==========================================
@@ -272,7 +274,7 @@ defmodule ExVrp.Solution do
   """
   @spec fixed_vehicle_cost(t()) :: non_neg_integer()
   def fixed_vehicle_cost(%__MODULE__{solution_ref: solution_ref}) do
-    ExVrp.Native.solution_fixed_vehicle_cost(solution_ref)
+    Native.solution_fixed_vehicle_cost(solution_ref)
   end
 
   @doc """
@@ -335,7 +337,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_distance(t(), non_neg_integer()) :: non_neg_integer()
   def route_distance(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_distance(solution_ref, route_idx)
+    Native.solution_route_distance(solution_ref, route_idx)
   end
 
   @doc """
@@ -343,7 +345,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_duration(t(), non_neg_integer()) :: non_neg_integer()
   def route_duration(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_duration(solution_ref, route_idx)
+    Native.solution_route_duration(solution_ref, route_idx)
   end
 
   @doc """
@@ -351,7 +353,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_delivery(t(), non_neg_integer()) :: [non_neg_integer()]
   def route_delivery(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_delivery(solution_ref, route_idx)
+    Native.solution_route_delivery(solution_ref, route_idx)
   end
 
   @doc """
@@ -359,7 +361,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_pickup(t(), non_neg_integer()) :: [non_neg_integer()]
   def route_pickup(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_pickup(solution_ref, route_idx)
+    Native.solution_route_pickup(solution_ref, route_idx)
   end
 
   @doc """
@@ -367,7 +369,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_feasible?(t(), non_neg_integer()) :: boolean()
   def route_feasible?(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_is_feasible(solution_ref, route_idx)
+    Native.solution_route_is_feasible(solution_ref, route_idx)
   end
 
   # ==========================================
@@ -379,7 +381,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_excess_load(t(), non_neg_integer()) :: [non_neg_integer()]
   def route_excess_load(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_excess_load(solution_ref, route_idx)
+    Native.solution_route_excess_load(solution_ref, route_idx)
   end
 
   @doc """
@@ -387,7 +389,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_time_warp(t(), non_neg_integer()) :: non_neg_integer()
   def route_time_warp(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_time_warp(solution_ref, route_idx)
+    Native.solution_route_time_warp(solution_ref, route_idx)
   end
 
   @doc """
@@ -395,7 +397,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_excess_distance(t(), non_neg_integer()) :: non_neg_integer()
   def route_excess_distance(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_excess_distance(solution_ref, route_idx)
+    Native.solution_route_excess_distance(solution_ref, route_idx)
   end
 
   @doc """
@@ -403,7 +405,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_overtime(t(), non_neg_integer()) :: non_neg_integer()
   def route_overtime(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_overtime(solution_ref, route_idx)
+    Native.solution_route_overtime(solution_ref, route_idx)
   end
 
   @doc """
@@ -411,7 +413,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_has_excess_load?(t(), non_neg_integer()) :: boolean()
   def route_has_excess_load?(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_has_excess_load(solution_ref, route_idx)
+    Native.solution_route_has_excess_load(solution_ref, route_idx)
   end
 
   @doc """
@@ -419,7 +421,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_has_time_warp?(t(), non_neg_integer()) :: boolean()
   def route_has_time_warp?(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_has_time_warp(solution_ref, route_idx)
+    Native.solution_route_has_time_warp(solution_ref, route_idx)
   end
 
   @doc """
@@ -427,7 +429,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_has_excess_distance?(t(), non_neg_integer()) :: boolean()
   def route_has_excess_distance?(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_has_excess_distance(solution_ref, route_idx)
+    Native.solution_route_has_excess_distance(solution_ref, route_idx)
   end
 
   @doc """
@@ -435,7 +437,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_vehicle_type(t(), non_neg_integer()) :: non_neg_integer()
   def route_vehicle_type(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_vehicle_type(solution_ref, route_idx)
+    Native.solution_route_vehicle_type(solution_ref, route_idx)
   end
 
   @doc """
@@ -443,7 +445,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_start_depot(t(), non_neg_integer()) :: non_neg_integer()
   def route_start_depot(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_start_depot(solution_ref, route_idx)
+    Native.solution_route_start_depot(solution_ref, route_idx)
   end
 
   @doc """
@@ -451,7 +453,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_end_depot(t(), non_neg_integer()) :: non_neg_integer()
   def route_end_depot(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_end_depot(solution_ref, route_idx)
+    Native.solution_route_end_depot(solution_ref, route_idx)
   end
 
   @doc """
@@ -459,7 +461,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_num_trips(t(), non_neg_integer()) :: non_neg_integer()
   def route_num_trips(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_num_trips(solution_ref, route_idx)
+    Native.solution_route_num_trips(solution_ref, route_idx)
   end
 
   @doc """
@@ -467,7 +469,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_centroid(t(), non_neg_integer()) :: {float(), float()}
   def route_centroid(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_centroid(solution_ref, route_idx)
+    Native.solution_route_centroid(solution_ref, route_idx)
   end
 
   @doc """
@@ -475,7 +477,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_start_time(t(), non_neg_integer()) :: non_neg_integer()
   def route_start_time(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_start_time(solution_ref, route_idx)
+    Native.solution_route_start_time(solution_ref, route_idx)
   end
 
   @doc """
@@ -483,7 +485,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_end_time(t(), non_neg_integer()) :: non_neg_integer()
   def route_end_time(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_end_time(solution_ref, route_idx)
+    Native.solution_route_end_time(solution_ref, route_idx)
   end
 
   @doc """
@@ -491,7 +493,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_slack(t(), non_neg_integer()) :: non_neg_integer()
   def route_slack(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_slack(solution_ref, route_idx)
+    Native.solution_route_slack(solution_ref, route_idx)
   end
 
   @doc """
@@ -499,7 +501,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_service_duration(t(), non_neg_integer()) :: non_neg_integer()
   def route_service_duration(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_service_duration(solution_ref, route_idx)
+    Native.solution_route_service_duration(solution_ref, route_idx)
   end
 
   @doc """
@@ -507,7 +509,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_travel_duration(t(), non_neg_integer()) :: non_neg_integer()
   def route_travel_duration(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_travel_duration(solution_ref, route_idx)
+    Native.solution_route_travel_duration(solution_ref, route_idx)
   end
 
   @doc """
@@ -515,7 +517,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_wait_duration(t(), non_neg_integer()) :: non_neg_integer()
   def route_wait_duration(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_wait_duration(solution_ref, route_idx)
+    Native.solution_route_wait_duration(solution_ref, route_idx)
   end
 
   @doc """
@@ -523,7 +525,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_distance_cost(t(), non_neg_integer()) :: non_neg_integer()
   def route_distance_cost(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_distance_cost(solution_ref, route_idx)
+    Native.solution_route_distance_cost(solution_ref, route_idx)
   end
 
   @doc """
@@ -531,7 +533,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_duration_cost(t(), non_neg_integer()) :: non_neg_integer()
   def route_duration_cost(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_duration_cost(solution_ref, route_idx)
+    Native.solution_route_duration_cost(solution_ref, route_idx)
   end
 
   @doc """
@@ -539,7 +541,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_reload_cost(t(), non_neg_integer()) :: non_neg_integer()
   def route_reload_cost(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_reload_cost(solution_ref, route_idx)
+    Native.solution_route_reload_cost(solution_ref, route_idx)
   end
 
   @doc """
@@ -547,7 +549,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_prizes(t(), non_neg_integer()) :: non_neg_integer()
   def route_prizes(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_prizes(solution_ref, route_idx)
+    Native.solution_route_prizes(solution_ref, route_idx)
   end
 
   @doc """
@@ -555,7 +557,7 @@ defmodule ExVrp.Solution do
   """
   @spec route_visits(t(), non_neg_integer()) :: [non_neg_integer()]
   def route_visits(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    ExVrp.Native.solution_route_visits(solution_ref, route_idx)
+    Native.solution_route_visits(solution_ref, route_idx)
   end
 
   @doc """
@@ -576,7 +578,7 @@ defmodule ExVrp.Solution do
   @spec route_schedule(t(), non_neg_integer()) :: [ExVrp.ScheduledVisit.t()]
   def route_schedule(%__MODULE__{solution_ref: solution_ref}, route_idx) do
     solution_ref
-    |> ExVrp.Native.solution_route_schedule(route_idx)
+    |> Native.solution_route_schedule(route_idx)
     |> Enum.map(&ExVrp.ScheduledVisit.from_tuple/1)
   end
 end

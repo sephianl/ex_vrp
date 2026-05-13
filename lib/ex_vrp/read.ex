@@ -61,7 +61,6 @@ defmodule ExVrp.Read do
     |> build_model(round_fn)
   end
 
-  # Get the rounding function
   # All functions must return integers since C++ expects int64 values.
   # :none still truncates floats to integers, it just doesn't scale them.
   defp get_round_func(:none), do: &trunc/1
@@ -72,7 +71,6 @@ defmodule ExVrp.Read do
   defp get_round_func(func) when is_function(func, 1), do: func
   defp get_round_func(other), do: raise(ArgumentError, "Unknown round_func: #{inspect(other)}")
 
-  # Parse a VRPLIB format file into a map of sections
   defp parse_instance(content) do
     lines =
       content
@@ -115,7 +113,6 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Parse a value (number or string)
   defp parse_value(value) do
     case Integer.parse(value) do
       {int, ""} ->
@@ -129,7 +126,6 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Parse a section until we hit a new section or EOF
   defp parse_section(lines, section_name) do
     {section_lines, remaining} =
       Enum.split_while(lines, fn line ->
@@ -284,7 +280,6 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Build an ExVrp.Model from parsed instance data
   defp build_model(instance, round_fn) do
     dimension = Map.get(instance, :dimension, 0)
     num_depots = length(Map.get(instance, :depot, [1]))
@@ -755,7 +750,6 @@ defmodule ExVrp.Read do
         List.duplicate([], num_vehicles)
 
       list ->
-        # Create a map of vehicle -> reload depots
         reload_map =
           Map.new(list, fn {veh, depots} ->
             # Convert to 0-indexed
@@ -786,7 +780,6 @@ defmodule ExVrp.Read do
         List.duplicate(all_clients, num_vehicles)
 
       list ->
-        # Create a map of vehicle -> allowed clients
         allowed_map =
           Map.new(list, fn {veh, clients} ->
             # Convert to 0-indexed

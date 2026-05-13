@@ -853,7 +853,6 @@ defmodule ExVrp.SolutionTest do
     end
 
     test "ScheduledVisit.has_wait?/1 returns true when wait_duration > 0" do
-      # Create a visit with wait duration
       visit_with_wait = %ScheduledVisit{
         location: 1,
         trip: 0,
