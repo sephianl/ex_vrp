@@ -85,32 +85,49 @@ defmodule ExVrp.Read do
 
   defp parse_lines([line | rest], acc) do
     cond do
-      # Key-value pairs (e.g., "NAME : OkSmall")
       String.contains?(line, ":") and not String.ends_with?(line, "_SECTION") ->
-        [key, value] = String.split(line, ":", parts: 2)
-        key = key |> String.trim() |> String.downcase() |> String.to_atom()
-        value = parse_value(String.trim(value))
-        parse_lines(rest, Map.put(acc, key, value))
+        parse_lines(rest, handle_key_value(line, acc))
 
-      # Section headers (e.g., "NODE_COORD_SECTION")
       String.ends_with?(line, "_SECTION") ->
-        section_name =
-          line
-          |> String.trim_trailing("_SECTION")
-          |> String.downcase()
-          |> String.to_atom()
+        {next_lines, next_acc} = handle_section(line, rest, acc)
+        parse_lines(next_lines, next_acc)
 
-        {section_data, remaining} = parse_section(rest, section_name)
-        parse_lines(remaining, Map.put(acc, section_name, section_data))
-
-      # EOF marker
       String.upcase(line) == "EOF" ->
         acc
 
-      # Unknown line - skip
       true ->
         parse_lines(rest, acc)
     end
+  end
+
+  defp handle_key_value(line, acc) do
+    [key, value] = String.split(line, ":", parts: 2)
+    key_str = key |> String.trim() |> String.downcase()
+
+    case safe_existing_atom(key_str) do
+      {:ok, key_atom} -> Map.put(acc, key_atom, parse_value(String.trim(value)))
+      :error -> acc
+    end
+  end
+
+  defp handle_section(line, rest, acc) do
+    raw = line |> String.trim_trailing("_SECTION") |> String.downcase()
+
+    case safe_existing_atom(raw) do
+      {:ok, section_name} ->
+        {section_data, remaining} = parse_section(rest, section_name)
+        {remaining, Map.put(acc, section_name, section_data)}
+
+      :error ->
+        {_section_data, remaining} = parse_section(rest, :__unknown__)
+        {remaining, acc}
+    end
+  end
+
+  defp safe_existing_atom(string) do
+    {:ok, String.to_existing_atom(string)}
+  rescue
+    ArgumentError -> :error
   end
 
   defp parse_value(value) do

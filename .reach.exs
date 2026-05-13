@@ -1,39 +1,58 @@
-# Example Reach architecture policy.
-# Copy to .reach.exs and adjust layer names/patterns for your project.
+# Reach architecture policy for ex_vrp.
+# Layers are listed roughly outer (entry-point) → inner (NIF leaf).
 [
   layers: [
-    cli: "Mix.Tasks.*",
-    cli_support: "Reach.CLI.*",
-    core: "Reach",
-    frontend: "Reach.Frontend.*",
-    ir: "Reach.IR.*",
-    analysis: [
-      "Reach.ControlFlow",
-      "Reach.DataDependence",
-      "Reach.ControlDependence",
-      "Reach.Dominator",
-      "Reach.SystemDependence",
-      "Reach.Effects",
-      "Reach.HigherOrder"
+    api: ["ExVrp"],
+    solver: [
+      "ExVrp.Solver",
+      "ExVrp.IteratedLocalSearch",
+      "ExVrp.MinimiseFleet"
     ],
-    otp: "Reach.OTP.*",
-    visualization: "Reach.Visualize.*",
-    plugins: ["Reach.Plugin", "Reach.Plugins.*"]
+    search: [
+      "ExVrp.Neighbourhood",
+      "ExVrp.NeighbourhoodParams",
+      "ExVrp.PenaltyManager",
+      "ExVrp.PerturbationManager",
+      "ExVrp.StoppingCriteria"
+    ],
+    # Model + Native are grouped: Native references Model.t() in its @spec, and
+    # Model calls Native — bundling avoids a spurious layer cycle.
+    model: [
+      "ExVrp.Native",
+      "ExVrp.Model",
+      "ExVrp.Client",
+      "ExVrp.ClientGroup",
+      "ExVrp.Depot",
+      "ExVrp.Route",
+      "ExVrp.Solution",
+      "ExVrp.Trip",
+      "ExVrp.VehicleType",
+      "ExVrp.SameVehicleGroup",
+      "ExVrp.ScheduledVisit",
+      "ExVrp.DurationSegment",
+      "ExVrp.LoadSegment"
+    ],
+    io: ["ExVrp.Read"],
+    utility: [
+      "ExVrp.RNG",
+      "ExVrp.DynamicBitset",
+      "ExVrp.RingBuffer",
+      "ExVrp.Statistics",
+      "ExVrp.Errors"
+    ],
+    runtime: ["ExVrp.Application"]
   ],
   deps: [
     forbidden: [
-      {:ir, :cli},
-      {:ir, :cli_support},
-      {:frontend, :cli},
-      {:frontend, :cli_support},
-      {:analysis, :cli},
-      {:analysis, :cli_support},
-      {:otp, :cli},
-      {:otp, :cli_support},
-      {:visualization, :cli},
-      {:visualization, :cli_support},
-      {:plugins, :cli},
-      {:plugins, :cli_support}
+      {:model, :solver},
+      {:model, :search},
+      {:model, :io},
+      {:io, :solver},
+      {:io, :search},
+      {:utility, :solver},
+      {:utility, :search}
+      # `utility -> model` is intentionally allowed: DynamicBitset/RNG/Statistics
+      # are thin wrappers over ExVrp.Native (which lives in :model).
     ]
   ],
   source: [
@@ -44,16 +63,7 @@
     forbidden: []
   ],
   effects: [
-    allowed: [
-      {"Reach.IR.*", [:pure, :unknown]},
-      {"Reach.ControlFlow", [:pure, :unknown]},
-      {"Reach.Dominator", [:pure, :unknown]},
-      {"Reach.DataDependence", [:pure, :unknown]},
-      {"Reach.ControlDependence", [:pure, :unknown]},
-      {"Reach.SystemDependence", [:pure, :unknown]},
-      {"Reach.Effects", [:pure, :unknown]},
-      {"Reach.CLI.Format", [:pure, :unknown]}
-    ]
+    allowed: []
   ],
   boundaries: [
     public: [],
@@ -100,12 +110,6 @@
     ]
   ],
   tests: [
-    hints: [
-      {"lib/reach/visualize/**",
-       ["test/reach/visualize/block_quality_test.exs", "test/reach/visualize/visualize_test.exs"]},
-      {"lib/reach/frontend/**", ["test/reach/ir/frontend_elixir_test.exs", "test/reach/frontend"]},
-      {"lib/mix/tasks/**", ["test/reach/cli"]},
-      {"lib/reach/otp/**", ["test/reach/otp/otp_test.exs"]}
-    ]
+    hints: []
   ]
 ]
