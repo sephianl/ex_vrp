@@ -102,13 +102,12 @@ defmodule ExVrp.VehicleType do
 
     validate_time_windows!(time_windows)
 
-    windows =
+    {windows, {_first_unused, tw_late}} =
       time_windows
       |> Enum.sort_by(fn {s, _end} -> s end)
       |> merge_windows()
 
-    tw_early = elem(hd(windows), 0)
-    tw_late = elem(List.last(windows), 1)
+    [{tw_early, _early_end} | _rest] = windows
 
     forbidden =
       windows
@@ -147,18 +146,20 @@ defmodule ExVrp.VehicleType do
     end)
   end
 
-  defp merge_windows([]), do: []
+  defp merge_windows([]), do: {[], nil}
 
   defp merge_windows([first | rest]) do
-    rest
-    |> Enum.reduce([first], fn {s, e}, [{cs, ce} | tail] ->
-      if lte(s, ce) do
-        [{cs, max_end(ce, e)} | tail]
-      else
-        [{s, e}, {cs, ce} | tail]
-      end
-    end)
-    |> Enum.reverse()
+    [last | _tail] =
+      reversed =
+      Enum.reduce(rest, [first], fn {s, e}, [{cs, ce} | tail] ->
+        if lte(s, ce) do
+          [{cs, max_end(ce, e)} | tail]
+        else
+          [{s, e}, {cs, ce} | tail]
+        end
+      end)
+
+    {Enum.reverse(reversed), last}
   end
 
   defp lte(_s, :infinity), do: true

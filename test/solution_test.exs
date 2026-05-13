@@ -310,7 +310,7 @@ defmodule ExVrp.SolutionTest do
       assert Solution.feasible?(solution)
 
       schedule = Solution.route_schedule(solution, 0)
-      last_visit = List.last(schedule)
+      last_visit = schedule |> Enum.reverse() |> hd()
       assert last_visit.location == 0
       assert last_visit.end_service <= 100
     end
