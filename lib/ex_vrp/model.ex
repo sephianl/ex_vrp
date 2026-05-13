@@ -126,7 +126,7 @@ defmodule ExVrp.Model do
   """
   @spec num_vehicles(t()) :: non_neg_integer()
   def num_vehicles(%__MODULE__{vehicle_types: types}) do
-    Enum.sum(Enum.map(types, & &1.num_available))
+    Enum.sum_by(types, & &1.num_available)
   end
 
   @doc """
@@ -249,7 +249,7 @@ defmodule ExVrp.Model do
 
     # Re-add clients to their groups with new indices
     clients
-    |> Enum.with_index()
+    |> Stream.with_index()
     |> Enum.reduce(cleared, fn {client, i}, acc ->
       if client.group == nil do
         acc
@@ -657,9 +657,14 @@ defmodule ExVrp.Model do
   end
 
   defp has_nonzero_diagonal?(matrix) when is_list(matrix) do
-    matrix
-    |> Enum.with_index()
-    |> Enum.any?(fn {row, i} -> is_list(row) and Enum.at(row, i, 0) != 0 end)
+    row_tuples = Enum.map(matrix, fn row -> if is_list(row), do: List.to_tuple(row) end)
+
+    row_tuples
+    |> Stream.with_index()
+    |> Enum.any?(fn
+      {nil, _i} -> false
+      {row_tuple, i} -> elem(row_tuple, i) != 0
+    end)
   end
 
   defp has_nonzero_diagonal?(_matrix), do: false
@@ -672,21 +677,23 @@ defmodule ExVrp.Model do
     num_clients = length(clients)
     num_depots = length(depots)
 
-    Enum.reduce(Enum.with_index(groups), errors, fn {group, idx}, acc ->
+    clients_tuple = List.to_tuple(clients)
+
+    groups
+    |> Stream.with_index()
+    |> Enum.reduce(errors, fn {group, idx}, acc ->
       cond do
-        # Check all client indices are valid (must be >= num_depots and < num_locs)
         Enum.any?(group.clients, fn ci ->
           ci < num_depots or ci >= num_depots + num_clients
         end) ->
           ["Group #{idx} has invalid client index" | acc]
 
-        # Required clients can't be in mutually exclusive groups
         group.mutually_exclusive and
             Enum.any?(group.clients, fn ci ->
               client_list_idx = ci - num_depots
 
               if client_list_idx >= 0 and client_list_idx < num_clients do
-                Enum.at(clients, client_list_idx).required
+                elem(clients_tuple, client_list_idx).required
               else
                 false
               end
@@ -707,19 +714,18 @@ defmodule ExVrp.Model do
     num_clients = length(clients)
     num_depots = length(depots)
 
-    Enum.reduce(Enum.with_index(groups), errors, fn {group, idx}, acc ->
+    groups
+    |> Stream.with_index()
+    |> Enum.reduce(errors, fn {group, idx}, acc ->
       cond do
-        # Empty same-vehicle groups are not allowed
         group.clients == [] ->
           ["Same-vehicle group #{idx} is empty" | acc]
 
-        # Check all client indices are valid (must be >= num_depots and < num_locs)
         Enum.any?(group.clients, fn ci ->
           ci < num_depots or ci >= num_depots + num_clients
         end) ->
           ["Same-vehicle group #{idx} has invalid client index" | acc]
 
-        # Check for duplicate clients within the group
         length(group.clients) != length(Enum.uniq(group.clients)) ->
           ["Same-vehicle group #{idx} has duplicate clients" | acc]
 

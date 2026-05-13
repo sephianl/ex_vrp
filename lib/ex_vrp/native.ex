@@ -6,6 +6,14 @@ defmodule ExVrp.Native do
   Users should prefer the high-level API in `ExVrp` and `ExVrp.Model`.
   """
 
+  @typedoc """
+  Opaque accepted-input type for `create_problem_data/1`.
+
+  Declared locally to avoid a `ExVrp.Native -> ExVrp.Model` compile-time edge;
+  callers pass `%ExVrp.Model{}` structs in practice.
+  """
+  @type model_input :: struct()
+
   # NIF stubs call :erlang.nif_error/1 which Dialyzer infers as no_return().
   # The @nifs attribute generates nif_start primops in Core Erlang, but Dialyzer's
   # constraint solver still fails for complex NIF modules. Suppress until fixed in OTP.
@@ -267,7 +275,7 @@ defmodule ExVrp.Native do
   @doc """
   Creates a ProblemData resource from a Model.
   """
-  @spec create_problem_data(ExVrp.Model.t()) :: {:ok, reference()} | {:error, term()}
+  @spec create_problem_data(model_input()) :: {:ok, reference()} | {:error, term()}
   def create_problem_data(_model), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------

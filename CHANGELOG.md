@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.5.2
+
+### Internal
+
+- Static analysis baseline: zero findings across credo, sobelow, ex_dna, and
+  reach (arch/dead-code/smells/candidates). Wired into `mix check` and the
+  pre-commit hook; PRs also run `mix reach.check --changed`.
+- Performance: hot validators in `Model` and `Read` switched from
+  `Enum.at`-in-loop and length checks to `Stream.with_index`, `Enum.sum_by`,
+  `List.to_tuple` + `elem/2`, and `Enum.zip_with`.
+- Architecture: `ExVrp.Native` is now a true PDG leaf (type-erased
+  `Model.t()` in the @spec) with explicit reach forbidden rules.
+- Safety: replaced `String.to_atom/1` in TSPLIB parsing with
+  `String.to_existing_atom/1` + rescue.
+
+## 0.5.1
+
+### Added
+
+- Forbidden time windows in route planning: support for multiple disjunctive
+  feasibility windows on vehicle time, used by the local search to evaluate
+  insertions against reload-time constraints (see `test/forbidden_window_test.exs`).
+
+### Fixed
+
+- AddressSanitizer / Valgrind setup stabilised across the C++ search code
+  (`LocalSearch`, `Route`, `Solution`, `CostEvaluator`).
+
+### Internal
+
+- Removed the in-tree `credo/append_in_loop.ex` custom check (and its test);
+  superseded by upstream tooling.
+
 ## 0.5.0
 
 ### Breaking Changes

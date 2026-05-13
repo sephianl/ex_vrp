@@ -91,13 +91,11 @@ defmodule ExVrp.SearchRouteTest do
         node = Native.create_search_node_nif(problem_data, loc)
         :ok = Native.search_route_append_nif(route, node)
 
-        # Get the start depot
         start_depot = Native.search_route_get_node_nif(route, 0)
         assert Native.search_node_is_depot_nif(start_depot) == true
         assert Native.search_node_is_start_depot_nif(start_depot) == true
         assert Native.search_node_is_end_depot_nif(start_depot) == false
 
-        # Get the end depot
         size = Native.search_route_size_nif(route)
         end_depot = Native.search_route_get_node_nif(route, size - 1)
         assert Native.search_node_is_depot_nif(end_depot) == true
@@ -134,7 +132,6 @@ defmodule ExVrp.SearchRouteTest do
       assert Native.search_route_num_clients_nif(route) == 0
       assert Native.search_route_num_depots_nif(route) == 2
 
-      # Insert a few nodes
       node1 = Native.create_search_node_nif(problem_data, 1)
       :ok = Native.search_route_append_nif(route, node1)
 

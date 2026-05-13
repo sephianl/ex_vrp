@@ -44,10 +44,8 @@ defmodule ExVrp.SearchExchangeTest do
       # The move should be improving (negative delta)
       assert delta_cost < 0
 
-      # Apply the move
       :ok = Native.exchange10_apply_nif(exchange10, node3, depot2)
 
-      # Verify the routes changed correctly
       assert Native.search_route_num_clients_nif(route1) == 2
       assert Native.search_route_num_clients_nif(route2) == 1
     end
@@ -116,7 +114,6 @@ defmodule ExVrp.SearchExchangeTest do
 
       exchange11 = Native.create_exchange11_nif(problem_data)
 
-      # Create a single route with all clients
       route = Native.make_search_route_nif(problem_data, [1, 2, 3, 4], 0, 0)
 
       node1 = Native.search_route_get_node_nif(route, 1)
@@ -229,7 +226,6 @@ defmodule ExVrp.SearchExchangeTest do
       new_cost1 = Native.search_route_distance_nif(route1)
       new_cost2 = Native.search_route_distance_nif(route2)
 
-      # Verify the delta cost was calculated correctly
       actual_delta = new_cost1 + new_cost2 - (initial_cost1 + initial_cost2)
       # Allow some tolerance due to rounding
       assert abs(actual_delta - delta_cost) <= 1 or delta_cost == 0
@@ -476,7 +472,6 @@ defmodule ExVrp.SearchExchangeTest do
       :ok = Native.search_route_append_nif(route, node)
       assert Native.search_route_num_clients_nif(route) == 1
 
-      # Remove the node
       :ok = Native.search_route_remove_nif(route, 1)
       assert Native.search_route_num_clients_nif(route) == 0
     end
@@ -1351,7 +1346,6 @@ defmodule ExVrp.SearchExchangeTest do
             &Native.create_exchange22_nif/1
           ] do
         op = create_fn.(problem_data)
-        # Get the evaluate function based on operator type
         delta = apply_exchange_evaluate(op, node1, node2, cost_evaluator)
         assert is_integer(delta)
       end

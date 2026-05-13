@@ -310,7 +310,7 @@ defmodule ExVrp.SolutionTest do
       assert Solution.feasible?(solution)
 
       schedule = Solution.route_schedule(solution, 0)
-      last_visit = List.last(schedule)
+      last_visit = schedule |> Enum.reverse() |> hd()
       assert last_visit.location == 0
       assert last_visit.end_service <= 100
     end
@@ -853,7 +853,6 @@ defmodule ExVrp.SolutionTest do
     end
 
     test "ScheduledVisit.has_wait?/1 returns true when wait_duration > 0" do
-      # Create a visit with wait duration
       visit_with_wait = %ScheduledVisit{
         location: 1,
         trip: 0,

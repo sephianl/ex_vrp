@@ -40,7 +40,7 @@ defmodule ExVrp.RNG do
 
   """
   @spec from_state([non_neg_integer()]) :: {:ok, t()} | {:error, term()}
-  def from_state(state) when is_list(state) and length(state) == 4 do
+  def from_state([_s0, _s1, _s2, _s3] = state) do
     Native.create_rng_from_state_nif(state)
   end
 

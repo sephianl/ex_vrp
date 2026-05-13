@@ -20,8 +20,6 @@ defmodule ExVrp.OscillationPreventionTest do
   alias ExVrp.Solver
 
   test "high prize clients converge without oscillating" do
-    # Create a scenario with multiple high-prize optional clients
-    # This would previously cause oscillations
     model =
       Model.new()
       |> Model.add_depot(x: 0, y: 0)
@@ -89,7 +87,6 @@ defmodule ExVrp.OscillationPreventionTest do
       |> Model.add_depot(x: 0, y: 0)
       |> Model.add_vehicle_type(num_available: 2, capacity: [100])
 
-    # Create a scenario where swapping clients IS beneficial
     model =
       Enum.reduce(1..8, model, fn i, acc ->
         prize = if rem(i, 2) == 0, do: 5000, else: 1000

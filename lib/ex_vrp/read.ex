@@ -61,7 +61,6 @@ defmodule ExVrp.Read do
     |> build_model(round_fn)
   end
 
-  # Get the rounding function
   # All functions must return integers since C++ expects int64 values.
   # :none still truncates floats to integers, it just doesn't scale them.
   defp get_round_func(:none), do: &trunc/1
@@ -72,7 +71,6 @@ defmodule ExVrp.Read do
   defp get_round_func(func) when is_function(func, 1), do: func
   defp get_round_func(other), do: raise(ArgumentError, "Unknown round_func: #{inspect(other)}")
 
-  # Parse a VRPLIB format file into a map of sections
   defp parse_instance(content) do
     lines =
       content
@@ -87,35 +85,51 @@ defmodule ExVrp.Read do
 
   defp parse_lines([line | rest], acc) do
     cond do
-      # Key-value pairs (e.g., "NAME : OkSmall")
       String.contains?(line, ":") and not String.ends_with?(line, "_SECTION") ->
-        [key, value] = String.split(line, ":", parts: 2)
-        key = key |> String.trim() |> String.downcase() |> String.to_atom()
-        value = parse_value(String.trim(value))
-        parse_lines(rest, Map.put(acc, key, value))
+        parse_lines(rest, handle_key_value(line, acc))
 
-      # Section headers (e.g., "NODE_COORD_SECTION")
       String.ends_with?(line, "_SECTION") ->
-        section_name =
-          line
-          |> String.trim_trailing("_SECTION")
-          |> String.downcase()
-          |> String.to_atom()
+        {next_lines, next_acc} = handle_section(line, rest, acc)
+        parse_lines(next_lines, next_acc)
 
-        {section_data, remaining} = parse_section(rest, section_name)
-        parse_lines(remaining, Map.put(acc, section_name, section_data))
-
-      # EOF marker
       String.upcase(line) == "EOF" ->
         acc
 
-      # Unknown line - skip
       true ->
         parse_lines(rest, acc)
     end
   end
 
-  # Parse a value (number or string)
+  defp handle_key_value(line, acc) do
+    [key, value] = String.split(line, ":", parts: 2)
+    key_str = key |> String.trim() |> String.downcase()
+
+    case safe_existing_atom(key_str) do
+      {:ok, key_atom} -> Map.put(acc, key_atom, parse_value(String.trim(value)))
+      :error -> acc
+    end
+  end
+
+  defp handle_section(line, rest, acc) do
+    raw = line |> String.trim_trailing("_SECTION") |> String.downcase()
+
+    case safe_existing_atom(raw) do
+      {:ok, section_name} ->
+        {section_data, remaining} = parse_section(rest, section_name)
+        {remaining, Map.put(acc, section_name, section_data)}
+
+      :error ->
+        {_section_data, remaining} = parse_section(rest, :__unknown__)
+        {remaining, acc}
+    end
+  end
+
+  defp safe_existing_atom(string) do
+    {:ok, String.to_existing_atom(string)}
+  rescue
+    ArgumentError -> :error
+  end
+
   defp parse_value(value) do
     case Integer.parse(value) do
       {int, ""} ->
@@ -129,7 +143,6 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Parse a section until we hit a new section or EOF
   defp parse_section(lines, section_name) do
     {section_lines, remaining} =
       Enum.split_while(lines, fn line ->
@@ -190,10 +203,8 @@ defmodule ExVrp.Read do
 
   defp parse_section_data(:vehicles_depot, lines) do
     Enum.map(lines, fn line ->
-      parts = String.split(line)
-      vehicle_idx = parse_number(Enum.at(parts, 0))
-      depot_idx = parse_number(Enum.at(parts, 1))
-      {vehicle_idx, depot_idx}
+      [vehicle_part, depot_part] = String.split(line)
+      {parse_number(vehicle_part), parse_number(depot_part)}
     end)
   end
 
@@ -284,7 +295,6 @@ defmodule ExVrp.Read do
     end
   end
 
-  # Build an ExVrp.Model from parsed instance data
   defp build_model(instance, round_fn) do
     dimension = Map.get(instance, :dimension, 0)
     num_depots = length(Map.get(instance, :depot, [1]))
@@ -318,8 +328,10 @@ defmodule ExVrp.Read do
   end
 
   defp add_depots(coords, depot_indices) do
+    coords_tuple = List.to_tuple(coords)
+
     Enum.reduce(depot_indices, Model.new(), fn depot_idx, model ->
-      {x, y} = Enum.at(coords, depot_idx)
+      {x, y} = elem(coords_tuple, depot_idx)
       Model.add_depot(model, x: x, y: y)
     end)
   end
@@ -355,9 +367,10 @@ defmodule ExVrp.Read do
 
   defp add_clients(model, coords, depot_indices, dimension, data) do
     client_indices = Enum.filter(0..(dimension - 1), fn idx -> idx not in depot_indices end)
+    coords_tuple = List.to_tuple(coords)
 
     Enum.reduce(client_indices, model, fn loc_idx, model ->
-      {x, y} = Enum.at(coords, loc_idx)
+      {x, y} = elem(coords_tuple, loc_idx)
       prize = Map.get(data.prizes, loc_idx, 0)
       group_idx = Map.get(data.client_to_group, loc_idx)
       {tw_early, tw_late} = Map.get(data.time_windows, loc_idx, {0, :infinity})
@@ -396,12 +409,26 @@ defmodule ExVrp.Read do
   end
 
   defp add_vehicle_types(model, info, time_windows, depot_indices) do
+    per_vehicle =
+      Enum.zip_with(
+        [
+          info.capacity,
+          info.vehicles_depots,
+          info.max_distances,
+          info.shift_durations,
+          info.fixed_costs,
+          info.unit_distance_costs,
+          info.reload_depots,
+          info.max_reloads,
+          info.allowed_clients
+        ],
+        &List.to_tuple/1
+      )
+
     vehicles_data =
-      for veh <- 0..(info.num_vehicles - 1) do
-        {veh, Enum.at(info.capacity, veh), Enum.at(info.vehicles_depots, veh), Enum.at(info.max_distances, veh),
-         Enum.at(info.shift_durations, veh), Enum.at(info.fixed_costs, veh), Enum.at(info.unit_distance_costs, veh),
-         Enum.at(info.reload_depots, veh), Enum.at(info.max_reloads, veh), Enum.at(info.allowed_clients, veh)}
-      end
+      per_vehicle
+      |> Enum.with_index()
+      |> Enum.map(fn {data, veh} -> Tuple.insert_at(data, 0, veh) end)
 
     type_groups =
       Enum.group_by(vehicles_data, fn {_veh, cap, depot, max_dist, shift_dur, fixed_cost, unit_dist_cost, reload,
@@ -755,7 +782,6 @@ defmodule ExVrp.Read do
         List.duplicate([], num_vehicles)
 
       list ->
-        # Create a map of vehicle -> reload depots
         reload_map =
           Map.new(list, fn {veh, depots} ->
             # Convert to 0-indexed
@@ -786,7 +812,6 @@ defmodule ExVrp.Read do
         List.duplicate(all_clients, num_vehicles)
 
       list ->
-        # Create a map of vehicle -> allowed clients
         allowed_map =
           Map.new(list, fn {veh, clients} ->
             # Convert to 0-indexed

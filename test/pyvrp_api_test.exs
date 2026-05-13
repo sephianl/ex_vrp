@@ -83,7 +83,6 @@ defmodule ExVrp.PyVRPApiTest do
     end
 
     test "cost returns infinity for infeasible solution" do
-      # Create an infeasible problem (capacity too small)
       model =
         Model.new()
         |> Model.add_depot(x: 0, y: 0)
