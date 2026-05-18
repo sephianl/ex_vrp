@@ -154,9 +154,9 @@ defmodule ExVrp.IteratedLocalSearch do
 
     seed = Keyword.get(opts, :seed, :rand.uniform(1_000_000))
     on_progress = Keyword.get(opts, :on_progress)
-    max_runtime_ms = Keyword.get(opts, :max_runtime_ms, nil)
-    on_migration = Keyword.get(opts, :on_migration, nil)
-    send_migration = Keyword.get(opts, :send_migration, nil)
+    max_runtime_ms = Keyword.get(opts, :max_runtime_ms)
+    on_migration = Keyword.get(opts, :on_migration)
+    send_migration = Keyword.get(opts, :send_migration)
     migration_interval = Keyword.get(opts, :migration_interval, 1000)
     migration_quarantine = Keyword.get(opts, :migration_quarantine, 500)
 
