@@ -614,7 +614,6 @@ defmodule ExVrp.MultiTripTest do
     end
 
     test "depot service_duration is applied at reload depots" do
-      # Create a problem where the vehicle must reload mid-route
       # and verify the service duration is accounted for in timing
       #
       # Setup: depot at (0,0), clients at (10,0) and (20,0)
@@ -655,7 +654,6 @@ defmodule ExVrp.MultiTripTest do
       # Should have 2 trips (since capacity forces a reload)
       assert Route.num_trips(route) >= 2
 
-      # Get the schedule and verify service time at reload depot
       schedule =
         route
         |> Route.schedule()
@@ -753,7 +751,6 @@ defmodule ExVrp.MultiTripTest do
       assert result_no.best
       assert result_with.best
 
-      # Get the route from each solution
       [route_no] = Solution.routes(result_no.best)
       [route_with] = Solution.routes(result_with.best)
 

@@ -97,7 +97,7 @@ defmodule ExVrp.Benchmark do
           {seed, result.best.distance, result.best.is_feasible}
         end
 
-      best = seed_results |> Enum.map(&elem(&1, 1)) |> Enum.min()
+      best = seed_results |> Enum.min_by(&elem(&1, 1)) |> elem(1)
       all_feasible = Enum.all?(seed_results, &elem(&1, 2))
 
       IO.puts(" best=#{best} (all_feasible=#{all_feasible})")
@@ -107,15 +107,17 @@ defmodule ExVrp.Benchmark do
   end
 
   defp print_report(results, iterations) do
+    separator = String.duplicate("-", 72)
+
     IO.puts("")
     IO.puts("Regression Report (seeds=#{inspect(@seeds)}, iterations=#{iterations})")
-    IO.puts(String.duplicate("-", 72))
+    IO.puts(separator)
 
     IO.puts(
       "#{rpad("Instance", 14)} #{lpad("Seed 42", 10)} #{lpad("Expected", 10)} #{rpad("Quality", 11)} #{lpad("Best", 10)} #{rpad("Feasible", 8)}"
     )
 
-    IO.puts(String.duplicate("-", 72))
+    IO.puts(separator)
 
     {pass, fail} =
       Enum.reduce(results, {0, 0}, fn {name, m}, {p, f} ->
@@ -144,7 +146,7 @@ defmodule ExVrp.Benchmark do
         if quality == "ok", do: {p + 1, f}, else: {p, f + 1}
       end)
 
-    IO.puts(String.duplicate("-", 72))
+    IO.puts(separator)
 
     IO.puts("Quality: #{pass}/#{pass + fail} passed")
     IO.puts("")

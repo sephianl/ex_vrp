@@ -80,6 +80,13 @@ defmodule ExVrp.ErrorsTest do
       assert message =~ "- Error 2"
     end
 
+    test "message/1 formats one error per indented line" do
+      err = %ValidationError{errors: ["a is bad", "b is missing"]}
+
+      assert Exception.message(err) ==
+               "Model validation failed:\n  - a is bad\n  - b is missing"
+    end
+
     test "can be raised with errors list" do
       assert_raise ValidationError, ~r/validation failed/, fn ->
         raise ValidationError, errors: ["Test error"]

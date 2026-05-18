@@ -108,7 +108,6 @@ defmodule ExVrp.Solver do
   end
 
   defp solve_single(problem_data, seed, opts, solve_start) do
-    :rand.seed(:exsplus, {seed, seed, seed})
     stop_fn = build_stop_fn(opts)
 
     {local_search, penalty_manager, initial_solution} =
@@ -185,7 +184,7 @@ defmodule ExVrp.Solver do
       end)
 
     total_runtime = System.monotonic_time(:millisecond) - solve_start
-    total_iterations = Enum.sum(Enum.map(results, & &1.num_iterations))
+    total_iterations = Enum.sum_by(results, & &1.num_iterations)
 
     Logger.info(
       "Parallel solve complete: #{num_starts} starts, " <>

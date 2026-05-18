@@ -19,7 +19,6 @@ defmodule ExVrp.LocalSearchTest do
           dist_penalty: 100.0
         )
 
-      # Create a random solution
       {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
       initial_cost = Native.solution_penalised_cost(initial_solution, cost_evaluator)
 
@@ -1767,7 +1766,6 @@ defmodule ExVrp.LocalSearchTest do
     end
 
     test "search improves infeasible solution" do
-      # Create a problem where random solution is likely infeasible
       model =
         Model.new()
         |> Model.add_depot(x: 0, y: 0)

@@ -125,26 +125,17 @@ defmodule ExVrp.MinimiseFleet do
   defp maybe_reduce_fleet(fleet, _routes_used), do: fleet
 
   defp compute_lower_bound(%Model{clients: clients, vehicle_types: [vehicle_type]}) do
-    # Compute bound based on packing demands in vehicles
     num_dims = max(length(vehicle_type.capacity), 1)
+    capacity_tuple = List.to_tuple(vehicle_type.capacity)
+    max_trips = compute_max_trips(vehicle_type)
 
     0..(num_dims - 1)
     |> Enum.map(fn dim ->
-      delivery_sum =
-        clients
-        |> Enum.map(fn c -> Enum.at(c.delivery, dim, 0) end)
-        |> Enum.sum()
-
-      pickup_sum =
-        clients
-        |> Enum.map(fn c -> Enum.at(c.pickup, dim, 0) end)
-        |> Enum.sum()
+      delivery_sum = Enum.sum_by(clients, fn c -> at_or_zero(c.delivery, dim) end)
+      pickup_sum = Enum.sum_by(clients, fn c -> at_or_zero(c.pickup, dim) end)
 
       demand = max(delivery_sum, pickup_sum)
-      capacity = Enum.at(vehicle_type.capacity, dim, 1)
-
-      # Account for multi-trip: max_trips multiplies effective capacity
-      max_trips = compute_max_trips(vehicle_type)
+      capacity = capacity_or_one(capacity_tuple, dim)
       effective_capacity = capacity * max_trips
 
       if effective_capacity > 0 do
@@ -156,11 +147,20 @@ defmodule ExVrp.MinimiseFleet do
     |> Enum.max(fn -> 1 end)
   end
 
+  defp at_or_zero(list, dim) do
+    case Enum.fetch(list, dim) do
+      {:ok, value} -> value
+      :error -> 0
+    end
+  end
+
+  defp capacity_or_one(tuple, dim) when dim < tuple_size(tuple), do: elem(tuple, dim)
+  defp capacity_or_one(_tuple, _dim), do: 1
+
   defp compute_max_trips(%VehicleType{max_reloads: max_reloads}) do
     case max_reloads do
       # If infinite reloads but no reload_depots, treat as 1 trip
       :infinity -> 1
-      # max_reloads + 1 = max_trips
       n when is_integer(n) -> n + 1
     end
   end
