@@ -37,12 +37,12 @@ defmodule ExVrp.Benchmark do
     p06: 829,
     pr01: 1627,
     pr107: 443_004,
-    rc208: 7870,
-    x101: 19_467,
-    gtsp: 45_235,
-    c201: 10_773,
-    x115: 17_368_625,
-    pr11a: 6881
+    rc208: 7779,
+    x101: 19_306,
+    gtsp: 42_545,
+    c201: 10_818,
+    x115: 17_203_077,
+    pr11a: 7081
   }
 
   def expected_distances, do: @expected_distances

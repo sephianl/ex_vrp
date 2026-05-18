@@ -1,5 +1,7 @@
 #include "SwapStar.h"
 
+#include "primitives.h"
+
 #include <cassert>
 #include <limits>
 
@@ -21,9 +23,9 @@ void SwapStar::updateRemovalCosts(Route *R, CostEvaluator const &costEvaluator)
         removalCosts(R->idx(), U->client()) = deltaCost;
     }
 
-    isCached(R->idx(), 0) = true;  // removal costs are now updated
+    isCached(R->idx(), 0) = true;
     for (size_t idx = data.numDepots(); idx != data.numLocations(); ++idx)
-        isCached(R->idx(), idx) = false;  // but insert costs not yet
+        isCached(R->idx(), idx) = false;
 }
 
 void SwapStar::updateInsertPoints(Route *R,
@@ -76,11 +78,6 @@ Cost SwapStar::deltaLoadCost(Route::Node *U,
     auto const &vLoad = vRoute->load();
     auto const &vCap = vRoute->capacity();
 
-    // Separating removal and insertion means that the effects on load are not
-    // counted correctly: during insert, U is still in the route, and now V is
-    // added as well. The following addresses this issue with an approximation,
-    // which is inexact when there are both pickups and deliveries in the data.
-    // So it's pretty rough but fast and seems to mostly work well enough.
     Cost cost = 0;
     for (size_t dim = 0; dim != data.numLoadDimensions(); ++dim)
     {
@@ -108,12 +105,8 @@ SwapStar::InsertPoint SwapStar::bestInsertPoint(
 
     for (auto [cost, where] : insertCache(route->idx(), U->client()))
         if (where && where != V && n(where) != V && V->trip() == where->trip())
-            // Only if V is not adjacent. We also require that V is in the same
-            // trip as the node we plan to remove, because we cannot currently
-            // evaluate segments with intermediate reloads in them.
             return std::make_pair(cost, where);
 
-    // As a fallback option, we consider inserting in the place of V.
     Cost deltaCost = 0;
     costEvaluator.deltaCost<true, true>(
         deltaCost,
@@ -137,7 +130,7 @@ Cost SwapStar::evaluateMove(Route::Node const *U,
 
     Cost deltaCost = 0;
 
-    if (V->idx() + 1 == remove->idx())  // then we insert U in place of remove
+    if (V->idx() + 1 == remove->idx())
         costEvaluator.deltaCost<true>(
             deltaCost,
             Route::Proposal(route->before(V->idx()),
@@ -161,9 +154,9 @@ Cost SwapStar::evaluateMove(Route::Node const *U,
     return deltaCost;
 }
 
-void SwapStar::init(Solution const &solution)
+void SwapStar::init()
 {
-    RouteOperator::init(solution);
+    stats_ = {};
     for (size_t row = 0; row != isCached.numRows(); ++row)
         isCached(row, 0) = false;
 }
@@ -190,14 +183,8 @@ Cost SwapStar::evaluate(Route *routeU,
         {
             assert(!U->isDepot() && !V->isDepot());
 
-            // The following lines compute a delta cost of removing U and V from
-            // their own routes and inserting them into the other's route in the
-            // best place. This is approximate since removal and insertion are
-            // evaluated separately, not taking into account that while U leaves
-            // its route, V will be inserted (and vice versa).
             Cost deltaCost = 0;
 
-            // Load is a bit tricky, so we compute that separately.
             deltaCost += deltaLoadCost(U, V, costEvaluator);
 
             deltaCost += removalCosts(routeU->idx(), U->client());
@@ -206,8 +193,8 @@ Cost SwapStar::evaluate(Route *routeU,
             auto [extraV, UAfter] = bestInsertPoint(U, V, costEvaluator);
             deltaCost += extraV;
 
-            if (deltaCost >= 0)  // continuing here avoids evaluating another
-                continue;        // costly insertion point below
+            if (deltaCost >= 0)
+                continue;
 
             auto [extraU, VAfter] = bestInsertPoint(V, U, costEvaluator);
             deltaCost += extraU;
@@ -224,9 +211,6 @@ Cost SwapStar::evaluate(Route *routeU,
             }
         }
 
-    // It is possible for positive delta costs to turn negative when we do an
-    // exact evaluation. But in practice that almost never happens, and is not
-    // worth spending time on.
     if (best.cost >= 0)
         return best.cost;
 
@@ -252,7 +236,7 @@ void SwapStar::apply(Route *U, Route *V) const
 void SwapStar::update(Route *U) { isCached(U->idx(), 0) = false; }
 
 SwapStar::SwapStar(ProblemData const &data, double overlapTolerance)
-    : RouteOperator(data),
+    : data(data),
       overlapTolerance(overlapTolerance),
       insertCache(data.numVehicles(), data.numLocations()),
       isCached(data.numVehicles(), data.numLocations()),
