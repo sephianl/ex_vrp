@@ -200,9 +200,13 @@
 
           # Sephia credo
           {SephiaCredo.Checks.AppendInLoop, []},
-          {SephiaCredo.Checks.NoDateTimeOperatorCompare, []},
+          {SephiaCredo.Checks.AssertWithoutAssertion, []},
+          {SephiaCredo.Checks.ProcessSleepInTests, []},
+          {SephiaCredo.Checks.RawRuntimeError, []},
+          {SephiaCredo.Checks.StructComparisonOperator, []},
           {SephiaCredo.Checks.UnusedSetupKeysInTests, []},
           {SephiaCredo.Checks.UnusedSetupKeysPerTest, []},
+          {SephiaCredo.Checks.SysGetStateWithoutTimeoutInPoll, []},
 
           #
           ## ex_slop (AI-slop / anti-pattern linter)
