@@ -38,6 +38,7 @@ defmodule ExVrp.Native do
     # Random Solution
     create_random_solution_nif: 2,
     create_solution_from_routes_nif: 2,
+    create_solution_from_routes_with_types_nif: 2,
     # ProblemData queries
     problem_data_num_load_dims: 1,
     problem_data_num_clients: 1,
@@ -376,6 +377,37 @@ defmodule ExVrp.Native do
   end
 
   defp create_solution_from_routes_nif(_problem_data, _routes), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Creates a solution from explicit routes with vehicle types.
+
+  Routes is a list of `{vehicle_type, [client_id, ...]}` 2-tuples. Each route is
+  constructed with the given vehicle type, allowing warm-starting heterogeneous-fleet
+  problems where `create_solution_from_routes/2` (which assigns all routes to vehicle
+  type 0) is insufficient.
+
+  Inputs are bounds-checked before constructing the underlying C++ solution:
+
+  - Raises `ArgumentError` if `vehicle_type` is not in `[0, num_vehicle_types)`.
+  - Raises `ArgumentError` if `client_id` is not in `[num_depots, num_locations)`
+    (i.e. references a depot or a non-existent location).
+  - Raises `RuntimeError` for PyVRP-level structural violations such as
+    duplicate clients across or within routes, or more routes than
+    `num_available` for a vehicle type.
+
+  Capacity overloads and time-window violations are *not* errors — the returned
+  solution is simply marked infeasible. Use this as a warm-start; the solver
+  will repair it via penalties.
+  """
+  @spec create_solution_from_routes_with_types(
+          reference(),
+          [{non_neg_integer(), [non_neg_integer()]}]
+        ) :: {:ok, reference()} | {:error, term()}
+  def create_solution_from_routes_with_types(problem_data, routes) do
+    create_solution_from_routes_with_types_nif(problem_data, routes)
+  end
+
+  defp create_solution_from_routes_with_types_nif(_problem_data, _routes), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Gets the number of load dimensions from ProblemData.

@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.3
+
+### Added
+
+- **Warm-start solver via `:initial_routes` option on `ExVrp.solve/2`.** The
+  outer list position maps to the vehicle type index; each inner list is the
+  sequence of client IDs visited by that vehicle type. Empty inner lists are
+  skipped. Example:
+
+  ```elixir
+  ExVrp.solve(model, initial_routes: [[1, 2, 3], [], [4, 5]])
+  # vehicle type 0 → clients 1, 2, 3; vehicle type 2 → clients 4, 5
+  ```
+
+  Use this when you already have a known-good (or even partially-known)
+  assignment to seed the solver — e.g. inserting new orders into existing
+  routes — instead of cold-starting from an empty solution.
+
+- New `Native.create_solution_from_routes_with_types/2` NIF backing the
+  warm-start path. Takes `[{vehicle_type, [client_id, ...]}, ...]`, unlike the
+  existing `create_solution_from_routes/2` which hardcodes vehicle type 0 and
+  is only suitable for homogeneous fleets.
+
+### Robustness
+
+- Warm-start inputs are bounds-checked in the NIF before constructing the
+  C++ `Solution`: vehicle type indices outside `[0, numVehicleTypes())` and
+  client IDs outside `[numDepots, numLocations)` now raise `ArgumentError`
+  with a descriptive message instead of segfaulting.
+- `ExVrp.solve/2` rescues any `ArgumentError`/`RuntimeError` from the
+  warm-start NIF and falls back to an empty-solution start with a warning
+  log. Structurally invalid `:initial_routes` (duplicate clients, malformed
+  tuples, too many routes for `num_available`) no longer crash the solve.
+- Capacity-overloaded or time-window-violating warm-starts are passed through
+  to the solver unchanged — these are valid infeasible starting points that
+  the solver can repair via penalties.
+
 ## 0.5.2
 
 ### Internal
