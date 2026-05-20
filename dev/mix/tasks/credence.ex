@@ -8,15 +8,16 @@ defmodule Mix.Tasks.Credence do
 
       mix credence              # Analyze and report all issues
       mix credence --exit       # Exit with non-zero status if issues found
+      mix credence --fix        # Apply autofixes and write files in place
   """
   use Mix.Task
 
-  @switches [exit: :boolean]
+  @switches [exit: :boolean, fix: :boolean]
 
   @impl Mix.Task
   def run(args) do
     {opts, _, _} = OptionParser.parse(args, switches: @switches)
-    run_analyze(opts)
+    if opts[:fix], do: run_fix(opts), else: run_analyze(opts)
   end
 
   defp run_analyze(opts) do
@@ -33,8 +34,39 @@ defmodule Mix.Tasks.Credence do
     end
   end
 
+  defp run_fix(opts) do
+    {total_applied, total_remaining} =
+      Enum.reduce(source_files(), {0, 0}, fn path, {applied_acc, remaining_acc} ->
+        {applied, remaining} = fix_file(path)
+        {applied_acc + applied, remaining_acc + remaining}
+      end)
+
+    Mix.shell().info("Credence fix: applied #{total_applied} fix(es), #{total_remaining} issue(s) remain")
+
+    if opts[:exit] && total_remaining > 0 do
+      Mix.raise("Credence found #{total_remaining} unfixable issue(s)")
+    end
+  end
+
+  defp fix_file(path) do
+    original = File.read!(path)
+    %{code: fixed, issues: remaining, applied_rules: applied} = apply(Credence, :fix, [original])
+
+    if fixed != original do
+      File.write!(path, fixed)
+      Mix.shell().info("  #{path}: applied #{length(applied)} fix(es)")
+    end
+
+    Enum.each(remaining, &print_issue(path, &1))
+    {length(applied), length(remaining)}
+  rescue
+    e ->
+      Mix.shell().error("  #{path}: error — #{Exception.message(e)}")
+      {0, 0}
+  end
+
   defp source_files do
-    ~w(lib test)
+    ~w(lib test dev)
     |> Enum.flat_map(&Path.wildcard("#{&1}/**/*.ex"))
     |> Enum.sort()
   end

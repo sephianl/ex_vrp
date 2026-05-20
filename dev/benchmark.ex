@@ -45,8 +45,10 @@ defmodule ExVrp.Benchmark do
     pr11a: 6881
   }
 
+  @sorted_instance_names @instances |> Enum.map(&elem(&1, 0)) |> Enum.sort()
+
   def expected_distances, do: @expected_distances
-  def available_instances, do: Map.keys(@instances)
+  def available_instances, do: @sorted_instance_names
 
   @doc """
   Runs benchmarks on the specified instances.
@@ -66,8 +68,7 @@ defmodule ExVrp.Benchmark do
     iterations = Keyword.get(opts, :iterations, 1000)
     save_path = Keyword.get(opts, :save)
 
-    instance_list =
-      if instances == :all, do: @instances |> Map.keys() |> Enum.sort(), else: instances
+    instance_list = if instances == :all, do: @sorted_instance_names, else: instances
 
     IO.puts("\nRunning benchmarks (seeds=#{inspect(@seeds)}, iterations=#{iterations})...\n")
 

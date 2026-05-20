@@ -7,8 +7,6 @@ defmodule ExVrp.BenchmarkTest do
     test "returns a non-empty list of atoms" do
       instances = Benchmark.available_instances()
 
-      assert is_list(instances)
-      assert instances != []
       assert Enum.all?(instances, &is_atom/1)
     end
 

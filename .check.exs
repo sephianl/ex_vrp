@@ -1,15 +1,10 @@
 [
   tools: [
     {:sobelow, "mix sobelow --exit --skip"},
-    {:credence, "mix credence --exit"},
-    {:ex_dna, "mix ex_dna"},
-
-    # Reach — program-dependence-graph release-safety. See .reach.exs.
-    # Only arch and smells gate the build; dead-code and candidates are advisory
-    # (no Mix.raise path) and run on demand. Matches reach's own `mix ci`.
-    # Combined invocation shares one project load (see Reach.CLI.Commands.Check
-    # share_project?/2) — avoids Task.async_stream 5s timeouts under parallel load.
-    {:reach, "mix reach.check --arch --smells --strict"}
-    # `--changed --base main` requires the base commit locally; run in CI separately.
+    {:ex_dna, "mix ex_dna"}
+    # Credence and Reach each run as their own pre-commit hook (mix-credence,
+    # mix-reach in devenv.nix) and dedicated CI steps. Splitting them out of
+    # `mix check` avoids `_build` lock contention with dialyzer/ex_doc and makes
+    # each gate's failure surface unambiguous in CI logs.
   ]
 ]

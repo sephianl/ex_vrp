@@ -43,10 +43,10 @@ in
       files = ".ex[s]?$";
       entry = "mix format";
     };
-    mix-credence-fix = {
+    mix-credence = {
       enable = !config.devenv.isTesting;
-      name = "mix-credence-fix";
-      entry = "mix credence --fix";
+      name = "mix-credence";
+      entry = "mix credence --exit";
       pass_filenames = false;
       stages = [ "pre-commit" ];
       files = ".ex[s]?$";
@@ -55,6 +55,16 @@ in
       enable = !config.devenv.isTesting;
       name = "mix-check";
       entry = "mix check --no-retry";
+      pass_filenames = false;
+      stages = [ "pre-commit" ];
+      files = ".ex[s]?$";
+    };
+    # Runs after mix-check (alphabetical ordering) so the _build lock is free —
+    # avoids reach's 5s Task.async_stream timeout caused by dialyzer/ex_doc contention.
+    mix-reach = {
+      enable = !config.devenv.isTesting;
+      name = "mix-reach";
+      entry = "mix reach.check --arch --smells --strict";
       pass_filenames = false;
       stages = [ "pre-commit" ];
       files = ".ex[s]?$";

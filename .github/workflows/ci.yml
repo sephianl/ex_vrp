@@ -81,6 +81,11 @@ jobs:
         run: |
           devenv shell mix check
 
+      - name: Credence semantic checks
+        if: github.event_name == 'pull_request'
+        run: |
+          devenv shell mix credence --exit
+
       - name: Reach change-safety analysis
         if: github.event_name == 'pull_request'
         run: |
