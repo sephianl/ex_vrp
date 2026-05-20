@@ -23,7 +23,8 @@ defmodule ExVrp.Solver do
           num_starts: pos_integer() | :auto,
           penalty_params: PenaltyManager.Params.t(),
           ils_params: IteratedLocalSearch.Params.t(),
-          on_progress: (map() -> any()) | nil
+          on_progress: (map() -> any()) | nil,
+          initial_routes: [[non_neg_integer()]] | nil
         ]
 
   @default_opts [
@@ -34,7 +35,8 @@ defmodule ExVrp.Solver do
     num_starts: :auto,
     penalty_params: nil,
     ils_params: nil,
-    on_progress: nil
+    on_progress: nil,
+    initial_routes: nil
   ]
 
   @doc """
@@ -59,6 +61,20 @@ defmodule ExVrp.Solver do
   - `:penalty_params` - PenaltyManager.Params for penalty adjustment
   - `:ils_params` - IteratedLocalSearch.Params for ILS behavior
   - `:on_progress` - Optional callback function receiving progress maps during ILS iterations (time-gated at ~1s intervals). When `num_starts > 1`, progress maps include `:seed_idx` and `:seed` fields.
+  - `:initial_routes` - Optional warm-start. A list of routes where the position
+    in the outer list maps to the vehicle type index. Each inner list is a
+    sequence of client IDs visited by that vehicle type. Empty inner lists are
+    skipped (vehicle type unused in the warm-start). When provided, the solver
+    skips the empty-solution local-search step and uses these routes as the
+    initial solution directly. Example: `[[1, 2, 3], [], [4, 5]]` warm-starts
+    with vehicle type 0 visiting clients 1, 2, 3 and vehicle type 2 visiting 4, 5.
+
+    Capacity-overloaded and time-window-violating starts are passed through to
+    the solver — these are valid infeasible starting points that the solver can
+    repair via penalties. Structurally invalid inputs (duplicate clients,
+    out-of-range vehicle types or client IDs, too many routes for
+    `num_available`) are logged as warnings and the solver falls back to a
+    cold (empty) start rather than crashing.
 
   ## Returns
 
@@ -230,7 +246,55 @@ defmodule ExVrp.Solver do
     local_search_time = System.monotonic_time(:millisecond) - local_search_start
     Logger.info("LocalSearch created (neighbours computed) in #{local_search_time}ms")
 
+    initial_solution =
+      build_initial_solution(problem_data, local_search, penalty_manager, opts, solve_start)
+
+    {local_search, penalty_manager, initial_solution}
+  end
+
+  defp build_initial_solution(problem_data, local_search, penalty_manager, opts, solve_start) do
     initial_solution_start = System.monotonic_time(:millisecond)
+
+    solution =
+      case typed_initial_routes(opts[:initial_routes]) do
+        [] ->
+          build_initial_via_local_search(problem_data, local_search, penalty_manager, opts, solve_start)
+
+        typed_routes ->
+          build_initial_from_routes_or_fallback(
+            problem_data,
+            local_search,
+            penalty_manager,
+            opts,
+            solve_start,
+            typed_routes
+          )
+      end
+
+    initial_solution_time = System.monotonic_time(:millisecond) - initial_solution_start
+    Logger.info("Initial solution generated in #{initial_solution_time}ms")
+
+    solution
+  end
+
+  defp build_initial_from_routes_or_fallback(
+         problem_data,
+         local_search,
+         penalty_manager,
+         opts,
+         solve_start,
+         typed_routes
+       ) do
+    {:ok, sol} = Native.create_solution_from_routes_with_types(problem_data, typed_routes)
+    sol
+  rescue
+    e in [ArgumentError, RuntimeError] ->
+      Logger.warning("ExVrp.Solver: :initial_routes is invalid, falling back to empty start: #{Exception.message(e)}")
+
+      build_initial_via_local_search(problem_data, local_search, penalty_manager, opts, solve_start)
+  end
+
+  defp build_initial_via_local_search(problem_data, local_search, penalty_manager, opts, solve_start) do
     {:ok, max_cost_eval} = PenaltyManager.max_cost_evaluator(penalty_manager)
     {:ok, empty_solution} = Native.create_solution_from_routes(problem_data, [])
 
@@ -247,10 +311,18 @@ defmodule ExVrp.Solver do
     {:ok, initial_solution} =
       Native.local_search_search_run(local_search, empty_solution, max_cost_eval, init_timeout_ms)
 
-    initial_solution_time = System.monotonic_time(:millisecond) - initial_solution_start
-    Logger.info("Initial solution generated in #{initial_solution_time}ms")
+    initial_solution
+  end
 
-    {local_search, penalty_manager, initial_solution}
+  defp typed_initial_routes(nil), do: []
+
+  defp typed_initial_routes(routes) when is_list(routes) do
+    routes
+    |> Enum.with_index()
+    |> Enum.flat_map(fn
+      {[], _idx} -> []
+      {clients, idx} when is_list(clients) -> [{idx, clients}]
+    end)
   end
 
   defp run_ils(problem_data, penalty_manager, local_search, initial_solution, stop_fn, opts, seed, solve_start) do

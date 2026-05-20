@@ -1531,6 +1531,198 @@ defmodule ExVrp.LocalSearchTest do
   end
 
   # ==========================================================================
+  # Solution from Routes with explicit vehicle types
+  # ==========================================================================
+
+  describe "create_solution_from_routes_with_types" do
+    test "assigns each route the requested vehicle type" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_client(x: 30, y: 0, delivery: [10])
+        |> Model.add_client(x: 40, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      {:ok, solution} =
+        Native.create_solution_from_routes_with_types(problem_data, [{0, [1, 2]}, {2, [3, 4]}])
+
+      assert Native.solution_num_routes(solution) == 2
+      assert Native.solution_num_clients(solution) == 4
+      assert Native.solution_route_vehicle_type(solution, 0) == 0
+      assert Native.solution_route_vehicle_type(solution, 1) == 2
+    end
+
+    test "supports single route with non-zero vehicle type" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      {:ok, solution} =
+        Native.create_solution_from_routes_with_types(problem_data, [{1, [1, 2]}])
+
+      assert Native.solution_num_routes(solution) == 1
+      assert Native.solution_route_vehicle_type(solution, 0) == 1
+    end
+
+    test "raises ArgumentError when vehicle_type index is out of range" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      assert_raise ArgumentError, ~r/vehicle_type 5 is out of range/, fn ->
+        Native.create_solution_from_routes_with_types(problem_data, [{5, [1]}])
+      end
+    end
+
+    test "raises ArgumentError when client_id is out of range" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      assert_raise ArgumentError, ~r/client_id 99 is out of range/, fn ->
+        Native.create_solution_from_routes_with_types(problem_data, [{0, [99]}])
+      end
+    end
+
+    test "raises ArgumentError when client_id points at a depot" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      assert_raise ArgumentError, ~r/client_id 0 is out of range/, fn ->
+        Native.create_solution_from_routes_with_types(problem_data, [{0, [0]}])
+      end
+    end
+
+    test "raises RuntimeError when the same client appears in two routes" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      assert_raise RuntimeError, fn ->
+        Native.create_solution_from_routes_with_types(problem_data, [{0, [1]}, {1, [1]}])
+      end
+    end
+
+    test "raises RuntimeError when the same client appears twice in one route" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      assert_raise RuntimeError, fn ->
+        Native.create_solution_from_routes_with_types(problem_data, [{0, [1, 1]}])
+      end
+    end
+
+    test "raises RuntimeError when assigning more routes than num_available for a vehicle type" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      assert_raise RuntimeError, fn ->
+        Native.create_solution_from_routes_with_types(problem_data, [{0, [1]}, {0, [2]}])
+      end
+    end
+
+    test "accepts an infeasible solution (capacity overload)" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [80])
+        |> Model.add_client(x: 20, y: 0, delivery: [80])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      {:ok, solution} =
+        Native.create_solution_from_routes_with_types(problem_data, [{0, [1, 2]}])
+
+      assert Native.solution_num_routes(solution) == 1
+      refute Native.solution_is_feasible(solution)
+    end
+
+    test "accepts an infeasible solution (time window violation)" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 100, y: 0, delivery: [10], tw_early: 0, tw_late: 5)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100], time_windows: [{0, 1000}])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      {:ok, solution} =
+        Native.create_solution_from_routes_with_types(problem_data, [{0, [1]}])
+
+      assert Native.solution_num_routes(solution) == 1
+      refute Native.solution_is_feasible(solution)
+    end
+
+    test "can be used as warm-start for local search" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_client(x: 30, y: 0, delivery: [10])
+        |> Model.add_client(x: 40, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+      {:ok, cost_evaluator} = create_cost_evaluator()
+
+      {:ok, solution} =
+        Native.create_solution_from_routes_with_types(problem_data, [{0, [1, 2]}, {1, [3, 4]}])
+
+      initial_cost = Native.solution_penalised_cost(solution, cost_evaluator)
+
+      {:ok, improved} = Native.local_search(solution, problem_data, cost_evaluator)
+      improved_cost = Native.solution_penalised_cost(improved, cost_evaluator)
+
+      assert improved_cost <= initial_cost
+    end
+  end
+
+  # ==========================================================================
   # PyVRP Parity: test_reoptimize_changed_objective_timewarp_OkSmall
   # ==========================================================================
 
