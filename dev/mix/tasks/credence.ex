@@ -20,10 +20,7 @@ defmodule Mix.Tasks.Credence do
   end
 
   defp run_analyze(opts) do
-    total_issues =
-      source_files()
-      |> Enum.map(&analyze_file/1)
-      |> Enum.sum()
+    total_issues = Enum.sum_by(source_files(), &analyze_file/1)
 
     if total_issues == 0 do
       Mix.shell().info("Credence: no issues found")

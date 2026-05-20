@@ -44,7 +44,6 @@ defmodule ExVrp.ResultTest do
     end
 
     test "returns infinity for infeasible solution" do
-      # Create a manually constructed infeasible result for testing
       solution = %Solution{
         routes: [[1, 2]],
         distance: 100,

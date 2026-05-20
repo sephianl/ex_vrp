@@ -166,13 +166,10 @@ defmodule ExVrp.Neighbourhood do
   end
 
   defp compute_min_edge_costs(distances, durations, vehicle_types) do
-    # Get unique edge cost combinations: {unit_dist, unit_dur, profile}
     unique_costs = Enum.uniq(vehicle_types)
-
     distances_tuple = List.to_tuple(distances)
     durations_tuple = List.to_tuple(durations)
 
-    # Compute edge costs for first combination
     [{unit_dist, unit_dur, profile} | rest] = unique_costs
 
     initial_costs =
@@ -181,7 +178,6 @@ defmodule ExVrp.Neighbourhood do
         Nx.multiply(unit_dur, elem(durations_tuple, profile))
       )
 
-    # Take minimum across all vehicle type combinations
     Enum.reduce(rest, initial_costs, fn {ud, ut, p}, acc ->
       costs =
         Nx.add(
@@ -346,19 +342,15 @@ defmodule ExVrp.Neighbourhood do
     # Construct a symmetric adjacency matrix and return adjacent clients
     # adj[i, j] = true if j is in neighbours[i]
 
-    # Start with false matrix
     adj = Nx.broadcast(0, {num_locs, num_locs})
 
-    # Set adj[i, j] = 1 for each j in neighbours[i]
     adj =
       neighbours
       |> Stream.with_index()
       |> Enum.reduce(adj, fn {nbrs, i}, acc -> set_adj_row(acc, nbrs, i) end)
 
-    # Symmetrize: adj = adj | adj.T
     adj = Nx.max(adj, Nx.transpose(adj))
 
-    # Convert back to neighbour lists
     for i <- 0..(num_locs - 1) do
       adj_row_to_neighbours(adj, i, num_locs, num_depots)
     end

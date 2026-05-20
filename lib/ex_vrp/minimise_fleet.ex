@@ -152,7 +152,6 @@ defmodule ExVrp.MinimiseFleet do
     case max_reloads do
       # If infinite reloads but no reload_depots, treat as 1 trip
       :infinity -> 1
-      # max_reloads + 1 = max_trips
       n when is_integer(n) -> n + 1
     end
   end

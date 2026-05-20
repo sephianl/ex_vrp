@@ -85,7 +85,6 @@ defmodule ExVrp.SameVehicleGroupTest do
         |> Model.add_client(x: 1, y: 1)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
 
-      # Create a client not in the model
       fake_client = ExVrp.Client.new(x: 99, y: 99)
 
       assert_raise ArgumentError, ~r/Client not in model/, fn ->

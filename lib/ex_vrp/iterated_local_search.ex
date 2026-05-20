@@ -150,8 +150,7 @@ defmodule ExVrp.IteratedLocalSearch do
     seed = Keyword.get(opts, :seed, :rand.uniform(1_000_000))
     on_progress = Keyword.get(opts, :on_progress)
 
-    # Get max_runtime_ms from options for per-iteration timeout calculation
-    max_runtime_ms = Keyword.get(opts, :max_runtime_ms, nil)
+    max_runtime_ms = Keyword.get(opts, :max_runtime_ms)
 
     {:ok, cost_eval} = PenaltyManager.cost_evaluator(penalty_manager)
 

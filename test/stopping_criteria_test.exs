@@ -41,11 +41,7 @@ defmodule ExVrp.StoppingCriteriaTest do
     end
 
     test "returns true after time limit exceeded" do
-      # 0 seconds - immediate stop
       criteria = StoppingCriteria.max_runtime(0.0)
-
-      # Small sleep to ensure time passes
-      Process.sleep(1)
 
       {stop?, _criteria} = StoppingCriteria.should_stop?(criteria, %{})
       assert stop? == true
