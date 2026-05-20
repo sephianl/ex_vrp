@@ -84,23 +84,17 @@ defmodule ExVrp.RingBuffer do
     %{rb | head: new_head}
   end
 
-  @doc """
-  Clears the buffer, resetting it to its initial state.
-  """
+  @doc "Clears the buffer, resetting it to its initial state."
   @spec clear(t()) :: t()
   def clear(%__MODULE__{maxlen: maxlen}) do
     new(maxlen)
   end
 
-  @doc """
-  Returns the maximum length of the buffer.
-  """
+  @doc "Returns the maximum length of the buffer."
   @spec maxlen(t()) :: pos_integer()
   def maxlen(%__MODULE__{maxlen: maxlen}), do: maxlen
 
-  @doc """
-  Returns the current number of items in the buffer.
-  """
+  @doc "Returns the current number of items in the buffer."
   @spec length(t()) :: non_neg_integer()
   def length(%__MODULE__{size: size}), do: size
 end

@@ -111,6 +111,7 @@ defmodule ExVrp.MixProject do
       {:ex_check, "~> 0.16.0", only: [:dev, :test], runtime: false},
       # Static code analysis
       {:credo, ">= 0.0.0", only: [:dev, :test], runtime: false},
+      {:credence, "~> 0.6", only: [:dev, :test], runtime: false},
       {:sephia_credo, "~> 0.1", only: [:dev, :test], runtime: false},
       {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},
       {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},

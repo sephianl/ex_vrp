@@ -272,9 +272,7 @@ defmodule ExVrp.Native do
   # ProblemData
   # ---------------------------------------------------------------------------
 
-  @doc """
-  Creates a ProblemData resource from a Model.
-  """
+  @doc "Creates a ProblemData resource from a Model."
   @spec create_problem_data(model_input()) :: {:ok, reference()} | {:error, term()}
   def create_problem_data(_model), do: :erlang.nif_error(:nif_not_loaded)
 
@@ -333,15 +331,11 @@ defmodule ExVrp.Native do
 
   defp create_cost_evaluator_nif(_opts), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Computes the penalised cost of a solution (feasible or infeasible).
-  """
+  @doc "Computes the penalised cost of a solution (feasible or infeasible)."
   @spec solution_penalised_cost(reference(), reference()) :: non_neg_integer()
   def solution_penalised_cost(_solution, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Computes the cost of a feasible solution. Returns max integer for infeasible.
-  """
+  @doc "Computes the cost of a feasible solution. Returns max integer for infeasible."
   @spec solution_cost(reference(), reference()) :: non_neg_integer() | :infinity
   def solution_cost(_solution, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
 
@@ -349,9 +343,7 @@ defmodule ExVrp.Native do
   # Random Solution
   # ---------------------------------------------------------------------------
 
-  @doc """
-  Creates a random solution for the given problem data.
-  """
+  @doc "Creates a random solution for the given problem data."
   @spec create_random_solution(reference(), keyword()) :: {:ok, reference()} | {:error, term()}
   def create_random_solution(problem_data, opts) when is_list(opts) do
     create_random_solution_nif(problem_data, Map.new(opts))
@@ -377,57 +369,39 @@ defmodule ExVrp.Native do
 
   defp create_solution_from_routes_nif(_problem_data, _routes), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the number of load dimensions from ProblemData.
-  """
+  @doc "Gets the number of load dimensions from ProblemData."
   @spec problem_data_num_load_dims(reference()) :: non_neg_integer()
   def problem_data_num_load_dims(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the number of clients from ProblemData.
-  """
+  @doc "Gets the number of clients from ProblemData."
   @spec problem_data_num_clients(reference()) :: non_neg_integer()
   def problem_data_num_clients(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the number of depots from ProblemData.
-  """
+  @doc "Gets the number of depots from ProblemData."
   @spec problem_data_num_depots(reference()) :: non_neg_integer()
   def problem_data_num_depots(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the total number of locations (depots + clients) from ProblemData.
-  """
+  @doc "Gets the total number of locations (depots + clients) from ProblemData."
   @spec problem_data_num_locations(reference()) :: non_neg_integer()
   def problem_data_num_locations(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the number of vehicle types from ProblemData.
-  """
+  @doc "Gets the number of vehicle types from ProblemData."
   @spec problem_data_num_vehicle_types(reference()) :: non_neg_integer()
   def problem_data_num_vehicle_types(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the total number of vehicles (sum of all vehicle types) from ProblemData.
-  """
+  @doc "Gets the total number of vehicles (sum of all vehicle types) from ProblemData."
   @spec problem_data_num_vehicles(reference()) :: non_neg_integer()
   def problem_data_num_vehicles(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Checks if the problem data has time windows (any non-default TW on clients/depots).
-  """
+  @doc "Checks if the problem data has time windows (any non-default TW on clients/depots)."
   @spec problem_data_has_time_windows_nif(reference()) :: boolean()
   def problem_data_has_time_windows_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the centroid (average x, y) of all client locations.
-  """
+  @doc "Gets the centroid (average x, y) of all client locations."
   @spec problem_data_centroid_nif(reference()) :: {float(), float()}
   def problem_data_centroid_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the number of profiles (distance/duration matrix sets).
-  """
+  @doc "Gets the number of profiles (distance/duration matrix sets)."
   @spec problem_data_num_profiles_nif(reference()) :: non_neg_integer()
   def problem_data_num_profiles_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
@@ -678,171 +652,115 @@ defmodule ExVrp.Native do
   # Route - via Solution reference + route index
   # ---------------------------------------------------------------------------
 
-  @doc """
-  Gets the distance of a specific route in a solution.
-  """
+  @doc "Gets the distance of a specific route in a solution."
   @spec solution_route_distance(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_distance(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the duration of a specific route in a solution.
-  """
+  @doc "Gets the duration of a specific route in a solution."
   @spec solution_route_duration(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_duration(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the delivery load of a specific route in a solution.
-  """
+  @doc "Gets the delivery load of a specific route in a solution."
   @spec solution_route_delivery(reference(), non_neg_integer()) :: [non_neg_integer()]
   def solution_route_delivery(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the pickup load of a specific route in a solution.
-  """
+  @doc "Gets the pickup load of a specific route in a solution."
   @spec solution_route_pickup(reference(), non_neg_integer()) :: [non_neg_integer()]
   def solution_route_pickup(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Checks if a specific route in a solution is feasible.
-  """
+  @doc "Checks if a specific route in a solution is feasible."
   @spec solution_route_is_feasible(reference(), non_neg_integer()) :: boolean()
   def solution_route_is_feasible(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets excess load of a specific route (per dimension).
-  """
+  @doc "Gets excess load of a specific route (per dimension)."
   @spec solution_route_excess_load(reference(), non_neg_integer()) :: [non_neg_integer()]
   def solution_route_excess_load(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets time warp of a specific route.
-  """
+  @doc "Gets time warp of a specific route."
   @spec solution_route_time_warp(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_time_warp(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets excess distance of a specific route.
-  """
+  @doc "Gets excess distance of a specific route."
   @spec solution_route_excess_distance(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_excess_distance(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets overtime of a specific route.
-  """
+  @doc "Gets overtime of a specific route."
   @spec solution_route_overtime(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_overtime(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Checks if a specific route has excess load.
-  """
+  @doc "Checks if a specific route has excess load."
   @spec solution_route_has_excess_load(reference(), non_neg_integer()) :: boolean()
   def solution_route_has_excess_load(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Checks if a specific route has time warp.
-  """
+  @doc "Checks if a specific route has time warp."
   @spec solution_route_has_time_warp(reference(), non_neg_integer()) :: boolean()
   def solution_route_has_time_warp(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Checks if a specific route has excess distance.
-  """
+  @doc "Checks if a specific route has excess distance."
   @spec solution_route_has_excess_distance(reference(), non_neg_integer()) :: boolean()
   def solution_route_has_excess_distance(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the vehicle type of a specific route.
-  """
+  @doc "Gets the vehicle type of a specific route."
   @spec solution_route_vehicle_type(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_vehicle_type(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the start depot of a specific route.
-  """
+  @doc "Gets the start depot of a specific route."
   @spec solution_route_start_depot(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_start_depot(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the end depot of a specific route.
-  """
+  @doc "Gets the end depot of a specific route."
   @spec solution_route_end_depot(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_end_depot(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the number of trips in a specific route.
-  """
+  @doc "Gets the number of trips in a specific route."
   @spec solution_route_num_trips(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_num_trips(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the centroid of a specific route as {x, y}.
-  """
+  @doc "Gets the centroid of a specific route as {x, y}."
   @spec solution_route_centroid(reference(), non_neg_integer()) :: {float(), float()}
   def solution_route_centroid(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the start time of a specific route.
-  """
+  @doc "Gets the start time of a specific route."
   @spec solution_route_start_time(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_start_time(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the end time of a specific route.
-  """
+  @doc "Gets the end time of a specific route."
   @spec solution_route_end_time(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_end_time(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the slack time of a specific route.
-  """
+  @doc "Gets the slack time of a specific route."
   @spec solution_route_slack(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_slack(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the service duration of a specific route.
-  """
+  @doc "Gets the service duration of a specific route."
   @spec solution_route_service_duration(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_service_duration(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the travel duration of a specific route.
-  """
+  @doc "Gets the travel duration of a specific route."
   @spec solution_route_travel_duration(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_travel_duration(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the wait duration of a specific route.
-  """
+  @doc "Gets the wait duration of a specific route."
   @spec solution_route_wait_duration(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_wait_duration(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the distance cost of a specific route.
-  """
+  @doc "Gets the distance cost of a specific route."
   @spec solution_route_distance_cost(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_distance_cost(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the duration cost of a specific route.
-  """
+  @doc "Gets the duration cost of a specific route."
   @spec solution_route_duration_cost(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_duration_cost(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the reload cost of a specific route.
-  """
+  @doc "Gets the reload cost of a specific route."
   @spec solution_route_reload_cost(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_reload_cost(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the prizes collected on a specific route.
-  """
+  @doc "Gets the prizes collected on a specific route."
   @spec solution_route_prizes(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_prizes(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Gets the visits (client indices) of a specific route.
-  """
+  @doc "Gets the visits (client indices) of a specific route."
   @spec solution_route_visits(reference(), non_neg_integer()) :: [non_neg_integer()]
   def solution_route_visits(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
@@ -858,9 +776,7 @@ defmodule ExVrp.Native do
           ]
   def solution_route_schedule(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc """
-  Returns the total fixed vehicle cost of the solution.
-  """
+  @doc "Returns the total fixed vehicle cost of the solution."
   @spec solution_fixed_vehicle_cost(reference()) :: non_neg_integer()
   def solution_fixed_vehicle_cost(_solution), do: :erlang.nif_error(:nif_not_loaded)
 

@@ -53,9 +53,7 @@ defmodule ExVrp.MinimiseFleet do
     end
   end
 
-  @doc """
-  Same as `minimise/3` but raises on error.
-  """
+  @doc "Same as `minimise/3` but raises on error."
   @spec minimise!(Model.t(), StoppingCriteria.t(), keyword()) :: VehicleType.t()
   def minimise!(%Model{} = model, stop, opts \\ []) do
     case minimise(model, stop, opts) do
@@ -67,7 +65,7 @@ defmodule ExVrp.MinimiseFleet do
   # Private implementation
 
   defp validate_single_vehicle_type(%Model{vehicle_types: vehicle_types}) do
-    if length(vehicle_types) == 1 do
+    if match?([_only], vehicle_types) do
       :ok
     else
       {:error, "Fleet minimisation does not understand multiple vehicle types."}
@@ -105,7 +103,7 @@ defmodule ExVrp.MinimiseFleet do
     end
   end
 
-  defp handle_minimise_result({:ok, %{best: %{is_feasible: true} = best}}, model, fleet, _feas, lb, stop, seed) do
+  defp handle_minimise_result({:ok, %{best: %{is_feasible: true} = best}}, model, fleet, _feas_fleet, lb, stop, seed) do
     new_fleet = maybe_reduce_fleet(fleet, length(best.routes))
     minimise_loop(model, new_fleet, lb, stop, seed)
   end
@@ -125,37 +123,30 @@ defmodule ExVrp.MinimiseFleet do
   defp maybe_reduce_fleet(fleet, _routes_used), do: fleet
 
   defp compute_lower_bound(%Model{clients: clients, vehicle_types: [vehicle_type]}) do
-    num_dims = max(length(vehicle_type.capacity), 1)
-    capacity_tuple = List.to_tuple(vehicle_type.capacity)
+    capacities = if vehicle_type.capacity == [], do: [1], else: vehicle_type.capacity
+    num_dims = length(capacities)
     max_trips = compute_max_trips(vehicle_type)
+    zeros = List.duplicate(0, num_dims)
 
-    0..(num_dims - 1)
-    |> Enum.map(fn dim ->
-      delivery_sum = Enum.sum_by(clients, fn c -> at_or_zero(c.delivery, dim) end)
-      pickup_sum = Enum.sum_by(clients, fn c -> at_or_zero(c.pickup, dim) end)
+    {delivery_sums, pickup_sums} =
+      Enum.reduce(clients, {zeros, zeros}, fn c, {d_acc, p_acc} ->
+        {add_dimensions(d_acc, c.delivery), add_dimensions(p_acc, c.pickup)}
+      end)
 
-      demand = max(delivery_sum, pickup_sum)
-      capacity = capacity_or_one(capacity_tuple, dim)
+    [delivery_sums, pickup_sums, capacities]
+    |> Enum.zip()
+    |> Enum.reduce(1, fn {d_sum, p_sum, capacity}, best ->
+      demand = max(d_sum, p_sum)
       effective_capacity = capacity * max_trips
 
-      if effective_capacity > 0 do
-        ceil(demand / effective_capacity)
-      else
-        0
-      end
+      dim_bound = if effective_capacity > 0, do: ceil(demand / effective_capacity), else: 0
+      max(dim_bound, best)
     end)
-    |> Enum.max(fn -> 1 end)
   end
 
-  defp at_or_zero(list, dim) do
-    case Enum.fetch(list, dim) do
-      {:ok, value} -> value
-      :error -> 0
-    end
-  end
-
-  defp capacity_or_one(tuple, dim) when dim < tuple_size(tuple), do: elem(tuple, dim)
-  defp capacity_or_one(_tuple, _dim), do: 1
+  defp add_dimensions([], _vals), do: []
+  defp add_dimensions(acc, []), do: acc
+  defp add_dimensions([a | acc_rest], [v | vals_rest]), do: [a + v | add_dimensions(acc_rest, vals_rest)]
 
   defp compute_max_trips(%VehicleType{max_reloads: max_reloads}) do
     case max_reloads do
