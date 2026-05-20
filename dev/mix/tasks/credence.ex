@@ -1,3 +1,84 @@
+defmodule Mix.Tasks.Credence.Finding do
+  @moduledoc false
+
+  @derive Jason.Encoder
+  @enforce_keys [:rule, :message, :file, :fingerprint]
+  defstruct [:rule, :message, :file, :line, :fingerprint]
+
+  def build(path, %{rule: rule, message: message, meta: meta}) do
+    line = line_from_meta(meta)
+
+    %__MODULE__{
+      rule: to_string(rule),
+      message: String.trim(message),
+      file: path,
+      line: line,
+      fingerprint: fingerprint(rule, path, line, message)
+    }
+  end
+
+  defp line_from_meta(%{line: line}) when is_integer(line), do: line
+  defp line_from_meta(_), do: nil
+
+  defp fingerprint(rule, file, line, message) do
+    input = [to_string(rule), to_string(file), to_string(line), message]
+    digest = :crypto.hash(:sha256, Enum.join(input, "\0"))
+    "sha256:" <> Base.encode16(digest, case: :lower)
+  end
+end
+
+defmodule Mix.Tasks.Credence.Baseline do
+  @moduledoc false
+
+  alias Mix.Tasks.Credence.Finding
+
+  @derive Jason.Encoder
+  defstruct version: 1, tool: "credence", findings: []
+
+  def filter(findings, nil), do: {findings, []}
+
+  def filter(findings, path) do
+    known = MapSet.new(read(path).findings, & &1.fingerprint)
+    Enum.split_with(findings, &(!MapSet.member?(known, &1.fingerprint)))
+  end
+
+  def write(path, findings) do
+    baseline = %__MODULE__{findings: Enum.sort_by(findings, &sort_key/1)}
+    File.write!(path, Jason.encode!(baseline, pretty: true) <> "\n")
+  end
+
+  def read(path) do
+    if File.exists?(path) do
+      path
+      |> File.read!()
+      |> Jason.decode!(keys: :atoms)
+      |> from_map()
+    else
+      %__MODULE__{}
+    end
+  end
+
+  defp from_map(%{findings: findings} = data) do
+    %__MODULE__{
+      version: Map.get(data, :version, 1),
+      tool: Map.get(data, :tool, "credence"),
+      findings: Enum.map(findings, &finding_from_map/1)
+    }
+  end
+
+  defp finding_from_map(data) do
+    %Finding{
+      rule: Map.fetch!(data, :rule),
+      message: Map.get(data, :message),
+      file: Map.get(data, :file),
+      line: Map.get(data, :line),
+      fingerprint: Map.fetch!(data, :fingerprint)
+    }
+  end
+
+  defp sort_key(%Finding{file: file, line: line, rule: rule}), do: {to_string(file), line || 0, to_string(rule)}
+end
+
 defmodule Mix.Tasks.Credence do
   @shortdoc "Run Credence semantic linter on Elixir source files"
 
@@ -6,13 +87,23 @@ defmodule Mix.Tasks.Credence do
 
   ## Usage
 
-      mix credence              # Analyze and report all issues
-      mix credence --exit       # Exit with non-zero status if issues found
-      mix credence --fix        # Apply autofixes and write files in place
+      mix credence                              # Analyze and report all issues
+      mix credence --exit                       # Exit non-zero if findings remain
+      mix credence --fix                        # Apply autofixes in place
+      mix credence --baseline PATH              # Ignore findings recorded in PATH
+      mix credence --write-baseline PATH        # Snapshot current findings to PATH
   """
   use Mix.Task
 
-  @switches [exit: :boolean, fix: :boolean]
+  alias Mix.Tasks.Credence.Baseline
+  alias Mix.Tasks.Credence.Finding
+
+  @switches [
+    exit: :boolean,
+    fix: :boolean,
+    baseline: :string,
+    write_baseline: :string
+  ]
 
   @impl Mix.Task
   def run(args) do
@@ -21,18 +112,31 @@ defmodule Mix.Tasks.Credence do
   end
 
   defp run_analyze(opts) do
-    total_issues = Enum.sum_by(source_files(), &analyze_file/1)
+    findings = Enum.flat_map(source_files(), &collect_findings/1)
+    {new_findings, known_findings} = Baseline.filter(findings, opts[:baseline])
 
-    if total_issues == 0 do
-      Mix.shell().info("Credence: no issues found")
-    else
-      Mix.shell().info("Credence: #{total_issues} issue(s) found")
+    Enum.each(new_findings, &print_finding/1)
+
+    if path = opts[:write_baseline] do
+      Baseline.write(path, findings)
+      Mix.shell().info("Credence: wrote #{length(findings)} finding(s) to #{path}")
     end
 
-    if opts[:exit] && total_issues > 0 do
-      Mix.raise("Credence found #{total_issues} issue(s)")
+    summarize_analyze(new_findings, known_findings)
+
+    if opts[:exit] && new_findings != [] do
+      Mix.raise("Credence found #{length(new_findings)} new finding(s)")
     end
   end
+
+  defp summarize_analyze([], []), do: Mix.shell().info("Credence: no issues found")
+
+  defp summarize_analyze([], known), do: Mix.shell().info("Credence: no new findings (#{length(known)} baselined)")
+
+  defp summarize_analyze(new, []), do: Mix.shell().info("Credence: #{length(new)} finding(s)")
+
+  defp summarize_analyze(new, known),
+    do: Mix.shell().info("Credence: #{length(new)} new finding(s) (#{length(known)} baselined)")
 
   defp run_fix(opts) do
     {total_applied, total_remaining} =
@@ -57,7 +161,7 @@ defmodule Mix.Tasks.Credence do
       Mix.shell().info("  #{path}: applied #{length(applied)} fix(es)")
     end
 
-    Enum.each(remaining, &print_issue(path, &1))
+    Enum.each(remaining, fn issue -> print_finding(Finding.build(path, issue)) end)
     {length(applied), length(remaining)}
   rescue
     e ->
@@ -71,29 +175,21 @@ defmodule Mix.Tasks.Credence do
     |> Enum.sort()
   end
 
-  defp analyze_file(path) do
+  defp collect_findings(path) do
     code = File.read!(path)
 
     case apply(Credence, :analyze, [code]) do
-      %{valid: true} ->
-        0
-
-      %{issues: issues} ->
-        Enum.each(issues, &print_issue(path, &1))
-        length(issues)
+      %{valid: true} -> []
+      %{issues: issues} -> Enum.map(issues, &Finding.build(path, &1))
     end
   rescue
     e ->
       Mix.shell().error("  #{path}: error — #{Exception.message(e)}")
-      0
+      []
   end
 
-  defp print_issue(path, %{rule: rule, message: message, meta: meta}) do
-    line = if meta[:line], do: ":#{meta[:line]}", else: ""
-    Mix.shell().info("  #{path}#{line}: [#{rule}] #{String.trim(message)}")
-  end
-
-  defp print_issue(path, %{rule: rule, message: message}) do
-    Mix.shell().info("  #{path}: [#{rule}] #{String.trim(message)}")
+  defp print_finding(%Finding{file: file, line: line, rule: rule, message: message}) do
+    location = if line, do: "#{file}:#{line}", else: file
+    Mix.shell().info("  #{location}: [#{rule}] #{String.trim(message)}")
   end
 end
