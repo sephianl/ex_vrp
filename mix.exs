@@ -1,14 +1,14 @@
 defmodule ExVrp.MixProject do
   use Mix.Project
 
-  @version "0.5.2"
+  @version "0.5.3"
   @github_url "https://github.com/sephianl/ex_vrp"
 
   def project do
     [
       app: :ex_vrp,
       version: @version,
-      elixir: "~> 1.15",
+      elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
