@@ -3,6 +3,10 @@ defmodule ExVrp.ABBenchmark.Loader do
   Loads a corpus entry into an `ExVrp.Model`. VRPLIB entries go through
   `ExVrp.Read`; ETF entries are base64-decoded, deserialized, and migrated so
   fields added after capture get default values.
+
+  ETF deserialization runs without `[:safe]` on purpose: these are trusted,
+  repo-local production model snapshots that legitimately carry atoms not yet
+  loaded in a fresh VM, which `[:safe]` would reject.
   """
 
   alias ExVrp.ABBenchmark.Corpus
@@ -17,7 +21,7 @@ defmodule ExVrp.ABBenchmark.Loader do
     path
     |> File.read!()
     |> Base.decode64!()
-    |> :erlang.binary_to_term([:safe])
+    |> :erlang.binary_to_term()
     |> migrate_model()
   end
 

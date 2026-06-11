@@ -102,6 +102,11 @@
     max_clones: 50
   ],
   smells: [
+    # ExVrp.ABBenchmark.Loader deserializes trusted, repo-local production ETF
+    # snapshots that legitimately carry atoms not yet loaded in a fresh VM, so
+    # binary_to_term/1 cannot pass [:safe]. The unsafe_binary_to_term smell is a
+    # false positive there.
+    ignore: [modules: ["ExVrp.ABBenchmark.Loader"]],
     fixed_shape_map: [
       min_keys: 3,
       min_occurrences: 3,
