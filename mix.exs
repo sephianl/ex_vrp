@@ -15,6 +15,7 @@ defmodule ExVrp.MixProject do
       compilers: [:elixir_make] ++ Mix.compilers(),
       make_targets: ["all"],
       make_clean: ["clean"],
+      make_force_build: System.get_env("EX_VRP_FORCE_BUILD") in ["1", "true"],
       make_args: ["-j#{System.schedulers_online()}"],
       make_env: &make_env/0,
       make_precompiler: make_precompiler(),
