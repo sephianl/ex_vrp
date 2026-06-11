@@ -1,0 +1,98 @@
+name: AB Benchmark
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+
+jobs:
+  ab-benchmark:
+    if: contains(github.event.pull_request.labels.*.name, 'benchmark')
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      DEVENV_NO_GIT_HOOKS: "1"
+      # Force a from-source NIF build for BOTH refs. Without this, cc_precompiler serves the
+      # released binary keyed on the package VERSION (not the git ref), so HEAD and BASE would
+      # get the identical prebuilt solver and every A/B comparison would falsely show "no change".
+      EX_VRP_FORCE_BUILD: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Install devenv
+        run: |
+          nix profile install --accept-flake-config github:cachix/devenv/latest
+
+      - name: Cache Mix dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      # HEAD run: solver code (lib/ + c_src/) is at the PR head commit.
+      # The benchmark harness (dev/, priv/benchmark_data/, mix tasks) is also at head.
+      # --budget-cap keeps total runtime bounded; tune this value to fit the runner's time budget.
+      - name: Build + run HEAD
+        run: |
+          devenv shell mix deps.get
+          devenv shell mix compile
+          devenv shell mix bench.run --out /tmp/results-head.json --ref head --seeds 1,2,3 --budget-cap 60
+
+      # NOTE: We only revert the solver sources (lib/ and c_src/) to the PR base.
+      # The benchmark harness (dev/, priv/benchmark_data/, mix tasks) intentionally stays at
+      # HEAD for both runs so that both refs are evaluated under identical harness conditions.
+      #
+      # CRITICAL: we must wipe the compiled NIF artifacts (priv/*.so and c_src/obj) before
+      # rebuilding. A stale HEAD-built .so would make the BASE run silently use HEAD's solver,
+      # so the A/B comparison would show no difference and report a false "safe". The whole
+      # validity of the comparison depends on a clean C++ rebuild here.
+      - name: Revert solver to BASE, keep harness from HEAD
+        run: |
+          rm -rf lib c_src
+          git checkout ${{ github.event.pull_request.base.sha }} -- lib c_src Makefile
+          rm -f priv/ex_vrp_nif.so
+
+      # BASE run: solver code is now at the base commit; harness remains at HEAD (see above).
+      # mix compile --force triggers a full NIF rebuild from scratch (artifacts wiped above).
+      # --budget-cap is tunable to fit the runner time budget.
+      - name: Build + run BASE
+        run: |
+          devenv shell mix deps.get
+          devenv shell mix compile --force
+          devenv shell mix bench.run --out /tmp/results-base.json --ref base --seeds 1,2,3 --budget-cap 60
+
+      # set -o pipefail ensures the pipeline returns bench.compare's exit code (1 on regression)
+      # rather than tee's exit code, so a regression actually fails the job.
+      - name: Compare
+        run: |
+          set -o pipefail
+          devenv shell mix bench.compare /tmp/results-base.json /tmp/results-head.json | tee /tmp/report.txt
+
+      - name: Post report comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let report = '(no report produced)';
+            try { report = fs.readFileSync('/tmp/report.txt', 'utf8'); } catch (e) {}
+            const body = "### A/B Benchmark\n```\n" + report + "\n```";
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });

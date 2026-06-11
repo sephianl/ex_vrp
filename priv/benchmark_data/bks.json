@@ -1,0 +1,10 @@
+{
+  "_comment": "Display-only best-known objectives keyed by Corpus entry id. Does NOT gate anything. CVRP values are direct .sol Cost integers (round_func :round). VRPTW/MTVRPTWR values are round(Cost * 10) when decimal, or Cost as-is when integer (round_func :dimacs). PCVRPTW entries are null because the published objective differs from routing distance.",
+  "cvrp_X-n439-k37": 36391,
+  "cvrp_X-n749-k98": 77269,
+  "vrptw_R101": 16377,
+  "pc_R1_10_4": null,
+  "pc_RC1_10_4": null,
+  "mtr_R204R0.25": 13246,
+  "mtr_C201R0.5": 15006
+}
