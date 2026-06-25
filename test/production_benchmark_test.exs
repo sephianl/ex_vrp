@@ -20,6 +20,8 @@ defmodule ExVrp.ProductionBenchmarkTest do
 
   use ExUnit.Case, async: true
 
+  alias ExVrp.ABBenchmark.Corpus
+  alias ExVrp.ABBenchmark.Loader
   alias ExVrp.StoppingCriteria
 
   require Logger
@@ -143,24 +145,11 @@ defmodule ExVrp.ProductionBenchmarkTest do
   end
 
   defp load_model(file) do
-    file
-    |> File.read!()
-    |> Base.decode64!()
-    |> :erlang.binary_to_term()
-    |> migrate_model()
+    Loader.load(%Corpus.Entry{
+      id: Path.basename(file, "_model.etf"),
+      variant: :production,
+      kind: :etf,
+      path: file
+    })
   end
-
-  # Reconstructs all structs so that fields added after the ETF was
-  # serialized get their default values (e.g. VehicleType.forbidden_windows).
-  defp migrate_model(%{__struct__: ExVrp.Model} = model) do
-    model
-    |> restruct()
-    |> Map.update!(:vehicle_types, fn vts -> Enum.map(vts, &restruct/1) end)
-    |> Map.update!(:clients, fn cs -> Enum.map(cs, &restruct/1) end)
-    |> Map.update!(:depots, fn ds -> Enum.map(ds, &restruct/1) end)
-    |> Map.update!(:client_groups, fn cgs -> Enum.map(cgs, &restruct/1) end)
-    |> Map.update!(:same_vehicle_groups, fn svgs -> Enum.map(svgs, &restruct/1) end)
-  end
-
-  defp restruct(%{__struct__: module} = s), do: struct(module, Map.from_struct(s))
 end

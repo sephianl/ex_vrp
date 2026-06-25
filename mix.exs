@@ -1,20 +1,21 @@
 defmodule ExVrp.MixProject do
   use Mix.Project
 
-  @version "0.5.2"
+  @version "0.5.3"
   @github_url "https://github.com/sephianl/ex_vrp"
 
   def project do
     [
       app: :ex_vrp,
       version: @version,
-      elixir: "~> 1.15",
+      elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       compilers: [:elixir_make] ++ Mix.compilers(),
       make_targets: ["all"],
       make_clean: ["clean"],
+      make_force_build: System.get_env("EX_VRP_FORCE_BUILD") in ["1", "true"],
       make_args: ["-j#{System.schedulers_online()}"],
       make_env: &make_env/0,
       make_precompiler: make_precompiler(),

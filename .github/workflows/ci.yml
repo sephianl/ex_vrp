@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DEVENV_NO_GIT_HOOKS: "1"
+      # Build the NIF from this ref's source. Without it, cc_precompiler may serve the
+      # released binary (keyed on package version, not git ref), so tests + the quality
+      # smoke would run against released code instead of the code under review.
+      EX_VRP_FORCE_BUILD: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,15 +66,15 @@ jobs:
         run: |
           devenv shell mix test
 
-      - name: Run benchmark regression tests
-        timeout-minutes: 5
-        run: |
-          devenv shell mix test test/benchmark_regression_test.exs --include benchmark --only benchmark
-
       - name: Run production benchmarks
         timeout-minutes: 10
         run: |
           devenv shell mix test test/production_benchmark_test.exs --include production_benchmark_quick --only production_benchmark_quick
+
+      - name: Run quality smoke
+        timeout-minutes: 5
+        run: |
+          devenv shell mix bench.smoke
 
       - name: Run AddressSanitizer tests
         run: |

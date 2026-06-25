@@ -27,6 +27,7 @@
 #include <limits>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -2425,6 +2426,116 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> create_solution_from_routes_nif(
 }
 
 FINE_NIF(create_solution_from_routes_nif, 0);
+
+/**
+ * Create a solution from explicit routes with vehicle types.
+ *
+ * Routes is a list of {vehicle_type, [client_id, ...]} 2-tuples. Each route
+ * is constructed with the given vehicle type, allowing warm-starting
+ * heterogeneous-fleet problems where the default
+ * `create_solution_from_routes_nif` (which assigns all routes to vehicle
+ * type 0) is insufficient.
+ */
+fine::Ok<fine::ResourcePtr<SolutionResource>>
+create_solution_from_routes_with_types_nif(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<ProblemDataResource> problem_resource,
+    fine::Term routes_term)
+{
+    auto &problem_data = problem_resource->data;
+
+    unsigned num_routes;
+    if (!enif_get_list_length(env, routes_term, &num_routes))
+    {
+        throw std::runtime_error("Expected list for routes");
+    }
+
+    std::vector<Route> routes;
+    routes.reserve(num_routes);
+
+    ERL_NIF_TERM route_head, route_tail = routes_term;
+    for (unsigned i = 0; i < num_routes; i++)
+    {
+        if (!enif_get_list_cell(env, route_tail, &route_head, &route_tail))
+        {
+            throw std::runtime_error("Failed to get route from list");
+        }
+
+        int arity;
+        const ERL_NIF_TERM *tuple_elems;
+        if (!enif_get_tuple(env, route_head, &arity, &tuple_elems)
+            || arity != 2)
+        {
+            throw std::runtime_error(
+                "Each route must be a {vehicle_type, client_ids} 2-tuple");
+        }
+
+        int64_t vehicle_type_raw;
+        if (!nif_get_int64(env, tuple_elems[0], &vehicle_type_raw)
+            || vehicle_type_raw < 0)
+        {
+            throw std::runtime_error("Expected non-negative vehicle_type");
+        }
+        if (static_cast<size_t>(vehicle_type_raw)
+            >= problem_data->numVehicleTypes())
+        {
+            std::ostringstream msg;
+            msg << "vehicle_type " << vehicle_type_raw
+                << " is out of range (have " << problem_data->numVehicleTypes()
+                << " vehicle types)";
+            throw std::invalid_argument(msg.str());
+        }
+
+        unsigned route_len;
+        if (!enif_get_list_length(env, tuple_elems[1], &route_len))
+        {
+            throw std::runtime_error("Expected list for client_ids");
+        }
+
+        auto const num_depots = problem_data->numDepots();
+        auto const num_locations = problem_data->numLocations();
+
+        std::vector<size_t> visits;
+        visits.reserve(route_len);
+
+        ERL_NIF_TERM client_head, client_tail = tuple_elems[1];
+        for (unsigned j = 0; j < route_len; j++)
+        {
+            if (!enif_get_list_cell(
+                    env, client_tail, &client_head, &client_tail))
+            {
+                throw std::runtime_error("Failed to get client from route");
+            }
+
+            int64_t client_id;
+            if (!nif_get_int64(env, client_head, &client_id))
+            {
+                throw std::runtime_error("Expected integer for client ID");
+            }
+            if (client_id < static_cast<int64_t>(num_depots)
+                || static_cast<size_t>(client_id) >= num_locations)
+            {
+                std::ostringstream msg;
+                msg << "client_id " << client_id
+                    << " is out of range (expected [" << num_depots << ", "
+                    << num_locations << "))";
+                throw std::invalid_argument(msg.str());
+            }
+            visits.push_back(static_cast<size_t>(client_id));
+        }
+
+        routes.emplace_back(*problem_data,
+                            std::move(visits),
+                            static_cast<size_t>(vehicle_type_raw));
+    }
+
+    Solution solution(*problem_data, std::move(routes));
+
+    return fine::Ok(fine::make_resource<SolutionResource>(std::move(solution),
+                                                          problem_data));
+}
+
+FINE_NIF(create_solution_from_routes_with_types_nif, 0);
 
 /**
  * Get the number of load dimensions from ProblemData.
