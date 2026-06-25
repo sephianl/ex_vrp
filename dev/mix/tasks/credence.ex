@@ -92,6 +92,7 @@ defmodule Mix.Tasks.Credence do
       mix credence --fix                        # Apply autofixes in place
       mix credence --baseline PATH              # Ignore findings recorded in PATH
       mix credence --write-baseline PATH        # Snapshot current findings to PATH
+      mix credence --verbose                    # Show Credence's per-file debug trace
   """
   use Mix.Task
 
@@ -102,12 +103,14 @@ defmodule Mix.Tasks.Credence do
     exit: :boolean,
     fix: :boolean,
     baseline: :string,
-    write_baseline: :string
+    write_baseline: :string,
+    verbose: :boolean
   ]
 
   @impl Mix.Task
   def run(args) do
     {opts, _, _} = OptionParser.parse(args, switches: @switches)
+    if opts[:verbose] != true, do: Logger.put_application_level(:credence, :none)
     if opts[:fix], do: run_fix(opts), else: run_analyze(opts)
   end
 
