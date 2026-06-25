@@ -98,7 +98,7 @@ defmodule ExVrp.PenaltyManager do
     # tw_penalty > avg_prize / 3600
     clients = Native.problem_data_clients_nif(problem_data)
     prizes = Enum.map(clients, fn {_tw_early, _tw_late, _svc, prize} -> prize end)
-    max_prize = if Enum.empty?(prizes), do: 0, else: Enum.max(prizes)
+    max_prize = Enum.max(prizes, fn -> 0 end)
 
     init_tw =
       if max_prize > 0 do
@@ -239,9 +239,7 @@ defmodule ExVrp.PenaltyManager do
   defp update_penalties(%__MODULE__{params: params} = pm) do
     # Update load penalties for each dimension
     new_load_penalties =
-      pm.load_penalties
-      |> Enum.zip(pm.load_feas)
-      |> Enum.map(fn {penalty, feas_list} ->
+      Enum.zip_with(pm.load_penalties, pm.load_feas, fn penalty, feas_list ->
         compute_new_penalty(penalty, feas_list, params)
       end)
 

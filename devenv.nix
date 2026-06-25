@@ -46,7 +46,7 @@ in
     mix-credence = {
       enable = !config.devenv.isTesting;
       name = "mix-credence";
-      entry = "mix credence --exit";
+      entry = "mix credence --fix";
       pass_filenames = false;
       stages = [ "pre-commit" ];
       files = ".ex[s]?$";

@@ -128,8 +128,7 @@ defmodule ExVrp.Statistics do
     rows =
       stats.runtimes
       |> Enum.reverse()
-      |> Enum.zip(Enum.reverse(stats.data))
-      |> Enum.map(fn {runtime, datum} ->
+      |> Enum.zip_with(Enum.reverse(stats.data), fn runtime, datum ->
         [
           runtime,
           datum.current_cost,

@@ -172,7 +172,12 @@ defmodule Mix.Tasks.Credence do
   defp source_files do
     ~w(lib test dev)
     |> Enum.flat_map(&Path.wildcard("#{&1}/**/*.ex"))
+    |> Enum.reject(&(Path.expand(&1) == own_source()))
     |> Enum.sort()
+  end
+
+  defp own_source do
+    __MODULE__.module_info(:compile)[:source] |> to_string() |> Path.expand()
   end
 
   defp collect_findings(path) do
