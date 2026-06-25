@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.4
+
+### Internal
+
+- **Adopted the Credence semantic linter.** Wired in two ways: `mix credence
+--fix` runs in the pre-commit hook (auto-cleans idiomatic and performance
+  nits in place, like `mix format`), and `mix credence --exit` runs as a CI
+  gate. Applied its fixes across the codebase — e.g. `Enum.zip_with/3` instead
+  of `Enum.zip |> Enum.map`, and `Enum.max/2` with an empty-fallback instead of
+  an `if Enum.empty?` guard — all behavior-preserving.
+- Hardened the `mix credence` task wrapper: it no longer recompiles its own
+  running source (which previously SIGKILLed `--fix`), and it silences
+  Credence's per-file debug trace by default (`--verbose` restores it).
+
 ## 0.5.3
 
 ### Added
