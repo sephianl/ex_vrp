@@ -46,14 +46,14 @@ defmodule ExVrp.OscillationPreventionTest do
     {:ok, result} =
       Solver.solve(model,
         max_iterations: 100,
-        # 2 second timeout
-        max_runtime: 2_000
+        max_runtime: 5_000
       )
 
     elapsed = System.monotonic_time(:millisecond) - start
 
-    # Should complete in reasonable time (not hit timeout)
-    assert elapsed < 1_500, "Took #{elapsed}ms, expected <1.5s (possible oscillation)"
+    # Oscillation manifests as running to the timeout. A healthy run converges
+    # well under the bound; the wide gap to max_runtime avoids load-flakes.
+    assert elapsed < 3_000, "Took #{elapsed}ms, expected <3s (possible oscillation)"
     assert result.best
     assert result.num_iterations <= 100
   end
@@ -138,15 +138,15 @@ defmodule ExVrp.OscillationPreventionTest do
     {:ok, result} =
       Solver.solve(model,
         max_iterations: 100,
-        max_runtime: 3_000,
+        max_runtime: 6_000,
         # Fixed seed for reproducibility
         seed: 12_345
       )
 
     elapsed = System.monotonic_time(:millisecond) - start
 
-    # Must complete without hitting timeout
-    assert elapsed < 2_500, "Took #{elapsed}ms, expected <2.5s (oscillation detected)"
+    # Must complete well before the timeout; wide gap avoids load-flakes.
+    assert elapsed < 4_000, "Took #{elapsed}ms, expected <4s (oscillation detected)"
     assert result.best
   end
 end

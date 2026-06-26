@@ -65,23 +65,17 @@ defmodule ExVrp.SameVehicleGroup do
     %{group | clients: [client_idx | clients]}
   end
 
-  @doc """
-  Clears all clients from the group.
-  """
+  @doc "Clears all clients from the group."
   @spec clear(t()) :: t()
   def clear(%__MODULE__{} = group) do
     %{group | clients: []}
   end
 
-  @doc """
-  Returns the number of clients in the group.
-  """
+  @doc "Returns the number of clients in the group."
   @spec size(t()) :: non_neg_integer()
   def size(%__MODULE__{clients: clients}), do: length(clients)
 
-  @doc """
-  Returns true if the group has no clients.
-  """
+  @doc "Returns true if the group has no clients."
   @spec empty?(t()) :: boolean()
   def empty?(%__MODULE__{clients: clients}), do: clients == []
 end

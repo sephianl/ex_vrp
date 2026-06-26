@@ -101,43 +101,31 @@ defmodule ExVrp.Model do
             distance_matrices: [],
             duration_matrices: []
 
-  @doc """
-  Creates a new empty model.
-  """
+  @doc "Creates a new empty model."
   @spec new() :: t()
   def new do
     %__MODULE__{}
   end
 
-  @doc """
-  Returns the number of depots in the model.
-  """
+  @doc "Returns the number of depots in the model."
   @spec num_depots(t()) :: non_neg_integer()
   def num_depots(%__MODULE__{depots: depots}), do: length(depots)
 
-  @doc """
-  Returns the number of clients in the model.
-  """
+  @doc "Returns the number of clients in the model."
   @spec num_clients(t()) :: non_neg_integer()
   def num_clients(%__MODULE__{clients: clients}), do: length(clients)
 
-  @doc """
-  Returns the total number of vehicles in the model.
-  """
+  @doc "Returns the total number of vehicles in the model."
   @spec num_vehicles(t()) :: non_neg_integer()
   def num_vehicles(%__MODULE__{vehicle_types: types}) do
     Enum.sum_by(types, & &1.num_available)
   end
 
-  @doc """
-  Returns the number of vehicle types in the model.
-  """
+  @doc "Returns the number of vehicle types in the model."
   @spec num_vehicle_types(t()) :: non_neg_integer()
   def num_vehicle_types(%__MODULE__{vehicle_types: types}), do: length(types)
 
-  @doc """
-  Returns the total number of locations (depots + clients) in the model.
-  """
+  @doc "Returns the total number of locations (depots + clients) in the model."
   @spec num_locations(t()) :: non_neg_integer()
   def num_locations(%__MODULE__{depots: depots, clients: clients}) do
     length(depots) + length(clients)
@@ -676,7 +664,6 @@ defmodule ExVrp.Model do
   defp validate_client_groups(errors, %{client_groups: groups, clients: clients, depots: depots}) do
     num_clients = length(clients)
     num_depots = length(depots)
-
     clients_tuple = List.to_tuple(clients)
 
     groups

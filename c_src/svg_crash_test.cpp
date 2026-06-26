@@ -1,18 +1,18 @@
 /**
  * Standalone test to reproduce SVG crash under valgrind/MSan.
- * Build: g++ -std=c++20 -O2 -g -Ic_src -Ic_src/pyvrp -o svg_crash_test
+ * Build: g++ -std=c++20 -O2 -g -Ic_src -Ic_src/ex_vrp -o svg_crash_test
  * c_src/svg_crash_test.cpp c_src/obj/pyvrp/*.o c_src/obj/pyvrp/search/*.o Run:
  * valgrind ./svg_crash_test
  */
-#include "pyvrp/ProblemData.h"
-#include "pyvrp/RandomNumberGenerator.h"
-#include "pyvrp/Solution.h"
-#include "pyvrp/search/Exchange.h"
-#include "pyvrp/search/LocalSearch.h"
-#include "pyvrp/search/PerturbationManager.h"
-#include "pyvrp/search/RelocateWithDepot.h"
-#include "pyvrp/search/SwapRoutes.h"
-#include "pyvrp/search/SwapTails.h"
+#include "ex_vrp/ProblemData.h"
+#include "ex_vrp/RandomNumberGenerator.h"
+#include "ex_vrp/Solution.h"
+#include "ex_vrp/search/Exchange.h"
+#include "ex_vrp/search/LocalSearch.h"
+#include "ex_vrp/search/PerturbationManager.h"
+#include "ex_vrp/search/RelocateWithDepot.h"
+#include "ex_vrp/search/SwapRoutes.h"
+#include "ex_vrp/search/SwapTails.h"
 
 #include <cstdio>
 #include <vector>

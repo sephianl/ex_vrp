@@ -28,7 +28,7 @@ endif
 CXXFLAGS = -std=c++20 -Wall -Wextra -fPIC -fvisibility=hidden
 CXXFLAGS += -I$(ERTS_INCLUDE_DIR)
 CXXFLAGS += -Ic_src
-CXXFLAGS += -Ic_src/pyvrp
+CXXFLAGS += -Ic_src/ex_vrp
 
 # Sanitizer support (set SANITIZE=1 to enable)
 # Use with: task test:asan
@@ -72,28 +72,28 @@ NIF_SRC = c_src/ex_vrp_nif.cpp
 
 # PyVRP core sources (from latest main branch)
 PYVRP_CORE_SRC = \
-	c_src/pyvrp/CostEvaluator.cpp \
-	c_src/pyvrp/DurationSegment.cpp \
-	c_src/pyvrp/DynamicBitset.cpp \
-	c_src/pyvrp/LoadSegment.cpp \
-	c_src/pyvrp/ProblemData.cpp \
-	c_src/pyvrp/RandomNumberGenerator.cpp \
-	c_src/pyvrp/Route.cpp \
-	c_src/pyvrp/Solution.cpp \
-	c_src/pyvrp/Trip.cpp
+	c_src/ex_vrp/CostEvaluator.cpp \
+	c_src/ex_vrp/DurationSegment.cpp \
+	c_src/ex_vrp/DynamicBitset.cpp \
+	c_src/ex_vrp/LoadSegment.cpp \
+	c_src/ex_vrp/ProblemData.cpp \
+	c_src/ex_vrp/RandomNumberGenerator.cpp \
+	c_src/ex_vrp/Route.cpp \
+	c_src/ex_vrp/Solution.cpp \
+	c_src/ex_vrp/Trip.cpp
 
 # PyVRP search sources
 PYVRP_SEARCH_SRC = \
-	c_src/pyvrp/search/LocalSearch.cpp \
-	c_src/pyvrp/search/PerturbationManager.cpp \
-	c_src/pyvrp/search/RelocateWithDepot.cpp \
-	c_src/pyvrp/search/Route.cpp \
-	c_src/pyvrp/search/SearchSpace.cpp \
-	c_src/pyvrp/search/Solution.cpp \
-	c_src/pyvrp/search/SwapRoutes.cpp \
-	c_src/pyvrp/search/SwapStar.cpp \
-	c_src/pyvrp/search/SwapTails.cpp \
-	c_src/pyvrp/search/primitives.cpp
+	c_src/ex_vrp/search/LocalSearch.cpp \
+	c_src/ex_vrp/search/PerturbationManager.cpp \
+	c_src/ex_vrp/search/RelocateWithDepot.cpp \
+	c_src/ex_vrp/search/Route.cpp \
+	c_src/ex_vrp/search/SearchSpace.cpp \
+	c_src/ex_vrp/search/Solution.cpp \
+	c_src/ex_vrp/search/SwapRoutes.cpp \
+	c_src/ex_vrp/search/SwapStar.cpp \
+	c_src/ex_vrp/search/SwapTails.cpp \
+	c_src/ex_vrp/search/primitives.cpp
 
 ALL_SRC = $(NIF_SRC) $(PYVRP_CORE_SRC) $(PYVRP_SEARCH_SRC)
 
@@ -117,14 +117,14 @@ $(PRIV_DIR):
 
 $(TOOLCHAIN_STAMP):
 	@rm -rf $(OBJ_DIR)
-	@mkdir -p $(OBJ_DIR)/pyvrp/search
+	@mkdir -p $(OBJ_DIR)/ex_vrp/search
 	@touch $@
 
 # Header files — ALL objects depend on ALL headers so that any header
 # change triggers a full rebuild. This is conservative but safe; the
 # alternative (gcc -MMD dependency tracking) adds complexity and the
 # full rebuild takes <10s.
-HEADERS = $(wildcard c_src/*.h c_src/pyvrp/*.h c_src/pyvrp/search/*.h)
+HEADERS = $(wildcard c_src/*.h c_src/ex_vrp/*.h c_src/ex_vrp/search/*.h)
 
 # Object files depend on toolchain stamp via order-only prerequisite
 # to prevent parallel make from compiling while the stamp rule cleans obj/
@@ -137,7 +137,7 @@ $(NIF_SO): $(OBJS)
 
 # Standalone test binary for running under valgrind (no BEAM/NIF needed).
 # Usage: make test-solver && valgrind --error-exitcode=1 ./solver_test
-TEST_CXXFLAGS = -std=c++20 -O1 -g -Ic_src -Ic_src/pyvrp
+TEST_CXXFLAGS = -std=c++20 -O1 -g -Ic_src -Ic_src/ex_vrp
 TEST_PYVRP_SRC = $(PYVRP_CORE_SRC) $(PYVRP_SEARCH_SRC)
 
 test-solver: c_src/solver_test.cpp $(TEST_PYVRP_SRC) $(HEADERS)

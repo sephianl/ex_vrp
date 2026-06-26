@@ -81,17 +81,13 @@ defmodule ExVrp.LoadSegment do
     Native.load_segment_delivery_nif(segment)
   end
 
-  @doc """
-  Returns the amount picked up from clients on this segment.
-  """
+  @doc "Returns the amount picked up from clients on this segment."
   @spec pickup(t()) :: integer()
   def pickup(segment) do
     Native.load_segment_pickup_nif(segment)
   end
 
-  @doc """
-  Returns the maximum load encountered on this segment.
-  """
+  @doc "Returns the maximum load encountered on this segment."
   @spec load(t()) :: integer()
   def load(segment) do
     Native.load_segment_load_nif(segment)

@@ -11,9 +11,7 @@ defmodule ExVrp.PenaltyManager do
   alias ExVrp.Native
 
   defmodule Params do
-    @moduledoc """
-    Parameters for penalty management.
-    """
+    @moduledoc "Parameters for penalty management."
     defstruct solutions_between_updates: 100,
               penalty_increase: 1.25,
               penalty_decrease: 0.85,
@@ -53,9 +51,7 @@ defmodule ExVrp.PenaltyManager do
     dist_feas: []
   ]
 
-  @doc """
-  Creates a new PenaltyManager with explicit initial penalties.
-  """
+  @doc "Creates a new PenaltyManager with explicit initial penalties."
   @spec new([float()], float(), float(), Params.t()) :: t()
   def new(load_penalties, tw_penalty, dist_penalty, params \\ %Params{}) do
     %__MODULE__{
@@ -102,7 +98,7 @@ defmodule ExVrp.PenaltyManager do
     # tw_penalty > avg_prize / 3600
     clients = Native.problem_data_clients_nif(problem_data)
     prizes = Enum.map(clients, fn {_tw_early, _tw_late, _svc, prize} -> prize end)
-    max_prize = if Enum.empty?(prizes), do: 0, else: Enum.max(prizes)
+    max_prize = Enum.max(prizes, fn -> 0 end)
 
     init_tw =
       if max_prize > 0 do
@@ -166,17 +162,13 @@ defmodule ExVrp.PenaltyManager do
     end)
   end
 
-  @doc """
-  Returns the current penalties as a tuple.
-  """
+  @doc "Returns the current penalties as a tuple."
   @spec penalties(t()) :: {[float()], float(), float()}
   def penalties(%__MODULE__{} = pm) do
     {pm.load_penalties, pm.tw_penalty, pm.dist_penalty}
   end
 
-  @doc """
-  Creates a CostEvaluator using the current penalty values.
-  """
+  @doc "Creates a CostEvaluator using the current penalty values."
   @spec cost_evaluator(t()) :: {:ok, reference()} | {:error, term()}
   def cost_evaluator(%__MODULE__{} = pm) do
     Native.create_cost_evaluator(
@@ -247,9 +239,7 @@ defmodule ExVrp.PenaltyManager do
   defp update_penalties(%__MODULE__{params: params} = pm) do
     # Update load penalties for each dimension
     new_load_penalties =
-      pm.load_penalties
-      |> Enum.zip(pm.load_feas)
-      |> Enum.map(fn {penalty, feas_list} ->
+      Enum.zip_with(pm.load_penalties, pm.load_feas, fn penalty, feas_list ->
         compute_new_penalty(penalty, feas_list, params)
       end)
 

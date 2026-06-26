@@ -203,8 +203,8 @@ defmodule ExVrp.Read do
 
   defp parse_section_data(:vehicles_depot, lines) do
     Enum.map(lines, fn line ->
-      [vehicle_part, depot_part] = String.split(line)
-      {parse_number(vehicle_part), parse_number(depot_part)}
+      [vehicle_idx, depot_idx | _rest] = String.split(line)
+      {parse_number(vehicle_idx), parse_number(depot_idx)}
     end)
   end
 
@@ -337,7 +337,11 @@ defmodule ExVrp.Read do
   end
 
   defp add_client_groups(model, instance) do
-    groups = instance |> Map.get(:mutually_exclusive_group, []) |> Enum.filter(fn g -> length(g) > 1 end)
+    groups =
+      instance
+      |> Map.get(:mutually_exclusive_group, [])
+      |> Enum.filter(fn g -> match?([_first, _second | _rest], g) end)
+
     instance_type = Map.get(instance, :type)
     is_gtsp = is_binary(instance_type) and String.upcase(instance_type) == "GTSP"
 
@@ -357,7 +361,7 @@ defmodule ExVrp.Read do
   defp build_client_to_group_map(instance) do
     instance
     |> Map.get(:mutually_exclusive_group, [])
-    |> Enum.filter(fn g -> length(g) > 1 end)
+    |> Enum.filter(fn g -> match?([_first, _second | _rest], g) end)
     |> Enum.with_index()
     |> Enum.flat_map(fn {members, group_idx} ->
       Enum.map(members, fn client_idx -> {client_idx, group_idx} end)
@@ -580,7 +584,7 @@ defmodule ExVrp.Read do
     {distances, distances}
   end
 
-  defp build_distance_matrix("EXPLICIT", instance, _coords, dimension, round_fn) do
+  defp build_distance_matrix("EXPLICIT", instance, _raw_coords, dimension, round_fn) do
     instance
     |> Map.get(:edge_weight, [])
     |> parse_edge_weights(dimension)
@@ -595,7 +599,7 @@ defmodule ExVrp.Read do
     end
   end
 
-  defp build_distance_matrix(other, _instance, _coords, _dimension, _round_fn) do
+  defp build_distance_matrix(other, _instance, _raw_coords, _dimension, _round_fn) do
     raise ArgumentError, "Unsupported edge weight type: #{other}"
   end
 
@@ -886,7 +890,7 @@ defmodule ExVrp.Read do
     |> Enum.map(&restrict_cell(&1, from_idx, allowed_set))
   end
 
-  defp restrict_cell({_val, idx}, idx, _allowed), do: 0
+  defp restrict_cell({_val, from_idx}, from_idx, _allowed), do: 0
 
   defp restrict_cell({val, to_idx}, from_idx, allowed) do
     if MapSet.member?(allowed, from_idx) and MapSet.member?(allowed, to_idx) do

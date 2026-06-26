@@ -1,7 +1,7 @@
 defmodule ExVrp.MixProject do
   use Mix.Project
 
-  @version "0.5.3"
+  @version "0.5.4"
   @github_url "https://github.com/sephianl/ex_vrp"
 
   def project do
@@ -112,6 +112,7 @@ defmodule ExVrp.MixProject do
       {:ex_check, "~> 0.16.0", only: [:dev, :test], runtime: false},
       # Static code analysis
       {:credo, ">= 0.0.0", only: [:dev, :test], runtime: false},
+      {:credence, "~> 0.6", only: [:dev, :test], runtime: false},
       {:sephia_credo, "~> 0.1", only: [:dev, :test], runtime: false},
       {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},
       {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},
@@ -131,7 +132,7 @@ defmodule ExVrp.MixProject do
       maintainers: ["Sephian"],
       licenses: ["MIT"],
       links: %{"GitHub" => @github_url},
-      files: ~w(lib c_src/ex_vrp_nif.cpp c_src/pyvrp mix.exs Makefile README.md LICENSE checksum.exs)
+      files: ~w(lib c_src/ex_vrp_nif.cpp c_src/ex_vrp mix.exs Makefile README.md LICENSE checksum.exs)
     ]
   end
 

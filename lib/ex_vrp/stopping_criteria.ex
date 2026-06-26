@@ -51,15 +51,15 @@ defmodule ExVrp.StoppingCriteria do
 
   """
   @spec max_iterations(non_neg_integer()) :: t()
-  def max_iterations(max) when is_integer(max) and max >= 0 do
+  def max_iterations(count) when is_integer(count) and count >= 0 do
     %__MODULE__{
       type: :max_iterations,
-      state: %{max: max, current: 0}
+      state: %{max: count, current: 0}
     }
   end
 
-  def max_iterations(max) when is_integer(max) do
-    raise ArgumentError, "max_iterations must be non-negative, got: #{max}"
+  def max_iterations(count) when is_integer(count) do
+    raise ArgumentError, "max_iterations must be non-negative, got: #{count}"
   end
 
   @doc """
@@ -139,9 +139,7 @@ defmodule ExVrp.StoppingCriteria do
     }
   end
 
-  @doc """
-  Alias for `multiple_criteria/1` for convenience.
-  """
+  @doc "Alias for `multiple_criteria/1` for convenience."
   @spec any([t()]) :: t()
   def any(criteria), do: multiple_criteria(criteria)
 

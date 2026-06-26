@@ -56,15 +56,15 @@ defmodule ExVrp.PerturbationManager do
   """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
-    min = Keyword.get(opts, :min, 1)
-    max = Keyword.get(opts, :max, 25)
+    min_perturbations = Keyword.get(opts, :min, 1)
+    max_perturbations = Keyword.get(opts, :max, 25)
 
-    ref = Native.create_perturbation_manager_nif(min, max)
+    ref = Native.create_perturbation_manager_nif(min_perturbations, max_perturbations)
 
     %__MODULE__{
       ref: ref,
-      min_perturbations: min,
-      max_perturbations: max
+      min_perturbations: min_perturbations,
+      max_perturbations: max_perturbations
     }
   end
 

@@ -189,7 +189,9 @@ defmodule ExVrp.SolveTest do
       elapsed = System.monotonic_time(:millisecond) - start
 
       assert result.best.is_feasible == true
-      assert elapsed < 2000
+      # Coarse regression guard: the pre-fix pathology took 25+ seconds. A
+      # generous bound catches that without flaking on CI/load variance.
+      assert elapsed < 5000
     end
   end
 

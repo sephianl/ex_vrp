@@ -1,128 +1,108 @@
 #!/bin/bash
-# Script to vendor PyVRP C++ source code
-# This downloads the required C++ files from the PyVRP repository
+# Check ExVrp's vendored PyVRP C++ core against a pinned upstream release.
+#
+# IMPORTANT: this script does NOT blindly overwrite files. Roughly half of the
+# vendored tree carries deliberate ExVrp patches (same-vehicle groups, forbidden
+# windows, reload/multi-trip, depot-service removal, NIF/ILS integration). A
+# straight re-download would destroy those. Instead, for every file this script:
+#   - leaves it untouched if it is byte-identical to upstream ("in sync"), or
+#   - writes the upstream version next to it as <file>.upstream and flags it as
+#     DRIFT, so you can do a deliberate 3-way merge by hand.
+#
+# We vendor ONLY the C++ search core. PyVRP's genetic-algorithm layer
+# (population / SubPopulation / crossover / diversity / repair) is intentionally
+# NOT vendored: ExVrp replaces it with iterated local search in Elixir.
+#
+# Usage:   PYVRP_VERSION=v0.13.4 scripts/vendor_pyvrp.sh
+# Baseline: ExVrp's pristine files are in sync with v0.13.0; the only known drift
+# from v0.13.4 is the #1045 group-guard fix, already ported into LocalSearch.cpp.
 
 set -euo pipefail
 
-PYVRP_VERSION="${PYVRP_VERSION:-v0.9.0}"
+PYVRP_VERSION="${PYVRP_VERSION:-v0.13.4}"
 PYVRP_REPO="https://raw.githubusercontent.com/PyVRP/PyVRP/${PYVRP_VERSION}"
-TARGET_DIR="c_src/pyvrp"
+TARGET_DIR="c_src/ex_vrp"
 
-echo "Vendoring PyVRP C++ source (${PYVRP_VERSION})..."
-
-# Create target directories
-mkdir -p "${TARGET_DIR}"
-mkdir -p "${TARGET_DIR}/search"
-mkdir -p "${TARGET_DIR}/crossover"
-mkdir -p "${TARGET_DIR}/diversity"
-mkdir -p "${TARGET_DIR}/repair"
-
-# Core C++ files (v0.9.0 structure)
+# Files we actually vendor (relative to the upstream pyvrp/cpp/ directory).
 CORE_FILES=(
-    "CostEvaluator.cpp"
-    "CostEvaluator.h"
-    "DistanceSegment.cpp"
-    "DistanceSegment.h"
-    "DurationSegment.cpp"
-    "DurationSegment.h"
-    "DynamicBitset.cpp"
-    "DynamicBitset.h"
-    "LoadSegment.cpp"
-    "LoadSegment.h"
-    "Matrix.h"
-    "Measure.h"
-    "ProblemData.cpp"
-    "ProblemData.h"
-    "RandomNumberGenerator.cpp"
-    "RandomNumberGenerator.h"
-    "Solution.cpp"
-    "Solution.h"
-    "SubPopulation.cpp"
-    "SubPopulation.h"
+    bindings.cpp bindings.h
+    CostEvaluator.cpp CostEvaluator.h
+    DurationSegment.cpp DurationSegment.h
+    DynamicBitset.cpp DynamicBitset.h
+    LoadSegment.cpp LoadSegment.h
+    Matrix.h Measure.h
+    ProblemData.cpp ProblemData.h
+    RandomNumberGenerator.cpp RandomNumberGenerator.h
+    Route.cpp Route.h
+    Solution.cpp Solution.h
+    Trip.cpp Trip.h
 )
 
-# Search algorithm files
 SEARCH_FILES=(
-    "Exchange.h"
-    "LocalSearch.cpp"
-    "LocalSearch.h"
-    "LocalSearchOperator.h"
-    "MoveTwoClientsReversed.h"
-    "PerturbationManager.cpp"
-    "PerturbationManager.h"
-    "RelocateWithDepot.cpp"
-    "RelocateWithDepot.h"
-    "Route.cpp"
-    "Route.h"
-    "SearchSpace.cpp"
-    "SearchSpace.h"
-    "Solution.cpp"
-    "Solution.h"
-    "SwapRoutes.cpp"
-    "SwapRoutes.h"
-    "SwapStar.cpp"
-    "SwapStar.h"
-    "SwapTails.cpp"
-    "SwapTails.h"
-    "TwoOpt.h"
-    "primitives.cpp"
-    "primitives.h"
+    search/bindings.cpp
+    search/Exchange.h
+    search/LocalSearch.cpp search/LocalSearch.h
+    search/LocalSearchOperator.h
+    search/PerturbationManager.cpp search/PerturbationManager.h
+    search/primitives.cpp search/primitives.h
+    search/RelocateWithDepot.cpp search/RelocateWithDepot.h
+    search/Route.cpp search/Route.h
+    search/SearchSpace.cpp search/SearchSpace.h
+    search/Solution.cpp search/Solution.h
+    search/SwapRoutes.cpp search/SwapRoutes.h
+    search/SwapStar.cpp search/SwapStar.h
+    search/SwapTails.cpp search/SwapTails.h
 )
 
-# Crossover files
-CROSSOVER_FILES=(
-    "SelectiveRouteExchange.cpp"
-    "SelectiveRouteExchange.h"
-    "bindings.cpp"
-)
+echo "Checking ${TARGET_DIR} against pristine PyVRP ${PYVRP_VERSION}..."
+echo
 
-# Diversity files
-DIVERSITY_FILES=(
-    "broken_pairs_distance.cpp"
-    "broken_pairs_distance.h"
-    "bindings.cpp"
-)
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp}"' EXIT
 
-# Repair files
-REPAIR_FILES=(
-    "greedy_repair.cpp"
-    "greedy_repair.h"
-    "nearest_route_insert.cpp"
-    "nearest_route_insert.h"
-    "bindings.cpp"
-)
+in_sync=0
+drift=()
+missing=()
 
-echo "Downloading core files..."
-for file in "${CORE_FILES[@]}"; do
-    echo "  - ${file}"
-    curl -sL "${PYVRP_REPO}/pyvrp/cpp/${file}" -o "${TARGET_DIR}/${file}" || echo "    (failed, skipping)"
+check_file() {
+    local rel="$1"
+    local local_path="${TARGET_DIR}/${rel}"
+    local up="${tmp}/upstream"
+
+    local code
+    code="$(curl -sL -o "${up}" -w '%{http_code}' "${PYVRP_REPO}/pyvrp/cpp/${rel}")"
+    if [ "${code}" != "200" ]; then
+        echo "  ?? ${rel} (upstream fetch ${code} — not present in ${PYVRP_VERSION})"
+        return
+    fi
+
+    if [ ! -f "${local_path}" ]; then
+        cp "${up}" "${local_path}"
+        missing+=("${rel}")
+        echo "  ++ ${rel} (was absent locally — added from upstream)"
+        return
+    fi
+
+    if cmp -s "${local_path}" "${up}"; then
+        in_sync=$((in_sync + 1))
+    else
+        cp "${up}" "${local_path}.upstream"
+        drift+=("${rel}")
+        echo "  !! ${rel} -> wrote ${rel}.upstream (DRIFT: 3-way merge by hand)"
+    fi
+}
+
+for f in "${CORE_FILES[@]}" "${SEARCH_FILES[@]}"; do
+    check_file "${f}"
 done
 
-echo "Downloading search files..."
-for file in "${SEARCH_FILES[@]}"; do
-    echo "  - search/${file}"
-    curl -sL "${PYVRP_REPO}/pyvrp/cpp/search/${file}" -o "${TARGET_DIR}/search/${file}" || echo "    (failed, skipping)"
-done
-
-echo "Downloading crossover files..."
-for file in "${CROSSOVER_FILES[@]}"; do
-    echo "  - crossover/${file}"
-    curl -sL "${PYVRP_REPO}/pyvrp/cpp/crossover/${file}" -o "${TARGET_DIR}/crossover/${file}" || echo "    (failed, skipping)"
-done
-
-echo "Downloading diversity files..."
-for file in "${DIVERSITY_FILES[@]}"; do
-    echo "  - diversity/${file}"
-    curl -sL "${PYVRP_REPO}/pyvrp/cpp/diversity/${file}" -o "${TARGET_DIR}/diversity/${file}" || echo "    (failed, skipping)"
-done
-
-echo "Downloading repair files..."
-for file in "${REPAIR_FILES[@]}"; do
-    echo "  - repair/${file}"
-    curl -sL "${PYVRP_REPO}/pyvrp/cpp/repair/${file}" -o "${TARGET_DIR}/repair/${file}" || echo "    (failed, skipping)"
-done
-
-echo "Done! PyVRP C++ source vendored to ${TARGET_DIR}"
-echo ""
-echo "Files downloaded:"
-find "${TARGET_DIR}" -type f \( -name "*.cpp" -o -name "*.h" \) | wc -l
+echo
+echo "Summary vs ${PYVRP_VERSION}:"
+echo "  in sync : ${in_sync}"
+echo "  drift   : ${#drift[@]} (see *.upstream sidecars; merge then delete them)"
+echo "  added   : ${#missing[@]}"
+if [ "${#drift[@]}" -gt 0 ]; then
+    echo
+    echo "Drifted files (carry local patches — DO NOT blind-overwrite):"
+    printf '  - %s\n' "${drift[@]}"
+fi

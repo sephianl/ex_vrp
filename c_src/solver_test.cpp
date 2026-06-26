@@ -7,15 +7,15 @@
  * Build: make test-solver
  * Run:   valgrind --error-exitcode=1 ./solver_test
  */
-#include "pyvrp/ProblemData.h"
-#include "pyvrp/RandomNumberGenerator.h"
-#include "pyvrp/Solution.h"
-#include "pyvrp/search/Exchange.h"
-#include "pyvrp/search/LocalSearch.h"
-#include "pyvrp/search/PerturbationManager.h"
-#include "pyvrp/search/RelocateWithDepot.h"
-#include "pyvrp/search/SwapRoutes.h"
-#include "pyvrp/search/SwapTails.h"
+#include "ex_vrp/ProblemData.h"
+#include "ex_vrp/RandomNumberGenerator.h"
+#include "ex_vrp/Solution.h"
+#include "ex_vrp/search/Exchange.h"
+#include "ex_vrp/search/LocalSearch.h"
+#include "ex_vrp/search/PerturbationManager.h"
+#include "ex_vrp/search/RelocateWithDepot.h"
+#include "ex_vrp/search/SwapRoutes.h"
+#include "ex_vrp/search/SwapTails.h"
 
 #include <cassert>
 #include <cmath>

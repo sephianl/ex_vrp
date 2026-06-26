@@ -724,8 +724,11 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
 
         ProblemData::Client const &vData = data.location(V->client());
 
-        // Check same-vehicle constraint for V before removing it.
-        if (!vData.required && !wouldViolateSameVehicle(V, nullptr)
+        // Check same-vehicle constraint for V before removing it. Also skip
+        // members of a mutually-exclusive group (upstream PyVRP #1045):
+        // replacing a grouped client with an optional one corrupts the group.
+        if (!vData.required && !vData.group
+            && !wouldViolateSameVehicle(V, nullptr)
             && inplaceCost(U, V, data, costEvaluator) < 0)
         {
             searchSpace_.markPromising(V);

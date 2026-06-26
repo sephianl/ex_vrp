@@ -59,9 +59,7 @@ defmodule ExVrp.Statistics do
     }
   end
 
-  @doc """
-  Returns whether this Statistics object is collecting data.
-  """
+  @doc "Returns whether this Statistics object is collecting data."
   @spec collecting?(t()) :: boolean()
   def collecting?(%__MODULE__{collect_stats: collect_stats}), do: collect_stats
 
@@ -77,7 +75,7 @@ defmodule ExVrp.Statistics do
   - `cost_evaluator` - CostEvaluator reference used to compute costs
   """
   @spec collect(t(), reference(), reference(), reference(), reference()) :: t()
-  def collect(%__MODULE__{collect_stats: false} = stats, _current, _candidate, _best, _cost_eval) do
+  def collect(%__MODULE__{collect_stats: false} = stats, _current, _candidate, _best, _cost_evaluator) do
     stats
   end
 
@@ -130,8 +128,7 @@ defmodule ExVrp.Statistics do
     rows =
       stats.runtimes
       |> Enum.reverse()
-      |> Enum.zip(Enum.reverse(stats.data))
-      |> Enum.map(fn {runtime, datum} ->
+      |> Enum.zip_with(Enum.reverse(stats.data), fn runtime, datum ->
         [
           runtime,
           datum.current_cost,

@@ -65,3 +65,6 @@ checksum.exs
 
 # Valgrind core dumps
 vgcore.*
+
+# Sidecars written by scripts/vendor_pyvrp.sh for manual 3-way merge
+c_src/**/*.upstream

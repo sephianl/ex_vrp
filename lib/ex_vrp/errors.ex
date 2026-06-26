@@ -16,9 +16,7 @@ defmodule ExVrp.NotImplementedError do
 end
 
 defmodule ExVrp.SolveError do
-  @moduledoc """
-  Raised when the solver fails to find a solution.
-  """
+  @moduledoc "Raised when the solver fails to find a solution."
 
   defexception [:reason]
 
@@ -33,9 +31,7 @@ defmodule ExVrp.SolveError do
 end
 
 defmodule ExVrp.ValidationError do
-  @moduledoc """
-  Raised when model validation fails.
-  """
+  @moduledoc "Raised when model validation fails."
 
   defexception [:errors]
 
