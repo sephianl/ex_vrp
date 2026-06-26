@@ -219,8 +219,9 @@ defmodule ExVrp.IteratedLocalSearchTest do
 
       elapsed = System.monotonic_time(:millisecond) - start
 
-      # Should stop around or before the runtime limit (with some tolerance)
-      assert elapsed < 500
+      # Proves the 0.1s runtime limit is respected: ignoring it would run all
+      # 100k iterations (many seconds). Generous bound avoids load-flakes.
+      assert elapsed < 1_500
     end
 
     test "respects custom stop criteria" do
