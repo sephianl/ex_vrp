@@ -1,6 +1,9 @@
 #include "Route.h"
 
+#include "../CostEvaluator.h"
+
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <ostream>
 #include <utility>
@@ -610,4 +613,25 @@ std::ostream &operator<<(std::ostream &out, Route const &route)
 std::ostream &operator<<(std::ostream &out, Route::Node const &node)
 {
     return out << node.client();
+}
+
+template <>
+pyvrp::Cost
+pyvrp::CostEvaluator::penalisedCost(search::Route const &route) const
+{
+    if (route.empty())
+        return 0;
+
+    return route.distanceCost() + route.durationCost()
+           + route.fixedVehicleCost() + route.reloadCost()
+           + excessLoadPenalties(route.excessLoad())
+           + twPenalty(route.timeWarp())
+           + distPenalty(route.excessDistance(), 0);
+}
+
+template <>
+pyvrp::Cost pyvrp::CostEvaluator::cost(search::Route const &route) const
+{
+    return route.isFeasible() ? penalisedCost(route)
+                              : std::numeric_limits<Cost>::max();
 }

@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+
+- **Solver migration hooks on `IteratedLocalSearch.run/7`.** New
+  `:on_migration`, `:send_migration`, `:migration_interval`, and
+  `:migration_quarantine` options enable island-model style solution exchange
+  between concurrently running solvers. On every `migration_interval`
+  iterations the loop pulls a candidate via `on_migration` (adopting it as the
+  current solution only when it is cheaper and the `migration_quarantine`
+  cooldown has elapsed) and publishes its current best via `send_migration`.
+  Both callbacks default to `nil`, so existing single-process solves are
+  unaffected.
+- **New local-search operators for optional clients and client groups,**
+  synced from upstream PyVRP: `RemoveOptional`, `ReplaceOptional`,
+  `ReplaceGroup`, and `RemoveAdjacentDepot`. These are wired into the
+  `LocalSearch` operator set behind `search::supports<…>(data)` guards, so they
+  only activate on problems that actually use optional clients, client groups,
+  or multi-depot routes.
+- **A/B benchmark suite** under `dev/ab_benchmark/` (loader, corpus, runner,
+  comparator, smoke) with `mix bench.run`, `mix bench.compare`, and
+  `mix bench.smoke` tasks, a curated VRP corpus in
+  `priv/benchmark_data/curated/`, best-known-solution references
+  (`priv/benchmark_data/bks.json`), and a GitHub Actions `ab_benchmark`
+  workflow.
+
+### Changed
+
+- Synced the bundled PyVRP C++ core with upstream: `LocalSearch`, `Route`,
+  `CostEvaluator`, `SwapStar`, `SwapTails`, `Exchange`, `Solution`, and
+  `ProblemData` updated; added `Activity`, `PiecewiseLinearFunction`, and
+  `ClientSegment` supporting types and a shared `neighbourhood` helper.
+- `mix.exs`: the `:dev` and `:test` environments now build the NIF from source
+  (`make_precompiler` returns `nil`) instead of downloading precompiled
+  binaries. Set `EX_VRP_FORCE_BUILD=1`/`true` to force a rebuild via the new
+  `make_force_build` flag.
+
+### Removed
+
+- The `SwapRoutes` local-search operator and its NIFs
+  (`create_swap_routes_nif`, `swap_routes_evaluate_nif`,
+  `swap_routes_apply_nif`).
+- Standalone NIFs no longer used by the solver: `create_swap_star_nif`,
+  `swap_star_evaluate_nif`, `swap_star_apply_nif`, `insert_cost_nif`,
+  `remove_cost_nif`, `inplace_cost_nif`, and `problem_data_centroid_nif`.
+
+### Internal
+
+- Test suite overhaul: dropped the legacy primitives, problem-data, and
+  mix-task benchmark tests; expanded local-search and route-operator coverage;
+  and added ASan smoke tests for the new benchmark path.
+
 ## 0.5.3
 
 ### Added

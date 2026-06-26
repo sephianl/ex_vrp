@@ -17,53 +17,44 @@ namespace pyvrp::search
  * routes (so the clients are swapped, but they are not necessarily inserted
  * in the place of the other swapped client).
  *
+ * This is a route-level operator that does not fit the node-based operator
+ * interface. It is called directly by LocalSearch::intensify().
+ *
  * References
  * ----------
  * .. [1] Thibaut Vidal. 2022. Hybrid genetic search for the CVRP: Open-source
  *        implementation and SWAP* neighborhood. *Comput. Oper. Res*. 140.
  *        https://doi.org/10.1016/j.cor.2021.105643
  */
-class SwapStar : public RouteOperator
+class SwapStar
 {
     using InsertPoint = std::pair<Cost, Route::Node *>;
     using ThreeBest = std::array<InsertPoint, 3>;
 
-    struct BestMove  // tracks the best SWAP* move
+    struct BestMove
     {
         Cost cost = 0;
 
         Route::Node *U = nullptr;
-        Route::Node *UAfter = nullptr;  // insert U after this node in V's route
+        Route::Node *UAfter = nullptr;
 
         Route::Node *V = nullptr;
-        Route::Node *VAfter = nullptr;  // insert V after this node in U's route
+        Route::Node *VAfter = nullptr;
     };
 
-    // To limit computational efforts, by default not all route pairs are
-    // considered: only those route pairs that share some overlap when
-    // considering their center's angle to the center of all clients. This value
-    // controls the amount of overlap needed before two routes are evaluated.
+    ProblemData const &data;
+    mutable OperatorStatistics stats_;
+
     double const overlapTolerance;
 
-    // Tracks the three best insert locations, for each route and client.
     Matrix<ThreeBest> insertCache;
-
-    // Tracks whether the insert locations and removal costs are still up to
-    // date. In particular, isCached(R, 0) tracks route-wise removal cost
-    // validity, while isCached(R, U) with U > 0 tracks (route, client) insert
-    // location validity.
     Matrix<bool> isCached;
-
-    // Tracks the removal costs of removing a client from its route.
     Matrix<Cost> removalCosts;
 
     BestMove best;
 
-    // Updates the removal costs of clients in the given route
     void updateRemovalCosts(Route *R, CostEvaluator const &costEvaluator);
 
-    // Updates the cache storing the three best positions in the given route for
-    // the passed-in node (client).
     void updateInsertPoints(Route *R,
                             Route::Node *U,
                             CostEvaluator const &costEvaluator);
@@ -76,22 +67,21 @@ class SwapStar : public RouteOperator
                                 Route::Node *V,
                                 CostEvaluator const &costEvaluator);
 
-    // Evaluates the delta cost for ``V``'s route of inserting ``U`` after
-    // ``V``, while removing ``remove`` from ``V``'s route.
     Cost evaluateMove(Route::Node const *U,
                       Route::Node const *V,
                       Route::Node const *remove,
                       CostEvaluator const &costEvaluator) const;
 
 public:
-    void init(pyvrp::Solution const &solution) override;
+    void init();
 
-    Cost
-    evaluate(Route *U, Route *V, CostEvaluator const &costEvaluator) override;
+    Cost evaluate(Route *U, Route *V, CostEvaluator const &costEvaluator);
 
-    void apply(Route *U, Route *V) const override;
+    void apply(Route *U, Route *V) const;
 
-    void update(Route *U) override;
+    void update(Route *U);
+
+    OperatorStatistics const &statistics() const { return stats_; }
 
     explicit SwapStar(ProblemData const &data, double overlapTolerance = 0.05);
 };

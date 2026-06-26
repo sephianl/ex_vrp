@@ -14,7 +14,6 @@
 #include "pyvrp/search/LocalSearch.h"
 #include "pyvrp/search/PerturbationManager.h"
 #include "pyvrp/search/RelocateWithDepot.h"
-#include "pyvrp/search/SwapRoutes.h"
 #include "pyvrp/search/SwapTails.h"
 
 #include <cassert>
@@ -37,7 +36,6 @@ struct TestLocalSearch
     std::unique_ptr<search::Exchange<2, 2>> exchange22;
     std::unique_ptr<search::SwapTails> swapTails;
     std::unique_ptr<search::RelocateWithDepot> relocateDepot;
-    std::unique_ptr<search::SwapRoutes> swapRoutes;
     search::PerturbationParams perturbParams;
     search::PerturbationManager perturbManager;
     std::unique_ptr<search::LocalSearch> ls;
@@ -54,26 +52,21 @@ struct TestLocalSearch
         exchange11 = std::make_unique<search::Exchange<1, 1>>(pd);
         exchange21 = std::make_unique<search::Exchange<2, 1>>(pd);
         exchange22 = std::make_unique<search::Exchange<2, 2>>(pd);
-        ls->addNodeOperator(*exchange10);
-        ls->addNodeOperator(*exchange20);
-        ls->addNodeOperator(*exchange11);
-        ls->addNodeOperator(*exchange21);
-        ls->addNodeOperator(*exchange22);
+        ls->addOperator(*exchange10);
+        ls->addOperator(*exchange20);
+        ls->addOperator(*exchange11);
+        ls->addOperator(*exchange21);
+        ls->addOperator(*exchange22);
 
         if (search::supports<search::SwapTails>(pd))
         {
             swapTails = std::make_unique<search::SwapTails>(pd);
-            ls->addNodeOperator(*swapTails);
+            ls->addOperator(*swapTails);
         }
         if (search::supports<search::RelocateWithDepot>(pd))
         {
             relocateDepot = std::make_unique<search::RelocateWithDepot>(pd);
-            ls->addNodeOperator(*relocateDepot);
-        }
-        if (search::supports<search::SwapRoutes>(pd))
-        {
-            swapRoutes = std::make_unique<search::SwapRoutes>(pd);
-            ls->addRouteOperator(*swapRoutes);
+            ls->addOperator(*relocateDepot);
         }
     }
 };

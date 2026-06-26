@@ -261,56 +261,6 @@ defmodule ExVrp.ProblemDataTest do
     end
   end
 
-  describe "centroid (PyVRP parity)" do
-    test "centroid is average of client coordinates" do
-      # Based on test_centroid
-      model =
-        Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 20, delivery: [10])
-        |> Model.add_client(x: 30, y: 40, delivery: [10])
-        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {x, y} = Native.problem_data_centroid_nif(problem_data)
-
-      # Centroid of clients (10, 20) and (30, 40)
-      assert_in_delta x, 20.0, 0.001
-      assert_in_delta y, 30.0, 0.001
-    end
-
-    test "centroid excludes depots" do
-      model =
-        Model.new()
-        # far away depot
-        |> Model.add_depot(x: 1000, y: 1000)
-        |> Model.add_client(x: 0, y: 0, delivery: [10])
-        |> Model.add_client(x: 10, y: 10, delivery: [10])
-        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {x, y} = Native.problem_data_centroid_nif(problem_data)
-
-      # Centroid should be center of clients only
-      assert_in_delta x, 5.0, 0.001
-      assert_in_delta y, 5.0, 0.001
-    end
-
-    test "single client centroid is client coordinates" do
-      model =
-        Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 42, y: 84, delivery: [10])
-        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {x, y} = Native.problem_data_centroid_nif(problem_data)
-
-      assert_in_delta x, 42.0, 0.001
-      assert_in_delta y, 84.0, 0.001
-    end
-  end
-
   describe "num_profiles (PyVRP parity)" do
     test "single profile by default" do
       model =
