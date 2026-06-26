@@ -81,4 +81,4 @@
 ExVRP is a direct port of [PyVRP](https://pyvrp.org/) to Elixir via C++ NIFs.
 
 - **PyVRP docs**: https://pyvrp.readthedocs.io/ -- the authoritative reference for algorithm concepts and solver behavior
-- **C++ sources**: `c_src/pyvrp/` contains the ported PyVRP core
+- **C++ sources**: `c_src/ex_vrp/` contains the adapted PyVRP core (fork at v0.13.0 baseline; see `c_src/ex_vrp/README.md`)

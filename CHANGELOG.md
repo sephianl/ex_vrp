@@ -2,8 +2,22 @@
 
 ## 0.5.4
 
+### Fixed
+
+- **Optional clients no longer corrupt mutually-exclusive groups during local
+  search.** Ported PyVRP upstream fix #1045 (v0.13.3): the in-place "replace
+  optional client V with U" move now skips clients that belong to a
+  mutually-exclusive group (`!vData.group` guard).
+
 ### Internal
 
+- Renamed the vendored C++ core `c_src/pyvrp/` → `c_src/ex_vrp/` to signal it
+  is an adapted PyVRP fork, not pristine upstream (the `pyvrp::` namespace and
+  `PYVRP_` header guards are kept to ease future upstream merges).
+- Rewrote `scripts/vendor_pyvrp.sh`: it now pins the true upstream baseline
+  (PyVRP v0.13.4), lists the files actually vendored, and never overwrites
+  local patches — drifted files get a `*.upstream` sidecar for a deliberate
+  3-way merge.
 - **Adopted the Credence semantic linter.** Wired in two ways: `mix credence
 --fix` runs in the pre-commit hook (auto-cleans idiomatic and performance
   nits in place, like `mix format`), and `mix credence --exit` runs as a CI

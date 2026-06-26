@@ -99,6 +99,20 @@ defmodule Mix.Tasks.Credence do
   alias Mix.Tasks.Credence.Baseline
   alias Mix.Tasks.Credence.Finding
 
+  # Credence analyzes untrusted source via Sourceror; a single malformed file or
+  # a rule edge-case should be logged and skipped, not abort the whole run.
+  # These are the failures that realistically surface from parsing and rule
+  # application — anything else propagates so genuine bugs are not swallowed.
+  @analysis_errors [
+    SyntaxError,
+    TokenMissingError,
+    MismatchedDelimiterError,
+    ArgumentError,
+    RuntimeError,
+    KeyError,
+    FunctionClauseError
+  ]
+
   @switches [
     exit: :boolean,
     fix: :boolean,
@@ -167,7 +181,7 @@ defmodule Mix.Tasks.Credence do
     Enum.each(remaining, fn issue -> print_finding(Finding.build(path, issue)) end)
     {length(applied), length(remaining)}
   rescue
-    e ->
+    e in @analysis_errors ->
       Mix.shell().error("  #{path}: error — #{Exception.message(e)}")
       {0, 0}
   end
@@ -191,7 +205,7 @@ defmodule Mix.Tasks.Credence do
       %{issues: issues} -> Enum.map(issues, &Finding.build(path, &1))
     end
   rescue
-    e ->
+    e in @analysis_errors ->
       Mix.shell().error("  #{path}: error — #{Exception.message(e)}")
       []
   end

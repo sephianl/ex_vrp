@@ -132,7 +132,7 @@ defmodule ExVrp.MixProject do
       maintainers: ["Sephian"],
       licenses: ["MIT"],
       links: %{"GitHub" => @github_url},
-      files: ~w(lib c_src/ex_vrp_nif.cpp c_src/pyvrp mix.exs Makefile README.md LICENSE checksum.exs)
+      files: ~w(lib c_src/ex_vrp_nif.cpp c_src/ex_vrp mix.exs Makefile README.md LICENSE checksum.exs)
     ]
   end
 
