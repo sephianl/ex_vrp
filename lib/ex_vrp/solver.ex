@@ -129,13 +129,16 @@ defmodule ExVrp.Solver do
     {local_search, penalty_manager, initial_solution} =
       setup_solver(problem_data, seed, opts, solve_start)
 
+    initial_routes = Native.solution_routes(initial_solution)
+
     notify_progress(opts[:on_progress], %{
       stage: :initial_solution,
-      num_routes: length(Native.solution_routes(initial_solution)),
+      num_routes: length(initial_routes),
       total_duration: Native.solution_duration(initial_solution),
       num_clients: Native.solution_num_clients(initial_solution),
       is_feasible: Native.solution_is_feasible(initial_solution),
-      best_distance: Native.solution_distance(initial_solution)
+      best_distance: Native.solution_distance(initial_solution),
+      routes: initial_route_candidates(initial_solution, initial_routes)
     })
 
     total_setup_time = System.monotonic_time(:millisecond) - solve_start
@@ -357,6 +360,21 @@ defmodule ExVrp.Solver do
   defp notify_progress(nil, _info), do: :ok
   defp notify_progress(callback, info) when is_function(callback, 1), do: callback.(info)
   defp notify_progress(_callback, _info), do: :ok
+
+  defp initial_route_candidates(solution_ref, routes) do
+    routes
+    |> Enum.with_index()
+    |> Enum.map(fn {client_indices, route_idx} ->
+      %{
+        slot_idx: route_idx,
+        client_indices: client_indices,
+        vehicle_type_idx: Native.solution_route_vehicle_type(solution_ref, route_idx),
+        total_duration_s: Native.solution_route_duration(solution_ref, route_idx),
+        total_distance_m: Native.solution_route_distance(solution_ref, route_idx),
+        is_feasible: Native.solution_route_is_feasible(solution_ref, route_idx)
+      }
+    end)
+  end
 
   # Extract max_runtime_ms from opts, checking both :max_runtime and :stop criteria.
   # This ensures the NIF gets per-iteration timeouts even when using stop: criteria.

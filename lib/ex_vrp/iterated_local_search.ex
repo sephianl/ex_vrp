@@ -407,6 +407,7 @@ defmodule ExVrp.IteratedLocalSearch do
       distance = Native.solution_distance(state.best)
       duration = Native.solution_duration(state.best)
       num_clients = Native.solution_num_clients(state.best)
+      route_candidates = build_route_candidates(state.best, routes)
 
       state.on_progress.(%{
         iteration: state.iteration,
@@ -419,13 +420,29 @@ defmodule ExVrp.IteratedLocalSearch do
         num_routes: length(routes),
         total_duration: duration,
         num_clients: num_clients,
-        best_distance: distance
+        best_distance: distance,
+        routes: route_candidates
       })
 
       %{state | last_progress_time: now}
     else
       state
     end
+  end
+
+  defp build_route_candidates(solution_ref, routes) do
+    routes
+    |> Enum.with_index()
+    |> Enum.map(fn {client_indices, route_idx} ->
+      %{
+        slot_idx: route_idx,
+        client_indices: client_indices,
+        vehicle_type_idx: Native.solution_route_vehicle_type(solution_ref, route_idx),
+        total_duration_s: Native.solution_route_duration(solution_ref, route_idx),
+        total_distance_m: Native.solution_route_distance(solution_ref, route_idx),
+        is_feasible: Native.solution_route_is_feasible(solution_ref, route_idx)
+      }
+    end)
   end
 
   # Remaining time budget in milliseconds (0 means no timeout).
