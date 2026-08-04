@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+
+- **Exhaustive-on-best polishing in Iterated Local Search (PyVRP #988).** When a
+  candidate becomes a new global best, it is now polished with a non-perturbing
+  (exhaustive) local-search pass before being recorded as the best. Controlled by
+  the new `exhaustive_on_best` field on `IteratedLocalSearch.Params` (default
+  `true`). The polished result replaces the candidate only when it is feasible;
+  an infeasible polish falls back to the original candidate.
+
+- New `exhaustive` argument on `Native.local_search_run/5` (default `false`),
+  backing the polishing pass. Passing `true` skips perturbation and runs a pure
+  intensification search, matching PyVRP's `exhaustive` flag.
+
+### Changed
+
+- `IteratedLocalSearch.Params` default `max_no_improvement` restored from an
+  accidental `5_000` to `50_000` (upstream PyVRP uses `150_000`).
+
+- **NIF `local_search_run_nif` arity changed from 4 to 5.** This bumps the
+  minor version because the precompiled artifact is version-pinned: consumers
+  must pull the `v0.6.0` release binary (or force a local build with
+  `EX_VRP_FORCE_BUILD=1`) — the `v0.5.x` artifact exposes the old arity-4 NIF
+  and will fail to load against this release.
+
 ## 0.5.3
 
 ### Added

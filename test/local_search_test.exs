@@ -2187,6 +2187,24 @@ defmodule ExVrp.LocalSearchTest do
       assert improved_cost <= initial_cost
     end
 
+    test "local_search_run with exhaustive: true polishes a feasible solution without worsening it" do
+      model = build_cvrp_model(10)
+      {:ok, problem_data} = Model.to_problem_data(model)
+      {:ok, cost_evaluator} = create_cost_evaluator()
+
+      local_search = Native.create_local_search(problem_data, 42)
+      {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
+
+      {:ok, improved} = Native.local_search_run(local_search, initial_solution, cost_evaluator)
+      improved_cost = Native.solution_penalised_cost(improved, cost_evaluator)
+
+      {:ok, polished} = Native.local_search_run(local_search, improved, cost_evaluator, 0, true)
+      polished_cost = Native.solution_penalised_cost(polished, cost_evaluator)
+
+      assert Native.solution_is_complete(polished)
+      assert polished_cost <= improved_cost
+    end
+
     test "local_search_search_run performs search-only without perturbation" do
       model = build_cvrp_model(10)
       {:ok, problem_data} = Model.to_problem_data(model)

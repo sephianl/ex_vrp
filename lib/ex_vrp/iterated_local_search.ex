@@ -24,14 +24,18 @@ defmodule ExVrp.IteratedLocalSearch do
     @moduledoc """
     Parameters for Iterated Local Search.
     """
-    defstruct max_no_improvement: 5_000,
-              # Number of iterations without improvement before restart
+    defstruct max_no_improvement: 50_000,
+              # Number of iterations without improvement before restart.
+              # Restored from an accidental 5_000; upstream PyVRP uses 150_000.
               # Size of the late acceptance history buffer
-              history_size: 500
+              history_size: 500,
+              # Polish each new best with a non-perturbing search (PyVRP #988)
+              exhaustive_on_best: true
 
     @type t :: %__MODULE__{
             max_no_improvement: pos_integer(),
-            history_size: pos_integer()
+            history_size: pos_integer(),
+            exhaustive_on_best: boolean()
           }
   end
 
@@ -295,15 +299,12 @@ defmodule ExVrp.IteratedLocalSearch do
   # - cost() for best selection (infeasible = infinity)
   # - penalised_cost() for LAHC acceptance
   defp accept_step(state) do
-    %{
-      candidate: candidate,
-      candidate_cost: cand_cost,
-      current: current,
-      current_cost: curr_cost,
-      history: history
-    } = state
+    candidate_obj_cost = Native.solution_cost(state.candidate, state.cost_eval)
 
-    candidate_obj_cost = Native.solution_cost(candidate, state.cost_eval)
+    {candidate, cand_cost, candidate_obj_cost, state} =
+      maybe_exhaustive_on_best(state, candidate_obj_cost)
+
+    %{current: current, current_cost: curr_cost, history: history} = state
 
     {new_best, new_best_cost, new_best_penalised, new_iters_no_improvement, new_stats} =
       update_best(state, candidate_obj_cost)
@@ -327,6 +328,39 @@ defmodule ExVrp.IteratedLocalSearch do
         iters_no_improvement: new_iters_no_improvement,
         stats: new_stats
     }
+  end
+
+  # Exhaustive-on-best (PyVRP #988): when the candidate is a new global best,
+  # polish it with a non-perturbing (exhaustive) local-search pass. The polished
+  # result replaces the candidate (and thus the new best) only when feasible.
+  defp maybe_exhaustive_on_best(
+         %{params: %{exhaustive_on_best: true}, best_cost: best_cost} = state,
+         candidate_obj_cost
+       )
+       when candidate_obj_cost < best_cost do
+    {:ok, polished} =
+      Native.local_search_run(
+        state.local_search,
+        state.candidate,
+        state.cost_eval,
+        remaining_timeout_ms(state),
+        true
+      )
+
+    keep_polished_or_candidate(state, polished, candidate_obj_cost)
+  end
+
+  defp maybe_exhaustive_on_best(state, candidate_obj_cost),
+    do: {state.candidate, state.candidate_cost, candidate_obj_cost, state}
+
+  defp keep_polished_or_candidate(state, polished, candidate_obj_cost) do
+    if Native.solution_is_feasible(polished) do
+      penalised = Native.solution_penalised_cost(polished, state.cost_eval)
+      obj = Native.solution_cost(polished, state.cost_eval)
+      {polished, penalised, obj, %{state | candidate: polished, candidate_cost: penalised}}
+    else
+      {state.candidate, state.candidate_cost, candidate_obj_cost, state}
+    end
   end
 
   # Update best if candidate improves. Use cost() (infinity for infeasible)
