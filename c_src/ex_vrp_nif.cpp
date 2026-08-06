@@ -3742,7 +3742,8 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_run_nif(
     fine::ResourcePtr<LocalSearchResource> ls_resource,
     fine::ResourcePtr<SolutionResource> solution_resource,
     fine::ResourcePtr<CostEvaluatorResource> evaluator_resource,
-    int64_t timeout_ms)
+    int64_t timeout_ms,
+    bool exhaustive)
 {
     auto &cost_evaluator = evaluator_resource->evaluator;
 
@@ -3750,9 +3751,10 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_run_nif(
     // The RNG state advances, matching PyVRP's behavior
     ls_resource->ls->shuffle(ls_resource->rng);
 
-    // Run local search (operator() = perturbation + search + intensify loop)
+    // Run local search (operator() = perturbation + search + intensify loop).
+    // exhaustive=true skips perturbation, matching PyVRP's exhaustive_on_best.
     Solution improved = (*ls_resource->ls)(
-        solution_resource->solution, cost_evaluator, false, timeout_ms);
+        solution_resource->solution, cost_evaluator, exhaustive, timeout_ms);
 
     return fine::Ok(fine::make_resource<SolutionResource>(
         std::move(improved), ls_resource->problemData));

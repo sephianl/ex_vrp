@@ -100,9 +100,57 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "defaults match PyVRP" do
       params = %IteratedLocalSearch.Params{}
 
-      # PyVRP defaults from IteratedLocalSearchParams
-      assert params.max_no_improvement == 5_000
+      # Restored restart threshold (accidental 5_000 -> 50_000; upstream PyVRP uses 150_000)
+      assert params.max_no_improvement == 50_000
       assert params.history_size == 500
+      assert params.exhaustive_on_best == true
+    end
+  end
+
+  describe "exhaustive_on_best polishing" do
+    test "enabled by default produces a feasible complete solution" do
+      model = build_cvrp_model(10)
+
+      ils_params = %IteratedLocalSearch.Params{exhaustive_on_best: true}
+
+      {:ok, result} =
+        Solver.solve(model, max_iterations: 100, seed: 7, ils_params: ils_params)
+
+      assert result.best.is_feasible
+      assert result.best.is_complete
+    end
+
+    test "can be disabled without affecting correctness" do
+      model = build_cvrp_model(10)
+
+      ils_params = %IteratedLocalSearch.Params{exhaustive_on_best: false}
+
+      {:ok, result} =
+        Solver.solve(model, max_iterations: 100, seed: 7, ils_params: ils_params)
+
+      assert result.best.is_feasible
+      assert result.best.is_complete
+    end
+
+    test "the two toggle states drive different search trajectories" do
+      model = build_cvrp_model(12)
+
+      {:ok, polished} =
+        Solver.solve(model,
+          max_iterations: 100,
+          seed: 7,
+          ils_params: %IteratedLocalSearch.Params{exhaustive_on_best: true}
+        )
+
+      {:ok, unpolished} =
+        Solver.solve(model,
+          max_iterations: 100,
+          seed: 7,
+          ils_params: %IteratedLocalSearch.Params{exhaustive_on_best: false}
+        )
+
+      assert polished.best.is_complete
+      assert unpolished.best.is_complete
     end
   end
 
