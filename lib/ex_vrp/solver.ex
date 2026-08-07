@@ -24,7 +24,8 @@ defmodule ExVrp.Solver do
           penalty_params: PenaltyManager.Params.t(),
           ils_params: IteratedLocalSearch.Params.t(),
           on_progress: (map() -> any()) | nil,
-          initial_routes: [[non_neg_integer()]] | nil
+          initial_routes: [[non_neg_integer()]] | nil,
+          log_label: String.t() | nil
         ]
 
   @default_opts [
@@ -36,7 +37,8 @@ defmodule ExVrp.Solver do
     penalty_params: nil,
     ils_params: nil,
     on_progress: nil,
-    initial_routes: nil
+    initial_routes: nil,
+    log_label: nil
   ]
 
   @doc """
@@ -61,6 +63,10 @@ defmodule ExVrp.Solver do
   - `:penalty_params` - PenaltyManager.Params for penalty adjustment
   - `:ils_params` - IteratedLocalSearch.Params for ILS behavior
   - `:on_progress` - Optional callback function receiving progress maps during ILS iterations (time-gated at ~1s intervals). When `num_starts > 1`, progress maps include `:seed_idx` and `:seed` fields.
+  - `:log_label` - Optional string folded into this solve's log lines, e.g.
+    `log_label: "relaxed_15"` yields `[exvrp relaxed_15 start 2] ILS completed in ...`.
+    Start indices only distinguish chains *within* one `solve/2` call, so a host that
+    runs several solves concurrently needs this to tell their log lines apart.
   - `:initial_routes` - Optional warm-start. A list of routes where the position
     in the outer list maps to the vehicle type index. Each inner list is a
     sequence of client IDs visited by that vehicle type. Empty inner lists are
@@ -139,23 +145,34 @@ defmodule ExVrp.Solver do
     })
 
     total_setup_time = System.monotonic_time(:millisecond) - solve_start
-    Logger.info("Total setup time before ILS: #{total_setup_time}ms")
+    Logger.debug("Total setup time before ILS: #{total_setup_time}ms")
 
     result = run_ils(problem_data, penalty_manager, local_search, initial_solution, stop_fn, opts, seed, solve_start)
 
     ils_time = System.monotonic_time(:millisecond) - solve_start - total_setup_time
     total_time = System.monotonic_time(:millisecond) - solve_start
-    Logger.info("ILS completed in #{ils_time}ms (#{result.num_iterations} iterations)")
-    Logger.info("Total solve time: #{total_time}ms (setup: #{total_setup_time}ms, ILS: #{ils_time}ms)")
+    Logger.info("#{start_label(opts)}ILS completed in #{ils_time}ms (#{result.num_iterations} iterations)")
+    Logger.debug("Total solve time: #{total_time}ms (setup: #{total_setup_time}ms, ILS: #{ils_time}ms)")
 
     {:ok, result}
   end
+
+  defp start_label(opts), do: format_label(opts[:log_label], opts[:start_index])
+
+  defp format_label(nil, nil), do: ""
+  defp format_label(nil, start_index), do: "[exvrp start #{start_index}] "
+  defp format_label(log_label, nil), do: "[exvrp #{log_label}] "
+  defp format_label(log_label, start_index), do: "[exvrp #{log_label} start #{start_index}] "
 
   defp solve_parallel(problem_data, base_seed, num_starts, opts, solve_start) do
     tasks =
       for idx <- 0..(num_starts - 1) do
         seed = base_seed + idx
-        task_opts = augment_progress_callback(opts, idx, seed)
+
+        task_opts =
+          opts
+          |> augment_progress_callback(idx, seed)
+          |> Keyword.put(:start_index, idx)
 
         Task.async(fn ->
           solve_single(problem_data, seed, task_opts, solve_start)
@@ -165,14 +182,16 @@ defmodule ExVrp.Solver do
     timeout = task_timeout(opts)
     results = Task.await_many(tasks, timeout)
 
-    pick_best_result(results, num_starts, solve_start)
+    pick_best_result(results, num_starts, solve_start, opts)
   end
 
-  defp pick_best_result(results, num_starts, solve_start) do
+  defp pick_best_result(results, num_starts, solve_start, opts) do
     successes =
-      Enum.flat_map(results, fn
-        {:ok, result} -> [result]
-        {:error, _reason} -> []
+      results
+      |> Enum.with_index()
+      |> Enum.flat_map(fn
+        {{:ok, result}, start_index} -> [{result, start_index}]
+        {{:error, _reason}, _start_index} -> []
       end)
 
     case successes do
@@ -186,25 +205,26 @@ defmodule ExVrp.Solver do
         {:error, error || :all_starts_failed}
 
       ok_results ->
-        finalize_best(ok_results, num_starts, solve_start)
+        finalize_best(ok_results, num_starts, solve_start, opts)
     end
   end
 
-  defp finalize_best(results, num_starts, solve_start) do
-    best =
-      Enum.min_by(results, fn result ->
-        case IteratedLocalSearch.Result.cost(result) do
-          :infinity -> {1, 0}
-          cost -> {0, cost}
-        end
-      end)
+  defp finalize_best(indexed_results, num_starts, solve_start, opts) do
+    {best, best_index} = Enum.min_by(indexed_results, fn {result, _index} -> selection_key(result) end)
 
     total_runtime = System.monotonic_time(:millisecond) - solve_start
-    total_iterations = Enum.sum_by(results, & &1.num_iterations)
+    total_iterations = Enum.sum_by(indexed_results, fn {result, _index} -> result.num_iterations end)
+    log_label = opts[:log_label]
+
+    Enum.each(indexed_results, fn {result, start_index} ->
+      log_candidate(result, format_label(log_label, start_index))
+    end)
 
     Logger.info(
-      "Parallel solve complete: #{num_starts} starts, " <>
-        "#{total_iterations} total iterations, best cost #{IteratedLocalSearch.Result.cost(best)}"
+      "#{format_label(log_label, nil)}Parallel solve complete: #{num_starts} starts, " <>
+        "#{total_iterations} total iterations, best from start #{best_index}: " <>
+        "cost #{IteratedLocalSearch.Result.cost(best)} (distance #{best.best.distance}, " <>
+        "duration #{best.best.duration}, routes #{length(best.best.routes)})"
     )
 
     {:ok,
@@ -213,6 +233,21 @@ defmodule ExVrp.Solver do
        | runtime: total_runtime,
          stats: Map.merge(best.stats, %{num_starts: num_starts, total_iterations: total_iterations})
      }}
+  end
+
+  defp selection_key(result) do
+    case IteratedLocalSearch.Result.cost(result) do
+      :infinity -> {1, 0, 0}
+      cost -> {0, cost, result.best.distance}
+    end
+  end
+
+  defp log_candidate(%{best: best} = result, label) do
+    Logger.info(
+      "#{label}candidate: cost #{IteratedLocalSearch.Result.cost(result)}, " <>
+        "distance #{best.distance}, duration #{best.duration}, routes #{length(best.routes)}, " <>
+        "clients #{best.num_clients}, iterations #{result.num_iterations}"
+    )
   end
 
   defp augment_progress_callback(opts, seed_idx, seed) do
@@ -244,7 +279,7 @@ defmodule ExVrp.Solver do
     local_search_start = System.monotonic_time(:millisecond)
     local_search = Native.create_local_search(problem_data, seed)
     local_search_time = System.monotonic_time(:millisecond) - local_search_start
-    Logger.info("LocalSearch created (neighbours computed) in #{local_search_time}ms")
+    Logger.debug("LocalSearch created (neighbours computed) in #{local_search_time}ms")
 
     initial_solution =
       build_initial_solution(problem_data, local_search, penalty_manager, opts, solve_start)
@@ -272,7 +307,7 @@ defmodule ExVrp.Solver do
       end
 
     initial_solution_time = System.monotonic_time(:millisecond) - initial_solution_start
-    Logger.info("Initial solution generated in #{initial_solution_time}ms")
+    Logger.debug("Initial solution generated in #{initial_solution_time}ms")
 
     solution
   end
@@ -328,7 +363,7 @@ defmodule ExVrp.Solver do
   defp run_ils(problem_data, penalty_manager, local_search, initial_solution, stop_fn, opts, seed, solve_start) do
     ils_params = opts[:ils_params] || %IteratedLocalSearch.Params{}
 
-    Logger.info("Starting ILS iterations")
+    Logger.debug("Starting ILS iterations")
 
     ils_opts = [seed: seed, on_progress: opts[:on_progress]]
 

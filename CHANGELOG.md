@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.7.0
+
+### Fixed
+
+- **`solve/2` with `num_starts > 1` picked the winning start on the wrong metric.**
+  `IteratedLocalSearch.Result.cost/1` returned `best.distance`, while every ILS chain
+  minimises `unit_distance_cost × distance + unit_duration_cost × duration +
+fixed_cost × vehicles + uncollected prizes`. `Solver.finalize_best/3` ranks starts
+  with that function, so the cross-start winner was chosen on one term of an
+  objective no start had optimised. It now returns the full objective
+  (`stats.final_cost`), still `:infinity` when infeasible.
+
+  This is a **behavioural change for callers reading `Result.cost/1` as a distance** —
+  it now equals distance only when `unit_duration_cost` is 0, no vehicle type sets a
+  `fixed_cost`, and every client is visited. Measured on a 153-order instance with a
+  fixed vehicle cost: the old rule returned a 7-vehicle plan, the new rule a
+  6-vehicle plan that was also shorter in duration.
+
+### Changed
+
+- **`IteratedLocalSearch.Params` default `max_no_improvement` lowered from `50_000`
+  to `800`.** Upstream PyVRP's `150_000` assumes runs of millions of iterations; a
+  two-minute solve of ~150 locations runs about 10_000, so any threshold in that
+  range left `maybe_restart/1` unreachable and a stalled chain simply burned its
+  remaining budget. On the same instance `800` fires 3-6 restarts per start and
+  raises total iterations ~29%. Pass `ils_params` to override.
+
+- Per-iteration and per-start setup logging dropped from `:info` to `:debug`
+  (`ILS iteration`, `LocalSearch created`, `Initial solution generated`,
+  `Total setup time before ILS`, `Total solve time`). An 8-start two-minute solve
+  emitted over a thousand `:info` lines, burying everything else in the host's log.
+
+### Added
+
+- Parallel solves log one `[exvrp start N] candidate:` line per finished start
+  (cost, distance, duration, routes, clients, iterations), and
+  `Parallel solve complete` names the winning start. `ILS completed` is prefixed
+  with `[exvrp start N]` so interleaved chains can be told apart. Indices are the
+  original spawn indices and stay stable when a start fails.
+
+- **New `:log_label` option on `solve/2`.** Start indices only tell chains apart
+  _within_ one solve, so a host running several solves concurrently would see the
+  same `[exvrp start 0..3]` labels from all of them. `log_label: "relaxed_15"`
+  namespaces every line of that solve:
+
+      [exvrp relaxed_15 start 2] ILS completed in 4210ms (3180 iterations)
+      [exvrp relaxed_15 start 2] candidate: cost 977440, distance 252435, ...
+      [exvrp relaxed_15] Parallel solve complete: 4 starts, ... best from start 2: ...
+
+  Defaults to `nil`, which keeps the unlabelled format.
+
 ## 0.6.0
 
 ### Added

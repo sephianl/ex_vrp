@@ -29,7 +29,7 @@ defmodule ExVrp.ResultTest do
   end
 
   describe "Result.cost/1" do
-    test "returns distance for feasible solution" do
+    test "equals distance when there are no fixed vehicle costs or prizes" do
       model =
         Model.new()
         |> Model.add_depot(x: 0, y: 0)
@@ -41,6 +41,19 @@ defmodule ExVrp.ResultTest do
       if result.best.is_feasible do
         assert Result.cost(result) == result.best.distance
       end
+    end
+
+    test "includes fixed vehicle cost, so it exceeds distance" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100], fixed_cost: 5_000)
+
+      {:ok, result} = Solver.solve(model, max_iterations: 10)
+
+      assert result.best.is_feasible
+      assert Result.cost(result) == result.best.distance + 5_000
     end
 
     test "returns infinity for infeasible solution" do
