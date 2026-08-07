@@ -97,11 +97,13 @@ defmodule ExVrp.IteratedLocalSearchTest do
   end
 
   describe "IteratedLocalSearch.Params defaults" do
-    test "defaults match PyVRP" do
+    test "restart threshold is reachable within a realistic iteration budget" do
       params = %IteratedLocalSearch.Params{}
 
-      # Restored restart threshold (accidental 5_000 -> 50_000; upstream PyVRP uses 150_000)
-      assert params.max_no_improvement == 50_000
+      # Upstream PyVRP uses 150_000, which assumes millions of iterations. A
+      # two-minute solve runs ~10_000, so a threshold in that range never fires
+      # and a stalled chain burns its remaining budget instead of restarting.
+      assert params.max_no_improvement == 800
       assert params.history_size == 500
       assert params.exhaustive_on_best == true
     end
@@ -155,7 +157,7 @@ defmodule ExVrp.IteratedLocalSearchTest do
   end
 
   describe "IteratedLocalSearch.Result methods" do
-    test "cost returns distance for feasible solution" do
+    test "cost equals distance when there are no fixed costs or prizes" do
       model = build_cvrp_model(5)
       {:ok, result} = Solver.solve(model, max_iterations: 50)
 

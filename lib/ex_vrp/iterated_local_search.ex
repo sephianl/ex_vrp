@@ -24,9 +24,14 @@ defmodule ExVrp.IteratedLocalSearch do
     @moduledoc """
     Parameters for Iterated Local Search.
     """
-    defstruct max_no_improvement: 50_000,
-              # Number of iterations without improvement before restart.
-              # Restored from an accidental 5_000; upstream PyVRP uses 150_000.
+    defstruct max_no_improvement: 800,
+              # Iterations without improvement before restarting from the best.
+              # Upstream PyVRP uses 150_000, which assumes runs of millions of
+              # iterations; a 2-minute solve of ~150 locations runs about 10_000,
+              # so anything in that range makes the restart unreachable and a
+              # stalled chain simply burns its remaining budget. Measured on a
+              # 153-order instance: 800 fires 3-6 restarts per start, raises total
+              # iterations ~29%, and turns a 40% idle tail into search.
               # Size of the late acceptance history buffer
               history_size: 500,
               # Polish each new best with a non-perturbing search (PyVRP #988)
@@ -95,16 +100,20 @@ defmodule ExVrp.IteratedLocalSearch do
     @doc """
     Returns the cost of the best solution.
 
+    This is the objective the search minimises: `unit_distance_cost` times
+    distance, plus `unit_duration_cost` times duration, plus the fixed cost of
+    every vehicle used, plus the prizes of any clients left unvisited.
+
+    Returning `best.distance` instead makes callers rank solutions on one term
+    of that sum, so a caller comparing independent starts picks on a metric no
+    start optimised. That matters most when starts settle on different vehicle
+    counts, or when the distance matrix carries penalties rather than metres.
+
     Returns `:infinity` if the solution is infeasible, matching PyVRP's behavior.
     """
     @spec cost(t()) :: non_neg_integer() | :infinity
-    def cost(%__MODULE__{best: best}) do
-      if best.is_feasible do
-        best.distance
-      else
-        :infinity
-      end
-    end
+    def cost(%__MODULE__{best: %{is_feasible: false}}), do: :infinity
+    def cost(%__MODULE__{stats: %{final_cost: final_cost}}), do: final_cost
 
     @doc """
     Returns whether the best solution is feasible.
@@ -218,7 +227,7 @@ defmodule ExVrp.IteratedLocalSearch do
   defp iterate(state, stop_fn) do
     # Log progress every 100 iterations
     if rem(state.iteration, 100) == 0 and state.iteration > 0 do
-      Logger.info(
+      Logger.debug(
         "ILS iteration #{state.iteration}, best_cost=#{state.best_cost}, iters_no_improvement=#{state.iters_no_improvement}"
       )
     end
