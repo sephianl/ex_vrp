@@ -53,7 +53,8 @@ defmodule ExVrp.Solver do
   ## Options
 
   - `:max_iterations` - Maximum number of iterations (default: 10_000)
-  - `:max_runtime` - Maximum runtime in seconds (default: unlimited). Matches PyVRP.
+  - `:max_runtime` - Maximum runtime in milliseconds (default: unlimited). Note that
+    `StoppingCriteria.max_runtime/1` takes seconds instead, matching PyVRP's `MaxRuntime`.
   - `:stop` - Custom StoppingCriteria (overrides max_iterations/max_runtime)
   - `:seed` - Random seed for reproducibility (default: random)
   - `:num_starts` - Number of parallel independent solver starts (default: `:auto`).
@@ -102,8 +103,8 @@ defmodule ExVrp.Solver do
       {:ok, result} = Solver.solve(model, max_iterations: 1000)
       IO.puts("Best distance: \#{result.best.distance}")
 
-      # With time limit (seconds, like PyVRP)
-      {:ok, result} = Solver.solve(model, max_runtime: 60.0)
+      # With a 60 second time limit
+      {:ok, result} = Solver.solve(model, max_runtime: 60_000)
 
   """
   @dialyzer {:nowarn_function, solve: 1}

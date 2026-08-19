@@ -60,8 +60,11 @@ defmodule ExVrp.Client do
 
   ## Examples
 
-      iex> ExVrp.Client.new(x: 1, y: 2, delivery: [10])
-      %ExVrp.Client{x: 1, y: 2, delivery: [10], ...}
+      iex> client = ExVrp.Client.new(x: 1, y: 2, delivery: [10])
+      iex> {client.x, client.y, client.delivery}
+      {1, 2, [10]}
+      iex> {client.required, client.prize, client.tw_late}
+      {true, 0, :infinity}
 
   """
   @spec new(keyword()) :: t()

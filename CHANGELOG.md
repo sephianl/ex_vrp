@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.7.1
+
+### Added
+
+- `usage-rules.md`, consumed by [usage_rules](https://hexdocs.pm/usage_rules), so agents working in
+  a consuming project get ExVrp's semantics at request time instead of inferring them. It documents
+  the traps that are invisible from the type specs: location indices being offset by the depot
+  count, capacity dimensions having to match the first vehicle type, `:time_windows` being the only
+  accepted way to give a vehicle its hours, `required: false` meaning nothing without a prize, and
+  `IteratedLocalSearch.Result.cost/1` being an objective rather than a distance.
+- `CHANGELOG.md` and `usage-rules.md` are now shipped in the package and rendered in the docs — the
+  package included neither before.
+- `usage-rules.md` also covers the cost model (`unit_distance_cost`, `unit_duration_cost`,
+  `fixed_cost`, and the fact that duration is free by default and dwarfs distance once service times
+  are counted), warm-starting via `:initial_routes`, multi-trip via `reload_depots`, and `:log_label`.
+- **Doctests.** The project had none, so every `iex>` example in the moduledocs was unverified —
+  which is how two fabricated result values survived in the docs. `ExVrp.Client`, `ExVrp.ClientGroup`,
+  `ExVrp.Depot`, `ExVrp.NeighbourhoodParams`, `ExVrp.PerturbationManager` and `ExVrp.VehicleType` are
+  now executed as doctests (13 in total). Examples that used elided `...` output were reshaped into
+  runnable form rather than deleted.
+
+### Fixed
+
+- **`Solver.solve/2`'s `:max_runtime` was documented as seconds.** It has always been milliseconds —
+  `resolve_max_runtime_ms/1` passes the value straight through — so the docstring's
+  `max_runtime: 60.0` example asked for a 60 millisecond solve. `ExVrp.solve/2` already documented it
+  correctly; the two now agree, and both point at `StoppingCriteria.max_runtime/1` being the one that
+  takes seconds.
+
+- **README quick start printed results the code does not produce.** It claimed
+  `routes #=> [[1, 2], [3]]` and `distance #=> 8944`; the actual output is `[[2, 1, 3]]` and `68`.
+  The install snippet still pinned `~> 0.4.0`, and the prerequisites said Elixir 1.15+ against
+  `elixir: "~> 1.18"` in `mix.exs`. The development section now also documents `EX_VRP_FORCE_BUILD=1`,
+  without which `c_src/` edits are silently ignored in favour of a precompiled artifact.
+
+- **Flaky timing tests made load-independent.** `ExVrp.TimeoutTest`, `ExVrp.SolveTest`,
+  `ExVrp.OscillationPreventionTest` and `ExVrp.PrizeCollectingEdgeCasesTest` all asserted on elapsed
+  time, so `mix check` failed intermittently: running ex_unit alongside dialyzer, credo and reach
+  starves the schedulers, and a 250ms budget reported 892ms while a 1.5s oscillation guard took
+  3734ms. `TimeoutTest` had also assumed `result.runtime` was not a wall-clock measurement; it is,
+  just taken inside the ILS loop.
+
+  The oscillation tests were measuring the wrong thing entirely. Those searches complete their full
+  iteration budget in 10-29ms; oscillation manifests as a search stalling inside an iteration and
+  being cut off by `max_runtime` after a handful, not as a slow wall clock. They now assert that the
+  iteration budget was completed, which is immune to machine load. The timeout tests assert that the
+  stopping criterion _fired_ — the run ended well short of the default 10_000 iterations — and keep
+  only a loose runtime ceiling to catch a criterion that is ignored outright. All timing-sensitive
+  solves also pin `num_starts: 1` so one chain's budget is what is being measured.
+
+  `SolveTest` additionally passed `max_runtime: 0.001`, a float left over from the seconds
+  assumption, where `solve_opts` declares `pos_integer()`.
+
+### Changed
+
+- The `ExVrp.ABBenchmark.*` modules live under `dev/` and are not shipped in the package, but were
+  still published to HexDocs. They are now filtered out, which also clears the `mix docs` warnings
+  about their hidden types.
+
+### Known issues
+
+- `ExVrp.Route`'s `trips` field is declared on the struct and in its typespec, but
+  `ExVrp.Solution.routes/1` never populates it — it is always `[]`, even on a route that made three
+  trips. Use `ExVrp.Route.num_trips/1`. Documented in `usage-rules.md`; populating the field is a
+  behavioural change left for a later release.
+
 ## 0.7.0
 
 ### Fixed

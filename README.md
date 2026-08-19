@@ -16,7 +16,7 @@ Add `ex_vrp` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_vrp, "~> 0.4.0"}
+    {:ex_vrp, "~> 0.7"}
   ]
 end
 ```
@@ -37,10 +37,13 @@ model =
 
 {:ok, result} = ExVrp.solve(model, max_iterations: 1000, seed: 42)
 
-result.best.routes     #=> [[1, 2], [3]]
-result.best.distance   #=> 8944
+result.best.routes      #=> [[2, 1, 3]]
+result.best.distance    #=> 68
 result.best.is_feasible #=> true
 ```
+
+Route entries are _location_ indices, not client indices — locations are ordered
+`[depots..., clients...]`, so with one depot client `n` is location `n + 1`.
 
 ## Features
 
@@ -56,11 +59,28 @@ result.best.is_feasible #=> true
 
 See the [full documentation](https://hexdocs.pm/ex_vrp) for detailed API reference and examples.
 
+## Usage rules
+
+ExVrp ships a [usage-rules.md](usage-rules.md) describing the semantics that are easy to get wrong
+from the type specs alone — location index offsets, capacity dimensions, vehicle time windows,
+optional clients, and the cost model. If your project uses
+[usage_rules](https://hexdocs.pm/usage_rules), list `:ex_vrp` in your project config and sync:
+
+```elixir
+defp usage_rules do
+  [file: "CLAUDE.md", usage_rules: [:ex_vrp]]
+end
+```
+
+```bash
+mix usage_rules.sync
+```
+
 ## Development
 
 ### Prerequisites
 
-- Elixir 1.15+
+- Elixir 1.18+
 - C++20 compiler (gcc 11+ or clang 14+)
 - Make
 
@@ -70,6 +90,13 @@ See the [full documentation](https://hexdocs.pm/ex_vrp) for detailed API referen
 mix deps.get
 mix compile
 mix test
+```
+
+`mix compile` downloads a precompiled NIF from a GitHub release. When changing anything under
+`c_src/`, force a local build or your changes silently have no effect:
+
+```bash
+EX_VRP_FORCE_BUILD=1 mix compile
 ```
 
 ## License

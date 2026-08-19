@@ -91,8 +91,20 @@ defmodule ExVrp.VehicleType do
 
   ## Examples
 
-      iex> ExVrp.VehicleType.new(num_available: 3, capacity: [100, 50], time_windows: [{0, 28_800}])
-      %ExVrp.VehicleType{num_available: 3, capacity: [100, 50], tw_early: 0, tw_late: 28_800, ...}
+      iex> vt = ExVrp.VehicleType.new(num_available: 3, capacity: [100, 50], time_windows: [{0, 28_800}])
+      iex> {vt.num_available, vt.capacity, vt.tw_early, vt.tw_late}
+      {3, [100, 50], 0, 28_800}
+
+  Gaps between windows become forbidden windows:
+
+      iex> vt = ExVrp.VehicleType.new(num_available: 2, capacity: [100], time_windows: [{0, 500}, {600, 1000}])
+      iex> {vt.tw_early, vt.tw_late, vt.forbidden_windows}
+      {0, 1000, [{500, 600}]}
+
+  Passing the derived fields directly is an error:
+
+      iex> ExVrp.VehicleType.new(num_available: 1, capacity: [10], tw_early: 5)
+      ** (ArgumentError) [:tw_early] cannot be set directly, use :time_windows instead
 
   """
   @spec new(keyword()) :: t()

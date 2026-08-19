@@ -44,8 +44,9 @@ defmodule ExVrp.Depot do
 
   ## Examples
 
-      iex> ExVrp.Depot.new(x: 0, y: 0)
-      %ExVrp.Depot{x: 0, y: 0, ...}
+      iex> depot = ExVrp.Depot.new(x: 0, y: 0)
+      iex> {depot.x, depot.y}
+      {0, 0}
 
   """
   @spec new(keyword()) :: t()

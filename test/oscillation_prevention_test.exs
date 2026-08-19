@@ -12,6 +12,13 @@ defmodule ExVrp.OscillationPreventionTest do
   - The client's route was updated since last test
 
   This prevents immediate reversals while still allowing legitimate improvements.
+
+  Oscillation is detected by iteration count, not elapsed time. A search that
+  oscillates stalls inside an iteration and gets cut off by `max_runtime` having
+  completed only a handful of them; a healthy one finishes its whole
+  `max_iterations` budget, which takes tens of milliseconds here. Asserting on the
+  clock instead measured the load on the machine — under `mix check` these solves
+  reported multi-second times while still completing every iteration.
   """
 
   use ExUnit.Case, async: true
@@ -40,22 +47,18 @@ defmodule ExVrp.OscillationPreventionTest do
         )
       end)
 
-    # Should complete quickly without oscillating
-    start = System.monotonic_time(:millisecond)
-
     {:ok, result} =
       Solver.solve(model,
         max_iterations: 100,
-        # 2 second timeout
-        max_runtime: 2_000
+        max_runtime: 2_000,
+        num_starts: 1
       )
 
-    elapsed = System.monotonic_time(:millisecond) - start
-
-    # Should complete in reasonable time (not hit timeout)
-    assert elapsed < 1_500, "Took #{elapsed}ms, expected <1.5s (possible oscillation)"
     assert result.best
     assert result.num_iterations <= 100
+
+    assert result.num_iterations >= 90,
+           "Only #{result.num_iterations}/100 iterations before the 2s timeout cut in (possible oscillation)"
   end
 
   test "prize-collecting still works correctly after oscillation fix" do
@@ -133,20 +136,17 @@ defmodule ExVrp.OscillationPreventionTest do
         )
       end)
 
-    start = System.monotonic_time(:millisecond)
-
     {:ok, result} =
       Solver.solve(model,
         max_iterations: 100,
         max_runtime: 3_000,
-        # Fixed seed for reproducibility
-        seed: 12_345
+        seed: 12_345,
+        num_starts: 1
       )
 
-    elapsed = System.monotonic_time(:millisecond) - start
-
-    # Must complete without hitting timeout
-    assert elapsed < 2_500, "Took #{elapsed}ms, expected <2.5s (oscillation detected)"
     assert result.best
+
+    assert result.num_iterations >= 90,
+           "Only #{result.num_iterations}/100 iterations before the 3s timeout cut in (oscillation detected)"
   end
 end
