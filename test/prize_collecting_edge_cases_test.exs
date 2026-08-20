@@ -81,13 +81,12 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
         |> Model.add_client(x: 10, y: 10, delivery: [50], required: false, prize: 100_000)
         |> Model.add_client(x: 15, y: 15, delivery: [50], required: false, prize: 100_000)
 
-      start = System.monotonic_time(:millisecond)
-      {:ok, result} = Solver.solve(model, max_iterations: 200)
-      elapsed = System.monotonic_time(:millisecond) - start
+      {:ok, result} = Solver.solve(model, max_iterations: 200, num_starts: 1)
 
-      # Should converge quickly without oscillating
-      assert elapsed < 5000
       assert result.num_iterations <= 200
+
+      assert result.num_iterations >= 190,
+             "Only #{result.num_iterations}/200 iterations completed (possible oscillation)"
     end
 
     test "many clients with same prize should converge" do

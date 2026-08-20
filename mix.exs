@@ -1,7 +1,7 @@
 defmodule ExVrp.MixProject do
   use Mix.Project
 
-  @version "0.7.0"
+  @version "0.7.1"
   @github_url "https://github.com/sephianl/ex_vrp"
 
   def project do
@@ -131,16 +131,18 @@ defmodule ExVrp.MixProject do
       maintainers: ["Sephian"],
       licenses: ["MIT"],
       links: %{"GitHub" => @github_url},
-      files: ~w(lib c_src/ex_vrp_nif.cpp c_src/pyvrp mix.exs Makefile README.md LICENSE checksum.exs)
+      files:
+        ~w(lib c_src/ex_vrp_nif.cpp c_src/pyvrp mix.exs Makefile README.md LICENSE CHANGELOG.md usage-rules.md checksum.exs)
     ]
   end
 
   defp docs do
     [
       main: "ExVrp",
-      extras: ["README.md"],
+      extras: ["README.md", "usage-rules.md", "CHANGELOG.md"],
       source_url: @github_url,
       source_ref: "v#{@version}",
+      filter_modules: &published?/2,
       groups_for_modules: [
         "Problem Definition": [
           ExVrp.Model,
@@ -166,5 +168,9 @@ defmodule ExVrp.MixProject do
         ]
       ]
     ]
+  end
+
+  defp published?(module, _metadata) do
+    not String.starts_with?(inspect(module), "ExVrp.ABBenchmark")
   end
 end

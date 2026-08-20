@@ -47,10 +47,8 @@ defmodule ExVrp.SolveTest do
     test "respects max_runtime" do
       model = build_ok_small_model()
 
-      # Very short runtime
-      {:ok, result} = Solver.solve(model, max_runtime: 0.001)
-      # Should complete quickly
-      # Less than 1 second
+      {:ok, result} = Solver.solve(model, max_runtime: 1, num_starts: 1)
+
       assert result.runtime < 1000
     end
 
