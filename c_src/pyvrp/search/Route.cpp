@@ -378,6 +378,14 @@ void Route::update()
     auto const durationDS = duration_;
     timeWarpDS_ = timeWarp_;
 
+    // Clock time at which the route ends. The DurationSegment view is the
+    // right answer only while no forbidden window is in play; once one is, the
+    // walk below tracks the real end time, and timeWarp_ picks up violation
+    // penalties that are not shifts along the timeline and so must not be
+    // subtracted from it.
+    auto const startTime = durAfter[0].startEarly();
+    auto endTime = startTime + duration_ - timeWarp_;
+
     // Account for forbidden time windows: the vehicle must be idle at the
     // depot during these periods, so no travel, service, or reloading may
     // occur.  We check at EVERY node (not just clients).
@@ -515,17 +523,16 @@ void Route::update()
                                          : Duration(0);
         if (actualEndExcess > dsEndExcess)
             timeWarp_ += actualEndExcess - dsEndExcess;
+
+        endTime = now;
     }
 
-    auto const overtime = duration_ > shiftDuration()
-                              ? duration_ - shiftDuration()
-                              : Duration(0);
+    overtime_ = vehicleType_.overtime(endTime, duration_);
     durationCost_ = unitDurationCost() * static_cast<Cost>(duration_)
-                    + unitOvertimeCost() * static_cast<Cost>(overtime);
+                    + unitOvertimeCost() * static_cast<Cost>(overtime_);
 
-    auto const overtimeDS = durationDS > shiftDuration()
-                                ? durationDS - shiftDuration()
-                                : Duration(0);
+    auto const overtimeDS = vehicleType_.overtime(
+        startTime + durationDS - timeWarpDS_, durationDS);
     durationCostDS_ = unitDurationCost() * static_cast<Cost>(durationDS)
                       + unitOvertimeCost() * static_cast<Cost>(overtimeDS);
 

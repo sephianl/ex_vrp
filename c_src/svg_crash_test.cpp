@@ -64,7 +64,7 @@ int main()
         std::vector<Load>{},                            // initialLoad
         std::vector<size_t>{},                          // reloadDepots
         0,                                              // maxReloads
-        Duration(0),                                    // maxOvertime
+        std::nullopt,                                   // maxDuration
         Cost(0),                                        // unitOvertimeCost
         "");                                            // name
 

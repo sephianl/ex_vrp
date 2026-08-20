@@ -1,5 +1,89 @@
 # Changelog
 
+## 0.8.0
+
+Overtime is reworked. `max_overtime` — an allowance bolted onto `shift_duration` — is replaced by an
+explicit `max_duration` hard cap, and a new `overtime_start` adds clock-based overtime for drivers
+who are contracted until a time of day rather than for a number of hours.
+
+### Changed
+
+- **Breaking: `max_overtime` is replaced by `max_duration`.** The old field was an allowance added to
+  `shift_duration` to derive the hard cap; `max_duration` now _is_ the hard cap. To migrate, add the
+  two numbers together:
+
+  ```elixir
+  # before
+  Model.add_vehicle_type(model, shift_duration: 480, max_overtime: 60, unit_overtime_cost: 10)
+  # after
+  Model.add_vehicle_type(model, shift_duration: 480, max_duration: 540, unit_overtime_cost: 10)
+  ```
+
+  `max_duration` defaults to `shift_duration`, which matches the old `max_overtime: 0` default: a
+  route may not run past its nominal shift. Vehicle types that never set `max_overtime` need no
+  change. Note that this default makes `unit_overtime_cost` inert on its own — duration-based
+  overtime is only reachable once `max_duration` is raised above `shift_duration`. `usage-rules.md`
+  has a section on the three fields and how they interact.
+
+- **Multi-trip construction now respects `max_duration` rather than `shift_duration`.** Both places
+  that decide whether another trip fits — `LocalSearch`'s trip-insertion heuristic and the initial
+  solution builder — capped the route at `shift_duration`, so raising `max_duration` bought a
+  single-trip route more room but never a multi-trip one. Behaviour is unchanged for vehicle types
+  that leave `max_duration` at its default, since that default is `shift_duration`.
+
+- **Breaking: `ExVrp.Native.search_route_max_overtime_nif/1` is removed.** Use
+  `search_route_max_duration_nif/1` for the hard cap or the new
+  `search_route_overtime_start_nif/1` for the contracted end of shift.
+  `search_route_max_duration_nif/1` is unchanged in name but now reports the value the caller
+  passed rather than `shift_duration + max_overtime`.
+
+- `ExVrp.solve/2` and `solve!/2` are specced as returning `ExVrp.IteratedLocalSearch.Result`, which
+  is what they have always returned — the specs said `ExVrp.Solution` and were silenced with
+  `@dialyzer {:nowarn_function, ...}`. The specs are now correct and the suppressions are gone;
+  dialyzer passes without them.
+
+### Documented
+
+- **`shift_duration` and `max_duration` both measure elapsed time, not time worked.** Route duration
+  runs from route start to route end with idle time included, so neither field expresses "no more
+  than N hours worked per day": a day of two short shifts separated by a long gap breaches an
+  elapsed cap the driver's actual hours would clear. Concretely, a route with 300 units of driving
+  spread across a 900-unit day is infeasible under `max_duration: 500`. `usage-rules.md` and the
+  `ProblemData` docs now say so, and point at `Route.duration/1 - Route.wait_duration/1` for
+  measuring worked time after the fact. No behaviour change — this was always true and undocumented.
+
+### Added
+
+- **`overtime_start`** on `ExVrp.VehicleType` — the contracted end of shift, on the same axis as
+  `:time_windows`. When set, overtime becomes `max(0, route_end - overtime_start)`: a driver
+  contracted until 16:00 who runs 09:00–17:00 has worked an hour of overtime even though the route
+  lasted only the nominal eight. Defaults to `:infinity`, in which case overtime stays
+  `max(0, duration - shift_duration)` as before.
+
+- `ExVrp.Native.search_route_overtime_start_nif/1`, completing the search-route accessor set
+  alongside `search_route_shift_duration_nif/1` and `search_route_max_duration_nif/1`.
+
+- Doctests for `ExVrp` itself, so the moduledoc's end-to-end example is executed rather than
+  asserted. The example's stated result was wrong (`[[1, 2], [3]]` at distance 8944 for an instance
+  whose optimum is a single route at 68); it now shows real output, and notes that route entries are
+  location indices.
+
+### Fixed
+
+- **Local search was blind to overtime cost whenever the hard cap was unbounded.**
+  `Route::hasDurationCost` gates whether `CostEvaluator::deltaCost` prices the duration and
+  time-warp terms of a move at all. It tested the old `max_overtime != 0`, whose natural translation
+  (`overtime_start` being set) drops the duration-based case: with `shift_duration: 480,
+max_duration: :infinity, unit_overtime_cost: 10` it returned `false`, so every move on that route
+  was evaluated as if overtime were free. It now also accounts for a finite `shift_duration`.
+
+- **Search-side overtime was wrong when forbidden windows were in play.** The search route derived
+  its end time as `start + duration - time_warp`, but under forbidden windows `time_warp` carries
+  violation penalties that are not shifts along the timeline. A route with `overtime_start: 250` and
+  a forbidden window it had to idle through reported 0 overtime in the search where the final route
+  reported 250. The search now uses the end time from the schedule walk it already performs, and the
+  two agree.
+
 ## 0.7.1
 
 ### Added

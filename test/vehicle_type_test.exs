@@ -28,7 +28,7 @@ defmodule ExVrp.VehicleTypeTest do
           unit_distance_cost: 37,
           unit_duration_cost: 41,
           start_late: 18,
-          max_overtime: 43,
+          max_duration: 66,
           name: "vehicle_type name"
         )
 
@@ -44,7 +44,7 @@ defmodule ExVrp.VehicleTypeTest do
       assert vt.unit_distance_cost == 37
       assert vt.unit_duration_cost == 41
       assert vt.start_late == 18
-      assert vt.max_overtime == 43
+      assert vt.max_duration == 66
       assert vt.name == "vehicle_type name"
     end
 
@@ -61,7 +61,7 @@ defmodule ExVrp.VehicleTypeTest do
       assert vt.unit_distance_cost == 1
       assert vt.unit_duration_cost == 0
       assert vt.start_late == 0
-      assert vt.max_overtime == 0
+      assert vt.max_duration == :infinity
       assert vt.name == ""
     end
 

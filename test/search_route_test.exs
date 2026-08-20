@@ -12,6 +12,8 @@ defmodule ExVrp.SearchRouteTest do
 
   @moduletag :nif_required
 
+  @int_max 9_223_372_036_854_775_807
+
   describe "Node init" do
     test "node has correct initial state" do
       # Based on test_node_init
@@ -598,27 +600,47 @@ defmodule ExVrp.SearchRouteTest do
       assert Native.search_route_shift_duration_nif(route) == 5000
     end
 
-    test "max overtime returns vehicle type's max overtime" do
+    test "overtime start is unset by default" do
       model =
         Model.new()
         |> Model.add_depot(x: 0, y: 0)
         |> Model.add_client(x: 1, y: 1, delivery: [0])
-        |> Model.add_vehicle_type(num_available: 1, capacity: [10], shift_duration: 5000, max_overtime: 1000)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [10], shift_duration: 5000)
         |> Model.set_distance_matrices([[[0, 100], [100, 0]]])
         |> Model.set_duration_matrices([[[0, 100], [100, 0]]])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
       route = Native.create_search_route_nif(problem_data, 0, 0)
-      assert Native.search_route_max_overtime_nif(route) == 1000
+      assert Native.search_route_overtime_start_nif(route) == @int_max
     end
 
-    test "max duration equals shift_duration + max_overtime" do
+    test "overtime start returns the contracted end of shift" do
       model =
         Model.new()
         |> Model.add_depot(x: 0, y: 0)
         |> Model.add_client(x: 1, y: 1, delivery: [0])
-        |> Model.add_vehicle_type(num_available: 1, capacity: [10], shift_duration: 5000, max_overtime: 1000)
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [10],
+          shift_duration: 5000,
+          overtime_start: 4200
+        )
+        |> Model.set_distance_matrices([[[0, 100], [100, 0]]])
+        |> Model.set_duration_matrices([[[0, 100], [100, 0]]])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      route = Native.create_search_route_nif(problem_data, 0, 0)
+      assert Native.search_route_overtime_start_nif(route) == 4200
+    end
+
+    test "max duration is the value the caller passed" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_client(x: 1, y: 1, delivery: [0])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [10], shift_duration: 5000, max_duration: 6000)
         |> Model.set_distance_matrices([[[0, 100], [100, 0]]])
         |> Model.set_duration_matrices([[[0, 100], [100, 0]]])
 
@@ -637,7 +659,7 @@ defmodule ExVrp.SearchRouteTest do
           num_available: 1,
           capacity: [10],
           shift_duration: 5000,
-          max_overtime: 1000,
+          max_duration: 6000,
           unit_overtime_cost: 10
         )
         |> Model.set_distance_matrices([[[0, 100], [100, 0]]])
@@ -651,7 +673,7 @@ defmodule ExVrp.SearchRouteTest do
 
     test "overtime calculation" do
       # Based on test_overtime
-      # Vehicle with shift_duration=5000, max_overtime=1000, unit_overtime_cost=10
+      # Vehicle with shift_duration=5000, max_duration=6000, unit_overtime_cost=10
       model =
         Model.new()
         |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
@@ -662,7 +684,7 @@ defmodule ExVrp.SearchRouteTest do
           capacity: [10],
           time_windows: [{0, 45_000}],
           shift_duration: 5000,
-          max_overtime: 1000,
+          max_duration: 6000,
           unit_overtime_cost: 10
         )
         |> Model.set_distance_matrices([build_small_overtime_distances()])
@@ -674,7 +696,6 @@ defmodule ExVrp.SearchRouteTest do
 
       # Verify route properties
       assert Native.search_route_shift_duration_nif(route) == 5000
-      assert Native.search_route_max_overtime_nif(route) == 1000
       assert Native.search_route_max_duration_nif(route) == 6000
       assert Native.search_route_unit_overtime_cost_nif(route) == 10
 
@@ -752,6 +773,46 @@ defmodule ExVrp.SearchRouteTest do
 
       # Default has no duration cost
       assert Native.search_route_has_duration_cost_nif(route) == false
+    end
+
+    test "has_duration_cost with duration-based overtime under an unbounded hard cap" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [10],
+          shift_duration: 250,
+          max_duration: :infinity,
+          unit_overtime_cost: 10
+        )
+        |> Model.set_distance_matrices([[[0]]])
+        |> Model.set_duration_matrices([[[0]]])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+      route = Native.create_search_route_nif(problem_data, 0, 0)
+
+      assert Native.search_route_has_duration_cost_nif(route) == true
+    end
+
+    test "has_duration_cost with clock-based overtime under an unbounded hard cap" do
+      model =
+        Model.new()
+        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [10],
+          max_duration: :infinity,
+          overtime_start: 300,
+          unit_overtime_cost: 10
+        )
+        |> Model.set_distance_matrices([[[0]]])
+        |> Model.set_duration_matrices([[[0]]])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+      route = Native.create_search_route_nif(problem_data, 0, 0)
+
+      assert Native.search_route_has_duration_cost_nif(route) == true
     end
 
     test "has_duration_cost with client time window" do

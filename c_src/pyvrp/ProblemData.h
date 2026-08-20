@@ -449,8 +449,9 @@ public:
      *     initial_load: list[int] = [],
      *     reload_depots: list[int] = [],
      *     max_reloads: int = np.iinfo(np.uint64).max,
-     *     max_overtime: int = 0,
+     *     max_duration: int | None = None,
      *     unit_overtime_cost: int = 0,
+     *     overtime_start: int | None = None,
      *     *,
      *     name: str = "",
      * )
@@ -480,9 +481,10 @@ public:
      * tw_late
      *     End of the vehicle type's shift. Unconstrained if not provided.
      * shift_duration
-     *     Nominal maximum route duration. May be extended through overtime
-     *     (see :py:attr:`~max_overtime`) at additional cost. Unconstrained if
-     *     not explicitly provided.
+     *     Nominal maximum route duration, and the baseline that duration-based
+     *     overtime is measured against. Raise :py:attr:`~max_duration` above it
+     *     to let routes run past it at additional cost. Unconstrained if not
+     *     explicitly provided.
      * max_distance
      *     Maximum route distance. Unconstrained if not explicitly provided.
      * unit_distance_cost
@@ -508,12 +510,29 @@ public:
      * max_reloads
      *     Maximum number of reloads the vehicle may perform on a route.
      *     Unconstrained if not explicitly provided.
-     * max_overtime
-     *     Maximum allowed overtime, on top of the :py:attr:`~shift_duration`.
-     *     Default 0, that is, overtime is not allowed.
+     * max_duration
+     *     Hard maximum route duration, measured as **elapsed** time from route
+     *     start to route end. Idle time between stops counts against it, so
+     *     this is not a cap on time worked: a day made of two short shifts
+     *     separated by a long gap can breach it while the driver worked very
+     *     little. Defaults to :py:attr:`~shift_duration`,
+     *     that is, a route may not run longer than its nominal shift. Pass a
+     *     larger value to allow routes to run longer than nominal — note that
+     *     duration-based overtime is only reachable when you do, since at the
+     *     default a route exceeding :py:attr:`~shift_duration` is infeasible
+     *     rather than merely expensive. Values below
+     *     :py:attr:`~shift_duration` make the nominal shift unreachable.
      * unit_overtime_cost
      *     Cost of a unit of overtime. This is in addition to the regular
      *     :py:attr:`~unit_duration_cost` of route durations. Default 0.
+     * overtime_start
+     *     Contracted end of shift, on the same axis as the time windows. When
+     *     given, overtime is measured from this clock time rather than from
+     *     :py:attr:`~shift_duration`: it is ``max(0, route end -
+     *     overtime_start)``, so a route that finishes past the contracted end
+     *     incurs overtime however short the route itself was. Unconstrained if
+     *     not explicitly provided, in which case overtime remains
+     *     ``max(0, duration - shift_duration)``.
      * name
      *     Free-form name field for this vehicle type. Default empty.
      *
@@ -557,14 +576,15 @@ public:
      *     empty and reload.
      * max_reloads
      *     Maximum number of reloads the vehicle may perform on a route.
-     * max_overtime
-     *     Maximum amount of allowed overtime, on top of the nominal
-     *     :py:attr:`~shift_duration`.
      * unit_overtime_cost
      *     Additional cost of a unit of overtime.
+     * overtime_start
+     *     Contracted end of shift past which work counts as overtime. Equal to
+     *     the maximum representable duration when overtime is measured from
+     *     :py:attr:`~shift_duration` instead.
      * max_duration
-     *     Hard maximum route duration constraint, computed as the sum of
-     *     :py:attr:`~shift_duration` and :py:attr:`~max_overtime`.
+     *     Hard maximum route duration constraint. Equal to
+     *     :py:attr:`~shift_duration` unless the caller passed a different one.
      * name
      *     Free-form name field for this vehicle type.
      */
@@ -586,35 +606,60 @@ public:
         std::vector<Load> const initialLoad;     // Initially used capacity
         std::vector<size_t> const reloadDepots;  // Reload locations
         size_t const maxReloads;                 // Maximum number of reloads
-        Duration const maxOvertime;              // Maximum allowed overtime
         Cost const unitOvertimeCost;             // Cost per unit of overtime
-        Duration const maxDuration;  // Maximum route duration, incl. overtime
+        Duration const overtimeStart;  // Contracted end of shift; max() when
+                                       // overtime is duration-based
+        Duration const maxDuration;    // Hard maximum route duration
         std::vector<std::pair<Duration, Duration>> const
             forbiddenWindows;  // Forbidden time windows
         char const *name;      // Type name (for reference)
 
-        VehicleType(size_t numAvailable = 1,
-                    std::vector<Load> capacity = {},
-                    size_t startDepot = 0,
-                    size_t endDepot = 0,
-                    Cost fixedCost = 0,
-                    Duration twEarly = 0,
-                    Duration twLate = std::numeric_limits<Duration>::max(),
-                    Duration shiftDuration
-                    = std::numeric_limits<Duration>::max(),
-                    Distance maxDistance = std::numeric_limits<Distance>::max(),
-                    Cost unitDistanceCost = 1,
-                    Cost unitDurationCost = 0,
-                    size_t profile = 0,
-                    std::optional<Duration> startLate = std::nullopt,
-                    std::vector<Load> initialLoad = {},
-                    std::vector<size_t> reloadDepots = {},
-                    size_t maxReloads = std::numeric_limits<size_t>::max(),
-                    Duration maxOvertime = 0,
-                    Cost unitOvertimeCost = 0,
-                    std::string name = "",
-                    std::vector<std::pair<Duration, Duration>> forbiddenWindows
-                    = {});
+        VehicleType(
+            size_t numAvailable = 1,
+            std::vector<Load> capacity = {},
+            size_t startDepot = 0,
+            size_t endDepot = 0,
+            Cost fixedCost = 0,
+            Duration twEarly = 0,
+            Duration twLate = std::numeric_limits<Duration>::max(),
+            Duration shiftDuration = std::numeric_limits<Duration>::max(),
+            Distance maxDistance = std::numeric_limits<Distance>::max(),
+            Cost unitDistanceCost = 1,
+            Cost unitDurationCost = 0,
+            size_t profile = 0,
+            std::optional<Duration> startLate = std::nullopt,
+            std::vector<Load> initialLoad = {},
+            std::vector<size_t> reloadDepots = {},
+            size_t maxReloads = std::numeric_limits<size_t>::max(),
+            std::optional<Duration> maxDuration = std::nullopt,
+            Cost unitOvertimeCost = 0,
+            std::string name = "",
+            std::vector<std::pair<Duration, Duration>> forbiddenWindows = {},
+            Duration overtimeStart = std::numeric_limits<Duration>::max());
+
+        /**
+         * Overtime incurred by a route of the given duration that ends at the
+         * given time.
+         *
+         * When ``overtime_start`` is set, overtime is clock-based: every unit
+         * worked past the contracted end of shift counts, however short the
+         * route itself was. A driver contracted until 16:00 who runs 09:00 to
+         * 17:00 has worked an hour of overtime even though the route lasted
+         * only the nominal eight hours.
+         *
+         * When ``overtime_start`` is unset, overtime is duration-based:
+         * ``max(0, duration - shift_duration)``.
+         */
+        [[nodiscard]] inline Duration overtime(Duration endTime,
+                                               Duration duration) const
+        {
+            if (overtimeStart != std::numeric_limits<Duration>::max())
+                return endTime > overtimeStart ? endTime - overtimeStart
+                                               : Duration(0);
+
+            return duration > shiftDuration ? duration - shiftDuration
+                                            : Duration(0);
+        }
 
         bool operator==(VehicleType const &other) const;
 
@@ -647,11 +692,12 @@ public:
                 std::optional<std::vector<Load>> initialLoad,
                 std::optional<std::vector<size_t>> reloadDepots,
                 std::optional<size_t> maxReloads,
-                std::optional<Duration> maxOvertime,
+                std::optional<Duration> maxDuration,
                 std::optional<Cost> unitOvertimeCost,
                 std::optional<std::string> name,
                 std::optional<std::vector<std::pair<Duration, Duration>>>
-                    forbiddenWindows) const;
+                    forbiddenWindows,
+                std::optional<Duration> overtimeStart = std::nullopt) const;
 
         /**
          * Returns the maximum number of trips these vehicle can execute.

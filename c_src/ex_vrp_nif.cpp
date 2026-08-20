@@ -672,11 +672,12 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     int64_t tw_early = 0;
     int64_t tw_late = std::numeric_limits<int64_t>::max();
     int64_t shift_duration = std::numeric_limits<int64_t>::max();
+    int64_t overtime_start = std::numeric_limits<int64_t>::max();
     int64_t max_distance = std::numeric_limits<int64_t>::max();
     int64_t unit_distance_cost = 1;
     int64_t unit_duration_cost = 0;
     int64_t profile = 0;
-    int64_t max_overtime = 0;
+    std::optional<int64_t> max_duration = std::nullopt;
     int64_t unit_overtime_cost = 0;
     std::vector<int64_t> reload_depots_vec;
     int64_t max_reloads = std::numeric_limits<int64_t>::max();
@@ -766,6 +767,21 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                     nif_get_int64(env, value, &shift_duration);
                 }
             }
+            else if (key_str == "overtime_start")
+            {
+                char buf[32];
+                if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1))
+                {
+                    if (std::string(buf) == "infinity")
+                    {
+                        overtime_start = std::numeric_limits<int64_t>::max();
+                    }
+                }
+                else
+                {
+                    nif_get_int64(env, value, &overtime_start);
+                }
+            }
             else if (key_str == "max_distance")
             {
                 char buf[32];
@@ -793,9 +809,20 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
             {
                 nif_get_int64(env, value, &profile);
             }
-            else if (key_str == "max_overtime")
+            else if (key_str == "max_duration")
             {
-                nif_get_int64(env, value, &max_overtime);
+                char buf[32];
+                if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1))
+                {
+                    if (std::string(buf) == "infinity")
+                        max_duration = std::numeric_limits<int64_t>::max();
+                }
+                else
+                {
+                    int64_t parsed = 0;
+                    nif_get_int64(env, value, &parsed);
+                    max_duration = parsed;
+                }
             }
             else if (key_str == "unit_overtime_cost")
             {
@@ -908,26 +935,29 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     for (auto const &[s, e] : forbidden_windows_raw)
         forbidden_windows.push_back({Duration(s), Duration(e)});
 
-    return ProblemData::VehicleType(static_cast<size_t>(num_available),
-                                    std::move(capacity_loads),
-                                    static_cast<size_t>(start_depot),
-                                    static_cast<size_t>(end_depot),
-                                    Cost(fixed_cost),
-                                    Duration(tw_early),
-                                    Duration(tw_late),
-                                    Duration(shift_duration),
-                                    Distance(max_distance),
-                                    Cost(unit_distance_cost),
-                                    Cost(unit_duration_cost),
-                                    static_cast<size_t>(profile),
-                                    std::nullopt,  // startLate
-                                    std::move(initial_loads),
-                                    std::move(reload_depots),
-                                    static_cast<size_t>(max_reloads),
-                                    Duration(max_overtime),
-                                    Cost(unit_overtime_cost),
-                                    std::move(name),
-                                    std::move(forbidden_windows));
+    return ProblemData::VehicleType(
+        static_cast<size_t>(num_available),
+        std::move(capacity_loads),
+        static_cast<size_t>(start_depot),
+        static_cast<size_t>(end_depot),
+        Cost(fixed_cost),
+        Duration(tw_early),
+        Duration(tw_late),
+        Duration(shift_duration),
+        Distance(max_distance),
+        Cost(unit_distance_cost),
+        Cost(unit_duration_cost),
+        static_cast<size_t>(profile),
+        std::nullopt,  // startLate
+        std::move(initial_loads),
+        std::move(reload_depots),
+        static_cast<size_t>(max_reloads),
+        max_duration ? std::optional<Duration>(Duration(*max_duration))
+                     : std::nullopt,
+        Cost(unit_overtime_cost),
+        std::move(name),
+        std::move(forbidden_windows),
+        Duration(overtime_start));
 }
 
 // Decode distance/duration matrix from nested list
@@ -4349,17 +4379,7 @@ int64_t search_route_shift_duration_nif(
 
 FINE_NIF(search_route_shift_duration_nif, 0);
 
-// Get max overtime
-int64_t search_route_max_overtime_nif(
-    [[maybe_unused]] ErlNifEnv *env,
-    fine::ResourcePtr<SearchRouteResource> route_resource)
-{
-    return static_cast<int64_t>(route_resource->route()->maxOvertime());
-}
-
-FINE_NIF(search_route_max_overtime_nif, 0);
-
-// Get max duration (shift_duration + max_overtime)
+// Get max duration
 int64_t search_route_max_duration_nif(
     [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<SearchRouteResource> route_resource)
@@ -4368,6 +4388,16 @@ int64_t search_route_max_duration_nif(
 }
 
 FINE_NIF(search_route_max_duration_nif, 0);
+
+// Get overtime start
+int64_t search_route_overtime_start_nif(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
+{
+    return static_cast<int64_t>(route_resource->route()->overtimeStart());
+}
+
+FINE_NIF(search_route_overtime_start_nif, 0);
 
 // Get unit overtime cost
 int64_t search_route_unit_overtime_cost_nif(

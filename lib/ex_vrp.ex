@@ -21,26 +21,29 @@ defmodule ExVrp do
 
   Build a model, solve it, inspect the result:
 
-      model =
-        ExVrp.Model.new()
-        |> ExVrp.Model.add_depot(x: 0, y: 0)
-        |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
-        |> ExVrp.Model.add_client(x: 10, y: 10, delivery: [20])
-        |> ExVrp.Model.add_client(x: 20, y: 0, delivery: [30])
-        |> ExVrp.Model.add_client(x: 0, y: 20, delivery: [25])
+      iex> model =
+      ...>   ExVrp.Model.new()
+      ...>   |> ExVrp.Model.add_depot(x: 0, y: 0)
+      ...>   |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100])
+      ...>   |> ExVrp.Model.add_client(x: 10, y: 10, delivery: [20])
+      ...>   |> ExVrp.Model.add_client(x: 20, y: 0, delivery: [30])
+      ...>   |> ExVrp.Model.add_client(x: 0, y: 20, delivery: [25])
+      iex> {:ok, result} = ExVrp.solve(model, max_iterations: 1000, seed: 42)
+      iex> {result.best.routes, result.best.distance, result.best.is_feasible}
+      {[[2, 1, 3]], 68, true}
 
-      {:ok, result} = ExVrp.solve(model, max_iterations: 1000, seed: 42)
-
-      result.best.routes    #=> [[1, 2], [3]]
-      result.best.distance  #=> 8944
-      result.best.is_feasible #=> true
+  Route entries are _location_ indices, not client indices — locations are ordered
+  `[depots..., clients...]`, so with one depot client `n` is location `n + 1`.
+  See `usage-rules.md` for the semantics that are easiest to get wrong.
 
   ## Solver Options
 
   The solver accepts these options:
 
   - `:max_iterations` - Maximum ILS iterations (default: `10_000`)
-  - `:max_runtime` - Maximum runtime in milliseconds (default: unlimited)
+  - `:max_runtime` - Maximum runtime in milliseconds (default: unlimited). Note that
+    `ExVrp.StoppingCriteria.max_runtime/1` takes seconds instead, matching PyVRP's
+    `MaxRuntime`.
   - `:seed` - Random seed for reproducibility (default: random)
   - `:num_starts` - Parallel independent solver starts (default: `:auto`).
     `:auto` uses `div(System.schedulers_online(), 2)` cores.
@@ -140,6 +143,7 @@ defmodule ExVrp do
 
   - `ExVrp.Model` - Problem builder (depots, clients, vehicles, constraints)
   - `ExVrp.Solver` - Solver configuration and execution
+  - `ExVrp.IteratedLocalSearch.Result` - What `solve/2` returns (`best`, `num_iterations`, `runtime`)
   - `ExVrp.Solution` - Solution queries (routes, costs, feasibility, schedules)
   - `ExVrp.Route` - Per-route queries (distance, duration, load, timing)
   - `ExVrp.StoppingCriteria` - Stopping conditions (iterations, runtime, improvement)
@@ -147,15 +151,17 @@ defmodule ExVrp do
   - `ExVrp.Native` - Low-level C++ NIF bindings (via Fine)
   """
 
+  alias ExVrp.IteratedLocalSearch.Result
   alias ExVrp.Model
   alias ExVrp.Solver
 
   @doc """
   Solve a VRP model.
 
-  Returns `{:ok, result}` on success, `{:error, reason}` on failure.
-  The result contains `result.best` (the best `ExVrp.Solution`) and metadata
-  like `result.num_iterations` and `result.runtime`.
+  Returns `{:ok, result}` on success, `{:error, reason}` on failure, where
+  `result` is an `ExVrp.IteratedLocalSearch.Result` holding `result.best` (the
+  best `ExVrp.Solution`) plus metadata like `result.num_iterations` and
+  `result.runtime`.
 
   See the module documentation for available options.
 
@@ -170,9 +176,7 @@ defmodule ExVrp do
       {:ok, result} = ExVrp.solve(model, max_runtime: 30_000)
 
   """
-  @dialyzer {:nowarn_function, solve: 1}
-  @dialyzer {:nowarn_function, solve: 2}
-  @spec solve(Model.t(), keyword()) :: {:ok, ExVrp.Solution.t()} | {:error, term()}
+  @spec solve(Model.t(), keyword()) :: {:ok, Result.t()} | {:error, term()}
   def solve(%Model{} = model, opts \\ []) do
     Solver.solve(model, opts)
   end
@@ -188,12 +192,10 @@ defmodule ExVrp do
       result.best.distance
 
   """
-  @dialyzer {:nowarn_function, solve!: 1}
-  @dialyzer {:nowarn_function, solve!: 2}
-  @spec solve!(Model.t(), keyword()) :: ExVrp.Solution.t()
+  @spec solve!(Model.t(), keyword()) :: Result.t()
   def solve!(%Model{} = model, opts \\ []) do
     case solve(model, opts) do
-      {:ok, solution} -> solution
+      {:ok, result} -> result
       {:error, reason} -> raise ExVrp.SolveError, reason: reason
     end
   end

@@ -1186,10 +1186,10 @@ void LocalSearch::improveWithMultiTrip(
                              + durMatrix(client, reloadDepot)
                              + clientData.serviceDuration;
 
-            // Check if adding this trip would exceed shift duration
-            auto const shiftDuration = vehType.shiftDuration;
+            // Check if adding this trip would exceed the hard duration cap
+            auto const maxDuration = vehType.maxDuration;
             auto const currentDuration = route.duration();
-            if (shiftDuration < std::numeric_limits<Duration>::max())
+            if (maxDuration < std::numeric_limits<Duration>::max())
             {
                 Duration reloadTime = 0;
                 if (reloadDepot < data.numDepots())
@@ -1199,8 +1199,8 @@ void LocalSearch::improveWithMultiTrip(
                     reloadTime = depot.serviceDuration;
                 }
 
-                if (currentDuration + dur + reloadTime > shiftDuration)
-                    continue;  // Would exceed shift duration
+                if (currentDuration + dur + reloadTime > maxDuration)
+                    continue;  // Would exceed the hard duration cap
             }
 
             // Calculate cost: prize gained minus travel cost

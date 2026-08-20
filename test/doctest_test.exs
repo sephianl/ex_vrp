@@ -1,6 +1,7 @@
 defmodule ExVrp.DoctestTest do
   use ExUnit.Case, async: true
 
+  doctest ExVrp, tags: [:nif_required]
   doctest ExVrp.Client
   doctest ExVrp.ClientGroup
   doctest ExVrp.Depot

@@ -460,7 +460,7 @@ bool Solution::insert(Route::Node *U,
             // Check if route can accommodate the new trip duration,
             // accounting for any forbidden window delay at the trip boundary.
             Duration currentDuration = route.duration();
-            Duration maxDuration = vehType.shiftDuration;
+            Duration maxDuration = vehType.maxDuration;
             Duration tripBoundary
                 = vehType.twEarly + currentDuration - route.timeWarp();
             Duration adjustedBoundary
@@ -469,7 +469,7 @@ bool Solution::insert(Route::Node *U,
 
             if (maxDuration < std::numeric_limits<Duration>::max()
                 && currentDuration + tripDur + forbiddenDelay > maxDuration)
-                continue;  // New trip would exceed shift duration
+                continue;  // New trip would exceed the hard duration cap
 
             // Check if the client's time window can be satisfied.
             // The new trip starts after the current route ends (at earliest),

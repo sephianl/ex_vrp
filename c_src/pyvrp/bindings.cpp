@@ -308,8 +308,9 @@ PYBIND11_MODULE(_pyvrp, m)
              py::arg("initial_load") = py::list(),
              py::arg("reload_depots") = py::list(),
              py::arg("max_reloads") = std::numeric_limits<size_t>::max(),
-             py::arg("max_overtime") = 0,
+             py::arg("max_duration") = py::none(),
              py::arg("unit_overtime_cost") = 0,
+             py::arg("overtime_start") = py::none(),
              py::kw_only(),
              py::arg("name") = "")
         .def_readonly("num_available", &ProblemData::VehicleType::numAvailable)
@@ -337,10 +338,11 @@ PYBIND11_MODULE(_pyvrp, m)
                       &ProblemData::VehicleType::reloadDepots,
                       py::return_value_policy::reference_internal)
         .def_readonly("max_reloads", &ProblemData::VehicleType::maxReloads)
-        .def_readonly("max_overtime", &ProblemData::VehicleType::maxOvertime)
         .def_readonly("unit_overtime_cost",
                       &ProblemData::VehicleType::unitOvertimeCost)
         .def_readonly("max_duration", &ProblemData::VehicleType::maxDuration)
+        .def_readonly("overtime_start",
+                      &ProblemData::VehicleType::overtimeStart)
         .def_property_readonly("max_trips", &ProblemData::VehicleType::maxTrips)
         .def_readonly("name",
                       &ProblemData::VehicleType::name,
@@ -363,8 +365,9 @@ PYBIND11_MODULE(_pyvrp, m)
              py::arg("initial_load") = py::none(),
              py::arg("reload_depots") = py::none(),
              py::arg("max_reloads") = py::none(),
-             py::arg("max_overtime") = py::none(),
+             py::arg("max_duration") = py::none(),
              py::arg("unit_overtime_cost") = py::none(),
+             py::arg("overtime_start") = py::none(),
              py::kw_only(),
              py::arg("name") = py::none(),
              DOC(pyvrp, ProblemData, VehicleType, replace))
@@ -387,9 +390,10 @@ PYBIND11_MODULE(_pyvrp, m)
                                       vehicleType.initialLoad,
                                       vehicleType.reloadDepots,
                                       vehicleType.maxReloads,
-                                      vehicleType.maxOvertime,
+                                      vehicleType.maxDuration,
                                       vehicleType.unitOvertimeCost,
-                                      vehicleType.name);
+                                      vehicleType.name,
+                                      vehicleType.overtimeStart);
             },
             [](py::tuple t) {  // __setstate__
                 ProblemData::VehicleType vehicleType(
@@ -409,9 +413,11 @@ PYBIND11_MODULE(_pyvrp, m)
                     t[13].cast<std::vector<pyvrp::Load>>(),  // initial load
                     t[14].cast<std::vector<size_t>>(),       // reload depots
                     t[15].cast<size_t>(),                    // max reloads
-                    t[16].cast<pyvrp::Duration>(),           // max overtime
-                    t[17].cast<pyvrp::Cost>(),   // unit overtime cost
-                    t[18].cast<std::string>());  // name
+                    t[16].cast<pyvrp::Duration>(),           // max duration
+                    t[17].cast<pyvrp::Cost>(),      // unit overtime cost
+                    t[18].cast<std::string>(),      // name
+                    {},                             // forbidden windows
+                    t[19].cast<pyvrp::Duration>());  // overtime start
 
                 return vehicleType;
             }))
