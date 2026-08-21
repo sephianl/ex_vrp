@@ -19,6 +19,17 @@ name: SwapStar Experiment
 # variable. That is deliberate: rebuilding per arm would reintroduce
 # build-to-build variance into the very numbers we are trying to compare.
 
+# Triggering: add the `benchmark` label to a PR from this branch. A
+# workflow_dispatch entry is kept for re-runs with different knobs, but it only
+# appears in the Actions UI once this file is on the default branch, whereas the
+# label works from a branch immediately because pull_request events read the
+# workflow from the PR merge ref.
+#
+# The `benchmark` label also starts the AB Benchmark job. That one compares this
+# branch against main with EX_VRP_SWAP_STAR unset in both arms, so it is a
+# same-code comparison and its deltas are a second sample of the harness noise
+# floor rather than a measurement of SwapStar.
+
 on:
   workflow_dispatch:
     inputs:
@@ -31,20 +42,34 @@ on:
         required: false
         default: "120"
       seeds:
-        description: "Comma-separated seeds. Widen to 1,2,3,4,5 if a result looks marginal."
+        description: >-
+          Comma-separated seeds. Keep the count at or below the runner's dirty
+          CPU scheduler count (4 on ubuntu-latest) — local search runs on dirty
+          schedulers, so extra seeds queue and then solve on an idle machine,
+          which inflates their results and biases the mean.
         required: false
-        default: "1,2,3"
+        default: "1,2,3,4"
       only:
         description: "Optional comma-separated instance ids to restrict the corpus (blank = all)."
         required: false
         default: ""
+  pull_request:
+    types: [labeled, synchronize]
 
 jobs:
   swapstar-experiment:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'benchmark')
     runs-on: ubuntu-latest
     timeout-minutes: 300
     env:
       DEVENV_NO_GIT_HOOKS: "1"
+      # pull_request events supply no inputs, so every knob needs a literal
+      # fallback. Reading them through env also keeps ${{ }} out of the shell.
+      BUDGET_CAP: ${{ inputs.budget_cap || '120' }}
+      SEEDS: ${{ inputs.seeds || '1,2,3,4' }}
+      ONLY: ${{ inputs.only || '' }}
       # cc_precompiler otherwise serves a released .so keyed on the package
       # VERSION rather than the git ref, which would silently run the shipped
       # solver instead of this branch's.
@@ -88,25 +113,38 @@ jobs:
       # blank input means "whole corpus" rather than "--only ''".
       - name: Arm A - baseline (SwapStar absent)
         run: |
-          ARGS="--out /tmp/A_baseline.json --ref A-baseline --seeds ${{ inputs.seeds }} --budget-cap ${{ inputs.budget_cap }}"
-          if [ -n "${{ inputs.only }}" ]; then ARGS="$ARGS --only ${{ inputs.only }}"; fi
+          ARGS="--out /tmp/A_baseline.json --ref A-baseline --seeds $SEEDS --budget-cap $BUDGET_CAP"
+          if [ -n "$ONLY" ]; then ARGS="$ARGS --only $ONLY"; fi
           devenv shell mix bench.run $ARGS
 
       - name: Arm B - SwapStar, overlap tolerance 0.05
         env:
           EX_VRP_SWAP_STAR: "0.05"
         run: |
-          ARGS="--out /tmp/B_tol005.json --ref B-swapstar-0.05 --seeds ${{ inputs.seeds }} --budget-cap ${{ inputs.budget_cap }}"
-          if [ -n "${{ inputs.only }}" ]; then ARGS="$ARGS --only ${{ inputs.only }}"; fi
+          ARGS="--out /tmp/B_tol005.json --ref B-swapstar-0.05 --seeds $SEEDS --budget-cap $BUDGET_CAP"
+          if [ -n "$ONLY" ]; then ARGS="$ARGS --only $ONLY"; fi
           devenv shell mix bench.run $ARGS
 
       - name: Arm C - SwapStar, no pruning
         env:
           EX_VRP_SWAP_STAR: "1.0"
         run: |
-          ARGS="--out /tmp/C_tol100.json --ref C-swapstar-1.0 --seeds ${{ inputs.seeds }} --budget-cap ${{ inputs.budget_cap }}"
-          if [ -n "${{ inputs.only }}" ]; then ARGS="$ARGS --only ${{ inputs.only }}"; fi
+          ARGS="--out /tmp/C_tol100.json --ref C-swapstar-1.0 --seeds $SEEDS --budget-cap $BUDGET_CAP"
+          if [ -n "$ONLY" ]; then ARGS="$ARGS --only $ONLY"; fi
           devenv shell mix bench.run $ARGS
+
+      - name: Verify the arms actually differed
+        if: always()
+        run: |
+          A=$(jq -r '[.instances[].seeds[].iterations] | add' /tmp/A_baseline.json)
+          B=$(jq -r '[.instances[].seeds[].iterations] | add' /tmp/B_tol005.json)
+          echo "total iterations: A=$A B=$B"
+          if [ "$A" = "$B" ]; then
+            echo "::error::Arms A and B produced identical total iteration counts. \
+          SwapStar was almost certainly not active in arm B — check that \
+          EX_VRP_SWAP_STAR reaches the solver and that the NIF was built from this branch."
+            exit 1
+          fi
 
       # bench.compare exits 1 on regression. This is an experiment, not a gate:
       # a "regression" in arm B or C is a finding to read, not a job failure.
@@ -119,65 +157,22 @@ jobs:
             devenv shell mix bench.compare "/tmp/$base.json" "/tmp/$cand.json" || true
           done | tee /tmp/compare.txt
 
-      # The comparator reports objectives only. Iteration throughput is the
-      # other half of the diagnosis: the general-updates post-mortem turned on
-      # a 12x iteration collapse at n~765, which is what distinguished a real
-      # regression from an instance that simply ran out of budget. A worse
-      # objective with flat iterations means the operator misleads the search;
-      # a worse objective with collapsed iterations means it was too slow.
-      - name: Three-way table with iteration counts
-        if: always()
-        run: |
-          for f in /tmp/A_baseline.json /tmp/B_tol005.json /tmp/C_tol100.json; do
-            if [ ! -s "$f" ]; then
-              echo "$f missing or empty - an arm did not finish; skipping table" | tee /tmp/table.txt
-              exit 0
-            fi
-          done
-          jq -s -r '
-            def pad($n): tostring | if length >= $n then .[0:$n] else . + (" " * ($n - length)) end;
-            def arm($i): .[$i].instances;
-            def iters(x): ([x.seeds[] | .iterations] | add / length) | round;
-            def obj(x): x.mean_objective;
-            def pct($b; $c): if $b == null or $c == null or $b == 0 then null
-                             else (($c - $b) / $b * 1000 | round / 10) end;
-            def objf(v): (if v == null then "infeas" else (v | round) end) | pad(12);
-            def pctf(v): (if v == null then "n/a" else v end) | pad(8);
-            (arm(0) | keys) as $ids
-            | ( [("instance" | pad(30)), ("variant" | pad(12)), ("A_obj" | pad(12)),
-                 ("B_obj" | pad(12)), ("B_%" | pad(8)), ("C_obj" | pad(12)), ("C_%" | pad(8)),
-                 ("A_it" | pad(8)), ("B_it" | pad(8)), ("C_it" | pad(8))] | join(" ") ),
-              ( "-" * 122 ),
-              ( $ids[] as $id
-                | arm(0)[$id] as $a | arm(1)[$id] as $b | arm(2)[$id] as $c
-                | [ ($id | pad(30)), ($a.variant | pad(12)),
-                    objf(obj($a)), objf(obj($b)), pctf(pct(obj($a); obj($b))),
-                    objf(obj($c)), pctf(pct(obj($a); obj($c))),
-                    (iters($a) | pad(8)), (iters($b) | pad(8)), (iters($c) | pad(8))
-                  ] | join(" ") )
-          ' /tmp/A_baseline.json /tmp/B_tol005.json /tmp/C_tol100.json | tee /tmp/table.txt
-
       - name: Job summary
         if: always()
         run: |
           {
             echo "## SwapStar three-arm experiment"
             echo
-            echo "budget_cap=\`${{ inputs.budget_cap }}\`s seeds=\`${{ inputs.seeds }}\` only=\`${{ inputs.only }}\`"
+            echo "budget_cap=\`$BUDGET_CAP\`s seeds=\`$SEEDS\` only=\`$ONLY\`"
             echo "$(cat /tmp/machine.txt)"
             echo
-            echo "Lower objective is better. \`B_%\`/\`C_%\` are vs arm A, so **negative = improvement**."
-            echo
-            echo '```'
-            cat /tmp/table.txt 2>/dev/null || echo "(table not produced)"
-            echo '```'
-            echo
-            echo "<details><summary>Pairwise comparator output</summary>"
+            echo "Lower objective is better, so **negative Delta% = improvement**."
+            echo "\`Noise\` is the seed-to-seed spread; a Delta% inside it is not a result."
+            echo "\`Iter%\` is the change in iterations completed — that is the cost side."
             echo
             echo '```'
             cat /tmp/compare.txt 2>/dev/null || echo "(no comparison produced)"
             echo '```'
-            echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload raw results
@@ -190,5 +185,4 @@ jobs:
             /tmp/B_tol005.json
             /tmp/C_tol100.json
             /tmp/compare.txt
-            /tmp/table.txt
             /tmp/machine.txt
