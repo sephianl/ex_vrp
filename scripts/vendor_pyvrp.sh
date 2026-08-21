@@ -1,6 +1,35 @@
 #!/bin/bash
+#
+# !! DO NOT RUN THIS SCRIPT AS-IS -- IT IS STALE AND DESTRUCTIVE !!
+#
+# It still describes PyVRP v0.9.0 and will actively damage the tree:
+#
+#   1. It curl-overwrites files in place. ~23 vendored files carry local
+#      feature patches (same-vehicle groups, forbidden windows, reload/
+#      multi-trip, depot-service removal, NIF/ILS plumbing). Running this
+#      silently destroys all of them. Upstream bumps must be a 3-way merge.
+#   2. It re-vendors a genetic algorithm that no longer exists upstream.
+#      PyVRP dropped hybrid genetic search in v0.13.0 (PR #778): no more
+#      crossover/, diversity/, repair/, or SubPopulation. The CROSSOVER_FILES,
+#      DIVERSITY_FILES, REPAIR_FILES and SubPopulation entries below are dead,
+#      and `|| echo "(failed, skipping)"` hides every 404 they now produce.
+#   3. It pins v0.9.0. The tree is synced at v0.13.0 (pristine files are
+#      byte-identical through v0.13.4).
+#
+# A corrected version -- pinned to v0.13.4, right file list, non-overwriting
+# (writes .upstream sidecars for drifted files) -- exists on branch
+# `update-to-upstream` (commit 7111d47). That commit also renames the vendored
+# folder to c_src/ex_vrp/, which has not landed on main, so it cannot be
+# cherry-picked cleanly. Take the script from there when doing an upstream bump.
+#
+# Policy: sync to tagged releases only, never upstream `main`.
+#
 # Script to vendor PyVRP C++ source code
 # This downloads the required C++ files from the PyVRP repository
+
+echo "Refusing to run: this script is stale (v0.9.0) and overwrites local patches." >&2
+echo "See the header comment; use the corrected script on branch update-to-upstream." >&2
+exit 1
 
 set -euo pipefail
 

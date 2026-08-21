@@ -9,6 +9,12 @@ Vehicle Routing Problem (VRP) solver.
 Uses the same C++ core as PyVRP via NIFs for high-performance solving of
 CVRP, VRPTW, multi-depot, heterogeneous fleet, prize-collecting, and multi-trip problems.
 
+The solver is an **iterated local search with late-acceptance hill-climbing**, matching
+PyVRP from v0.13.0 onward. Note that PyVRP's own citation (Wouda, Lan & Kool 2024,
+_INFORMS Journal on Computing_ 36(4)) describes an earlier hybrid genetic search
+implementation; upstream [replaced it in v0.13.0](https://github.com/PyVRP/PyVRP/pull/778),
+and ExVrp follows the current design.
+
 ## Installation
 
 Add `ex_vrp` to your dependencies in `mix.exs`:

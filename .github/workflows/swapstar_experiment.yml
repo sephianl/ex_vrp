@@ -1,0 +1,194 @@
+name: SwapStar Experiment
+
+# Three-arm experiment measuring whether SwapStar is worth enabling, and
+# whether repairing its geographic pruning would buy anything.
+#
+#   A  EX_VRP_SWAP_STAR unset  baseline; the operator is absent (shipped behaviour)
+#   B  EX_VRP_SWAP_STAR=0.05   SwapStar with upstream's default overlap tolerance
+#   C  EX_VRP_SWAP_STAR=1.0    SwapStar evaluating every route pair (no pruning)
+#
+# Why arm C is the point: `search::Route::overlapsWith` prunes candidate route
+# pairs by the polar angle of their centroids. Zelo feeds synthetic coordinates
+# (x = matrix index, y = 0), so every point is collinear and that pruning
+# degenerates into an arbitrary bisection by mean index. Arm C evaluates a
+# strict superset of the pairs any correct geometry would select, so C bounds
+# from above whatever fixing the coordinates could buy. If C ~= B, the
+# coordinate work is not worth doing and no Zelo change is needed.
+#
+# All three arms run from ONE build, differing only by the environment
+# variable. That is deliberate: rebuilding per arm would reintroduce
+# build-to-build variance into the very numbers we are trying to compare.
+
+on:
+  workflow_dispatch:
+    inputs:
+      budget_cap:
+        description: >-
+          Per-instance wall-clock cap in seconds. Production solves run
+          114-215s, so caps below ~120 truncate the large prize-collecting
+          instances before they converge and measure per-iteration cost
+          rather than final quality.
+        required: false
+        default: "120"
+      seeds:
+        description: "Comma-separated seeds. Widen to 1,2,3,4,5 if a result looks marginal."
+        required: false
+        default: "1,2,3"
+      only:
+        description: "Optional comma-separated instance ids to restrict the corpus (blank = all)."
+        required: false
+        default: ""
+
+jobs:
+  swapstar-experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      DEVENV_NO_GIT_HOOKS: "1"
+      # cc_precompiler otherwise serves a released .so keyed on the package
+      # VERSION rather than the git ref, which would silently run the shipped
+      # solver instead of this branch's.
+      EX_VRP_FORCE_BUILD: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Install devenv
+        run: nix profile install --accept-flake-config github:cachix/devenv/latest
+
+      - name: Cache Mix dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Build once
+        run: |
+          devenv shell mix deps.get
+          devenv shell mix compile
+
+      - name: Record machine profile
+        run: |
+          echo "cores=$(nproc)" | tee /tmp/machine.txt
+          cat /proc/cpuinfo | grep -m1 "model name" | tee -a /tmp/machine.txt
+
+      # Arms run back to back on the same runner so they share a machine.
+      # ONLY is passed through unquoted-if-empty via a conditional so that a
+      # blank input means "whole corpus" rather than "--only ''".
+      - name: Arm A - baseline (SwapStar absent)
+        run: |
+          ARGS="--out /tmp/A_baseline.json --ref A-baseline --seeds ${{ inputs.seeds }} --budget-cap ${{ inputs.budget_cap }}"
+          if [ -n "${{ inputs.only }}" ]; then ARGS="$ARGS --only ${{ inputs.only }}"; fi
+          devenv shell mix bench.run $ARGS
+
+      - name: Arm B - SwapStar, overlap tolerance 0.05
+        env:
+          EX_VRP_SWAP_STAR: "0.05"
+        run: |
+          ARGS="--out /tmp/B_tol005.json --ref B-swapstar-0.05 --seeds ${{ inputs.seeds }} --budget-cap ${{ inputs.budget_cap }}"
+          if [ -n "${{ inputs.only }}" ]; then ARGS="$ARGS --only ${{ inputs.only }}"; fi
+          devenv shell mix bench.run $ARGS
+
+      - name: Arm C - SwapStar, no pruning
+        env:
+          EX_VRP_SWAP_STAR: "1.0"
+        run: |
+          ARGS="--out /tmp/C_tol100.json --ref C-swapstar-1.0 --seeds ${{ inputs.seeds }} --budget-cap ${{ inputs.budget_cap }}"
+          if [ -n "${{ inputs.only }}" ]; then ARGS="$ARGS --only ${{ inputs.only }}"; fi
+          devenv shell mix bench.run $ARGS
+
+      # bench.compare exits 1 on regression. This is an experiment, not a gate:
+      # a "regression" in arm B or C is a finding to read, not a job failure.
+      - name: Pairwise comparisons
+        if: always()
+        run: |
+          for pair in "A_baseline:B_tol005" "A_baseline:C_tol100" "B_tol005:C_tol100"; do
+            base="${pair%%:*}"; cand="${pair##*:}"
+            echo "===== $base -> $cand ====="
+            devenv shell mix bench.compare "/tmp/$base.json" "/tmp/$cand.json" || true
+          done | tee /tmp/compare.txt
+
+      # The comparator reports objectives only. Iteration throughput is the
+      # other half of the diagnosis: the general-updates post-mortem turned on
+      # a 12x iteration collapse at n~765, which is what distinguished a real
+      # regression from an instance that simply ran out of budget. A worse
+      # objective with flat iterations means the operator misleads the search;
+      # a worse objective with collapsed iterations means it was too slow.
+      - name: Three-way table with iteration counts
+        if: always()
+        run: |
+          for f in /tmp/A_baseline.json /tmp/B_tol005.json /tmp/C_tol100.json; do
+            if [ ! -s "$f" ]; then
+              echo "$f missing or empty - an arm did not finish; skipping table" | tee /tmp/table.txt
+              exit 0
+            fi
+          done
+          jq -s -r '
+            def pad($n): tostring | if length >= $n then .[0:$n] else . + (" " * ($n - length)) end;
+            def arm($i): .[$i].instances;
+            def iters(x): ([x.seeds[] | .iterations] | add / length) | round;
+            def obj(x): x.mean_objective;
+            def pct($b; $c): if $b == null or $c == null or $b == 0 then null
+                             else (($c - $b) / $b * 1000 | round / 10) end;
+            def objf(v): (if v == null then "infeas" else (v | round) end) | pad(12);
+            def pctf(v): (if v == null then "n/a" else v end) | pad(8);
+            (arm(0) | keys) as $ids
+            | ( [("instance" | pad(30)), ("variant" | pad(12)), ("A_obj" | pad(12)),
+                 ("B_obj" | pad(12)), ("B_%" | pad(8)), ("C_obj" | pad(12)), ("C_%" | pad(8)),
+                 ("A_it" | pad(8)), ("B_it" | pad(8)), ("C_it" | pad(8))] | join(" ") ),
+              ( "-" * 122 ),
+              ( $ids[] as $id
+                | arm(0)[$id] as $a | arm(1)[$id] as $b | arm(2)[$id] as $c
+                | [ ($id | pad(30)), ($a.variant | pad(12)),
+                    objf(obj($a)), objf(obj($b)), pctf(pct(obj($a); obj($b))),
+                    objf(obj($c)), pctf(pct(obj($a); obj($c))),
+                    (iters($a) | pad(8)), (iters($b) | pad(8)), (iters($c) | pad(8))
+                  ] | join(" ") )
+          ' /tmp/A_baseline.json /tmp/B_tol005.json /tmp/C_tol100.json | tee /tmp/table.txt
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## SwapStar three-arm experiment"
+            echo
+            echo "budget_cap=\`${{ inputs.budget_cap }}\`s seeds=\`${{ inputs.seeds }}\` only=\`${{ inputs.only }}\`"
+            echo "$(cat /tmp/machine.txt)"
+            echo
+            echo "Lower objective is better. \`B_%\`/\`C_%\` are vs arm A, so **negative = improvement**."
+            echo
+            echo '```'
+            cat /tmp/table.txt 2>/dev/null || echo "(table not produced)"
+            echo '```'
+            echo
+            echo "<details><summary>Pairwise comparator output</summary>"
+            echo
+            echo '```'
+            cat /tmp/compare.txt 2>/dev/null || echo "(no comparison produced)"
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload raw results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swapstar-experiment-results
+          path: |
+            /tmp/A_baseline.json
+            /tmp/B_tol005.json
+            /tmp/C_tol100.json
+            /tmp/compare.txt
+            /tmp/table.txt
+            /tmp/machine.txt

@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <optional>
 #include <set>
@@ -299,6 +300,7 @@ struct LocalSearchResource
     std::unique_ptr<search::SwapTails> swapTails;
     std::unique_ptr<search::RelocateWithDepot> relocateDepot;
     std::unique_ptr<search::SwapRoutes> swapRoutes;
+    std::unique_ptr<search::SwapStar> swapStar;
 
     // The local search object (must be last - uses references to above)
     std::unique_ptr<search::LocalSearch> ls;
@@ -342,13 +344,16 @@ struct LocalSearchResource
             ls->addNodeOperator(*relocateDepot);
         }
 
-        // TODO: SwapStar is PyVRP's most powerful route operator for
-        // inter-route optimization. Currently disabled because it's O(V²×N)
-        // per pass and needs a per-iteration timeout to prevent hanging on
-        // large problems (53+ vehicles). Enable when a per-iteration timeout
-        // is passed from the Elixir ILS layer.
-        // swapStar = std::make_unique<search::SwapStar>(data);
-        // ls->addRouteOperator(*swapStar);
+        // TEMPORARY EXPERIMENT SCAFFOLD — remove before merging.
+        // EX_VRP_SWAP_STAR sets SwapStar's overlap tolerance; leaving it
+        // unset omits the operator entirely, which is the shipped behaviour.
+        // One binary serves all arms so the A/B has no build variance.
+        if (char const *tolerance = std::getenv("EX_VRP_SWAP_STAR"))
+        {
+            swapStar = std::make_unique<search::SwapStar>(data,
+                                                          std::atof(tolerance));
+            ls->addRouteOperator(*swapStar);
+        }
 
         if (search::supports<search::SwapRoutes>(data))
         {
