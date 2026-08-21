@@ -155,6 +155,80 @@ Price the terms against each other's actual magnitudes on your own data, or one 
 becomes the whole objective. `IteratedLocalSearch.Result.cost/1` reports this total, which is why
 it is not a distance.
 
+## Overtime needs two fields, and `shift_duration` alone is a hard cap
+
+Three vehicle-type fields interact here, and only two of them are on the same axis:
+
+| Field            | Axis     | Meaning                                                             |
+| ---------------- | -------- | ------------------------------------------------------------------- |
+| `shift_duration` | duration | nominal shift, and the baseline duration-based overtime counts from |
+| `max_duration`   | duration | hard cap on route duration; defaults to `shift_duration`            |
+| `overtime_start` | clock    | contracted end of shift, same axis as `:time_windows`               |
+
+Both duration fields measure elapsed time rather than time worked — see the next section, which is
+the single most common way these get misused.
+
+`max_duration` defaulting to `shift_duration` is the part that catches people out. It means
+**`unit_overtime_cost` on its own does nothing**:
+
+```elixir
+# Inert. The route is hard-capped at 480, so duration never exceeds shift_duration
+# and duration-based overtime is always 0.
+Model.add_vehicle_type(model, shift_duration: 480, unit_overtime_cost: 10)
+
+# Works. Up to 60 units past the nominal shift, priced at 10 each.
+Model.add_vehicle_type(model, shift_duration: 480, max_duration: 540, unit_overtime_cost: 10)
+```
+
+Overtime is then `max(0, duration - shift_duration)` — it measures how _long_ the vehicle worked,
+so a route that starts late but runs only seven hours incurs none.
+
+If your drivers are contracted until a wall-clock time rather than for a number of hours, that is a
+different rule and needs `overtime_start`:
+
+```elixir
+Model.add_vehicle_type(model,
+  time_windows: [{0, 86_400}],
+  shift_duration: 28_800,
+  max_duration: :infinity,
+  overtime_start: 57_600,   # 16:00
+  unit_overtime_cost: 10
+)
+```
+
+Overtime becomes `max(0, route_end - overtime_start)`. A driver who runs 09:00–17:00 has worked an
+hour of overtime even though the route lasted exactly the nominal eight. Setting `overtime_start`
+switches the rule over completely — `shift_duration` stops feeding the overtime calculation and
+does nothing but seed the `max_duration` default.
+
+Read the result with `ExVrp.Solution.overtime/1` or `ExVrp.Route.overtime/1`.
+
+## Duration caps measure elapsed time, not time worked
+
+`shift_duration`, `max_duration` and `ExVrp.Route.duration/1` all measure **elapsed** time: route
+start to route end, with idle time included. None of them caps how long the driver actually worked.
+
+That distinction is invisible until a client's time window forces a wait, and then it inverts the
+answer. A driver doing 300 units of driving across a day with a 600-unit gap in the middle:
+
+```elixir
+# elapsed 900, wait 600, actually worked 300
+max_duration: 500   # => INFEASIBLE, despite only 300 units worked
+max_duration: 1500  # => feasible
+```
+
+So a working day made of two short shifts separated by a long gap breaches an elapsed cap that the
+driver's real hours would clear — and conversely, an elapsed cap generous enough to allow that day
+also permits a route that genuinely works the full span.
+
+**There is no "no more than N hours worked per day" constraint.** If that is what you need, the
+solver cannot enforce it; measure it after the fact and reject or re-plan yourself:
+
+```elixir
+worked = ExVrp.Route.duration(route) - ExVrp.Route.wait_duration(route)
+# equivalently: ExVrp.Route.travel_duration(route) + ExVrp.Route.service_duration(route)
+```
+
 ## Warm-starting with `:initial_routes`
 
 If you already have a plan — last night's routes, or an existing schedule you are inserting new

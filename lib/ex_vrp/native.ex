@@ -135,8 +135,8 @@ defmodule ExVrp.Native do
     search_route_swap_nif: 2,
     search_route_overlaps_with_nif: 3,
     search_route_shift_duration_nif: 1,
-    search_route_max_overtime_nif: 1,
     search_route_max_duration_nif: 1,
+    search_route_overtime_start_nif: 1,
     search_route_unit_overtime_cost_nif: 1,
     search_route_has_distance_cost_nif: 1,
     search_route_has_duration_cost_nif: 1,
@@ -1017,11 +1017,11 @@ defmodule ExVrp.Native do
   @doc "Gets the route's shift duration."
   def search_route_shift_duration_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc "Gets the route's max overtime."
-  def search_route_max_overtime_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Gets the route's max duration (shift_duration + max_overtime)."
+  @doc "Gets the route's hard max duration."
   def search_route_max_duration_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc "Gets the route's contracted end of shift, past which work counts as overtime."
+  def search_route_overtime_start_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Gets the route's unit overtime cost."
   def search_route_unit_overtime_cost_nif(_route), do: :erlang.nif_error(:nif_not_loaded)

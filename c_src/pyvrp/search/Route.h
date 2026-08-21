@@ -308,6 +308,7 @@ private:
     Cost distanceCost_;
     Distance excessDistance_;
     Duration duration_;
+    Duration overtime_ = 0;
     Cost durationCost_;
     Duration timeWarp_;
     Cost reloadCost_;
@@ -492,16 +493,23 @@ public:
     [[nodiscard]] inline Duration shiftDuration() const;
 
     /**
+     * @return The vehicle type data backing this route, used for rules that
+     *         depend on more than one of its fields (such as overtime).
+     */
+    [[nodiscard]] inline ProblemData::VehicleType const &
+    vehicleTypeData() const;
+
+    /**
      * @return The (hard) maximum route duration that the vehicle servicing
      *         this route supports.
      */
     [[nodiscard]] inline Duration maxDuration() const;
 
     /**
-     * @return The maximum overtime that the vehicle servicing this route
-     *         supports.
+     * @return The contracted end of shift past which work counts as overtime,
+     *         or the maximum representable duration when unset.
      */
-    [[nodiscard]] inline Duration maxOvertime() const;
+    [[nodiscard]] inline Duration overtimeStart() const;
 
     /**
      * @return The maximum route distance that the vehicle servicing this route
@@ -970,7 +978,7 @@ Duration Route::duration() const
 Duration Route::overtime() const
 {
     assert(!dirty);
-    return std::max<Duration>(duration() - shiftDuration(), 0);
+    return overtime_;
 }
 
 Cost Route::durationCost() const
@@ -991,19 +999,33 @@ Cost Route::unitOvertimeCost() const { return vehicleType_.unitOvertimeCost; }
 
 bool Route::hasDurationCost() const
 {
+    // Overtime is reachable either from a contracted end of shift, or from a
+    // finite nominal shift the route can be costed for running past. Missing
+    // the latter would leave delta evaluation blind to overtime whenever the
+    // hard cap is unbounded.
+    auto const unbounded = std::numeric_limits<Duration>::max();
+    auto const hasOvertimeCost
+        = unitOvertimeCost() != 0
+          && (overtimeStart() != unbounded || shiftDuration() != unbounded);
+
     // clang-format off
     return data.hasTimeWindows()
         || unitDurationCost() != 0
-        || (unitOvertimeCost() != 0 && maxOvertime() != 0)
-        || maxDuration() != std::numeric_limits<Duration>::max();
+        || hasOvertimeCost
+        || maxDuration() != unbounded;
     // clang-format on
 }
 
 Duration Route::shiftDuration() const { return vehicleType_.shiftDuration; }
 
+ProblemData::VehicleType const &Route::vehicleTypeData() const
+{
+    return vehicleType_;
+}
+
 Duration Route::maxDuration() const { return vehicleType_.maxDuration; }
 
-Duration Route::maxOvertime() const { return vehicleType_.maxOvertime; }
+Duration Route::overtimeStart() const { return vehicleType_.overtimeStart; }
 
 Distance Route::maxDistance() const { return vehicleType_.maxDistance; }
 
@@ -1145,7 +1167,7 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
     auto const &data = route()->data;
     auto const unitDurationCost = route()->unitDurationCost();
     auto const unitOvertimeCost = route()->unitOvertimeCost();
-    auto const shiftDuration = route()->shiftDuration();
+    auto const &vehType = route()->vehicleTypeData();
     auto const maxDuration = route()->maxDuration();
     auto const profile = route()->profile();
     auto const &matrix = data.durationMatrix(profile);
@@ -1209,10 +1231,11 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
         merge(merge, std::forward<decltype(args)>(args)...);
 
         auto const duration = ds.duration();
-        auto const overtime = std::max<Duration>(duration - shiftDuration, 0);
+        auto const timeWarp = ds.timeWarp(maxDuration);
+        auto const endTime = ds.startEarly() + duration - timeWarp;
+        auto const overtime = vehType.overtime(endTime, duration);
         auto const cost = unitDurationCost * static_cast<Cost>(duration)
                           + unitOvertimeCost * static_cast<Cost>(overtime);
-        auto const timeWarp = ds.timeWarp(maxDuration);
         return std::make_pair(cost, timeWarp);
     };
 

@@ -80,12 +80,12 @@ defmodule ExVrp.MultiTripTest do
           num_available: 1,
           capacity: [100],
           shift_duration: 480,
-          max_overtime: 60,
+          max_duration: 540,
           unit_overtime_cost: 2
         )
 
       assert vt.shift_duration == 480
-      assert vt.max_overtime == 60
+      assert vt.max_duration == 540
       assert vt.unit_overtime_cost == 2
     end
 
@@ -93,7 +93,7 @@ defmodule ExVrp.MultiTripTest do
       vt = VehicleType.new(num_available: 1, capacity: [50])
 
       assert vt.shift_duration == :infinity
-      assert vt.max_overtime == 0
+      assert vt.max_duration == :infinity
       assert vt.unit_overtime_cost == 0
     end
   end

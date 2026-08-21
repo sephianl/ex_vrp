@@ -430,7 +430,7 @@ defmodule ExVrp.ModelTest do
           shift_duration: 93,
           max_distance: 97,
           start_late: 18,
-          max_overtime: 43
+          max_duration: 136
         )
 
       vt = hd(model.vehicle_types)
@@ -442,7 +442,7 @@ defmodule ExVrp.ModelTest do
       assert vt.shift_duration == 93
       assert vt.max_distance == 97
       assert vt.start_late == 18
-      assert vt.max_overtime == 43
+      assert vt.max_duration == 136
     end
 
     test "vehicle type default depots" do

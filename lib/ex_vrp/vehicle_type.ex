@@ -20,8 +20,9 @@ defmodule ExVrp.VehicleType do
           unit_duration_cost: non_neg_integer(),
           profile: non_neg_integer(),
           start_late: non_neg_integer(),
-          max_overtime: non_neg_integer(),
+          max_duration: non_neg_integer() | :infinity,
           unit_overtime_cost: non_neg_integer(),
+          overtime_start: non_neg_integer() | :infinity,
           reload_depots: [non_neg_integer()],
           max_reloads: non_neg_integer() | :infinity,
           initial_load: [non_neg_integer()],
@@ -44,8 +45,9 @@ defmodule ExVrp.VehicleType do
     unit_duration_cost: 0,
     profile: 0,
     start_late: 0,
-    max_overtime: 0,
+    max_duration: nil,
     unit_overtime_cost: 0,
+    overtime_start: :infinity,
     reload_depots: [],
     max_reloads: :infinity,
     initial_load: [],
@@ -76,8 +78,19 @@ defmodule ExVrp.VehicleType do
   - `:unit_duration_cost` - Cost per unit time (default: `0`)
   - `:profile` - Index of distance/duration matrix to use (default: `0`)
   - `:start_late` - Latest allowed start time (default: `0`)
-  - `:max_overtime` - Maximum overtime allowed (default: `0`)
+  - `:max_duration` - Hard maximum route duration, independent of `:shift_duration`
+    but defaulting to it, i.e. a route may not run longer than its nominal shift
+    unless you say otherwise. Measures **elapsed** time from route start to route
+    end, so idle time between stops counts against it; it is not a cap on time
+    worked. `new/1` resolves the default, so the struct always carries a concrete
+    value
   - `:unit_overtime_cost` - Cost per unit of overtime (default: `0`)
+  - `:overtime_start` - Clock time after which work counts as overtime, on the same
+    axis as `:time_windows` (default: `:infinity`). When set, overtime is
+    `max(0, route_end - overtime_start)` — time worked past the contracted end,
+    regardless of how long the route itself took. When left at `:infinity`,
+    overtime is `max(0, duration - shift_duration)` instead — which only ever
+    exceeds zero if `:max_duration` was raised above `:shift_duration`.
   - `:reload_depots` - List of depot indices where vehicle can reload (default: `[]`)
   - `:max_reloads` - Maximum number of reloads per route (default: `:infinity`)
   - `:initial_load` - Initial load per dimension (default: `[]`)
@@ -126,7 +139,22 @@ defmodule ExVrp.VehicleType do
       |> Enum.chunk_every(2, 1, :discard)
       |> Enum.map(fn [{_s, gap_start}, {gap_end, _e}] -> {gap_start, gap_end} end)
 
-    struct!(__MODULE__, Keyword.merge(rest, tw_early: tw_early, tw_late: tw_late, forbidden_windows: forbidden))
+    struct!(
+      __MODULE__,
+      Keyword.merge(rest,
+        tw_early: tw_early,
+        tw_late: tw_late,
+        max_duration: resolve_max_duration(rest),
+        forbidden_windows: forbidden
+      )
+    )
+  end
+
+  defp resolve_max_duration(opts) do
+    defaults = %__MODULE__{num_available: 1, capacity: []}
+
+    Keyword.get(opts, :max_duration) ||
+      Keyword.get(opts, :shift_duration, defaults.shift_duration)
   end
 
   defp validate_no_legacy_options!(opts) do

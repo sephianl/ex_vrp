@@ -365,10 +365,11 @@ ProblemData::VehicleType::VehicleType(
     std::vector<Load> initialLoad,
     std::vector<size_t> reloadDepots,
     size_t maxReloads,
-    Duration maxOvertime,
+    std::optional<Duration> maxDuration,
     Cost unitOvertimeCost,
     std::string name,
-    std::vector<std::pair<Duration, Duration>> forbiddenWindows)
+    std::vector<std::pair<Duration, Duration>> forbiddenWindows,
+    Duration overtimeStart)
     : numAvailable(numAvailable),
       startDepot(startDepot),
       endDepot(endDepot),
@@ -385,16 +386,9 @@ ProblemData::VehicleType::VehicleType(
       initialLoad(pad(initialLoad, capacity)),
       reloadDepots(reloadDepots),
       maxReloads(maxReloads),
-      maxOvertime(maxOvertime),
       unitOvertimeCost(unitOvertimeCost),
-      // We need to check >= 0 here to avoid overflow. If the arguments are
-      // negative the validation checks further below will raise, so it doesn't
-      // matter what we set as long as we get to those checks.
-      maxDuration(shiftDuration >= 0 && maxOvertime >= 0
-                          && maxOvertime < std::numeric_limits<Duration>::max()
-                                               - shiftDuration
-                      ? shiftDuration + maxOvertime
-                      : std::numeric_limits<Duration>::max()),
+      overtimeStart(overtimeStart),
+      maxDuration(maxDuration.value_or(shiftDuration)),
       forbiddenWindows(std::move(forbiddenWindows)),
       name(duplicate(name.data()))
 {
@@ -435,11 +429,14 @@ ProblemData::VehicleType::VehicleType(
         if (initialLoad[dim] > capacity[dim])
             throw std::invalid_argument("initial load exceeds capacity.");
 
-    if (maxOvertime < 0)
-        throw std::invalid_argument("max_overtime must be >= 0.");
+    if (this->maxDuration < 0)
+        throw std::invalid_argument("max_duration must be >= 0.");
 
     if (unitOvertimeCost < 0)
         throw std::invalid_argument("unit_overtime_cost must be >= 0.");
+
+    if (overtimeStart < 0)
+        throw std::invalid_argument("overtime_start must be >= 0.");
 
     for (auto const &[fStart, fEnd] : this->forbiddenWindows)
     {
@@ -470,8 +467,8 @@ ProblemData::VehicleType::VehicleType(VehicleType const &vehicleType)
       initialLoad(vehicleType.initialLoad),
       reloadDepots(vehicleType.reloadDepots),
       maxReloads(vehicleType.maxReloads),
-      maxOvertime(vehicleType.maxOvertime),
       unitOvertimeCost(vehicleType.unitOvertimeCost),
+      overtimeStart(vehicleType.overtimeStart),
       maxDuration(vehicleType.maxDuration),
       forbiddenWindows(vehicleType.forbiddenWindows),
       name(duplicate(vehicleType.name))
@@ -495,8 +492,8 @@ ProblemData::VehicleType::VehicleType(VehicleType &&vehicleType)
       initialLoad(std::move(vehicleType.initialLoad)),
       reloadDepots(std::move(vehicleType.reloadDepots)),
       maxReloads(vehicleType.maxReloads),
-      maxOvertime(vehicleType.maxOvertime),
       unitOvertimeCost(vehicleType.unitOvertimeCost),
+      overtimeStart(vehicleType.overtimeStart),
       maxDuration(vehicleType.maxDuration),
       forbiddenWindows(std::move(vehicleType.forbiddenWindows)),
       name(vehicleType.name)  // we can steal
@@ -523,11 +520,11 @@ ProblemData::VehicleType ProblemData::VehicleType::replace(
     std::optional<std::vector<Load>> initialLoad,
     std::optional<std::vector<size_t>> reloadDepots,
     std::optional<size_t> maxReloads,
-    std::optional<Duration> maxOvertime,
+    std::optional<Duration> maxDuration,
     std::optional<Cost> unitOvertimeCost,
     std::optional<std::string> name,
-    std::optional<std::vector<std::pair<Duration, Duration>>> forbiddenWindows)
-    const
+    std::optional<std::vector<std::pair<Duration, Duration>>> forbiddenWindows,
+    std::optional<Duration> overtimeStart) const
 {
     return {numAvailable.value_or(this->numAvailable),
             capacity.value_or(this->capacity),
@@ -545,10 +542,11 @@ ProblemData::VehicleType ProblemData::VehicleType::replace(
             initialLoad.value_or(this->initialLoad),
             reloadDepots.value_or(this->reloadDepots),
             maxReloads.value_or(this->maxReloads),
-            maxOvertime.value_or(this->maxOvertime),
+            maxDuration.value_or(this->maxDuration),
             unitOvertimeCost.value_or(this->unitOvertimeCost),
             name.value_or(this->name),
-            forbiddenWindows.value_or(this->forbiddenWindows)};
+            forbiddenWindows.value_or(this->forbiddenWindows),
+            overtimeStart.value_or(this->overtimeStart)};
 }
 
 size_t ProblemData::VehicleType::maxTrips() const
@@ -577,8 +575,9 @@ bool ProblemData::VehicleType::operator==(VehicleType const &other) const
         && initialLoad == other.initialLoad
         && reloadDepots == other.reloadDepots
         && maxReloads == other.maxReloads
-        && maxOvertime == other.maxOvertime
+        && maxDuration == other.maxDuration
         && unitOvertimeCost == other.unitOvertimeCost
+        && overtimeStart == other.overtimeStart
         && forbiddenWindows == other.forbiddenWindows
         && std::strcmp(name, other.name) == 0;
     // clang-format on

@@ -246,7 +246,7 @@ void test_basic_vrp()
                      std::vector<Load>{},
                      std::vector<size_t>{},
                      0,
-                     Duration(0),
+                     std::nullopt,
                      Cost(0),
                      "");
 
@@ -316,7 +316,7 @@ void test_prize_collecting()
                      std::vector<Load>{},
                      std::vector<size_t>{},
                      0,
-                     Duration(0),
+                     std::nullopt,
                      Cost(0),
                      "");
 
@@ -385,7 +385,7 @@ void test_svg_small()
                      std::vector<Load>{},
                      std::vector<size_t>{},
                      0,
-                     Duration(0),
+                     std::nullopt,
                      Cost(0),
                      "");
 
@@ -458,7 +458,7 @@ void test_svg_large()
                      std::vector<Load>{},
                      std::vector<size_t>{},
                      0,
-                     Duration(0),
+                     std::nullopt,
                      Cost(0),
                      "");
 
@@ -534,7 +534,7 @@ void test_zone_forbidden()
                      std::vector<Load>{},
                      std::vector<size_t>{},
                      0,
-                     Duration(0),
+                     std::nullopt,
                      Cost(0),
                      "standard");
     vts.emplace_back(1,
@@ -553,7 +553,7 @@ void test_zone_forbidden()
                      std::vector<Load>{},
                      std::vector<size_t>{},
                      0,
-                     Duration(0),
+                     std::nullopt,
                      Cost(0),
                      "specialist");
 
@@ -647,7 +647,7 @@ void test_svg_with_zones()
                      std::vector<Load>{},
                      std::vector<size_t>{},
                      0,
-                     Duration(0),
+                     std::nullopt,
                      Cost(0),
                      "standard");
     vts.emplace_back(1,
@@ -666,7 +666,7 @@ void test_svg_with_zones()
                      std::vector<Load>{},
                      std::vector<size_t>{},
                      0,
-                     Duration(0),
+                     std::nullopt,
                      Cost(0),
                      "zone_driver");
 
@@ -764,7 +764,7 @@ void test_multi_dim_capacity()
                      std::vector<Load>{},
                      std::vector<size_t>{},
                      0,
-                     Duration(0),
+                     std::nullopt,
                      Cost(0),
                      "");
 
@@ -838,7 +838,7 @@ void test_tight_time_windows()
                      std::vector<Load>{},
                      std::vector<size_t>{},
                      0,
-                     Duration(0),
+                     std::nullopt,
                      Cost(0),
                      "");
 
@@ -911,7 +911,7 @@ void test_perturbation_prize_collecting()
                      std::vector<Load>{},
                      std::vector<size_t>{},
                      0,
-                     Duration(0),
+                     std::nullopt,
                      Cost(0),
                      "");
 
@@ -988,7 +988,7 @@ void test_backhaul_like()
                      std::vector<Load>{},
                      std::vector<size_t>{},
                      0,
-                     Duration(0),
+                     std::nullopt,
                      Cost(0),
                      "");
 

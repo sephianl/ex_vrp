@@ -148,9 +148,16 @@ defmodule ExVrp.SolveTest do
 
   describe "prize-collecting problems" do
     test "finds feasible solution quickly for high-prize optional clients" do
-      # Regression test: without prize-aware tw_penalty, this took 25+ seconds
-      # because the solver preferred keeping clients with time warp violations
-      # (low penalty) over removing them (losing high prize).
+      # Regression test: without prize-aware tw_penalty, the solver preferred
+      # keeping clients with time warp violations (low penalty) over removing
+      # them (losing high prize), and took 25+ seconds to get anywhere.
+      #
+      # The primary assertion is on iterations, not the clock: healthy code
+      # reaches a feasible 18-client solution on the very first iteration, so a
+      # budget of five leaves margin without depending on machine speed. The
+      # elapsed check is only a backstop against the original pathology — a
+      # hundredfold headroom over the ~100ms this actually takes, so that CPU
+      # contention and AddressSanitizer runs cannot flake it.
 
       prize = 100_000
       shift_duration = 8 * 3600
@@ -183,11 +190,15 @@ defmodule ExVrp.SolveTest do
         end)
 
       start = System.monotonic_time(:millisecond)
-      {:ok, result} = Solver.solve(model, max_iterations: 100)
+      {:ok, result} = Solver.solve(model, max_iterations: 5)
       elapsed = System.monotonic_time(:millisecond) - start
 
       assert result.best.is_feasible == true
-      assert elapsed < 2000
+      assert result.best.num_clients == 18
+
+      assert elapsed < 10_000,
+             "Solver took #{elapsed}ms over #{result.num_iterations} iterations; " <>
+               "the regression this guards took 25+ seconds"
     end
   end
 

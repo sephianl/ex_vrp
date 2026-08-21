@@ -601,7 +601,7 @@ defmodule ExVrp.SolutionTest do
           num_available: 1,
           capacity: [10],
           shift_duration: 5000,
-          max_overtime: 1000,
+          max_duration: 6000,
           unit_overtime_cost: 10
         )
 

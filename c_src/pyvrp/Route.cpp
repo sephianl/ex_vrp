@@ -374,14 +374,12 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     ds = DurationSegment::merge(0, {vehData, vehData.startLate}, ds);
 
     duration_ = ds.duration();
-    overtime_ = duration_ > vehData.shiftDuration
-                    ? duration_ - vehData.shiftDuration
-                    : Duration(0);
-    durationCost_ = vehData.unitDurationCost * static_cast<Cost>(duration_)
-                    + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
     startTime_ = ds.startEarly();
     slack_ = ds.slack();
     timeWarp_ = ds.timeWarp(vehData.maxDuration);
+    overtime_ = vehData.overtime(endTime(), duration_);
+    durationCost_ = vehData.unitDurationCost * static_cast<Cost>(duration_)
+                    + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
 
     makeSchedule(data);
 
@@ -392,9 +390,7 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     {
         duration_
             = schedule_.back().endService - schedule_.front().startService;
-        overtime_ = duration_ > vehData.shiftDuration
-                        ? duration_ - vehData.shiftDuration
-                        : Duration(0);
+        overtime_ = vehData.overtime(schedule_.back().endService, duration_);
         durationCost_
             = vehData.unitDurationCost * static_cast<Cost>(duration_)
               + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);

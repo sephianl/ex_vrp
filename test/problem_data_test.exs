@@ -124,7 +124,7 @@ defmodule ExVrp.ProblemDataTest do
           num_available: 1,
           capacity: [100],
           shift_duration: 480,
-          max_overtime: 60,
+          max_duration: 540,
           unit_overtime_cost: 5
         )
 
@@ -339,7 +339,7 @@ defmodule ExVrp.ProblemDataTest do
           max_distance: 10_000,
           unit_distance_cost: 2,
           unit_duration_cost: 3,
-          max_overtime: 100,
+          max_duration: 600,
           unit_overtime_cost: 5
         )
 
