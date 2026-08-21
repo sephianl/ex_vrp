@@ -85,10 +85,11 @@ defmodule ExVrp.PyVRPApiTest do
     test "cost returns infinity for infeasible solution" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10])
         # Way over capacity
-        |> Model.add_client(x: 10, y: 0, delivery: [100])
+        |> Model.add_client(delivery: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} =
         Solver.solve(model,
@@ -366,11 +367,12 @@ defmodule ExVrp.PyVRPApiTest do
 
   defp build_small_cvrp do
     Model.new()
-    |> Model.add_depot(x: 0, y: 0)
+    |> Model.add_depot([])
     |> Model.add_vehicle_type(num_available: 3, capacity: [100])
-    |> Model.add_client(x: 10, y: 0, delivery: [20])
-    |> Model.add_client(x: 20, y: 0, delivery: [20])
-    |> Model.add_client(x: 0, y: 10, delivery: [20])
-    |> Model.add_client(x: 0, y: 20, delivery: [20])
+    |> Model.add_client(delivery: [20])
+    |> Model.add_client(delivery: [20])
+    |> Model.add_client(delivery: [20])
+    |> Model.add_client(delivery: [20])
+    |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {0, 10}, {0, 20}])
   end
 end

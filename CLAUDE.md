@@ -75,7 +75,7 @@ Requires C++20 compiler (gcc 11+ or clang 14+).
 
 ### Adding New Features
 
-1. Check if PyVRP C++ already supports it (look in `c_src/pyvrp/`)
+1. Check if PyVRP C++ already supports it (look in `c_src/ex_vrp/`)
 2. Add NIF binding in `c_src/ex_vrp_nif.cpp` + `lib/ex_vrp/native.ex`
 3. Add Elixir API in the appropriate module (Model, Solution, etc.)
 4. Add validation in `Model.validate/1` if needed

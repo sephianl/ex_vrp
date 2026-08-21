@@ -164,7 +164,7 @@ defmodule ExVrp.SolveTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: shift_duration)
+        |> Model.add_depot(tw_early: 0, tw_late: shift_duration)
         |> Model.add_vehicle_type(
           num_available: 5,
           capacity: [1000],
@@ -172,14 +172,18 @@ defmodule ExVrp.SolveTest do
         )
 
       # Add 20 optional clients with high prizes and tight time windows
-      model =
-        Enum.reduce(1..20, model, fn i, acc ->
+      coordinates =
+        for i <- 1..20 do
           angle = 2 * :math.pi() * i / 20
+          {round(1000 * :math.cos(angle)), round(1000 * :math.sin(angle))}
+        end
+
+      model =
+        1..20
+        |> Enum.reduce(model, fn i, acc ->
           tw_start = div(i * shift_duration, 21)
 
           Model.add_client(acc,
-            x: round(1000 * :math.cos(angle)),
-            y: round(1000 * :math.sin(angle)),
             delivery: [10],
             required: false,
             prize: prize,
@@ -188,6 +192,7 @@ defmodule ExVrp.SolveTest do
             service_duration: 1800
           )
         end)
+        |> Model.set_euclidean_matrices([{0, 0} | coordinates])
 
       start = System.monotonic_time(:millisecond)
       {:ok, result} = Solver.solve(model, max_iterations: 5)
@@ -222,10 +227,8 @@ defmodule ExVrp.SolveTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 28_800, service_duration: 0)
+        |> Model.add_depot(tw_early: 0, tw_late: 28_800, service_duration: 0)
         |> Model.add_client(
-          x: 1,
-          y: 0,
           tw_early: 0,
           tw_late: 28_800,
           service_duration: 60,
@@ -235,8 +238,6 @@ defmodule ExVrp.SolveTest do
           pickup: [0, 0, 0, 0]
         )
         |> Model.add_client(
-          x: 2,
-          y: 0,
           tw_early: 0,
           tw_late: 28_800,
           service_duration: 120,
@@ -246,8 +247,6 @@ defmodule ExVrp.SolveTest do
           pickup: [0, 0, 0, 0]
         )
         |> Model.add_client(
-          x: 3,
-          y: 0,
           tw_early: 0,
           tw_late: 28_800,
           service_duration: 180,
@@ -257,8 +256,6 @@ defmodule ExVrp.SolveTest do
           pickup: [0, 0, 0, 0]
         )
         |> Model.add_client(
-          x: 4,
-          y: 0,
           tw_early: 0,
           tw_late: 28_800,
           service_duration: 240,
@@ -321,10 +318,8 @@ defmodule ExVrp.SolveTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 86_400, service_duration: 60)
+        |> Model.add_depot(tw_early: 0, tw_late: 86_400, service_duration: 60)
         |> Model.add_client(
-          x: 1,
-          y: 0,
           tw_early: 0,
           tw_late: 100,
           service_duration: 15,
@@ -334,8 +329,6 @@ defmodule ExVrp.SolveTest do
           pickup: [10, 100, 100]
         )
         |> Model.add_client(
-          x: 2,
-          y: 0,
           tw_early: 300,
           tw_late: 400,
           service_duration: 15,
@@ -345,8 +338,6 @@ defmodule ExVrp.SolveTest do
           pickup: [10, 100, 100]
         )
         |> Model.add_client(
-          x: 3,
-          y: 0,
           tw_early: 400,
           tw_late: 810,
           service_duration: 15,
@@ -356,8 +347,6 @@ defmodule ExVrp.SolveTest do
           pickup: [10, 100, 100]
         )
         |> Model.add_client(
-          x: 4,
-          y: 0,
           tw_early: 820,
           tw_late: 1500,
           service_duration: 15,
@@ -497,11 +486,11 @@ defmodule ExVrp.SolveTest do
     ]
 
     Model.new()
-    |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-    |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-    |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-    |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-    |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+    |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+    |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+    |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+    |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+    |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
     |> Model.add_vehicle_type(num_available: 3, capacity: [10], time_windows: [{0, 45_000}])
     |> Model.set_distance_matrices([distances])
     |> Model.set_duration_matrices([distances])

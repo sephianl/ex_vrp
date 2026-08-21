@@ -14,12 +14,12 @@ defmodule ExVrp.ReloadCostTest do
 
   describe "depot reload_cost field" do
     test "depot accepts reload_cost parameter" do
-      depot = Depot.new(x: 0, y: 0, reload_cost: 100)
+      depot = Depot.new(reload_cost: 100)
       assert depot.reload_cost == 100
     end
 
     test "depot defaults to zero reload_cost" do
-      depot = Depot.new(x: 0, y: 0)
+      depot = Depot.new([])
       assert depot.reload_cost == 0
     end
   end
@@ -30,15 +30,16 @@ defmodule ExVrp.ReloadCostTest do
       # with a reload depot that has a cost
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, reload_cost: 100, service_duration: 10)
-        |> Model.add_client(x: 10, y: 0, delivery: [80])
-        |> Model.add_client(x: 20, y: 0, delivery: [80])
+        |> Model.add_depot(reload_cost: 100, service_duration: 10)
+        |> Model.add_client(delivery: [80])
+        |> Model.add_client(delivery: [80])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
           reload_depots: [0],
           max_reloads: 5
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
 
@@ -54,9 +55,10 @@ defmodule ExVrp.ReloadCostTest do
       # Simple problem that doesn't need reload
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, reload_cost: 100)
-        |> Model.add_client(x: 10, y: 0, delivery: [50])
+        |> Model.add_depot(reload_cost: 100)
+        |> Model.add_client(delivery: [50])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(50))
 
@@ -73,15 +75,16 @@ defmodule ExVrp.ReloadCostTest do
     test "route_reload_cost returns cost for multi-trip route" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, reload_cost: 75, service_duration: 10)
-        |> Model.add_client(x: 10, y: 0, delivery: [80])
-        |> Model.add_client(x: 20, y: 0, delivery: [80])
+        |> Model.add_depot(reload_cost: 75, service_duration: 10)
+        |> Model.add_client(delivery: [80])
+        |> Model.add_client(delivery: [80])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
           reload_depots: [0],
           max_reloads: 5
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
 

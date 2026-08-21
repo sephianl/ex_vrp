@@ -1,7 +1,7 @@
 defmodule ExVrp.MixProject do
   use Mix.Project
 
-  @version "0.8.0"
+  @version "0.9.0"
   @github_url "https://github.com/sephianl/ex_vrp"
 
   def project do
@@ -132,7 +132,7 @@ defmodule ExVrp.MixProject do
       licenses: ["MIT"],
       links: %{"GitHub" => @github_url},
       files:
-        ~w(lib c_src/ex_vrp_nif.cpp c_src/pyvrp mix.exs Makefile README.md LICENSE CHANGELOG.md usage-rules.md checksum.exs)
+        ~w(lib c_src/ex_vrp_nif.cpp c_src/ex_vrp mix.exs Makefile README.md LICENSE CHANGELOG.md usage-rules.md checksum.exs)
     ]
   end
 

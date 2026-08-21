@@ -465,14 +465,6 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the centroid of a specific route as {x, y}.
-  """
-  @spec route_centroid(t(), non_neg_integer()) :: {float(), float()}
-  def route_centroid(%__MODULE__{solution_ref: solution_ref}, route_idx) do
-    Native.solution_route_centroid(solution_ref, route_idx)
-  end
-
-  @doc """
   Returns the start time of a specific route.
   """
   @spec route_start_time(t(), non_neg_integer()) :: non_neg_integer()

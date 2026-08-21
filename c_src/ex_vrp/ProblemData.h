@@ -175,8 +175,6 @@ public:
      */
     struct Client
     {
-        Coordinate const x;
-        Coordinate const y;
         Duration const serviceDuration;
         Duration const twEarly;  // Earliest possible start of service
         Duration const twLate;   // Latest possible start of service
@@ -188,9 +186,7 @@ public:
         std::optional<size_t> const group;  // Optional client group membership
         char const *name;                   // Client name (for reference)
 
-        Client(Coordinate x,
-               Coordinate y,
-               std::vector<Load> delivery = {},
+        Client(std::vector<Load> delivery = {},
                std::vector<Load> pickup = {},
                Duration serviceDuration = 0,
                Duration twEarly = 0,
@@ -404,17 +400,13 @@ public:
      */
     struct Depot
     {
-        Coordinate const x;
-        Coordinate const y;
         Duration const twEarly;          // Depot opening time
         Duration const twLate;           // Depot closing time
         Duration const serviceDuration;  // Service time during reloads
         Cost const reloadCost;  // Cost incurred when reloading at depot
         char const *name;       // Depot name (for reference)
 
-        Depot(Coordinate x,
-              Coordinate y,
-              Duration twEarly = 0,
+        Depot(Duration twEarly = 0,
               Duration twLate = std::numeric_limits<Duration>::max(),
               Duration serviceDuration = 0,
               Cost reloadCost = 0,
@@ -718,7 +710,6 @@ private:
         inline operator Depot const &() const;
     };
 
-    std::pair<Coordinate, Coordinate> centroid_;   // Center of client locations
     std::vector<Matrix<Distance>> const dists_;    // Distance matrices
     std::vector<Matrix<Duration>> const durs_;     // Duration matrices
     std::vector<Client> const clients_;            // Client information
@@ -794,11 +785,6 @@ public:
      *    way!
      */
     [[nodiscard]] std::vector<Matrix<Duration>> const &durationMatrices() const;
-
-    /**
-     * Center point of all client locations (excluding depots).
-     */
-    [[nodiscard]] std::pair<Coordinate, Coordinate> const &centroid() const;
 
     /**
      * Returns the client group at the given index.

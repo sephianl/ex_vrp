@@ -8,18 +8,13 @@ defmodule ExVrp.ClientTest do
 
   describe "new/1" do
     test "creates client with required fields" do
-      client = Client.new(x: 1, y: 2)
-
-      assert client.x == 1
-      assert client.y == 2
+      client = Client.new([])
     end
 
     test "creates client with all fields" do
       # Ported from PyVRP test_client_constructor
       client =
         Client.new(
-          x: 1,
-          y: 1,
           delivery: [1],
           pickup: [1],
           service_duration: 1,
@@ -32,8 +27,6 @@ defmodule ExVrp.ClientTest do
           name: "test name"
         )
 
-      assert client.x == 1
-      assert client.y == 1
       assert client.delivery == [1]
       assert client.pickup == [1]
       assert client.service_duration == 1
@@ -47,7 +40,7 @@ defmodule ExVrp.ClientTest do
     end
 
     test "has sensible defaults" do
-      client = Client.new(x: 0, y: 0)
+      client = Client.new([])
 
       assert client.delivery == [0]
       assert client.pickup == [0]
@@ -61,19 +54,9 @@ defmodule ExVrp.ClientTest do
       assert client.name == ""
     end
 
-    test "raises on missing required fields" do
-      assert_raise ArgumentError, fn ->
-        Client.new(x: 1)
-      end
-
-      assert_raise ArgumentError, fn ->
-        Client.new(y: 1)
-      end
-    end
-
     test "supports multi-dimensional capacity" do
       # Ported from PyVRP test - clients can have multiple capacity dimensions
-      client = Client.new(x: 0, y: 0, delivery: [1, 2], pickup: [3, 4])
+      client = Client.new(delivery: [1, 2], pickup: [3, 4])
 
       assert client.delivery == [1, 2]
       assert client.pickup == [3, 4]

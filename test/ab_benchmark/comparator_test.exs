@@ -70,12 +70,29 @@ defmodule ExVrp.ABBenchmark.ComparatorTest do
     assert Enum.any?(summary.hard_fails, &String.contains?(&1, "gone"))
   end
 
-  test "noise is the widest seed-to-seed spread of the two refs" do
-    base = results("main", %{"a" => inst("cvrp", nil, %{"1" => seed(100, true), "2" => seed(100, true)})})
-    cand = results("head", %{"a" => inst("cvrp", nil, %{"1" => seed(90, true), "2" => seed(110, true)})})
+  test "noise is the spread of paired per-seed deltas, not the scatter of raw objectives" do
+    base = results("main", %{"a" => inst("cvrp", nil, %{"1" => seed(900, true), "2" => seed(1100, true)})})
+    cand = results("head", %{"a" => inst("cvrp", nil, %{"1" => seed(909, true), "2" => seed(1111, true)})})
 
     %{per_instance: [row]} = Comparator.analyze(base, cand)
-    assert_in_delta row.noise, 0.20, 1.0e-9
+    assert_in_delta row.noise, 0.0, 1.0e-9
+    assert_in_delta row.pct_change, 0.01, 1.0e-9
+  end
+
+  test "a shift every seed agrees on is a result even when the seeds scatter" do
+    scattered = fn objs ->
+      seeds = objs |> Enum.with_index(1) |> Map.new(fn {o, i} -> {to_string(i), seed(o, true)} end)
+      inst("production", nil, seeds)
+    end
+
+    base = results("main", %{"noisy" => scattered.([900, 1100])})
+    cand = results("head", %{"noisy" => scattered.([918, 1122])})
+
+    %{per_instance: [row]} = Comparator.analyze(base, cand)
+    assert row.pct_change > row.noise
+
+    assert {:regression, summary} = Comparator.compare(base, cand)
+    assert Enum.any?(summary.warnings, &String.contains?(&1, "noisy"))
   end
 
   test "a regression smaller than the instance's own noise does not warn" do
@@ -87,8 +104,8 @@ defmodule ExVrp.ABBenchmark.ComparatorTest do
     steady = inst("cvrp", nil, %{"1" => seed(1000, true)})
     quiet = %{"a" => steady, "b" => steady, "c" => steady, "d" => steady}
 
-    base = results("main", Map.put(quiet, "noisy", scattered.([900, 1100])))
-    cand = results("head", Map.put(quiet, "noisy", scattered.([915, 1115])))
+    base = results("main", Map.put(quiet, "noisy", scattered.([1000, 1000])))
+    cand = results("head", Map.put(quiet, "noisy", scattered.([1200, 830])))
 
     %{per_instance: rows} = Comparator.analyze(base, cand)
     row = Enum.find(rows, &(&1.id == "noisy"))
@@ -97,6 +114,22 @@ defmodule ExVrp.ABBenchmark.ComparatorTest do
 
     assert {:ok, summary} = Comparator.compare(base, cand)
     assert summary.warnings == []
+  end
+
+  test "seeds are paired by seed id, not by position" do
+    base = results("main", %{"a" => inst("cvrp", nil, %{"1" => seed(1000, true), "2" => seed(2000, true)})})
+    cand = results("head", %{"a" => inst("cvrp", nil, %{"2" => seed(2020, true), "1" => seed(1010, true)})})
+
+    %{per_instance: [row]} = Comparator.analyze(base, cand)
+    assert_in_delta row.noise, 0.0, 1.0e-9
+  end
+
+  test "a seed feasible in only one ref is excluded from the band" do
+    base = results("main", %{"a" => inst("cvrp", nil, %{"1" => seed(1000, true), "2" => seed(2000, true)})})
+    cand = results("head", %{"a" => inst("cvrp", nil, %{"1" => seed(1010, true), "2" => seed(9999, false)})})
+
+    %{per_instance: [row]} = Comparator.analyze(base, cand)
+    assert_in_delta row.noise, 0.0, 1.0e-9
   end
 
   test "iteration throughput is reported alongside the objective" do

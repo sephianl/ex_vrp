@@ -35,7 +35,7 @@ set -euo pipefail
 
 PYVRP_VERSION="${PYVRP_VERSION:-v0.9.0}"
 PYVRP_REPO="https://raw.githubusercontent.com/PyVRP/PyVRP/${PYVRP_VERSION}"
-TARGET_DIR="c_src/pyvrp"
+TARGET_DIR="c_src/ex_vrp"
 
 echo "Vendoring PyVRP C++ source (${PYVRP_VERSION})..."
 

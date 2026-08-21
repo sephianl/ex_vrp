@@ -21,40 +21,36 @@ defmodule ExVrp.ModelTest do
 
   describe "add_client/2" do
     test "adds client to model" do
-      model = Model.add_client(Model.new(), x: 1, y: 2, delivery: [10])
+      model = Model.add_client(Model.new(), delivery: [10])
 
       assert length(model.clients) == 1
-      assert hd(model.clients).x == 1
-      assert hd(model.clients).y == 2
     end
 
     test "preserves order of clients" do
       model =
         Model.new()
-        |> Model.add_client(x: 1, y: 1)
-        |> Model.add_client(x: 2, y: 2)
-        |> Model.add_client(x: 3, y: 3)
+        |> Model.add_client([])
+        |> Model.add_client([])
+        |> Model.add_client([])
+        |> Model.set_euclidean_matrices([{1, 1}, {2, 2}, {3, 3}])
 
       assert length(model.clients) == 3
-      assert Enum.at(model.clients, 0).x == 1
-      assert Enum.at(model.clients, 1).x == 2
-      assert Enum.at(model.clients, 2).x == 3
     end
   end
 
   describe "add_depot/2" do
     test "adds depot to model" do
-      model = Model.add_depot(Model.new(), x: 0, y: 0)
+      model = Model.add_depot(Model.new(), [])
 
       assert length(model.depots) == 1
-      assert hd(model.depots).x == 0
     end
 
     test "supports multiple depots" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, name: "depot1")
-        |> Model.add_depot(x: 10, y: 10, name: "depot2")
+        |> Model.add_depot(name: "depot1")
+        |> Model.add_depot(name: "depot2")
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 10}])
 
       assert length(model.depots) == 2
     end
@@ -82,9 +78,10 @@ defmodule ExVrp.ModelTest do
     test "valid model passes validation" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       assert :ok = Model.validate(model)
     end
@@ -93,7 +90,8 @@ defmodule ExVrp.ModelTest do
       model =
         Model.new()
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{1, 1}])
 
       assert {:error, errors} = Model.validate(model)
       assert "Model must have at least one depot" in errors
@@ -102,8 +100,9 @@ defmodule ExVrp.ModelTest do
     test "model without vehicle type fails validation" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       assert {:error, errors} = Model.validate(model)
       assert "Model must have at least one vehicle type" in errors
@@ -112,9 +111,10 @@ defmodule ExVrp.ModelTest do
     test "mismatched capacity dimensions fails validation" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100, 50])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       # Client has 1 dimension, vehicle has 2
       assert {:error, errors} = Model.validate(model)
@@ -126,12 +126,13 @@ defmodule ExVrp.ModelTest do
     test "supports pipe chaining" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 100, y: 100)
+        |> Model.add_depot([])
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 3, capacity: [100])
-        |> Model.add_client(x: 10, y: 10, delivery: [25])
-        |> Model.add_client(x: 20, y: 20, delivery: [30])
-        |> Model.add_client(x: 30, y: 10, delivery: [20])
+        |> Model.add_client(delivery: [25])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [20])
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 100}, {10, 10}, {20, 20}, {30, 10}])
 
       assert length(model.depots) == 2
       assert length(model.vehicle_types) == 1
@@ -162,14 +163,14 @@ defmodule ExVrp.ModelTest do
     end
 
     test "dynamic client assignment via add_client" do
-      model = Model.add_depot(Model.new(), x: 0, y: 0)
+      model = Model.add_depot(Model.new(), [])
 
       {model, group} = Model.add_client_group(model, required: false)
 
       model =
         model
-        |> Model.add_client(x: 1, y: 1, required: false, group: group)
-        |> Model.add_client(x: 2, y: 2, required: false, group: group)
+        |> Model.add_client(required: false, group: group)
+        |> Model.add_client(required: false, group: group)
 
       # Group should now have both clients (in reverse/prepend order internally)
       # depot is 0, clients are 1, 2
@@ -177,27 +178,27 @@ defmodule ExVrp.ModelTest do
     end
 
     test "raises when required client added to mutually exclusive group" do
-      model = Model.add_depot(Model.new(), x: 0, y: 0)
+      model = Model.add_depot(Model.new(), [])
 
       # mutually_exclusive=true
       {model, group} = Model.add_client_group(model, required: false)
 
       assert_raise ArgumentError, ~r/Required client cannot be in mutually exclusive group/, fn ->
-        Model.add_client(model, x: 1, y: 1, required: true, group: group)
+        Model.add_client(model, required: true, group: group)
       end
     end
 
     test "depot re-indexing updates group client indices" do
       model = Model.new()
       {model, group} = Model.add_client_group(model, required: false)
-      model = Model.add_depot(model, x: 0, y: 0)
-      model = Model.add_client(model, x: 1, y: 1, required: false, group: group)
+      model = Model.add_depot(model, [])
+      model = Model.add_client(model, required: false, group: group)
 
       # Client is at index 1 (after 1 depot)
       assert hd(model.client_groups).clients == [1]
 
       # Add another depot - client indices should be recalculated
-      model = Model.add_depot(model, x: 5, y: 5)
+      model = Model.add_depot(model, [])
 
       # Client is now at index 2 (after 2 depots)
       assert hd(model.client_groups).clients == [2]
@@ -208,18 +209,19 @@ defmodule ExVrp.ModelTest do
     setup do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, name: "depot1")
-        |> Model.add_depot(x: 100, y: 100, name: "depot2")
+        |> Model.add_depot(name: "depot1")
+        |> Model.add_depot(name: "depot2")
         |> Model.add_vehicle_type(num_available: 2, capacity: [50], name: "small")
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], name: "large")
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 100}])
 
       {model, group} = Model.add_client_group(model, required: false)
 
       model =
         model
-        |> Model.add_client(x: 10, y: 10, delivery: [10], name: "client1", required: false, group: group)
-        |> Model.add_client(x: 20, y: 20, delivery: [20], name: "client2", required: false, group: group)
-        |> Model.add_client(x: 30, y: 30, delivery: [15], name: "client3")
+        |> Model.add_client(delivery: [10], name: "client1", required: false, group: group)
+        |> Model.add_client(delivery: [20], name: "client2", required: false, group: group)
+        |> Model.add_client(delivery: [15], name: "client3")
 
       %{model: model}
     end
@@ -268,16 +270,17 @@ defmodule ExVrp.ModelTest do
     test "converts valid model to problem data" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [20])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:ok, problem_data} = Model.to_problem_data(model)
       assert is_reference(problem_data)
     end
 
     test "returns error for invalid model" do
-      model = Model.add_client(Model.new(), x: 10, y: 0, delivery: [20])
+      model = Model.add_client(Model.new(), delivery: [20])
 
       assert {:error, _errors} = Model.to_problem_data(model)
     end
@@ -287,9 +290,10 @@ defmodule ExVrp.ModelTest do
     test "model with single client" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert :ok = Model.validate(model)
       assert {:ok, _problem_data} = Model.to_problem_data(model)
@@ -298,8 +302,9 @@ defmodule ExVrp.ModelTest do
     test "model with no clients (empty problem)" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}])
 
       # Empty model should still be valid
       assert :ok = Model.validate(model)
@@ -308,9 +313,10 @@ defmodule ExVrp.ModelTest do
     test "model with single depot" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert :ok = Model.validate(model)
     end
@@ -318,9 +324,10 @@ defmodule ExVrp.ModelTest do
     test "model with single vehicle" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert :ok = Model.validate(model)
     end
@@ -328,11 +335,12 @@ defmodule ExVrp.ModelTest do
     test "model with heterogeneous fleet" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [50], fixed_cost: 10)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], fixed_cost: 20)
         |> Model.add_vehicle_type(num_available: 3, capacity: [200], fixed_cost: 30)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert :ok = Model.validate(model)
       assert length(model.vehicle_types) == 3
@@ -341,13 +349,14 @@ defmodule ExVrp.ModelTest do
     test "model with multiple depots (MDVRP)" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 100, y: 0)
-        |> Model.add_depot(x: 50, y: 100)
-        |> Model.add_client(x: 25, y: 25, delivery: [10])
-        |> Model.add_client(x: 75, y: 25, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_depot([])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], start_depot: 0, end_depot: 0)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], start_depot: 1, end_depot: 1)
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {50, 100}, {25, 25}, {75, 25}])
 
       assert :ok = Model.validate(model)
     end
@@ -355,14 +364,16 @@ defmodule ExVrp.ModelTest do
     test "model with many clients (stress test)" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 10, capacity: [1000])
 
       # Add 100 clients
       model =
-        Enum.reduce(1..100, model, fn i, acc ->
-          Model.add_client(acc, x: rem(i, 10) * 10, y: div(i, 10) * 10, delivery: [10])
-        end)
+        1..100
+        |> Enum.reduce(model, fn _i, acc -> Model.add_client(acc, delivery: [10]) end)
+        |> Model.set_euclidean_matrices([
+          {0, 0} | for(i <- 1..100, do: {rem(i, 10) * 10, div(i, 10) * 10})
+        ])
 
       assert length(model.clients) == 100
       assert :ok = Model.validate(model)
@@ -373,8 +384,6 @@ defmodule ExVrp.ModelTest do
     test "client with all attributes" do
       model =
         Model.add_client(Model.new(),
-          x: 1,
-          y: 2,
           delivery: [3],
           pickup: [9],
           service_duration: 4,
@@ -386,8 +395,6 @@ defmodule ExVrp.ModelTest do
         )
 
       client = hd(model.clients)
-      assert client.x == 1
-      assert client.y == 2
       assert client.delivery == [3]
       assert client.pickup == [9]
       assert client.service_duration == 4
@@ -399,7 +406,7 @@ defmodule ExVrp.ModelTest do
     end
 
     test "client with multidimensional load" do
-      model = Model.add_client(Model.new(), x: 1, y: 2, delivery: [3, 4], pickup: [5, 6])
+      model = Model.add_client(Model.new(), delivery: [3, 4], pickup: [5, 6])
 
       client = hd(model.clients)
       assert client.delivery == [3, 4]
@@ -409,11 +416,9 @@ defmodule ExVrp.ModelTest do
 
   describe "depot attributes" do
     test "depot with all attributes" do
-      model = Model.add_depot(Model.new(), x: 1, y: 0, tw_early: 5, tw_late: 7)
+      model = Model.add_depot(Model.new(), tw_early: 5, tw_late: 7)
 
       depot = hd(model.depots)
-      assert depot.x == 1
-      assert depot.y == 0
       assert depot.tw_early == 5
       assert depot.tw_late == 7
     end
@@ -448,9 +453,10 @@ defmodule ExVrp.ModelTest do
     test "vehicle type default depots" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 1, y: 1)
+        |> Model.add_depot([])
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       vt = hd(model.vehicle_types)
       # Default should be first depot (index 0)
@@ -461,9 +467,10 @@ defmodule ExVrp.ModelTest do
     test "vehicle type with explicit depots" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 1, y: 1)
+        |> Model.add_depot([])
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], start_depot: 1, end_depot: 1)
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       vt = hd(model.vehicle_types)
       assert vt.start_depot == 1
@@ -473,9 +480,10 @@ defmodule ExVrp.ModelTest do
     test "vehicle type with mixed start/end depots" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 1, y: 1)
+        |> Model.add_depot([])
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], start_depot: 0, end_depot: 1)
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       vt = hd(model.vehicle_types)
       assert vt.start_depot == 0
@@ -487,9 +495,10 @@ defmodule ExVrp.ModelTest do
     test "vehicle type with reload depots" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 1, y: 1)
+        |> Model.add_depot([])
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], reload_depots: [0])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       vt = hd(model.vehicle_types)
       assert vt.reload_depots == [0]
@@ -498,9 +507,10 @@ defmodule ExVrp.ModelTest do
     test "vehicle type with multiple reload depots" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 1, y: 1)
+        |> Model.add_depot([])
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], reload_depots: [0, 1])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       vt = hd(model.vehicle_types)
       assert vt.reload_depots == [0, 1]
@@ -531,9 +541,9 @@ defmodule ExVrp.ModelTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.set_distance_matrices([matrix])
 
@@ -549,9 +559,9 @@ defmodule ExVrp.ModelTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.set_duration_matrices([matrix])
 
@@ -568,9 +578,9 @@ defmodule ExVrp.ModelTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.set_distance_matrices([matrix])
 
@@ -580,14 +590,14 @@ defmodule ExVrp.ModelTest do
 
   describe "client with optional attributes" do
     test "client with release time" do
-      model = Model.add_client(Model.new(), x: 1, y: 1, release_time: 100)
+      model = Model.add_client(Model.new(), release_time: 100)
 
       client = hd(model.clients)
       assert client.release_time == 100
     end
 
     test "client with prize (optional client)" do
-      model = Model.add_client(Model.new(), x: 1, y: 1, prize: 50, required: false)
+      model = Model.add_client(Model.new(), prize: 50, required: false)
 
       client = hd(model.clients)
       assert client.prize == 50
@@ -597,12 +607,12 @@ defmodule ExVrp.ModelTest do
 
   describe "name fields" do
     test "client name" do
-      model = Model.add_client(Model.new(), x: 1, y: 2, name: "customer1")
+      model = Model.add_client(Model.new(), name: "customer1")
       assert hd(model.clients).name == "customer1"
     end
 
     test "depot name" do
-      model = Model.add_depot(Model.new(), x: 0, y: 0, name: "warehouse")
+      model = Model.add_depot(Model.new(), name: "warehouse")
       assert hd(model.depots).name == "warehouse"
     end
 

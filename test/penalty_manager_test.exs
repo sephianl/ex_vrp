@@ -34,9 +34,10 @@ defmodule ExVrp.PenaltyManagerTest do
     test "creates penalty manager from problem data" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -50,9 +51,10 @@ defmodule ExVrp.PenaltyManagerTest do
     test "respects custom params" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [50])
-        |> Model.add_client(x: 5, y: 0, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {5, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -103,9 +105,10 @@ defmodule ExVrp.PenaltyManagerTest do
     test "tracks solution feasibility" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       pm = PenaltyManager.init_from(problem_data)
@@ -121,9 +124,10 @@ defmodule ExVrp.PenaltyManagerTest do
     test "updates penalties after threshold" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -173,9 +177,10 @@ defmodule ExVrp.PenaltyManagerTest do
     test "does not update penalties before sufficient registrations" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -208,9 +213,10 @@ defmodule ExVrp.PenaltyManagerTest do
     test "updates penalties after threshold registrations" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -246,10 +252,11 @@ defmodule ExVrp.PenaltyManagerTest do
       # Vehicle has 2 capacity dimensions, clients must match in both delivery and pickup
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100, 50])
-        |> Model.add_client(x: 10, y: 0, delivery: [10, 2], pickup: [0, 0])
-        |> Model.add_client(x: 20, y: 0, delivery: [20, 3], pickup: [0, 0])
+        |> Model.add_client(delivery: [10, 2], pickup: [0, 0])
+        |> Model.add_client(delivery: [20, 3], pickup: [0, 0])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -300,10 +307,11 @@ defmodule ExVrp.PenaltyManagerTest do
       # Create a model with known distances to verify penalty computation
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 100, y: 0, delivery: [10])
-        |> Model.add_client(x: 0, y: 100, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {0, 100}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -324,10 +332,11 @@ defmodule ExVrp.PenaltyManagerTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 100, y: 0, delivery: [10], required: false, prize: prize)
-        |> Model.add_client(x: 0, y: 100, delivery: [10], required: false, prize: prize)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], required: false, prize: prize)
+        |> Model.add_client(delivery: [10], required: false, prize: prize)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {0, 100}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -344,10 +353,11 @@ defmodule ExVrp.PenaltyManagerTest do
       # from distance/duration only, not inflated
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 100, y: 0, delivery: [10])
-        |> Model.add_client(x: 0, y: 100, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {0, 100}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -362,11 +372,12 @@ defmodule ExVrp.PenaltyManagerTest do
       # Model with allowed_clients creates multiple profiles
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.add_vehicle_type(num_available: 1, capacity: [50])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 

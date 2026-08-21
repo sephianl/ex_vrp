@@ -8,11 +8,12 @@ defmodule ExVrpTest do
     test "solves a simple CVRP" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
-        |> Model.add_client(x: 2, y: 2, delivery: [20])
-        |> Model.add_client(x: 3, y: 1, delivery: [15])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [20])
+        |> Model.add_client(delivery: [15])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}, {3, 1}])
 
       assert {:ok, result} = ExVrp.solve(model, max_iterations: 100)
       assert result.best.is_feasible
@@ -24,9 +25,10 @@ defmodule ExVrpTest do
     test "respects max_iterations option" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       # Should complete quickly with low iterations
       assert {:ok, _result} = ExVrp.solve(model, max_iterations: 10)
@@ -37,14 +39,15 @@ defmodule ExVrpTest do
     test "warm-starts from :initial_routes assigning routes by vehicle type index" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
-        |> Model.add_client(x: 2, y: 2, delivery: [10])
-        |> Model.add_client(x: 3, y: 1, delivery: [10])
-        |> Model.add_client(x: 4, y: 2, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}, {3, 1}, {4, 2}])
 
       assert {:ok, result} =
                ExVrp.solve(model,
@@ -62,9 +65,10 @@ defmodule ExVrpTest do
     test "falls back to empty start when :initial_routes references unknown client" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       assert {:ok, result} =
                ExVrp.solve(model,
@@ -81,10 +85,11 @@ defmodule ExVrpTest do
     test "falls back to empty start when :initial_routes has more lists than vehicle types" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
-        |> Model.add_client(x: 2, y: 2, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}])
 
       assert {:ok, result} =
                ExVrp.solve(model,
@@ -101,11 +106,12 @@ defmodule ExVrpTest do
     test "falls back to empty start when :initial_routes contains duplicate clients" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
-        |> Model.add_client(x: 2, y: 2, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}])
 
       assert {:ok, result} =
                ExVrp.solve(model,
@@ -122,10 +128,11 @@ defmodule ExVrpTest do
     test "accepts capacity-infeasible :initial_routes (solver can repair)" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [80])
-        |> Model.add_client(x: 2, y: 2, delivery: [80])
+        |> Model.add_client(delivery: [80])
+        |> Model.add_client(delivery: [80])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}])
 
       assert {:ok, result} =
                ExVrp.solve(model,
@@ -142,9 +149,10 @@ defmodule ExVrpTest do
     test "accepts time-window-infeasible :initial_routes (solver can repair)" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], time_windows: [{0, 1000}])
-        |> Model.add_client(x: 100, y: 0, delivery: [10], tw_early: 0, tw_late: 5)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 5)
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}])
 
       assert {:ok, result} =
                ExVrp.solve(model,
@@ -161,11 +169,12 @@ defmodule ExVrpTest do
     test "warm-start skips empty inner lists" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
-        |> Model.add_client(x: 2, y: 2, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}])
 
       assert {:ok, result} =
                ExVrp.solve(model,
@@ -182,10 +191,11 @@ defmodule ExVrpTest do
     test "respects seed for reproducibility" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
-        |> Model.add_client(x: 2, y: 2, delivery: [20])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [20])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}])
 
       {:ok, result1} = ExVrp.solve(model, seed: 42, max_iterations: 100)
       {:ok, result2} = ExVrp.solve(model, seed: 42, max_iterations: 100)
@@ -200,9 +210,10 @@ defmodule ExVrpTest do
     test "returns solution directly on success" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       result = ExVrp.solve!(model, max_iterations: 10)
       assert result.best.is_feasible
@@ -214,7 +225,8 @@ defmodule ExVrpTest do
       model =
         Model.new()
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 1, y: 1, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{1, 1}])
 
       assert_raise ExVrp.SolveError, fn ->
         ExVrp.solve!(model, max_iterations: 10)

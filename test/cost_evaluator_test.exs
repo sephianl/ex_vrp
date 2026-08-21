@@ -55,10 +55,11 @@ defmodule ExVrp.CostEvaluatorTest do
     test "returns cost for feasible solution" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -80,10 +81,11 @@ defmodule ExVrp.CostEvaluatorTest do
       # Model where capacity is exceeded
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10])
         # Exceeds capacity
-        |> Model.add_client(x: 10, y: 0, delivery: [20])
+        |> Model.add_client(delivery: [20])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -116,10 +118,11 @@ defmodule ExVrp.CostEvaluatorTest do
       # Model where capacity must be exceeded
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10])
         # Exceeds capacity
-        |> Model.add_client(x: 10, y: 0, delivery: [50])
+        |> Model.add_client(delivery: [50])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -143,10 +146,11 @@ defmodule ExVrp.CostEvaluatorTest do
     test "returns actual cost for feasible solution" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 3, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 0, y: 10, delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {0, 10}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -173,10 +177,11 @@ defmodule ExVrp.CostEvaluatorTest do
     test "penalises time window violations" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # Very tight time window
-        |> Model.add_client(x: 100, y: 0, delivery: [10], tw_early: 0, tw_late: 10)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 10)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], time_windows: [{0, 1000}])
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -209,11 +214,12 @@ defmodule ExVrp.CostEvaluatorTest do
     test "penalises distance violations" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1000, y: 0, delivery: [10])
-        |> Model.add_client(x: 0, y: 1000, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         # Very low max_distance to trigger violations
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], max_distance: 100)
+        |> Model.set_euclidean_matrices([{0, 0}, {1000, 0}, {0, 1000}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -245,9 +251,10 @@ defmodule ExVrp.CostEvaluatorTest do
     test "handles multi-dimensional load penalties" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [30, 20], pickup: [0, 0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [30, 20], pickup: [0, 0])
         |> Model.add_vehicle_type(num_available: 1, capacity: [20, 10])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -269,10 +276,11 @@ defmodule ExVrp.CostEvaluatorTest do
     test "different dimension penalties affect cost differently" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [30, 30], pickup: [0, 0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [30, 30], pickup: [0, 0])
         # Capacity exceeded in both dimensions
         |> Model.add_vehicle_type(num_available: 1, capacity: [20, 20])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -304,9 +312,10 @@ defmodule ExVrp.CostEvaluatorTest do
     test "zero penalties result in base cost only" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -332,10 +341,11 @@ defmodule ExVrp.CostEvaluatorTest do
       # The penalty manager uses initial penalty of ~100,000
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 100, y: 0, delivery: [100])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [100])
         # Capacity exceeded - will have penalty applied
         |> Model.add_vehicle_type(num_available: 1, capacity: [50])
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -360,10 +370,11 @@ defmodule ExVrp.CostEvaluatorTest do
       # not some huge value that overflows when multiplied by penalty
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10_000, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         # No max_distance constraint
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10_000, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -388,9 +399,10 @@ defmodule ExVrp.CostEvaluatorTest do
     test "single dimension penalty" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -411,9 +423,10 @@ defmodule ExVrp.CostEvaluatorTest do
     test "very high penalties" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 

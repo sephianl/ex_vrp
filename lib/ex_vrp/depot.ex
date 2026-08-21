@@ -6,8 +6,6 @@ defmodule ExVrp.Depot do
   """
 
   @type t :: %__MODULE__{
-          x: number(),
-          y: number(),
           tw_early: non_neg_integer(),
           tw_late: non_neg_integer(),
           service_duration: non_neg_integer(),
@@ -15,24 +13,17 @@ defmodule ExVrp.Depot do
           name: String.t()
         }
 
-  @enforce_keys [:x, :y]
-  defstruct [
-    :x,
-    :y,
-    tw_early: 0,
-    tw_late: :infinity,
-    service_duration: 0,
-    reload_cost: 0,
-    name: ""
-  ]
+  defstruct tw_early: 0,
+            tw_late: :infinity,
+            service_duration: 0,
+            reload_cost: 0,
+            name: ""
 
   @doc """
   Creates a new depot.
 
   ## Required Options
 
-  - `:x` - X coordinate
-  - `:y` - Y coordinate
 
   ## Optional Options
 
@@ -44,9 +35,9 @@ defmodule ExVrp.Depot do
 
   ## Examples
 
-      iex> depot = ExVrp.Depot.new(x: 0, y: 0)
-      iex> {depot.x, depot.y}
-      {0, 0}
+      iex> depot = ExVrp.Depot.new(tw_early: 0, tw_late: 3600)
+      iex> {depot.tw_early, depot.tw_late}
+      {0, 3600}
 
   """
   @spec new(keyword()) :: t()

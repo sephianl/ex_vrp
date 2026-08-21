@@ -333,34 +333,26 @@ defmodule ExVrp.StatisticsTest do
 
     model =
       Model.new()
-      |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
+      |> Model.add_depot(tw_early: 0, tw_late: 45_000)
       |> Model.add_client(
-        x: 226,
-        y: 1297,
         delivery: [5],
         tw_early: 15_600,
         tw_late: 22_500,
         service_duration: 360
       )
       |> Model.add_client(
-        x: 590,
-        y: 530,
         delivery: [5],
         tw_early: 12_000,
         tw_late: 19_500,
         service_duration: 360
       )
       |> Model.add_client(
-        x: 435,
-        y: 718,
         delivery: [3],
         tw_early: 8400,
         tw_late: 15_300,
         service_duration: 420
       )
       |> Model.add_client(
-        x: 1191,
-        y: 639,
         delivery: [5],
         tw_early: 12_000,
         tw_late: 19_500,

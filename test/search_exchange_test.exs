@@ -364,12 +364,13 @@ defmodule ExVrp.SearchExchangeTest do
       # Relocate to empty route should account for fixed vehicle cost
       model =
         Model.new()
-        |> Model.add_depot(x: 2334, y: 726)
-        |> Model.add_client(x: 226, y: 1297, delivery: [5])
-        |> Model.add_client(x: 590, y: 530, delivery: [5])
-        |> Model.add_client(x: 435, y: 718, delivery: [3])
-        |> Model.add_client(x: 1191, y: 639, delivery: [5])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [3])
+        |> Model.add_client(delivery: [5])
         |> Model.add_vehicle_type(num_available: 2, capacity: [10], fixed_cost: 100)
+        |> Model.set_euclidean_matrices([{2334, 726}, {226, 1297}, {590, 530}, {435, 718}, {1191, 639}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = make_cost_evaluator()
@@ -532,20 +533,6 @@ defmodule ExVrp.SearchExchangeTest do
     end
   end
 
-  describe "Route centroid" do
-    test "centroid is computed correctly" do
-      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
-
-      # Clients: (226, 1297), (590, 530)
-      route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
-      {cx, cy} = Native.search_route_centroid_nif(route)
-
-      # Expected: ((226 + 590) / 2, (1297 + 530) / 2) = (408, 913.5)
-      assert_in_delta cx, 408.0, 1.0
-      assert_in_delta cy, 913.5, 1.0
-    end
-  end
-
   describe "Distance vs duration moves (PyVRP test_relocate_only_happens)" do
     test "relocate respects duration matrix even when distance is better" do
       # Based on test_relocate_only_happens_when_distance_and_duration_allow_it
@@ -564,9 +551,9 @@ defmodule ExVrp.SearchExchangeTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 0, tw_early: 0, tw_late: 5, delivery: [0])
-        |> Model.add_client(x: 2, y: 0, tw_early: 0, tw_late: 5, delivery: [0])
+        |> Model.add_depot([])
+        |> Model.add_client(tw_early: 0, tw_late: 5, delivery: [0])
+        |> Model.add_client(tw_early: 0, tw_late: 5, delivery: [0])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10], time_windows: [{0, 10}])
         |> Model.set_distance_matrices([distances])
         |> Model.set_duration_matrices([durations])
@@ -604,11 +591,11 @@ defmodule ExVrp.SearchExchangeTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-        |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-        |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-        |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-        |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+        |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
         # can fit 3 clients
         |> Model.add_vehicle_type(num_available: 1, capacity: [12])
         # can only fit 1 client
@@ -617,6 +604,7 @@ defmodule ExVrp.SearchExchangeTest do
         |> Model.add_vehicle_type(num_available: 1, capacity: [1])
         # exactly for client 3
         |> Model.add_vehicle_type(num_available: 1, capacity: [3])
+        |> Model.set_euclidean_matrices([{2334, 726}, {226, 1297}, {590, 530}, {435, 718}, {1191, 639}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -655,13 +643,14 @@ defmodule ExVrp.SearchExchangeTest do
       # Based on test_exchange_with_duration_constraint
       model =
         Model.new()
-        |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-        |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-        |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-        |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-        |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+        |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
         # No duration constraint (max_dur = 0 means unlimited)
         |> Model.add_vehicle_type(num_available: 2, capacity: [10], shift_duration: 0)
+        |> Model.set_euclidean_matrices([{2334, 726}, {226, 1297}, {590, 530}, {435, 718}, {1191, 639}])
 
       distances = [
         [0, 1544, 1944, 1931, 1476],
@@ -707,12 +696,13 @@ defmodule ExVrp.SearchExchangeTest do
       # With max_dur = 5000, routes have duration violations
       model =
         Model.new()
-        |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-        |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-        |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-        |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-        |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+        |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
         |> Model.add_vehicle_type(num_available: 2, capacity: [10], shift_duration: 5000)
+        |> Model.set_euclidean_matrices([{2334, 726}, {226, 1297}, {590, 530}, {435, 718}, {1191, 639}])
 
       distances = [
         [0, 1544, 1944, 1931, 1476],
@@ -753,12 +743,13 @@ defmodule ExVrp.SearchExchangeTest do
     test "Exchange21 with shift_duration constraint" do
       model =
         Model.new()
-        |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-        |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-        |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-        |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-        |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+        |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
         |> Model.add_vehicle_type(num_available: 2, capacity: [10], shift_duration: 0)
+        |> Model.set_euclidean_matrices([{2334, 726}, {226, 1297}, {590, 530}, {435, 718}, {1191, 639}])
 
       distances = [
         [0, 1544, 1944, 1931, 1476],
@@ -803,14 +794,15 @@ defmodule ExVrp.SearchExchangeTest do
       # Tests correct evaluation of load violations in same route
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # client 1: picks up 5
-        |> Model.add_client(x: 1, y: 0, pickup: [5])
+        |> Model.add_client(pickup: [5])
         # client 2: no load change
-        |> Model.add_client(x: 2, y: 0, pickup: [0])
+        |> Model.add_client(pickup: [0])
         # client 3: delivers 5
-        |> Model.add_client(x: 2, y: 0, delivery: [5])
+        |> Model.add_client(delivery: [5])
         |> Model.add_vehicle_type(num_available: 1, capacity: [5])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 0}, {2, 0}, {2, 0}])
 
       distances = [[0, 1, 1, 1], [1, 0, 1, 1], [1, 1, 0, 1], [1, 1, 1, 0]]
 
@@ -853,11 +845,12 @@ defmodule ExVrp.SearchExchangeTest do
       # Same test for Exchange11 (swap)
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 0, pickup: [5])
-        |> Model.add_client(x: 2, y: 0, pickup: [0])
-        |> Model.add_client(x: 2, y: 0, delivery: [5])
+        |> Model.add_depot([])
+        |> Model.add_client(pickup: [5])
+        |> Model.add_client(pickup: [0])
+        |> Model.add_client(delivery: [5])
         |> Model.add_vehicle_type(num_available: 1, capacity: [5])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 0}, {2, 0}, {2, 0}])
 
       distances = [[0, 1, 1, 1], [1, 0, 1, 1], [1, 1, 0, 1], [1, 1, 1, 0]]
 
@@ -893,12 +886,13 @@ defmodule ExVrp.SearchExchangeTest do
       # Based on test_relocate_max_distance
       model =
         Model.new()
-        |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-        |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-        |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-        |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-        |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+        |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
         |> Model.add_vehicle_type(num_available: 2, capacity: [10], max_distance: 5000)
+        |> Model.set_euclidean_matrices([{2334, 726}, {226, 1297}, {590, 530}, {435, 718}, {1191, 639}])
 
       distances = [
         [0, 1544, 1944, 1931, 1476],
@@ -944,12 +938,13 @@ defmodule ExVrp.SearchExchangeTest do
       # Based on test_swap_max_distance
       model =
         Model.new()
-        |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-        |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-        |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-        |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-        |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+        |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
         |> Model.add_vehicle_type(num_available: 2, capacity: [10], max_distance: 5000)
+        |> Model.set_euclidean_matrices([{2334, 726}, {226, 1297}, {590, 530}, {435, 718}, {1191, 639}])
 
       distances = [
         [0, 1544, 1944, 1931, 1476],
@@ -1010,11 +1005,11 @@ defmodule ExVrp.SearchExchangeTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 45_000)
-        |> Model.add_client(x: 226, y: 1297, delivery: [5])
-        |> Model.add_client(x: 590, y: 530, delivery: [5])
-        |> Model.add_client(x: 435, y: 718, delivery: [3])
-        |> Model.add_client(x: 1191, y: 639, delivery: [5])
+        |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [3])
+        |> Model.add_client(delivery: [5])
         |> Model.add_vehicle_type(num_available: 3, capacity: [10], profile: 0)
         |> Model.add_vehicle_type(num_available: 3, capacity: [10], profile: 1)
         |> Model.set_distance_matrices([dist1, dist2])
@@ -1069,11 +1064,11 @@ defmodule ExVrp.SearchExchangeTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 45_000)
-        |> Model.add_client(x: 10, y: 0, delivery: [1])
-        |> Model.add_client(x: 20, y: 0, delivery: [1])
-        |> Model.add_client(x: 30, y: 0, delivery: [1])
-        |> Model.add_client(x: 40, y: 0, delivery: [1])
+        |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+        |> Model.add_client(delivery: [1])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_client(delivery: [1])
         |> Model.add_vehicle_type(num_available: 2, capacity: [10])
         |> Model.set_distance_matrices([distances])
         |> Model.set_duration_matrices([distances])
@@ -1119,10 +1114,10 @@ defmodule ExVrp.SearchExchangeTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # second depot
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 0, y: 0, delivery: [0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
         # type 0: normal
         |> Model.add_vehicle_type(num_available: 1, capacity: [10])
         |> Model.add_vehicle_type(
@@ -1167,11 +1162,12 @@ defmodule ExVrp.SearchExchangeTest do
       # Based on test_bug_evaluating_move_with_initial_load
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 0, y: 0, delivery: [1])
-        |> Model.add_client(x: 0, y: 0, delivery: [1])
-        |> Model.add_client(x: 0, y: 0, delivery: [0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_client(delivery: [0])
         |> Model.add_vehicle_type(num_available: 2, capacity: [5], initial_load: [5])
+        |> Model.set_euclidean_matrices([{0, 0}, {0, 0}, {0, 0}, {0, 0}])
 
       distances = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]
 
@@ -1210,10 +1206,11 @@ defmodule ExVrp.SearchExchangeTest do
       # Tests that Exchange10 respects release times
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [5], release_time: 100)
-        |> Model.add_client(x: 20, y: 0, delivery: [5], release_time: 0)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [5], release_time: 100)
+        |> Model.add_client(delivery: [5], release_time: 0)
         |> Model.add_vehicle_type(num_available: 2, capacity: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1281,12 +1278,13 @@ defmodule ExVrp.SearchExchangeTest do
     test "Exchange20 with different vehicle types" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [5])
-        |> Model.add_client(x: 20, y: 0, delivery: [5])
-        |> Model.add_client(x: 30, y: 0, delivery: [5])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [5])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10], fixed_cost: 100)
         |> Model.add_vehicle_type(num_available: 1, capacity: [20], fixed_cost: 50)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1391,11 +1389,11 @@ defmodule ExVrp.SearchExchangeTest do
 
     model =
       Model.new()
-      |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-      |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-      |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-      |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-      |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+      |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+      |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+      |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+      |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+      |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
       |> Model.add_vehicle_type(num_available: 3, capacity: [10], time_windows: [{0, 45_000}])
       |> Model.set_distance_matrices([distances])
       # Same as distance for OkSmall

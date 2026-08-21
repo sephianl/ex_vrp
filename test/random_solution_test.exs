@@ -13,10 +13,11 @@ defmodule ExVrp.RandomSolutionTest do
     test "creates valid solution" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -27,10 +28,11 @@ defmodule ExVrp.RandomSolutionTest do
     test "solution is complete" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -41,11 +43,12 @@ defmodule ExVrp.RandomSolutionTest do
     test "respects seed for reproducibility" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 3, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -60,12 +63,13 @@ defmodule ExVrp.RandomSolutionTest do
     test "different seeds produce different solutions" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
-        |> Model.add_client(x: 40, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 4, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -81,11 +85,12 @@ defmodule ExVrp.RandomSolutionTest do
     test "assigns all clients" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 3, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -102,11 +107,12 @@ defmodule ExVrp.RandomSolutionTest do
     test "handles capacity constraints" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [60])
-        |> Model.add_client(x: 20, y: 0, delivery: [60])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [60])
+        |> Model.add_client(delivery: [60])
         # Capacity forces clients into separate routes
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -118,10 +124,11 @@ defmodule ExVrp.RandomSolutionTest do
     test "handles time windows" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 100)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 50, tw_late: 200)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 100)
+        |> Model.add_client(delivery: [10], tw_early: 50, tw_late: 200)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 300}])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -132,11 +139,12 @@ defmodule ExVrp.RandomSolutionTest do
     test "handles multiple vehicle types" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [50])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -149,9 +157,10 @@ defmodule ExVrp.RandomSolutionTest do
     test "single client" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -165,17 +174,20 @@ defmodule ExVrp.RandomSolutionTest do
     test "many clients" do
       model =
         Model.new()
-        |> Model.add_depot(x: 50, y: 50)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 20, capacity: [100])
+
+      coordinates =
+        for i <- 1..50 do
+          angle = 2 * :math.pi() * i / 50
+          {round(50 + 40 * :math.cos(angle)), round(50 + 40 * :math.sin(angle))}
+        end
 
       # Add 50 clients
       model =
-        Enum.reduce(1..50, model, fn i, m ->
-          angle = 2 * :math.pi() * i / 50
-          x = round(50 + 40 * :math.cos(angle))
-          y = round(50 + 40 * :math.sin(angle))
-          Model.add_client(m, x: x, y: y, delivery: [5])
-        end)
+        1..50
+        |> Enum.reduce(model, fn _i, m -> Model.add_client(m, delivery: [5]) end)
+        |> Model.set_euclidean_matrices([{50, 50} | coordinates])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -186,11 +198,12 @@ defmodule ExVrp.RandomSolutionTest do
     test "multi-depot" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 100, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 90, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {10, 0}, {90, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -201,10 +214,11 @@ defmodule ExVrp.RandomSolutionTest do
     test "multi-dimensional capacity" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10, 5], pickup: [0, 0])
-        |> Model.add_client(x: 20, y: 0, delivery: [15, 10], pickup: [0, 0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10, 5], pickup: [0, 0])
+        |> Model.add_client(delivery: [15, 10], pickup: [0, 0])
         |> Model.add_vehicle_type(num_available: 2, capacity: [50, 30])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -217,11 +231,12 @@ defmodule ExVrp.RandomSolutionTest do
     test "returns correct number of clients" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 3, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -232,10 +247,11 @@ defmodule ExVrp.RandomSolutionTest do
     test "distance is positive" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -246,9 +262,10 @@ defmodule ExVrp.RandomSolutionTest do
     test "duration is non-negative" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], service_duration: 10)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], service_duration: 10)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, solution} = Native.create_random_solution(problem_data, seed: 42)

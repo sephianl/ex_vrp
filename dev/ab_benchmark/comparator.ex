@@ -5,10 +5,16 @@ defmodule ExVrp.ABBenchmark.Comparator do
 
   Solves stop on wall-clock, so the same seed on the same code does not reproduce
   exactly: instances that converge inside their budget land on identical solutions
-  and instances that do not, scatter. Every row therefore carries a `noise` band —
-  the widest seed-to-seed spread of the two refs — and a `pct_change` inside that
-  band is not a result. Warnings respect the band so an instance can never be
-  flagged for moving less than it moves against itself.
+  and instances that do not, scatter. Every row therefore carries a `noise` band,
+  and a `pct_change` inside that band is not a result. Warnings respect the band so
+  an instance can never be flagged for moving less than it moves against itself.
+
+  Both refs run the same seed set, so the band is computed from the *paired*
+  per-seed deltas rather than from the scatter of raw objectives. Seeds differ from
+  each other far more than a code change moves any one of them, and that difference
+  is common to both refs, so it cancels in the pairing. Banding on raw scatter
+  instead charges a code change for variance it did not cause, which hides real
+  effects on exactly the instances that scatter most.
   """
 
   defmodule Row do
@@ -74,7 +80,7 @@ defmodule ExVrp.ABBenchmark.Comparator do
       baseline_gap: gap(base_mean, bks),
       candidate_gap: gap(cand_mean, bks),
       pct_change: pct_change(base_mean, cand_mean),
-      noise: widest(spread(base_objs), spread(cand_objs)),
+      noise: paired_noise(paired_deltas(base["seeds"], cand["seeds"])),
       iter_pct_change: pct_change(mean_iterations(base["seeds"]), mean_iterations(cand["seeds"]))
     }
   end
@@ -86,20 +92,27 @@ defmodule ExVrp.ABBenchmark.Comparator do
   defp mean([]), do: nil
   defp mean(list), do: Enum.sum(list) / length(list)
 
-  defp spread([]), do: nil
-  defp spread([_single]), do: 0.0
+  defp paired_deltas(base_seeds, cand_seeds) do
+    cand_seeds = Map.new(cand_seeds)
 
-  defp spread(objs) do
-    {low, high} = Enum.min_max(objs)
-    relative_range(high - low, mean(objs))
+    for {seed, b} <- base_seeds,
+        c = Map.get(cand_seeds, seed),
+        paired_feasible?(b, c),
+        do: (c["objective"] - b["objective"]) / b["objective"]
   end
 
-  defp relative_range(_range, mean) when mean <= 0, do: nil
-  defp relative_range(range, mean), do: range / mean
+  defp paired_feasible?(%{"feasible" => true, "objective" => base}, %{"feasible" => true, "objective" => cand})
+       when is_number(base) and base > 0 and is_number(cand), do: true
 
-  defp widest(nil, other), do: other
-  defp widest(one, nil), do: one
-  defp widest(one, other), do: max(one, other)
+  defp paired_feasible?(_base, _cand), do: false
+
+  defp paired_noise([]), do: nil
+  defp paired_noise([_single]), do: 0.0
+
+  defp paired_noise(deltas) do
+    {low, high} = Enum.min_max(deltas)
+    high - low
+  end
 
   defp feasible_count(seeds), do: Enum.count(seeds, fn {_s, m} -> m["feasible"] end)
 
@@ -188,7 +201,12 @@ defmodule ExVrp.ABBenchmark.Comparator do
     IO.puts(divider)
     Enum.each(rows, &print_row/1)
     IO.puts(divider)
-    IO.puts("Delta% marked * exceeds this instance's seed-to-seed noise; unmarked deltas are not results.")
+
+    IO.puts(
+      "Delta% marked * exceeds the spread of this instance's paired per-seed deltas; " <>
+        "unmarked deltas are not results."
+    )
+
     Enum.each(warnings, fn w -> IO.puts("WARN: #{w}") end)
     Enum.each(hard_fails, fn f -> IO.puts("FAIL: #{f}") end)
     IO.puts(if hard_fails == [], do: "\nNo regressions detected.\n", else: "\nREGRESSION DETECTED.\n")

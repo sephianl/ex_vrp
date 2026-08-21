@@ -299,12 +299,11 @@ defmodule ExVrp.Read do
     dimension = Map.get(instance, :dimension, 0)
     num_depots = length(Map.get(instance, :depot, [1]))
     num_clients = dimension - num_depots
-    coords = instance |> extract_raw_coords() |> scale_coords(round_fn)
     depot_indices = instance |> Map.get(:depot, [1]) |> Enum.map(&(&1 - 1))
     {distances, durations} = build_matrices(instance, dimension, round_fn)
     time_windows = build_time_windows(instance, round_fn)
 
-    model = add_depots(coords, depot_indices)
+    model = add_depots(depot_indices)
     model = add_client_groups(model, instance)
 
     client_data = %{
@@ -317,7 +316,7 @@ defmodule ExVrp.Read do
       client_to_group: build_client_to_group_map(instance)
     }
 
-    model = add_clients(model, coords, depot_indices, dimension, client_data)
+    model = add_clients(model, depot_indices, dimension, client_data)
 
     vehicle_info = collect_vehicle_info(instance, num_clients, num_depots, dimension, depot_indices, round_fn)
     model = add_vehicle_types(model, vehicle_info, time_windows, depot_indices)
@@ -327,12 +326,9 @@ defmodule ExVrp.Read do
     )
   end
 
-  defp add_depots(coords, depot_indices) do
-    coords_tuple = List.to_tuple(coords)
-
-    Enum.reduce(depot_indices, Model.new(), fn depot_idx, model ->
-      {x, y} = elem(coords_tuple, depot_idx)
-      Model.add_depot(model, x: x, y: y)
+  defp add_depots(depot_indices) do
+    Enum.reduce(depot_indices, Model.new(), fn _depot_idx, model ->
+      Model.add_depot(model, [])
     end)
   end
 
@@ -365,19 +361,15 @@ defmodule ExVrp.Read do
     |> Map.new()
   end
 
-  defp add_clients(model, coords, depot_indices, dimension, data) do
+  defp add_clients(model, depot_indices, dimension, data) do
     client_indices = Enum.filter(0..(dimension - 1), fn idx -> idx not in depot_indices end)
-    coords_tuple = List.to_tuple(coords)
 
     Enum.reduce(client_indices, model, fn loc_idx, model ->
-      {x, y} = elem(coords_tuple, loc_idx)
       prize = Map.get(data.prizes, loc_idx, 0)
       group_idx = Map.get(data.client_to_group, loc_idx)
       {tw_early, tw_late} = Map.get(data.time_windows, loc_idx, {0, :infinity})
 
       Model.add_client(model,
-        x: x,
-        y: y,
         delivery: Map.get(data.demands, loc_idx, [0]),
         pickup: Map.get(data.backhauls, loc_idx, [0]),
         service_duration: Map.get(data.service_times, loc_idx, 0),
@@ -561,10 +553,6 @@ defmodule ExVrp.Read do
         |> Enum.sort_by(fn {idx, _coords} -> idx end)
         |> Enum.map(fn {_idx, [x, y]} -> {x, y} end)
     end
-  end
-
-  defp scale_coords(raw_coords, round_fn) do
-    Enum.map(raw_coords, fn {x, y} -> {round_fn.(x), round_fn.(y)} end)
   end
 
   defp build_matrices(instance, dimension, round_fn) do

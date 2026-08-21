@@ -47,7 +47,6 @@ defmodule ExVrp.Native do
     problem_data_num_vehicle_types: 1,
     problem_data_num_vehicles: 1,
     problem_data_has_time_windows_nif: 1,
-    problem_data_centroid_nif: 1,
     problem_data_num_profiles_nif: 1,
     # ProblemData extraction
     problem_data_clients_nif: 1,
@@ -81,7 +80,6 @@ defmodule ExVrp.Native do
     solution_route_start_depot: 2,
     solution_route_end_depot: 2,
     solution_route_num_trips: 2,
-    solution_route_centroid: 2,
     solution_route_start_time: 2,
     solution_route_end_time: 2,
     solution_route_slack: 2,
@@ -124,7 +122,6 @@ defmodule ExVrp.Native do
     search_route_duration_cost_nif: 1,
     search_route_unit_distance_cost_nif: 1,
     search_route_unit_duration_cost_nif: 1,
-    search_route_centroid_nif: 1,
     search_route_profile_nif: 1,
     search_route_get_node_nif: 2,
     search_route_append_nif: 2,
@@ -133,7 +130,6 @@ defmodule ExVrp.Native do
     search_route_clear_nif: 1,
     search_route_update_nif: 1,
     search_route_swap_nif: 2,
-    search_route_overlaps_with_nif: 3,
     search_route_shift_duration_nif: 1,
     search_route_max_duration_nif: 1,
     search_route_overtime_start_nif: 1,
@@ -184,9 +180,6 @@ defmodule ExVrp.Native do
     exchange33_evaluate_nif: 4,
     exchange33_apply_nif: 3,
     # Route operators
-    create_swap_star_nif: 2,
-    swap_star_evaluate_nif: 4,
-    swap_star_apply_nif: 3,
     create_swap_routes_nif: 1,
     swap_routes_evaluate_nif: 4,
     swap_routes_apply_nif: 3,
@@ -452,12 +445,6 @@ defmodule ExVrp.Native do
   def problem_data_has_time_windows_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
-  Gets the centroid (average x, y) of all client locations.
-  """
-  @spec problem_data_centroid_nif(reference()) :: {float(), float()}
-  def problem_data_centroid_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc """
   Gets the number of profiles (distance/duration matrix sets).
   """
   @spec problem_data_num_profiles_nif(reference()) :: non_neg_integer()
@@ -581,7 +568,6 @@ defmodule ExVrp.Native do
     - `:relocate_with_depot` - Relocate with depot reload (multi-trip)
 
   - `:route_operators` - List of route operator names:
-    - `:swap_star` - SWAP* operator (Vidal et al.)
     - `:swap_routes` - Swap entire routes
 
   - `:exhaustive` - Whether to run exhaustive search (default: false)
@@ -807,12 +793,6 @@ defmodule ExVrp.Native do
   def solution_route_num_trips(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
-  Gets the centroid of a specific route as {x, y}.
-  """
-  @spec solution_route_centroid(reference(), non_neg_integer()) :: {float(), float()}
-  def solution_route_centroid(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc """
   Gets the start time of a specific route.
   """
   @spec solution_route_start_time(reference(), non_neg_integer()) :: non_neg_integer()
@@ -984,9 +964,6 @@ defmodule ExVrp.Native do
   @doc "Gets the unit duration cost."
   def search_route_unit_duration_cost_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc "Gets the route centroid."
-  def search_route_centroid_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
-
   @doc "Gets the route profile."
   def search_route_profile_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
 
@@ -1010,9 +987,6 @@ defmodule ExVrp.Native do
 
   @doc "Swaps two nodes."
   def search_route_swap_nif(_node1, _node2), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Checks if two routes overlap with the given tolerance (0.0 to 1.0)."
-  def search_route_overlaps_with_nif(_route1, _route2, _tolerance), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Gets the route's shift duration."
   def search_route_shift_duration_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
@@ -1164,17 +1138,8 @@ defmodule ExVrp.Native do
   def exchange33_apply_nif(_op, _u, _v), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
-  # Route Operator NIFs (SwapStar, SwapRoutes, SwapTails, RelocateWithDepot)
+  # Route Operator NIFs (SwapRoutes, SwapTails, RelocateWithDepot)
   # ---------------------------------------------------------------------------
-
-  @doc "Creates a SwapStar operator with overlap_tolerance (0.0 to 1.0, use 1.0 to check all route pairs)."
-  def create_swap_star_nif(_problem_data, _overlap_tolerance), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Evaluates SwapStar move cost between two routes."
-  def swap_star_evaluate_nif(_op, _route1, _route2, _evaluator), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "Applies SwapStar move between two routes."
-  def swap_star_apply_nif(_op, _route1, _route2), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Creates a SwapRoutes operator."
   def create_swap_routes_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)

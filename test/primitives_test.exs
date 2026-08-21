@@ -88,9 +88,9 @@ defmodule ExVrp.PrimitivesTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1, delivery: [0])
-        |> Model.add_client(x: 1, y: 0, delivery: [0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], fixed_cost: 7)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], fixed_cost: 13)
         |> Model.set_distance_matrices([distances])
@@ -164,9 +164,9 @@ defmodule ExVrp.PrimitivesTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1, delivery: [0])
-        |> Model.add_client(x: 1, y: 0, delivery: [0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], fixed_cost: 7)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], fixed_cost: 13)
         |> Model.set_distance_matrices([distances])
@@ -202,16 +202,17 @@ defmodule ExVrp.PrimitivesTest do
       model =
         Model.new()
         # depot 0
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # depot 1
-        |> Model.add_depot(x: 1000, y: 0)
+        |> Model.add_depot([])
         # client 2
-        |> Model.add_client(x: 500, y: 500, delivery: [0])
+        |> Model.add_client(delivery: [0])
         # client 3
-        |> Model.add_client(x: 200, y: 200, delivery: [0])
+        |> Model.add_client(delivery: [0])
         # client 4
-        |> Model.add_client(x: 800, y: 800, delivery: [0])
+        |> Model.add_client(delivery: [0])
         |> Model.add_vehicle_type(num_available: 3, capacity: [10], start_depot: 0, end_depot: 1)
+        |> Model.set_euclidean_matrices([{0, 0}, {1000, 0}, {500, 500}, {200, 200}, {800, 800}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -311,10 +312,10 @@ defmodule ExVrp.PrimitivesTest do
       model =
         Model.new()
         # depot 0
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # depot 1
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 0, y: 0, delivery: [0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [10],
@@ -420,11 +421,11 @@ defmodule ExVrp.PrimitivesTest do
 
     model =
       Model.new()
-      |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-      |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-      |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-      |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-      |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+      |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+      |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+      |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+      |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+      |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
       |> Model.add_vehicle_type(num_available: 3, capacity: [10], time_windows: [{0, 45_000}])
       |> Model.set_distance_matrices([distances])
       |> Model.set_duration_matrices([distances])
@@ -458,11 +459,11 @@ defmodule ExVrp.PrimitivesTest do
 
     model =
       Model.new()
-      |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-      |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-      |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-      |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-      |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+      |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+      |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+      |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+      |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+      |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
       |> Model.add_vehicle_type(
         num_available: 3,
         capacity: [10],
@@ -481,11 +482,11 @@ defmodule ExVrp.PrimitivesTest do
 
     model =
       Model.new()
-      |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-      |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-      |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-      |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-      |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+      |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+      |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+      |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+      |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+      |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
       |> Model.add_vehicle_type(
         num_available: 3,
         capacity: [10],

@@ -6,10 +6,11 @@ ExVrp solves vehicle routing problems through PyVRP's C++ core. You build an `Ex
 ```elixir
 model =
   ExVrp.Model.new()
-  |> ExVrp.Model.add_depot(x: 0, y: 0)
+  |> ExVrp.Model.add_depot([])
   |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
-  |> ExVrp.Model.add_client(x: 10, y: 10, delivery: [20], service_duration: 300)
-  |> ExVrp.Model.add_client(x: 20, y: 0, delivery: [30], service_duration: 300)
+  |> ExVrp.Model.add_client(delivery: [20], service_duration: 300)
+  |> ExVrp.Model.add_client(delivery: [30], service_duration: 300)
+  |> ExVrp.Model.set_euclidean_matrices([{0, 0}, {10, 10}, {20, 0}])
 
 {:ok, result} = ExVrp.solve(model, max_runtime: 30_000, seed: 42)
 
@@ -55,7 +56,7 @@ validation the moment your vehicles carry two dimensions. Pass a full-width list
 
 ```elixir
 |> Model.add_vehicle_type(num_available: 3, capacity: [1000, 50], time_windows: [{0, 28_800}])
-|> Model.add_client(x: 1, y: 1, delivery: [200, 10], pickup: [0, 0])
+|> Model.add_client(delivery: [200, 10], pickup: [0, 0])
 ```
 
 ## Vehicle time windows: pass `:time_windows`, never `tw_early`/`tw_late`
@@ -83,7 +84,7 @@ the whole solve is infeasible rather than dropping that client. To let the solve
 optional and price it:
 
 ```elixir
-Model.add_client(model, x: 50, y: 50, delivery: [10], required: false, prize: 5000)
+Model.add_client(model, delivery: [10], required: false, prize: 5000)
 ```
 
 The prize is what the solver gives up by skipping the client, so it is the knob that decides
@@ -102,8 +103,8 @@ client to a mutually exclusive group raises `ArgumentError`.
 
 model =
   model
-  |> Model.add_client(x: 1, y: 1, group: group, required: false, prize: 100)
-  |> Model.add_client(x: 2, y: 2, group: group, required: false, prize: 100)
+  |> Model.add_client(group: group, required: false, prize: 100)
+  |> Model.add_client(group: group, required: false, prize: 100)
 ```
 
 Use `Model.add_same_vehicle_group/3` for the different constraint "if these are visited, one vehicle

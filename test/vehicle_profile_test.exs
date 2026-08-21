@@ -37,10 +37,8 @@ defmodule ExVrp.VehicleProfileTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_late: 500)
+        |> Model.add_depot(tw_late: 500)
         |> Model.add_client(
-          x: 1,
-          y: 0,
           delivery: [10],
           service_duration: 10,
           tw_early: 0,
@@ -49,8 +47,6 @@ defmodule ExVrp.VehicleProfileTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 2,
-          y: 0,
           delivery: [10],
           service_duration: 10,
           tw_early: 0,
@@ -111,10 +107,8 @@ defmodule ExVrp.VehicleProfileTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_late: 500)
+        |> Model.add_depot(tw_late: 500)
         |> Model.add_client(
-          x: 1,
-          y: 0,
           delivery: [10],
           service_duration: 10,
           tw_early: 0,
@@ -123,8 +117,6 @@ defmodule ExVrp.VehicleProfileTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 2,
-          y: 0,
           delivery: [10],
           service_duration: 10,
           tw_early: 0,
@@ -133,8 +125,6 @@ defmodule ExVrp.VehicleProfileTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 3,
-          y: 0,
           delivery: [10],
           service_duration: 10,
           tw_early: 0,
@@ -143,8 +133,6 @@ defmodule ExVrp.VehicleProfileTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 4,
-          y: 0,
           delivery: [10],
           service_duration: 10,
           tw_early: 0,
@@ -192,11 +180,9 @@ defmodule ExVrp.VehicleProfileTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_late: 1000)
+        |> Model.add_depot(tw_late: 1000)
         # Client 1: early time window, only cheap vehicle (profile 0) is available then
         |> Model.add_client(
-          x: 1,
-          y: 0,
           delivery: [10],
           service_duration: 10,
           tw_early: 0,
@@ -206,8 +192,6 @@ defmodule ExVrp.VehicleProfileTest do
         )
         # Client 2: late time window, only expensive vehicle (profile 1) is available then
         |> Model.add_client(
-          x: 2,
-          y: 0,
           delivery: [10],
           service_duration: 10,
           tw_early: 500,

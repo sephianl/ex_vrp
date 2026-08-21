@@ -20,29 +20,12 @@ defmodule ExVrp.ReadTest do
       veh_type = hd(model.vehicle_types)
       assert veh_type.capacity == [10]
 
-      # From NODE_COORD_SECTION
-      expected_coords = [
-        {2334, 726},
-        {226, 1297},
-        {590, 530},
-        {435, 718},
-        {1191, 639}
-      ]
-
-      # Check depot
-      depot = hd(model.depots)
-      assert depot.x == 2334
-      assert depot.y == 726
+      # NODE_COORD_SECTION now only feeds the distance matrix; locations
+      # themselves carry no coordinates.
+      assert length(model.distance_matrices) == 1
 
       assert length(model.clients) == 4
       clients = model.clients
-
-      clients
-      |> Enum.zip(tl(expected_coords))
-      |> Enum.each(fn {client, {x, y}} ->
-        assert client.x == x
-        assert client.y == y
-      end)
 
       # From DEMAND_SECTION
       expected_demands = [5, 5, 3, 5]
@@ -97,12 +80,8 @@ defmodule ExVrp.ReadTest do
 
       # Check coordinates are scaled
       depot = hd(model.depots)
-      assert depot.x == 1450
-      assert depot.y == 2150
 
       first_client = hd(model.clients)
-      assert first_client.x == 1510
-      assert first_client.y == 2640
     end
 
     test "reads instance with multiple depots" do
@@ -117,10 +96,6 @@ defmodule ExVrp.ReadTest do
       assert length(model.vehicle_types) == 2
 
       [depot1, depot2] = model.depots
-      assert depot1.x == 2334
-      assert depot1.y == 726
-      assert depot2.x == 226
-      assert depot2.y == 1297
 
       # Check vehicle types have correct depots
       veh_type1 = Enum.find(model.vehicle_types, &(&1.start_depot == 0))
@@ -231,7 +206,6 @@ defmodule ExVrp.ReadTest do
 
       # Values are already integers, so should be unchanged
       depot = hd(model.depots)
-      assert depot.x == 2334
     end
 
     test ":trunc truncates to integer" do
@@ -239,7 +213,6 @@ defmodule ExVrp.ReadTest do
       model = Read.read(path, round_func: :trunc)
 
       depot = hd(model.depots)
-      assert depot.x == 2334
     end
 
     test ":exact scales by 1000" do
@@ -247,7 +220,6 @@ defmodule ExVrp.ReadTest do
       model = Read.read(path, round_func: :exact)
 
       depot = hd(model.depots)
-      assert depot.x == 2_334_000
     end
 
     test "custom rounding function" do
@@ -255,7 +227,6 @@ defmodule ExVrp.ReadTest do
       model = Read.read(path, round_func: fn x -> x * 2 end)
 
       depot = hd(model.depots)
-      assert depot.x == 4668
     end
 
     test "raises on unknown rounding function" do
@@ -273,8 +244,6 @@ defmodule ExVrp.ReadTest do
 
       # Should be integers
       depot = hd(model.depots)
-      assert is_integer(depot.x)
-      assert is_integer(depot.y)
     end
   end
 
@@ -361,11 +330,12 @@ defmodule ExVrp.ReadTest do
       # This must produce a complete solution with all clients
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 3, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       # Solve with minimal iterations to focus on initial solution quality
       {:ok, result} = ExVrp.Solver.solve(model, max_iterations: 1)
@@ -381,11 +351,12 @@ defmodule ExVrp.ReadTest do
     test "solver respects seed for initial solution reproducibility" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 10, delivery: [10])
-        |> Model.add_client(x: 20, y: 20, delivery: [10])
-        |> Model.add_client(x: 30, y: 30, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 3, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 10}, {20, 20}, {30, 30}])
 
       # Same seed should produce same initial solution
       {:ok, result1} = ExVrp.Solver.solve(model, max_iterations: 1, seed: 123)

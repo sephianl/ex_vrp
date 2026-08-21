@@ -1,5 +1,79 @@
 # Changelog
 
+## 0.9.0
+
+Locations no longer carry coordinates, and the SwapStar operator is gone. Distance matrices
+are now the solver's only notion of distance, and a model must supply one.
+
+### Removed
+
+- **Breaking: `:x` and `:y` are removed from `add_client/2` and `add_depot/2`.** They fed
+  exactly two things: a Euclidean distance matrix generated when a model supplied none, and
+  SwapStar's centroid pruning. The second is gone (below), and the first is now an explicit
+  call. To migrate, drop the coordinates and derive the matrices from them instead:
+
+  ```elixir
+  # before
+  Model.new()
+  |> Model.add_depot(x: 0, y: 0)
+  |> Model.add_client(x: 10, y: 10, delivery: [20])
+
+  # after
+  Model.new()
+  |> Model.add_depot([])
+  |> Model.add_client(delivery: [20])
+  |> Model.set_euclidean_matrices([{0, 0}, {10, 10}])
+  ```
+
+  Coordinates are in _location_ order — depots first, then clients — which is the order
+  `ProblemData` indexes by, not necessarily the order you called the builders in. Callers
+  that already supply their own matrices (via `set_distance_matrices/2`) just drop the
+  coordinates; nothing else changes for them.
+
+- **Breaking: `Route.centroid/1` and `Solution.route_centroid/2` are removed,** along with
+  the `problem_data_centroid_nif`, `solution_route_centroid`, `search_route_centroid_nif`
+  and `search_route_overlaps_with_nif` NIFs. Locations have no coordinates to average.
+
+- **Breaking: the SwapStar operator is removed,** including `create_swap_star_nif/2`,
+  `swap_star_evaluate_nif/4`, `swap_star_apply_nif/3`, and `:swap_star` in
+  `local_search_with_operators`. It was measured on the full benchmark corpus (21 instances,
+  4 seeds, 120s cap) against a no-SwapStar baseline: not one instance improved beyond its
+  noise band, while iteration throughput fell 13% overall and 33-90% on the large instances.
+  The two production prize-collecting instances got 5-17% worse.
+
+  Its overlap tolerance was not the lever. `overlapsWith` pruned route pairs by the polar
+  angle of their centroids, which degenerates when a caller feeds synthetic collinear
+  coordinates. Re-running with tolerance 1.0 — every pair evaluated, a strict superset of
+  what correct geometry would select — was worse still. What remains untested is a bounded
+  per-pass timeout: the operator is O(V² × N) per pass and ran unbounded in every arm, which
+  is where the throughput went.
+
+  SwapStar was never in the default operator set, so this changes no solve. `bench.smoke`
+  objectives are unchanged.
+
+### Added
+
+- `Model.set_euclidean_matrices/2` sets both matrices to the rounded Euclidean distances
+  between the given coordinates, taking durations to equal distances. This is the explicit
+  replacement for the implicit generation that used to happen inside `to_problem_data/1`.
+
+### Changed
+
+- `Model.validate/1` now rejects a model with no distance matrix. Previously such a model
+  silently got Euclidean distances derived from coordinates.
+
+- **Fixed: `add_same_vehicle_group/3` resolved clients by structural equality,** so two
+  clients with identical attributes both resolved to the first matching index and the group
+  failed validation with "duplicate clients". Each match is now consumed once. Coordinates
+  used to mask this by making otherwise-identical clients distinguishable.
+
+- The vendored PyVRP core moved from `c_src/pyvrp/` to `c_src/ex_vrp/`. The old path read as
+  pristine upstream, but ~23 of its files carry local feature patches (same-vehicle groups,
+  forbidden windows, reload/multi-trip, depot service-duration removal, NIF/ILS plumbing),
+  so an upstream bump must be a three-way merge rather than an overwrite. The `pyvrp::`
+  namespace and `PYVRP_*` header guards are deliberately unchanged — they are what keeps
+  those merges tractable.
+
 ## 0.8.0
 
 Overtime is reworked. `max_overtime` — an allowance bolted onto `shift_duration` — is replaced by an

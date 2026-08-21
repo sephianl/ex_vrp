@@ -27,13 +27,13 @@ defmodule ExVrp.EndAtLocationTest do
       model =
         Model.new()
         # Main depot at index 0
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
         # End depot at index 1
-        |> Model.add_depot(x: 1, y: 0, tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
         # Clients at indices 2, 3, 4
-        |> Model.add_client(x: 2, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 3, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 4, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
@@ -73,11 +73,11 @@ defmodule ExVrp.EndAtLocationTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
-        |> Model.add_depot(x: 1, y: 0, tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 2, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 3, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 4, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
         |> Model.add_vehicle_type(
           num_available: 2,
           capacity: [20],
@@ -117,15 +117,15 @@ defmodule ExVrp.EndAtLocationTest do
       model =
         Model.new()
         # Main depot at index 0
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
         # End depot 1 at index 1
-        |> Model.add_depot(x: 1, y: 0, tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
         # End depot 2 at index 2
-        |> Model.add_depot(x: 2, y: 0, tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
         # Clients at indices 3, 4, 5
-        |> Model.add_client(x: 3, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 4, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 5, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
         # Vehicle type 0: ends at depot 1
         |> Model.add_vehicle_type(
           num_available: 1,
@@ -175,11 +175,11 @@ defmodule ExVrp.EndAtLocationTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 1, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 2, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 3, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 4, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
@@ -217,13 +217,13 @@ defmodule ExVrp.EndAtLocationTest do
       model =
         Model.new()
         # Main depot at index 0
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
         # End depot at index 1
-        |> Model.add_depot(x: 1, y: 0, tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
         # Clients at indices 2, 3, 4
-        |> Model.add_client(x: 2, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 3, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 4, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
         # Vehicle type 0: returns to main depot
         |> Model.add_vehicle_type(
           num_available: 1,
@@ -271,11 +271,11 @@ defmodule ExVrp.EndAtLocationTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
-        |> Model.add_depot(x: 1, y: 0, tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 2, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 3, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 4, y: 0, delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1000)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [20],
