@@ -31,7 +31,7 @@ who are contracted until a time of day rather than for a number of hours.
   single-trip route more room but never a multi-trip one. Behaviour is unchanged for vehicle types
   that leave `max_duration` at its default, since that default is `shift_duration`.
 
-- **Breaking: `ExVrp.Native.search_route_max_overtime_nif/1` is removed.** Use
+- **Breaking: `ExVrp.Native.search_route_max_overtime_nif` is removed.** Use
   `search_route_max_duration_nif/1` for the hard cap or the new
   `search_route_overtime_start_nif/1` for the contracted end of shift.
   `search_route_max_duration_nif/1` is unchanged in name but now reports the value the caller
