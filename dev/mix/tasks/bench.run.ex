@@ -64,7 +64,7 @@ defmodule Mix.Tasks.Bench.Run do
     result
   end
 
-  defp parse_seeds(nil), do: [1, 2, 3]
+  defp parse_seeds(nil), do: Runner.default_seeds()
   defp parse_seeds(s), do: s |> String.split(",") |> Enum.map(&String.to_integer/1)
 
   defp filter_entries(entries, nil), do: entries

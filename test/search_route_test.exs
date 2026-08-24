@@ -241,12 +241,13 @@ defmodule ExVrp.SearchRouteTest do
       for fixed_cost <- [0, 9] do
         model =
           Model.new()
-          |> Model.add_depot(x: 2334, y: 726)
-          |> Model.add_client(x: 226, y: 1297, delivery: [5])
-          |> Model.add_client(x: 590, y: 530, delivery: [5])
-          |> Model.add_client(x: 435, y: 718, delivery: [3])
-          |> Model.add_client(x: 1191, y: 639, delivery: [5])
+          |> Model.add_depot([])
+          |> Model.add_client(delivery: [5])
+          |> Model.add_client(delivery: [5])
+          |> Model.add_client(delivery: [3])
+          |> Model.add_client(delivery: [5])
           |> Model.add_vehicle_type(num_available: 2, capacity: [10], fixed_cost: fixed_cost)
+          |> Model.set_euclidean_matrices([{2334, 726}, {226, 1297}, {590, 530}, {435, 718}, {1191, 639}])
 
         {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -272,42 +273,16 @@ defmodule ExVrp.SearchRouteTest do
     end
   end
 
-  describe "Route centroid" do
-    test "computes center point correctly" do
-      # Based on test_route_centroid
-      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
-
-      # Test with clients 1, 2, 3, 4
-      route = Native.make_search_route_nif(problem_data, [1, 2, 3, 4], 0, 0)
-      {cx, cy} = Native.search_route_centroid_nif(route)
-
-      # Clients: (226, 1297), (590, 530), (435, 718), (1191, 639)
-      expected_x = (226 + 590 + 435 + 1191) / 4
-      expected_y = (1297 + 530 + 718 + 639) / 4
-      assert_in_delta cx, expected_x, 1.0
-      assert_in_delta cy, expected_y, 1.0
-
-      # Test with clients 1, 2
-      route2 = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
-      {cx2, cy2} = Native.search_route_centroid_nif(route2)
-
-      expected_x2 = (226 + 590) / 2
-      expected_y2 = (1297 + 530) / 2
-      assert_in_delta cx2, expected_x2, 1.0
-      assert_in_delta cy2, expected_y2, 1.0
-    end
-  end
-
   describe "Route feasibility" do
     test "checks load, time, and distance constraints" do
       # Based on test_is_feasible
       # Need a model with max_distance constraint
       model =
         Model.new()
-        |> Model.add_depot(x: 2334, y: 726)
-        |> Model.add_client(x: 226, y: 1297, delivery: [5])
-        |> Model.add_client(x: 590, y: 530, delivery: [5])
-        |> Model.add_client(x: 435, y: 718, delivery: [3])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [3])
         |> Model.add_vehicle_type(num_available: 3, capacity: [10], max_distance: 6000)
         |> Model.set_distance_matrices([build_small_distances()])
         |> Model.set_duration_matrices([build_small_distances()])
@@ -330,11 +305,11 @@ defmodule ExVrp.SearchRouteTest do
       # Based on test_max_distance
       model =
         Model.new()
-        |> Model.add_depot(x: 2334, y: 726)
-        |> Model.add_client(x: 226, y: 1297, delivery: [5])
-        |> Model.add_client(x: 590, y: 530, delivery: [5])
-        |> Model.add_client(x: 435, y: 718, delivery: [3])
-        |> Model.add_client(x: 1191, y: 639, delivery: [5])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [3])
+        |> Model.add_client(delivery: [5])
         |> Model.add_vehicle_type(num_available: 3, capacity: [10], max_distance: 5000)
         |> Model.set_distance_matrices([build_ok_small_distances()])
         |> Model.set_duration_matrices([build_ok_small_distances()])
@@ -497,32 +472,6 @@ defmodule ExVrp.SearchRouteTest do
   end
 
   describe "Route overlap (PyVRP parity)" do
-    test "route overlaps with self no matter the tolerance value" do
-      # Based on test_route_overlaps_with_self_no_matter_the_tolerance_value
-      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
-
-      route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
-
-      assert Native.search_route_overlaps_with_nif(route, route, 0.0) == true
-      assert Native.search_route_overlaps_with_nif(route, route, 0.5) == true
-      assert Native.search_route_overlaps_with_nif(route, route, 1.0) == true
-    end
-
-    test "all routes overlap with maximum tolerance value" do
-      # Based on test_all_routes_overlap_with_maximum_tolerance_value
-      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
-
-      route1 = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
-      route2 = Native.make_search_route_nif(problem_data, [3, 4], 1, 0)
-
-      # With zero tolerance, routes don't overlap
-      assert Native.search_route_overlaps_with_nif(route1, route2, 0.0) == false
-      assert Native.search_route_overlaps_with_nif(route2, route1, 0.0) == false
-
-      # With maximum tolerance, they do overlap
-      assert Native.search_route_overlaps_with_nif(route1, route2, 1.0) == true
-      assert Native.search_route_overlaps_with_nif(route2, route1, 1.0) == true
-    end
   end
 
   describe "Distance segment access (PyVRP parity)" do
@@ -588,8 +537,8 @@ defmodule ExVrp.SearchRouteTest do
     test "shift duration returns vehicle type's shift duration" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1, delivery: [0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10], shift_duration: 5000)
         |> Model.set_distance_matrices([[[0, 100], [100, 0]]])
         |> Model.set_duration_matrices([[[0, 100], [100, 0]]])
@@ -603,8 +552,8 @@ defmodule ExVrp.SearchRouteTest do
     test "overtime start is unset by default" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1, delivery: [0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10], shift_duration: 5000)
         |> Model.set_distance_matrices([[[0, 100], [100, 0]]])
         |> Model.set_duration_matrices([[[0, 100], [100, 0]]])
@@ -618,8 +567,8 @@ defmodule ExVrp.SearchRouteTest do
     test "overtime start returns the contracted end of shift" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1, delivery: [0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [10],
@@ -638,8 +587,8 @@ defmodule ExVrp.SearchRouteTest do
     test "max duration is the value the caller passed" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1, delivery: [0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10], shift_duration: 5000, max_duration: 6000)
         |> Model.set_distance_matrices([[[0, 100], [100, 0]]])
         |> Model.set_duration_matrices([[[0, 100], [100, 0]]])
@@ -653,8 +602,8 @@ defmodule ExVrp.SearchRouteTest do
     test "unit overtime cost returns vehicle type's unit overtime cost" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1, delivery: [0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [10],
@@ -676,9 +625,9 @@ defmodule ExVrp.SearchRouteTest do
       # Vehicle with shift_duration=5000, max_duration=6000, unit_overtime_cost=10
       model =
         Model.new()
-        |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-        |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-        |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [10],
@@ -717,7 +666,7 @@ defmodule ExVrp.SearchRouteTest do
       # Based on test_has_distance_cost - default has cost
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10])
         |> Model.set_distance_matrices([[[0]]])
         |> Model.set_duration_matrices([[[0]]])
@@ -733,7 +682,7 @@ defmodule ExVrp.SearchRouteTest do
       # Based on test_has_distance_cost - no cost or constraint
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10], unit_distance_cost: 0)
         |> Model.set_distance_matrices([[[0]]])
         |> Model.set_duration_matrices([[[0]]])
@@ -748,7 +697,7 @@ defmodule ExVrp.SearchRouteTest do
       # Based on test_has_distance_cost - constraint activates even without cost
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10], unit_distance_cost: 0, max_distance: 0)
         |> Model.set_distance_matrices([[[0]]])
         |> Model.set_duration_matrices([[[0]]])
@@ -763,7 +712,7 @@ defmodule ExVrp.SearchRouteTest do
       # Based on test_has_duration_cost - default has no cost
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10])
         |> Model.set_distance_matrices([[[0]]])
         |> Model.set_duration_matrices([[[0]]])
@@ -778,7 +727,7 @@ defmodule ExVrp.SearchRouteTest do
     test "has_duration_cost with duration-based overtime under an unbounded hard cap" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [10],
@@ -798,7 +747,7 @@ defmodule ExVrp.SearchRouteTest do
     test "has_duration_cost with clock-based overtime under an unbounded hard cap" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [10],
@@ -820,8 +769,8 @@ defmodule ExVrp.SearchRouteTest do
       # hasDurationCost checks data.hasTimeWindows(), so we need a client with TW
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1, delivery: [0], tw_early: 100, tw_late: 200)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0], tw_early: 100, tw_late: 200)
         |> Model.add_vehicle_type(num_available: 1, capacity: [10])
         |> Model.set_distance_matrices([[[0, 1], [1, 0]]])
         |> Model.set_duration_matrices([[[0, 1], [1, 0]]])
@@ -836,7 +785,7 @@ defmodule ExVrp.SearchRouteTest do
       # Based on test_has_duration_cost - unit cost
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10], unit_duration_cost: 1)
         |> Model.set_distance_matrices([[[0]]])
         |> Model.set_duration_matrices([[[0]]])
@@ -850,7 +799,7 @@ defmodule ExVrp.SearchRouteTest do
     test "has_duration_cost with shift_duration constraint" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10], shift_duration: 0)
         |> Model.set_distance_matrices([[[0]]])
         |> Model.set_duration_matrices([[[0]]])
@@ -925,11 +874,11 @@ defmodule ExVrp.SearchRouteTest do
       for {shift_duration, expected_tw} <- [{100_000, 3633}, {5000, 3633}, {4000, 3950}, {3000, 4950}, {0, 7950}] do
         model =
           Model.new()
-          |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-          |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-          |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-          |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-          |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+          |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+          |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+          |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+          |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+          |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
           |> Model.add_vehicle_type(num_available: 3, capacity: [10], shift_duration: shift_duration)
           |> Model.set_distance_matrices([build_ok_small_distances()])
           |> Model.set_duration_matrices([build_ok_small_distances()])
@@ -954,11 +903,11 @@ defmodule ExVrp.SearchRouteTest do
       for {max_distance, expected_excess} <- [{100_000, 0}, {5000, 1450}, {0, 6450}] do
         model =
           Model.new()
-          |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-          |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-          |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-          |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-          |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+          |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+          |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+          |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+          |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+          |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
           |> Model.add_vehicle_type(num_available: 3, capacity: [10], max_distance: max_distance)
           |> Model.set_distance_matrices([build_ok_small_distances()])
           |> Model.set_duration_matrices([build_ok_small_distances()])
@@ -1044,21 +993,6 @@ defmodule ExVrp.SearchRouteTest do
     end
   end
 
-  describe "Empty route centroid (PyVRP parity)" do
-    test "zero centroid for empty routes" do
-      # Based on test_zero_centroid_empty_routes
-      # Tests that empty routes return (0.0, 0.0), not NaN from divide-by-zero
-      {:ok, problem_data, _cost_evaluator} = ok_small_setup()
-
-      route = Native.create_search_route_nif(problem_data, 0, 0)
-      assert Native.search_route_empty_nif(route) == true
-
-      {cx, cy} = Native.search_route_centroid_nif(route)
-      assert cx == 0.0
-      assert cy == 0.0
-    end
-  end
-
   describe "Initial load calculation (PyVRP parity)" do
     test "initial_load affects excess_load calculation" do
       # Based on test_initial_load_calculation
@@ -1072,11 +1006,11 @@ defmodule ExVrp.SearchRouteTest do
       # Now create same model but with initial_load = [5]
       model_with_initial_load =
         Model.new()
-        |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-        |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-        |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-        |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-        |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+        |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+        |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+        |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
         |> Model.add_vehicle_type(num_available: 3, capacity: [10], initial_load: [5], time_windows: [{0, 45_000}])
         |> Model.set_distance_matrices([build_ok_small_distances()])
         |> Model.set_duration_matrices([build_ok_small_distances()])
@@ -1097,11 +1031,11 @@ defmodule ExVrp.SearchRouteTest do
 
     model =
       Model.new()
-      |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-      |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-      |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-      |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-      |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+      |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+      |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+      |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+      |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+      |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
       |> Model.add_vehicle_type(
         num_available: 3,
         capacity: [10],
@@ -1129,11 +1063,11 @@ defmodule ExVrp.SearchRouteTest do
 
     model =
       Model.new()
-      |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-      |> Model.add_client(x: 226, y: 1297, delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
-      |> Model.add_client(x: 590, y: 530, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
-      |> Model.add_client(x: 435, y: 718, delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
-      |> Model.add_client(x: 1191, y: 639, delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+      |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+      |> Model.add_client(delivery: [5], tw_early: 15_600, tw_late: 22_500, service_duration: 360)
+      |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
+      |> Model.add_client(delivery: [3], tw_early: 8400, tw_late: 15_300, service_duration: 420)
+      |> Model.add_client(delivery: [5], tw_early: 12_000, tw_late: 19_500, service_duration: 360)
       |> Model.add_vehicle_type(num_available: 3, capacity: [10], time_windows: [{0, 45_000}])
       |> Model.set_distance_matrices([distances])
       |> Model.set_duration_matrices([distances])
@@ -1155,11 +1089,11 @@ defmodule ExVrp.SearchRouteTest do
 
     model =
       Model.new()
-      |> Model.add_depot(x: 2334, y: 726, tw_early: 0, tw_late: 45_000)
-      |> Model.add_client(x: 226, y: 1297, delivery: [5])
-      |> Model.add_client(x: 590, y: 530, delivery: [5])
-      |> Model.add_client(x: 435, y: 718, delivery: [3])
-      |> Model.add_client(x: 1191, y: 639, delivery: [5])
+      |> Model.add_depot(tw_early: 0, tw_late: 45_000)
+      |> Model.add_client(delivery: [5])
+      |> Model.add_client(delivery: [5])
+      |> Model.add_client(delivery: [3])
+      |> Model.add_client(delivery: [5])
       |> Model.add_vehicle_type(num_available: 1, capacity: [1])
       |> Model.add_vehicle_type(num_available: 2, capacity: [2])
       |> Model.set_distance_matrices([distances])

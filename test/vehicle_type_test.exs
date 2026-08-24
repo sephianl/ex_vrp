@@ -182,9 +182,9 @@ defmodule ExVrp.VehicleTypeTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1200)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 400, service_duration: 10)
-        |> Model.add_client(x: 0, y: 10, delivery: [10], tw_early: 800, tw_late: 1100, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 1200)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 400, service_duration: 10)
+        |> Model.add_client(delivery: [10], tw_early: 800, tw_late: 1100, service_duration: 10)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],

@@ -6,20 +6,19 @@
 
 #include <fine.hpp>
 
-#include "pyvrp/CostEvaluator.h"
-#include "pyvrp/DynamicBitset.h"
-#include "pyvrp/LoadSegment.h"
-#include "pyvrp/ProblemData.h"
-#include "pyvrp/RandomNumberGenerator.h"
-#include "pyvrp/Solution.h"
-#include "pyvrp/search/Exchange.h"
-#include "pyvrp/search/LocalSearch.h"
-#include "pyvrp/search/PerturbationManager.h"
-#include "pyvrp/search/RelocateWithDepot.h"
-#include "pyvrp/search/SwapRoutes.h"
-#include "pyvrp/search/SwapStar.h"
-#include "pyvrp/search/SwapTails.h"
-#include "pyvrp/search/primitives.h"
+#include "ex_vrp/CostEvaluator.h"
+#include "ex_vrp/DynamicBitset.h"
+#include "ex_vrp/LoadSegment.h"
+#include "ex_vrp/ProblemData.h"
+#include "ex_vrp/RandomNumberGenerator.h"
+#include "ex_vrp/Solution.h"
+#include "ex_vrp/search/Exchange.h"
+#include "ex_vrp/search/LocalSearch.h"
+#include "ex_vrp/search/PerturbationManager.h"
+#include "ex_vrp/search/RelocateWithDepot.h"
+#include "ex_vrp/search/SwapRoutes.h"
+#include "ex_vrp/search/SwapTails.h"
+#include "ex_vrp/search/primitives.h"
 
 #include <algorithm>
 #include <cmath>
@@ -189,19 +188,6 @@ template <size_t N, size_t M> struct ExchangeOperatorResource
     }
 };
 
-// Wrap SwapStar operator
-struct SwapStarResource
-{
-    std::unique_ptr<search::SwapStar> op;
-    std::shared_ptr<ProblemData> problemData;
-
-    SwapStarResource(std::unique_ptr<search::SwapStar> o,
-                     std::shared_ptr<ProblemData> pd)
-        : op(std::move(o)), problemData(std::move(pd))
-    {
-    }
-};
-
 // Wrap SwapRoutes operator
 struct SwapRoutesResource
 {
@@ -342,14 +328,11 @@ struct LocalSearchResource
             ls->addNodeOperator(*relocateDepot);
         }
 
-        // TODO: SwapStar is PyVRP's most powerful route operator for
-        // inter-route optimization. Currently disabled because it's O(V²×N)
-        // per pass and needs a per-iteration timeout to prevent hanging on
-        // large problems (53+ vehicles). Enable when a per-iteration timeout
-        // is passed from the Elixir ILS layer.
-        // swapStar = std::make_unique<search::SwapStar>(data);
-        // ls->addRouteOperator(*swapStar);
-
+        // SwapStar used to go here. It was measured on the full benchmark
+        // corpus and removed in 0.9.0 -- no instance improved, and iteration
+        // throughput fell 13% overall and up to 90% on the large ones. See the
+        // 0.9.0 CHANGELOG entry for the numbers and for the one configuration
+        // the experiment never tried (a bounded per-pass timeout).
         if (search::supports<search::SwapRoutes>(data))
         {
             swapRoutes = std::make_unique<search::SwapRoutes>(data);
@@ -384,7 +367,6 @@ FINE_RESOURCE(Exchange30Resource);
 FINE_RESOURCE(Exchange31Resource);
 FINE_RESOURCE(Exchange32Resource);
 FINE_RESOURCE(Exchange33Resource);
-FINE_RESOURCE(SwapStarResource);
 FINE_RESOURCE(SwapRoutesResource);
 FINE_RESOURCE(SwapTailsResource);
 FINE_RESOURCE(RelocateWithDepotResource);
@@ -433,7 +415,6 @@ reconcile_route_ownership(std::shared_ptr<SearchRouteData> &route1_data,
 ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                                   ERL_NIF_TERM term)
 {
-    int64_t x = 0, y = 0;
     std::vector<int64_t> delivery_vec, pickup_vec;
     int64_t service_duration = 0;
     int64_t tw_early = 0;
@@ -458,15 +439,7 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
         {
             std::string key_str(atom_buf);
 
-            if (key_str == "x")
-            {
-                nif_get_int64(env, value, &x);
-            }
-            else if (key_str == "y")
-            {
-                nif_get_int64(env, value, &y);
-            }
-            else if (key_str == "delivery")
+            if (key_str == "delivery")
             {
                 // Decode list of integers
                 unsigned len;
@@ -571,9 +544,7 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
     if (pickup_loads.empty())
         pickup_loads.push_back(Load(0));
 
-    return ProblemData::Client(Coordinate(x),
-                               Coordinate(y),
-                               std::move(delivery_loads),
+    return ProblemData::Client(std::move(delivery_loads),
                                std::move(pickup_loads),
                                Duration(service_duration),
                                Duration(tw_early),
@@ -590,7 +561,6 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
 ProblemData::Depot decode_depot([[maybe_unused]] ErlNifEnv *env,
                                 ERL_NIF_TERM term)
 {
-    int64_t x = 0, y = 0;
     int64_t service_duration = 0;
     int64_t reload_cost = 0;
     int64_t tw_early = 0;
@@ -611,15 +581,7 @@ ProblemData::Depot decode_depot([[maybe_unused]] ErlNifEnv *env,
         {
             std::string key_str(atom_buf);
 
-            if (key_str == "x")
-            {
-                nif_get_int64(env, value, &x);
-            }
-            else if (key_str == "y")
-            {
-                nif_get_int64(env, value, &y);
-            }
-            else if (key_str == "service_duration")
+            if (key_str == "service_duration")
             {
                 nif_get_int64(env, value, &service_duration);
             }
@@ -651,9 +613,7 @@ ProblemData::Depot decode_depot([[maybe_unused]] ErlNifEnv *env,
     }
     enif_map_iterator_destroy(env, &iter);
 
-    return ProblemData::Depot(Coordinate(x),
-                              Coordinate(y),
-                              Duration(tw_early),
+    return ProblemData::Depot(Duration(tw_early),
                               Duration(tw_late),
                               Duration(service_duration),
                               Cost(reload_cost));
@@ -1041,14 +1001,6 @@ Matrix<Duration> decode_duration_matrix([[maybe_unused]] ErlNifEnv *env,
     return Matrix<Duration>(std::move(data), num_rows, num_cols);
 }
 
-// Calculate Euclidean distance between two points
-int64_t euclidean_distance(int64_t x1, int64_t y1, int64_t x2, int64_t y2)
-{
-    double dx = static_cast<double>(x2 - x1);
-    double dy = static_cast<double>(y2 - y1);
-    return static_cast<int64_t>(std::round(std::sqrt(dx * dx + dy * dy)));
-}
-
 // Decode Elixir binary to std::string
 std::string decode_binary_to_string([[maybe_unused]] ErlNifEnv *env,
                                     ERL_NIF_TERM term)
@@ -1267,7 +1219,6 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
     }
 
     // Create matrices
-    size_t num_locations = depots.size() + clients.size();
     std::vector<Matrix<Distance>> dist_matrices;
     std::vector<Matrix<Duration>> dur_matrices;
 
@@ -1299,43 +1250,6 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
                 dur_matrices.push_back(decode_duration_matrix(env, head));
             }
         }
-    }
-
-    // If no matrices provided, generate from coordinates
-    if (dist_matrices.empty())
-    {
-        Matrix<Distance> dist_mat(num_locations, num_locations);
-        Matrix<Duration> dur_mat(num_locations, num_locations);
-
-        // Helper to get coordinates
-        auto get_coords = [&](size_t idx) -> std::pair<int64_t, int64_t>
-        {
-            if (idx < depots.size())
-            {
-                return {static_cast<int64_t>(depots[idx].x),
-                        static_cast<int64_t>(depots[idx].y)};
-            }
-            else
-            {
-                auto &c = clients[idx - depots.size()];
-                return {static_cast<int64_t>(c.x), static_cast<int64_t>(c.y)};
-            }
-        };
-
-        for (size_t i = 0; i < num_locations; i++)
-        {
-            auto [x1, y1] = get_coords(i);
-            for (size_t j = 0; j < num_locations; j++)
-            {
-                auto [x2, y2] = get_coords(j);
-                int64_t dist = euclidean_distance(x1, y1, x2, y2);
-                dist_mat(i, j) = Distance(dist);
-                dur_mat(i, j) = Duration(dist);  // Assume unit speed
-            }
-        }
-
-        dist_matrices.push_back(std::move(dist_mat));
-        dur_matrices.push_back(std::move(dur_mat));
     }
 
     // Decode client groups
@@ -1909,32 +1823,6 @@ solution_route_num_trips([[maybe_unused]] ErlNifEnv *env,
 }
 
 FINE_NIF(solution_route_num_trips, 0);
-
-/**
- * Get centroid of a specific route.
- */
-fine::Term
-solution_route_centroid([[maybe_unused]] ErlNifEnv *env,
-                        fine::ResourcePtr<SolutionResource> solution_resource,
-                        int64_t route_idx)
-{
-    auto &solution = solution_resource->solution;
-    auto const &routes = solution.routes();
-
-    if (route_idx < 0 || static_cast<size_t>(route_idx) >= routes.size())
-    {
-        return fine::Term(enif_make_tuple2(
-            env, enif_make_double(env, 0.0), enif_make_double(env, 0.0)));
-    }
-
-    auto const &centroid = routes[static_cast<size_t>(route_idx)].centroid();
-    return fine::Term(enif_make_tuple2(
-        env,
-        enif_make_double(env, static_cast<double>(centroid.first)),
-        enif_make_double(env, static_cast<double>(centroid.second))));
-}
-
-FINE_NIF(solution_route_centroid, 0);
 
 /**
  * Get start time of a specific route.
@@ -2649,18 +2537,6 @@ bool problem_data_has_time_windows_nif(
 
 FINE_NIF(problem_data_has_time_windows_nif, 0);
 
-// Get centroid of all client locations
-std::tuple<double, double> problem_data_centroid_nif(
-    [[maybe_unused]] ErlNifEnv *env,
-    fine::ResourcePtr<ProblemDataResource> problem_resource)
-{
-    auto const &centroid = problem_resource->data->centroid();
-    return std::make_tuple(static_cast<double>(centroid.first),
-                           static_cast<double>(centroid.second));
-}
-
-FINE_NIF(problem_data_centroid_nif, 0);
-
 // Get number of profiles (distance/duration matrices)
 int64_t problem_data_num_profiles_nif(
     [[maybe_unused]] ErlNifEnv *env,
@@ -3150,7 +3026,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
     // Add node operators - matching PyVRP's default NODE_OPERATORS:
     // Exchange10, Exchange20, Exchange11, Exchange21, Exchange22, SwapTails,
     // RelocateWithDepot Note: PyVRP's default ROUTE_OPERATORS is empty, so we
-    // don't add SwapStar/SwapRoutes here
+    // don't add SwapRoutes here
     pyvrp::search::Exchange<1, 0> relocate(problem_data);   // RELOCATE
     pyvrp::search::Exchange<2, 0> relocate2(problem_data);  // 2-RELOCATE
     pyvrp::search::Exchange<1, 1> swap11(problem_data);     // SWAP(1,1)
@@ -3179,7 +3055,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
     }
 
     // Note: PyVRP's default ROUTE_OPERATORS is empty - don't add
-    // SwapStar/SwapRoutes
+    // SwapRoutes
 
     // Create RNG and shuffle (like Python's ls.search() does)
     RandomNumberGenerator rng(static_cast<uint32_t>(seed));
@@ -3205,7 +3081,7 @@ FINE_NIF(local_search_search_only_nif, ERL_NIF_DIRTY_JOB_CPU_BOUND);
  * Options:
  * - :node_operators - list of atom operator names: [:exchange10, :exchange11,
  * ...]
- * - :route_operators - list of atom operator names: [:swap_star, :swap_routes]
+ * - :route_operators - list of atom operator names: [:swap_routes]
  * - :exhaustive - boolean (default false)
  */
 fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
@@ -3307,7 +3183,6 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
     std::vector<std::unique_ptr<pyvrp::search::SwapTails>> swap_tails_ops;
     std::vector<std::unique_ptr<pyvrp::search::RelocateWithDepot>>
         relocate_depot_ops;
-    std::vector<std::unique_ptr<pyvrp::search::SwapStar>> swap_star_ops;
     std::vector<std::unique_ptr<pyvrp::search::SwapRoutes>> swap_routes_ops;
 
     // Add specified node operators
@@ -3385,13 +3260,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
     // Add specified route operators
     for (const auto &op_name : route_ops)
     {
-        if (op_name == "swap_star")
-        {
-            swap_star_ops.push_back(
-                std::make_unique<pyvrp::search::SwapStar>(problem_data));
-            ls.addRouteOperator(*swap_star_ops.back());
-        }
-        else if (op_name == "swap_routes")
+        if (op_name == "swap_routes")
         {
             swap_routes_ops.push_back(
                 std::make_unique<pyvrp::search::SwapRoutes>(problem_data));
@@ -3515,7 +3384,6 @@ fine::Term local_search_stats_nif(
     std::vector<std::unique_ptr<pyvrp::search::SwapTails>> swap_tails_ops;
     std::vector<std::unique_ptr<pyvrp::search::RelocateWithDepot>>
         relocate_depot_ops;
-    std::vector<std::unique_ptr<pyvrp::search::SwapStar>> swap_star_ops;
     std::vector<std::unique_ptr<pyvrp::search::SwapRoutes>> swap_routes_ops;
 
     for (const auto &op_name : node_ops)
@@ -3613,15 +3481,7 @@ fine::Term local_search_stats_nif(
 
     for (const auto &op_name : route_ops)
     {
-        if (op_name == "swap_star")
-        {
-            swap_star_ops.push_back(
-                std::make_unique<pyvrp::search::SwapStar>(problem_data));
-            ls.addRouteOperator(*swap_star_ops.back());
-            route_operator_ptrs.push_back(
-                {op_name, swap_star_ops.back().get()});
-        }
-        else if (op_name == "swap_routes")
+        if (op_name == "swap_routes")
         {
             swap_routes_ops.push_back(
                 std::make_unique<pyvrp::search::SwapRoutes>(problem_data));
@@ -4117,18 +3977,6 @@ int64_t search_route_unit_duration_cost_nif(
 
 FINE_NIF(search_route_unit_duration_cost_nif, 0);
 
-// Get centroid
-std::tuple<double, double>
-search_route_centroid_nif([[maybe_unused]] ErlNifEnv *env,
-                          fine::ResourcePtr<SearchRouteResource> route_resource)
-{
-    auto const &centroid = route_resource->route()->centroid();
-    return {static_cast<double>(centroid.first),
-            static_cast<double>(centroid.second)};
-}
-
-FINE_NIF(search_route_centroid_nif, 0);
-
 // Get profile
 int64_t
 search_route_profile_nif([[maybe_unused]] ErlNifEnv *env,
@@ -4355,19 +4203,6 @@ search_route_swap_nif([[maybe_unused]] ErlNifEnv *env,
 }
 
 FINE_NIF(search_route_swap_nif, 0);
-
-// Check if routes overlap with given tolerance
-bool search_route_overlaps_with_nif(
-    [[maybe_unused]] ErlNifEnv *env,
-    fine::ResourcePtr<SearchRouteResource> route1_resource,
-    fine::ResourcePtr<SearchRouteResource> route2_resource,
-    double tolerance)
-{
-    return route1_resource->route()->overlapsWith(*route2_resource->route(),
-                                                  tolerance);
-}
-
-FINE_NIF(search_route_overlaps_with_nif, 0);
 
 // Get shift duration
 int64_t search_route_shift_duration_nif(
@@ -4992,20 +4827,6 @@ exchange33_apply_nif([[maybe_unused]] ErlNifEnv *env,
 
 FINE_NIF(exchange33_apply_nif, 0);
 
-// Create SwapStar operator with optional overlap_tolerance
-fine::ResourcePtr<SwapStarResource>
-create_swap_star_nif([[maybe_unused]] ErlNifEnv *env,
-                     fine::ResourcePtr<ProblemDataResource> problem_resource,
-                     double overlap_tolerance)
-{
-    auto &data = *problem_resource->data;
-    auto op = std::make_unique<search::SwapStar>(data, overlap_tolerance);
-    return fine::make_resource<SwapStarResource>(std::move(op),
-                                                 problem_resource->data);
-}
-
-FINE_NIF(create_swap_star_nif, 0);
-
 // Create SwapRoutes operator
 fine::ResourcePtr<SwapRoutesResource>
 create_swap_routes_nif([[maybe_unused]] ErlNifEnv *env,
@@ -5018,36 +4839,6 @@ create_swap_routes_nif([[maybe_unused]] ErlNifEnv *env,
 }
 
 FINE_NIF(create_swap_routes_nif, 0);
-
-// SwapStar evaluate (takes two Routes, not Nodes)
-int64_t swap_star_evaluate_nif(
-    [[maybe_unused]] ErlNifEnv *env,
-    fine::ResourcePtr<SwapStarResource> op_resource,
-    fine::ResourcePtr<SearchRouteResource> route1_resource,
-    fine::ResourcePtr<SearchRouteResource> route2_resource,
-    fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
-{
-    return static_cast<int64_t>(
-        op_resource->op->evaluate(route1_resource->route(),
-                                  route2_resource->route(),
-                                  evaluator_resource->evaluator));
-}
-
-FINE_NIF(swap_star_evaluate_nif, 0);
-
-// SwapStar apply (takes two Routes) - reconciles ownership after apply
-fine::Atom
-swap_star_apply_nif([[maybe_unused]] ErlNifEnv *env,
-                    fine::ResourcePtr<SwapStarResource> op_resource,
-                    fine::ResourcePtr<SearchRouteResource> route1_resource,
-                    fine::ResourcePtr<SearchRouteResource> route2_resource)
-{
-    op_resource->op->apply(route1_resource->route(), route2_resource->route());
-    reconcile_route_ownership(route1_resource, route2_resource);
-    return fine::Atom("ok");
-}
-
-FINE_NIF(swap_star_apply_nif, 0);
 
 // SwapRoutes evaluate (takes two Routes, not Nodes)
 int64_t swap_routes_evaluate_nif(
@@ -5998,7 +5789,7 @@ static void reconcile_route_ownership_impl(
     }
 }
 
-// Overload for route-based operations (SwapStar, SwapRoutes)
+// Overload for route-based operations (SwapRoutes)
 static void reconcile_route_ownership(
     fine::ResourcePtr<SearchRouteResource> &route1_resource,
     fine::ResourcePtr<SearchRouteResource> &route2_resource)

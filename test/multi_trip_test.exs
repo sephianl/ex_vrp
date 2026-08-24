@@ -103,15 +103,16 @@ defmodule ExVrp.MultiTripTest do
       # Create a simple problem where a vehicle might need to reload
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [60])
-        |> Model.add_client(x: 20, y: 0, delivery: [60])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [60])
+        |> Model.add_client(delivery: [60])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
           reload_depots: [0],
           max_reloads: 2
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
 
@@ -123,10 +124,11 @@ defmodule ExVrp.MultiTripTest do
       # Ensure non-multi-trip problems still work
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [30])
-        |> Model.add_client(x: 20, y: 0, delivery: [30])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
 
@@ -142,11 +144,11 @@ defmodule ExVrp.MultiTripTest do
       # This tests the in-place depot insertion capability
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, service_duration: 50)
-        |> Model.add_client(x: 10, y: 0, delivery: [100], service_duration: 10)
-        |> Model.add_client(x: 20, y: 0, delivery: [100], service_duration: 10)
-        |> Model.add_client(x: 30, y: 0, delivery: [100], service_duration: 10)
-        |> Model.add_client(x: 40, y: 0, delivery: [100], service_duration: 10)
+        |> Model.add_depot(service_duration: 50)
+        |> Model.add_client(delivery: [100], service_duration: 10)
+        |> Model.add_client(delivery: [100], service_duration: 10)
+        |> Model.add_client(delivery: [100], service_duration: 10)
+        |> Model.add_client(delivery: [100], service_duration: 10)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
@@ -154,6 +156,7 @@ defmodule ExVrp.MultiTripTest do
           max_reloads: :infinity,
           time_windows: [{0, 2000}]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
 
@@ -181,9 +184,9 @@ defmodule ExVrp.MultiTripTest do
       # exceed capacity (60 + 60 = 120 > 100), so a depot should be auto-inserted.
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, service_duration: 10)
-        |> Model.add_client(x: 10, y: 0, delivery: [60], service_duration: 5)
-        |> Model.add_client(x: 20, y: 0, delivery: [60], service_duration: 5)
+        |> Model.add_depot(service_duration: 10)
+        |> Model.add_client(delivery: [60], service_duration: 5)
+        |> Model.add_client(delivery: [60], service_duration: 5)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
@@ -191,6 +194,7 @@ defmodule ExVrp.MultiTripTest do
           max_reloads: 5,
           time_windows: [{0, 1000}]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
 
@@ -212,10 +216,10 @@ defmodule ExVrp.MultiTripTest do
       # With 3 clients each needing full capacity, only 2 can be served.
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [100])
-        |> Model.add_client(x: 20, y: 0, delivery: [100])
-        |> Model.add_client(x: 30, y: 0, delivery: [100])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [100])
+        |> Model.add_client(delivery: [100])
+        |> Model.add_client(delivery: [100])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
@@ -223,6 +227,7 @@ defmodule ExVrp.MultiTripTest do
           max_reloads: 1,
           time_windows: [{0, 1000}]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
 
@@ -242,11 +247,11 @@ defmodule ExVrp.MultiTripTest do
       # Vehicle can carry 2 items, needs 2 trips for 4 clients
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, service_duration: 50)
-        |> Model.add_client(x: 10, y: 0, delivery: [50], service_duration: 10)
-        |> Model.add_client(x: 20, y: 0, delivery: [50], service_duration: 10)
-        |> Model.add_client(x: 30, y: 0, delivery: [50], service_duration: 10)
-        |> Model.add_client(x: 40, y: 0, delivery: [50], service_duration: 10)
+        |> Model.add_depot(service_duration: 50)
+        |> Model.add_client(delivery: [50], service_duration: 10)
+        |> Model.add_client(delivery: [50], service_duration: 10)
+        |> Model.add_client(delivery: [50], service_duration: 10)
+        |> Model.add_client(delivery: [50], service_duration: 10)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
@@ -254,6 +259,7 @@ defmodule ExVrp.MultiTripTest do
           max_reloads: :infinity,
           time_windows: [{0, 2000}]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
 
@@ -275,11 +281,11 @@ defmodule ExVrp.MultiTripTest do
     test "two vehicles each make independent multi-trips" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [100])
-        |> Model.add_client(x: 20, y: 0, delivery: [100])
-        |> Model.add_client(x: -10, y: 0, delivery: [100])
-        |> Model.add_client(x: -20, y: 0, delivery: [100])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [100])
+        |> Model.add_client(delivery: [100])
+        |> Model.add_client(delivery: [100])
+        |> Model.add_client(delivery: [100])
         |> Model.add_vehicle_type(
           num_available: 2,
           capacity: [100],
@@ -287,6 +293,7 @@ defmodule ExVrp.MultiTripTest do
           max_reloads: :infinity,
           time_windows: [{0, 1000}]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {-10, 0}, {-20, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
 
@@ -304,9 +311,9 @@ defmodule ExVrp.MultiTripTest do
     test "pickup loads trigger multi-trip when capacity exceeded" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, pickup: [60])
-        |> Model.add_client(x: 20, y: 0, pickup: [60])
+        |> Model.add_depot([])
+        |> Model.add_client(pickup: [60])
+        |> Model.add_client(pickup: [60])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
@@ -314,6 +321,7 @@ defmodule ExVrp.MultiTripTest do
           max_reloads: 5,
           time_windows: [{0, 1000}]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
 
@@ -345,11 +353,11 @@ defmodule ExVrp.MultiTripTest do
       # All 4 clients should be served across multiple trips.
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, service_duration: 60)
-        |> Model.add_client(x: 10, y: 0, pickup: [600], service_duration: 116)
-        |> Model.add_client(x: 20, y: 0, delivery: [600], service_duration: 116)
-        |> Model.add_client(x: 30, y: 0, pickup: [600], service_duration: 116)
-        |> Model.add_client(x: 40, y: 0, delivery: [600], service_duration: 116)
+        |> Model.add_depot(service_duration: 60)
+        |> Model.add_client(pickup: [600], service_duration: 116)
+        |> Model.add_client(delivery: [600], service_duration: 116)
+        |> Model.add_client(pickup: [600], service_duration: 116)
+        |> Model.add_client(delivery: [600], service_duration: 116)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [1000],
@@ -357,6 +365,7 @@ defmodule ExVrp.MultiTripTest do
           max_reloads: :infinity,
           time_windows: [{0, 10_000}]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
 
@@ -388,9 +397,9 @@ defmodule ExVrp.MultiTripTest do
       # Must do 2 trips.
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [600])
-        |> Model.add_client(x: 20, y: 0, delivery: [600])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [600])
+        |> Model.add_client(delivery: [600])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [1000],
@@ -398,6 +407,7 @@ defmodule ExVrp.MultiTripTest do
           max_reloads: :infinity,
           time_windows: [{0, 10_000}]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
 
@@ -467,11 +477,9 @@ defmodule ExVrp.MultiTripTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000, service_duration: 60)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000, service_duration: 60)
         # Client 0: weight pickup + volume delivery
         |> Model.add_client(
-          x: 0,
-          y: 0,
           delivery: [0, 250, 250],
           pickup: [600, 0, 0],
           service_duration: 116,
@@ -482,8 +490,6 @@ defmodule ExVrp.MultiTripTest do
         )
         # Client 1: weight delivery + volume delivery
         |> Model.add_client(
-          x: 1,
-          y: 0,
           delivery: [600, 250, 250],
           pickup: [0, 0, 0],
           service_duration: 116,
@@ -494,8 +500,6 @@ defmodule ExVrp.MultiTripTest do
         )
         # Client 2: weight pickup + volume delivery
         |> Model.add_client(
-          x: 2,
-          y: 0,
           delivery: [0, 250, 250],
           pickup: [600, 0, 0],
           service_duration: 116,
@@ -506,8 +510,6 @@ defmodule ExVrp.MultiTripTest do
         )
         # Client 3: weight delivery + volume delivery
         |> Model.add_client(
-          x: 3,
-          y: 0,
           delivery: [600, 250, 250],
           pickup: [0, 0, 0],
           service_duration: 116,
@@ -549,9 +551,9 @@ defmodule ExVrp.MultiTripTest do
       # Second dimension: 60+60=120 > 100, triggers multi-trip
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10, 60], pickup: [0, 0])
-        |> Model.add_client(x: 20, y: 0, delivery: [10, 60], pickup: [0, 0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10, 60], pickup: [0, 0])
+        |> Model.add_client(delivery: [10, 60], pickup: [0, 0])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [1000, 100],
@@ -559,6 +561,7 @@ defmodule ExVrp.MultiTripTest do
           max_reloads: 5,
           time_windows: [{0, 1000}]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
 
@@ -574,10 +577,10 @@ defmodule ExVrp.MultiTripTest do
     test "uses specified reload depot different from start depot" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 50, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [100])
-        |> Model.add_client(x: 20, y: 0, delivery: [100])
+        |> Model.add_depot([])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [100])
+        |> Model.add_client(delivery: [100])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
@@ -587,6 +590,7 @@ defmodule ExVrp.MultiTripTest do
           max_reloads: 5,
           time_windows: [{0, 2000}]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {50, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
 
@@ -600,15 +604,13 @@ defmodule ExVrp.MultiTripTest do
 
   describe "Depot service_duration" do
     test "creates depot with service_duration" do
-      depot = Depot.new(x: 0, y: 0, service_duration: 30)
+      depot = Depot.new(service_duration: 30)
 
-      assert depot.x == 0
-      assert depot.y == 0
       assert depot.service_duration == 30
     end
 
     test "depot service_duration defaults to 0" do
-      depot = Depot.new(x: 0, y: 0)
+      depot = Depot.new([])
 
       assert depot.service_duration == 0
     end
@@ -630,15 +632,16 @@ defmodule ExVrp.MultiTripTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, service_duration: depot_service_time)
-        |> Model.add_client(x: 10, y: 0, delivery: [40])
-        |> Model.add_client(x: 20, y: 0, delivery: [40])
+        |> Model.add_depot(service_duration: depot_service_time)
+        |> Model.add_client(delivery: [40])
+        |> Model.add_client(delivery: [40])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [50],
           reload_depots: [0],
           max_reloads: 1
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(500))
 
@@ -686,12 +689,13 @@ defmodule ExVrp.MultiTripTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, service_duration: 30)
-        |> Model.add_client(x: 10, y: 0, delivery: [20])
+        |> Model.add_depot(service_duration: 30)
+        |> Model.add_client(delivery: [20])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(100))
 
@@ -719,28 +723,33 @@ defmodule ExVrp.MultiTripTest do
 
       base_model =
         Model.new()
-        |> Model.add_client(x: 10, y: 0, delivery: [40])
-        |> Model.add_client(x: 20, y: 0, delivery: [40])
+        |> Model.add_client(delivery: [40])
+        |> Model.add_client(delivery: [40])
+
+      # depot is added last but indexes first, so matrices come after it
+      coordinates = [{0, 0}, {10, 0}, {20, 0}]
 
       model_no_service =
         base_model
-        |> Model.add_depot(x: 0, y: 0, service_duration: 0)
+        |> Model.add_depot(service_duration: 0)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [50],
           reload_depots: [0],
           max_reloads: 1
         )
+        |> Model.set_euclidean_matrices(coordinates)
 
       model_with_service =
         base_model
-        |> Model.add_depot(x: 0, y: 0, service_duration: 100)
+        |> Model.add_depot(service_duration: 100)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [50],
           reload_depots: [0],
           max_reloads: 1
         )
+        |> Model.set_euclidean_matrices(coordinates)
 
       {:ok, result_no} =
         Solver.solve(model_no_service, stop: ExVrp.StoppingCriteria.max_iterations(500))
@@ -781,10 +790,8 @@ defmodule ExVrp.MultiTripTest do
       # Should drop the client and complete without hanging
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 130, service_duration: 60)
+        |> Model.add_depot(tw_early: 0, tw_late: 130, service_duration: 60)
         |> Model.add_client(
-          x: 0,
-          y: 0,
           tw_early: 0,
           tw_late: 130,
           service_duration: 116,
@@ -800,6 +807,7 @@ defmodule ExVrp.MultiTripTest do
           reload_depots: [0],
           max_reloads: :infinity
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {0, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
 
@@ -819,10 +827,8 @@ defmodule ExVrp.MultiTripTest do
       # Should drop the client and complete without hanging
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 130, service_duration: 60)
+        |> Model.add_depot(tw_early: 0, tw_late: 130, service_duration: 60)
         |> Model.add_client(
-          x: 0,
-          y: 0,
           tw_early: 0,
           tw_late: 130,
           service_duration: 116,
@@ -840,6 +846,7 @@ defmodule ExVrp.MultiTripTest do
           reload_depots: [0],
           max_reloads: :infinity
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {0, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
 
@@ -858,10 +865,8 @@ defmodule ExVrp.MultiTripTest do
       # But shift_duration (130) < service (116) + depot reload (60) = 176
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000, service_duration: 60)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000, service_duration: 60)
         |> Model.add_client(
-          x: 0,
-          y: 0,
           tw_early: 0,
           tw_late: 1000,
           service_duration: 116,
@@ -882,6 +887,7 @@ defmodule ExVrp.MultiTripTest do
           reload_depots: [0],
           max_reloads: :infinity
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {0, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
 
@@ -905,10 +911,8 @@ defmodule ExVrp.MultiTripTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 3600, service_duration: 60)
+        |> Model.add_depot(tw_early: 0, tw_late: 3600, service_duration: 60)
         |> Model.add_client(
-          x: 1,
-          y: 0,
           tw_early: 0,
           tw_late: 3600,
           service_duration: 116,
@@ -943,11 +947,9 @@ defmodule ExVrp.MultiTripTest do
       # None should hang the solver
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 130, service_duration: 60)
+        |> Model.add_depot(tw_early: 0, tw_late: 130, service_duration: 60)
         # Client 0: demand (150) exceeds capacity (100) - even multi-trip can't help
         |> Model.add_client(
-          x: 0,
-          y: 0,
           tw_early: 0,
           tw_late: 130,
           service_duration: 10,
@@ -957,8 +959,6 @@ defmodule ExVrp.MultiTripTest do
         )
         # Client 1: demand (150) exceeds capacity (100) - even multi-trip can't help
         |> Model.add_client(
-          x: 1,
-          y: 0,
           tw_early: 0,
           tw_late: 130,
           service_duration: 10,
@@ -974,6 +974,7 @@ defmodule ExVrp.MultiTripTest do
           reload_depots: [0],
           max_reloads: :infinity
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {0, 0}, {1, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
 
@@ -991,11 +992,9 @@ defmodule ExVrp.MultiTripTest do
       # Should serve the feasible one, drop the infeasible one
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000, service_duration: 60)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000, service_duration: 60)
         # Client 0: feasible - small demand, quick service
         |> Model.add_client(
-          x: 0,
-          y: 0,
           tw_early: 0,
           tw_late: 1000,
           service_duration: 10,
@@ -1005,8 +1004,6 @@ defmodule ExVrp.MultiTripTest do
         )
         # Client 1: infeasible - demand exceeds capacity
         |> Model.add_client(
-          x: 1,
-          y: 0,
           tw_early: 0,
           tw_late: 1000,
           service_duration: 10,
@@ -1022,6 +1019,7 @@ defmodule ExVrp.MultiTripTest do
           reload_depots: [0],
           max_reloads: :infinity
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {0, 0}, {1, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
 
@@ -1042,10 +1040,8 @@ defmodule ExVrp.MultiTripTest do
       # Solver should serve 1 client and complete (not hang)
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 200, service_duration: 500)
+        |> Model.add_depot(tw_early: 0, tw_late: 200, service_duration: 500)
         |> Model.add_client(
-          x: 0,
-          y: 0,
           tw_early: 0,
           tw_late: 200,
           service_duration: 10,
@@ -1054,8 +1050,6 @@ defmodule ExVrp.MultiTripTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 1,
-          y: 0,
           tw_early: 0,
           tw_late: 200,
           service_duration: 10,
@@ -1064,8 +1058,6 @@ defmodule ExVrp.MultiTripTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 2,
-          y: 0,
           tw_early: 0,
           tw_late: 200,
           service_duration: 10,
@@ -1074,8 +1066,6 @@ defmodule ExVrp.MultiTripTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 3,
-          y: 0,
           tw_early: 0,
           tw_late: 200,
           service_duration: 10,
@@ -1091,6 +1081,7 @@ defmodule ExVrp.MultiTripTest do
           reload_depots: [0],
           max_reloads: :infinity
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {0, 0}, {1, 0}, {2, 0}, {3, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
 
@@ -1112,10 +1103,8 @@ defmodule ExVrp.MultiTripTest do
       # Should serve 1 client per shift (2 total)
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000, service_duration: 800)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000, service_duration: 800)
         |> Model.add_client(
-          x: 0,
-          y: 0,
           tw_early: 0,
           tw_late: 1000,
           service_duration: 10,
@@ -1124,8 +1113,6 @@ defmodule ExVrp.MultiTripTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 1,
-          y: 0,
           tw_early: 0,
           tw_late: 1000,
           service_duration: 10,
@@ -1134,8 +1121,6 @@ defmodule ExVrp.MultiTripTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 2,
-          y: 0,
           tw_early: 0,
           tw_late: 1000,
           service_duration: 10,
@@ -1144,8 +1129,6 @@ defmodule ExVrp.MultiTripTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 3,
-          y: 0,
           tw_early: 0,
           tw_late: 1000,
           service_duration: 10,
@@ -1173,6 +1156,7 @@ defmodule ExVrp.MultiTripTest do
           reload_depots: [0],
           max_reloads: :infinity
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {0, 0}, {1, 0}, {2, 0}, {3, 0}])
 
       {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
 

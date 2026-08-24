@@ -206,38 +206,41 @@ defmodule ExVrp.NeighbourhoodTest do
   defp create_small_problem do
     # 4 clients in a square pattern
     Model.new()
-    |> Model.add_depot(x: 0, y: 0)
-    |> Model.add_client(x: 10, y: 0, delivery: [10])
-    |> Model.add_client(x: 10, y: 10, delivery: [10])
-    |> Model.add_client(x: 0, y: 10, delivery: [10])
-    |> Model.add_client(x: 5, y: 5, delivery: [10])
+    |> Model.add_depot([])
+    |> Model.add_client(delivery: [10])
+    |> Model.add_client(delivery: [10])
+    |> Model.add_client(delivery: [10])
+    |> Model.add_client(delivery: [10])
     |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+    |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {10, 10}, {0, 10}, {5, 5}])
     |> Model.to_problem_data()
   end
 
   defp create_line_problem do
     # 4 clients in a line at x = 10, 20, 30, 40
     Model.new()
-    |> Model.add_depot(x: 0, y: 0)
-    |> Model.add_client(x: 10, y: 0, delivery: [10])
-    |> Model.add_client(x: 20, y: 0, delivery: [10])
-    |> Model.add_client(x: 30, y: 0, delivery: [10])
-    |> Model.add_client(x: 40, y: 0, delivery: [10])
+    |> Model.add_depot([])
+    |> Model.add_client(delivery: [10])
+    |> Model.add_client(delivery: [10])
+    |> Model.add_client(delivery: [10])
+    |> Model.add_client(delivery: [10])
     |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+    |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
     |> Model.to_problem_data()
   end
 
   defp create_prize_problem do
     # 3 clients: one with high prize, one with low prize, one to test from
     Model.new()
-    |> Model.add_depot(x: 0, y: 0)
+    |> Model.add_depot([])
     # High prize
-    |> Model.add_client(x: 10, y: 0, delivery: [10], prize: 100)
+    |> Model.add_client(delivery: [10], prize: 100)
     # Low prize (same dist)
-    |> Model.add_client(x: 10, y: 1, delivery: [10], prize: 1)
+    |> Model.add_client(delivery: [10], prize: 1)
     # Test client
-    |> Model.add_client(x: 20, y: 0, delivery: [10])
+    |> Model.add_client(delivery: [10])
     |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+    |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {10, 1}, {20, 0}])
     |> Model.to_problem_data()
   end
 
@@ -245,10 +248,11 @@ defmodule ExVrp.NeighbourhoodTest do
     # 3 clients with 2 profiles
     model =
       Model.new()
-      |> Model.add_depot(x: 0, y: 0)
-      |> Model.add_client(x: 10, y: 0, delivery: [10])
-      |> Model.add_client(x: 20, y: 0, delivery: [10])
-      |> Model.add_client(x: 30, y: 0, delivery: [10])
+      |> Model.add_depot([])
+      |> Model.add_client(delivery: [10])
+      |> Model.add_client(delivery: [10])
+      |> Model.add_client(delivery: [10])
+      |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
     # Add vehicle type with profile 0
     model =

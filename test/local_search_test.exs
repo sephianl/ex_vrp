@@ -160,10 +160,11 @@ defmodule ExVrp.LocalSearchTest do
     test "handles time window constraints" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 100)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 50, tw_late: 200)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 100)
+        |> Model.add_client(delivery: [10], tw_early: 50, tw_late: 200)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 300}])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -193,11 +194,12 @@ defmodule ExVrp.LocalSearchTest do
       # Tight capacity to force multiple routes
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [40])
-        |> Model.add_client(x: 20, y: 0, delivery: [40])
-        |> Model.add_client(x: 30, y: 0, delivery: [40])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [40])
+        |> Model.add_client(delivery: [40])
+        |> Model.add_client(delivery: [40])
         |> Model.add_vehicle_type(num_available: 3, capacity: [50])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -229,10 +231,11 @@ defmodule ExVrp.LocalSearchTest do
     test "handles multi-dimensional capacity" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [20, 10], pickup: [0, 0])
-        |> Model.add_client(x: 20, y: 0, delivery: [15, 15], pickup: [0, 0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20, 10], pickup: [0, 0])
+        |> Model.add_client(delivery: [15, 15], pickup: [0, 0])
         |> Model.add_vehicle_type(num_available: 2, capacity: [50, 30])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -302,11 +305,12 @@ defmodule ExVrp.LocalSearchTest do
     test "handles multiple vehicle types" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [30])
-        |> Model.add_client(x: 20, y: 0, delivery: [30])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
         |> Model.add_vehicle_type(num_available: 2, capacity: [50])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -334,10 +338,11 @@ defmodule ExVrp.LocalSearchTest do
     test "handles service durations in optimization" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], service_duration: 50)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], service_duration: 100)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], service_duration: 50)
+        |> Model.add_client(delivery: [10], service_duration: 100)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -365,9 +370,10 @@ defmodule ExVrp.LocalSearchTest do
     test "handles single client" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -637,25 +643,6 @@ defmodule ExVrp.LocalSearchTest do
       assert result_cost <= initial_cost
     end
 
-    test "works with swap_star route operator" do
-      model = build_cvrp_model(10)
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {:ok, cost_evaluator} = create_cost_evaluator()
-      {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
-      initial_cost = Native.solution_penalised_cost(initial_solution, cost_evaluator)
-
-      {:ok, result} =
-        Native.local_search_with_operators(
-          initial_solution,
-          problem_data,
-          cost_evaluator,
-          route_operators: [:swap_star]
-        )
-
-      result_cost = Native.solution_penalised_cost(result, cost_evaluator)
-      assert result_cost <= initial_cost
-    end
-
     test "works with swap_routes route operator" do
       model = build_cvrp_model(10)
       {:ok, problem_data} = Model.to_problem_data(model)
@@ -688,7 +675,7 @@ defmodule ExVrp.LocalSearchTest do
           problem_data,
           cost_evaluator,
           node_operators: [:exchange10, :exchange11, :exchange20],
-          route_operators: [:swap_star]
+          route_operators: [:swap_routes]
         )
 
       result_cost = Native.solution_penalised_cost(result, cost_evaluator)
@@ -719,7 +706,7 @@ defmodule ExVrp.LocalSearchTest do
             :exchange33,
             :swap_tails
           ],
-          route_operators: [:swap_star, :swap_routes]
+          route_operators: [:swap_routes]
         )
 
       result_cost = Native.solution_penalised_cost(result, cost_evaluator)
@@ -870,7 +857,7 @@ defmodule ExVrp.LocalSearchTest do
           problem_data,
           cost_evaluator,
           node_operators: [:exchange10, :exchange11],
-          route_operators: [:swap_star]
+          route_operators: [:swap_routes]
         )
 
       for op_stats <- stats.operators do
@@ -889,13 +876,12 @@ defmodule ExVrp.LocalSearchTest do
           initial_solution,
           problem_data,
           cost_evaluator,
-          route_operators: [:swap_star, :swap_routes]
+          route_operators: [:swap_routes]
         )
 
-      assert length(stats.operators) == 2
+      assert length(stats.operators) == 1
 
       op_names = Enum.map(stats.operators, & &1.name)
-      assert :swap_star in op_names
       assert :swap_routes in op_names
     end
 
@@ -911,7 +897,7 @@ defmodule ExVrp.LocalSearchTest do
           problem_data,
           cost_evaluator,
           node_operators: [:exchange10, :exchange11, :exchange20],
-          route_operators: [:swap_star]
+          route_operators: [:swap_routes]
         )
 
       assert length(stats.operators) == 4
@@ -1019,25 +1005,6 @@ defmodule ExVrp.LocalSearchTest do
   # ==========================================
 
   describe "Route operators" do
-    test "swap_star improves multi-route solutions" do
-      model = build_cvrp_model(15)
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {:ok, cost_evaluator} = create_cost_evaluator()
-      {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
-      initial_cost = Native.solution_penalised_cost(initial_solution, cost_evaluator)
-
-      {:ok, result} =
-        Native.local_search_with_operators(
-          initial_solution,
-          problem_data,
-          cost_evaluator,
-          route_operators: [:swap_star]
-        )
-
-      result_cost = Native.solution_penalised_cost(result, cost_evaluator)
-      assert result_cost <= initial_cost
-    end
-
     test "swap_routes can swap entire routes" do
       model = build_cvrp_model(15)
       {:ok, problem_data} = Model.to_problem_data(model)
@@ -1069,7 +1036,7 @@ defmodule ExVrp.LocalSearchTest do
           initial_solution,
           problem_data,
           cost_evaluator,
-          route_operators: [:swap_star, :swap_routes]
+          route_operators: [:swap_routes]
         )
 
       result_cost = Native.solution_penalised_cost(result, cost_evaluator)
@@ -1197,10 +1164,11 @@ defmodule ExVrp.LocalSearchTest do
       # Based on PyVRP's test_prize_collecting
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], required: true)
-        |> Model.add_client(x: 100, y: 100, delivery: [5], required: false, prize: 1)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], required: true)
+        |> Model.add_client(delivery: [5], required: false, prize: 1)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {100, 100}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -1282,12 +1250,13 @@ defmodule ExVrp.LocalSearchTest do
       # Based on PyVRP's test_bugfix_vehicle_type_offsets
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [30])
-        |> Model.add_client(x: 20, y: 0, delivery: [30])
-        |> Model.add_client(x: 30, y: 0, delivery: [30])
-        |> Model.add_client(x: 40, y: 0, delivery: [30])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
         |> Model.add_vehicle_type(num_available: 4, capacity: [50])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1353,13 +1322,14 @@ defmodule ExVrp.LocalSearchTest do
     test "heterogeneous fleet is handled correctly" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [20])
-        |> Model.add_client(x: 20, y: 0, delivery: [20])
-        |> Model.add_client(x: 30, y: 0, delivery: [20])
-        |> Model.add_client(x: 40, y: 0, delivery: [20])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20])
+        |> Model.add_client(delivery: [20])
+        |> Model.add_client(delivery: [20])
+        |> Model.add_client(delivery: [20])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [50])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -1382,11 +1352,12 @@ defmodule ExVrp.LocalSearchTest do
       # Based on PyVRP's test_reoptimize_changed_objective_timewarp_OkSmall
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
-        |> Model.add_client(x: 30, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 50)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 50)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 50)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 500}])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, initial_solution} = Native.create_random_solution(problem_data, seed: 42)
@@ -1438,12 +1409,13 @@ defmodule ExVrp.LocalSearchTest do
     test "works on multi-trip problems" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [30])
-        |> Model.add_client(x: 20, y: 0, delivery: [30])
-        |> Model.add_client(x: 30, y: 0, delivery: [30])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
         # reload_depots enables multi-trip capability, max_reloads limits trips
         |> Model.add_vehicle_type(num_available: 1, capacity: [50], reload_depots: [0], max_reloads: 3)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -1471,12 +1443,13 @@ defmodule ExVrp.LocalSearchTest do
     test "creates solution from explicit routes" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
-        |> Model.add_client(x: 40, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 3, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1491,12 +1464,13 @@ defmodule ExVrp.LocalSearchTest do
     test "creates single route solution" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
-        |> Model.add_client(x: 40, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1510,12 +1484,13 @@ defmodule ExVrp.LocalSearchTest do
     test "can be used for local search" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
-        |> Model.add_client(x: 40, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 3, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -1538,14 +1513,15 @@ defmodule ExVrp.LocalSearchTest do
     test "assigns each route the requested vehicle type" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
-        |> Model.add_client(x: 40, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1561,11 +1537,12 @@ defmodule ExVrp.LocalSearchTest do
     test "supports single route with non-zero vehicle type" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1579,9 +1556,10 @@ defmodule ExVrp.LocalSearchTest do
     test "raises ArgumentError when vehicle_type index is out of range" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1593,9 +1571,10 @@ defmodule ExVrp.LocalSearchTest do
     test "raises ArgumentError when client_id is out of range" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1607,9 +1586,10 @@ defmodule ExVrp.LocalSearchTest do
     test "raises ArgumentError when client_id points at a depot" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1621,11 +1601,12 @@ defmodule ExVrp.LocalSearchTest do
     test "raises RuntimeError when the same client appears in two routes" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1637,9 +1618,10 @@ defmodule ExVrp.LocalSearchTest do
     test "raises RuntimeError when the same client appears twice in one route" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1651,10 +1633,11 @@ defmodule ExVrp.LocalSearchTest do
     test "raises RuntimeError when assigning more routes than num_available for a vehicle type" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1666,10 +1649,11 @@ defmodule ExVrp.LocalSearchTest do
     test "accepts an infeasible solution (capacity overload)" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [80])
-        |> Model.add_client(x: 20, y: 0, delivery: [80])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [80])
+        |> Model.add_client(delivery: [80])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1683,9 +1667,10 @@ defmodule ExVrp.LocalSearchTest do
     test "accepts an infeasible solution (time window violation)" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 100, y: 0, delivery: [10], tw_early: 0, tw_late: 5)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 5)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], time_windows: [{0, 1000}])
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1699,13 +1684,14 @@ defmodule ExVrp.LocalSearchTest do
     test "can be used as warm-start for local search" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
-        |> Model.add_client(x: 40, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -1732,12 +1718,13 @@ defmodule ExVrp.LocalSearchTest do
       # reset the timewarp for a route to 0 if the route was not changed.
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
-        |> Model.add_client(x: 30, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
-        |> Model.add_client(x: 40, y: 0, delivery: [10], tw_early: 0, tw_late: 50)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 50)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 50)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 50)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 50)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 500}])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1791,13 +1778,14 @@ defmodule ExVrp.LocalSearchTest do
       # incorrect internal mapping of vehicle types to route indices.
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [5])
-        |> Model.add_client(x: 20, y: 0, delivery: [5])
-        |> Model.add_client(x: 30, y: 0, delivery: [5])
-        |> Model.add_client(x: 40, y: 0, delivery: [5])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [5])
+        |> Model.add_client(delivery: [5])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -1820,15 +1808,16 @@ defmodule ExVrp.LocalSearchTest do
     test "heterogeneous fleet local search" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [30])
-        |> Model.add_client(x: 20, y: 0, delivery: [30])
-        |> Model.add_client(x: 30, y: 0, delivery: [30])
-        |> Model.add_client(x: 40, y: 0, delivery: [30])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
         # Small capacity vehicle
         |> Model.add_vehicle_type(num_available: 2, capacity: [40])
         # Large capacity vehicle
         |> Model.add_vehicle_type(num_available: 1, capacity: [150])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -1842,7 +1831,7 @@ defmodule ExVrp.LocalSearchTest do
           problem_data,
           cost_evaluator,
           node_operators: [:exchange10, :exchange11],
-          route_operators: [:swap_star, :swap_routes]
+          route_operators: [:swap_routes]
         )
 
       improved_cost = Native.solution_penalised_cost(improved, cost_evaluator)
@@ -1859,11 +1848,12 @@ defmodule ExVrp.LocalSearchTest do
     test "no operators does not worsen solution cost" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -1893,11 +1883,12 @@ defmodule ExVrp.LocalSearchTest do
     test "minimal operators still improve solution" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -1930,15 +1921,16 @@ defmodule ExVrp.LocalSearchTest do
       # Test that SwapRoutes as route operator can improve solutions
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [15])
-        |> Model.add_client(x: 20, y: 0, delivery: [15])
-        |> Model.add_client(x: 30, y: 0, delivery: [15])
-        |> Model.add_client(x: 40, y: 0, delivery: [5])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [15])
+        |> Model.add_client(delivery: [15])
+        |> Model.add_client(delivery: [15])
+        |> Model.add_client(delivery: [5])
         # Small capacity - will have excess load if it gets heavy clients
         |> Model.add_vehicle_type(num_available: 1, capacity: [20])
         # Large capacity - can handle all clients
         |> Model.add_vehicle_type(num_available: 1, capacity: [60])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
 
@@ -1976,16 +1968,17 @@ defmodule ExVrp.LocalSearchTest do
       # Prize-collecting problem - some clients are optional
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # Client 1 is required (default)
-        |> Model.add_client(x: 10, y: 0, delivery: [5])
+        |> Model.add_client(delivery: [5])
         # Client 2 is optional with prize
-        |> Model.add_client(x: 20, y: 0, delivery: [5], required: false, prize: 100)
+        |> Model.add_client(delivery: [5], required: false, prize: 100)
         # Client 3 is optional with prize
-        |> Model.add_client(x: 30, y: 0, delivery: [5], required: false, prize: 100)
+        |> Model.add_client(delivery: [5], required: false, prize: 100)
         # Client 4 is optional with prize
-        |> Model.add_client(x: 40, y: 0, delivery: [5], required: false, prize: 100)
+        |> Model.add_client(delivery: [5], required: false, prize: 100)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -2071,9 +2064,10 @@ defmodule ExVrp.LocalSearchTest do
     test "single client problem" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -2089,11 +2083,12 @@ defmodule ExVrp.LocalSearchTest do
       # All clients have demands that exactly match vehicle capacity
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [50])
-        |> Model.add_client(x: 20, y: 0, delivery: [50])
-        |> Model.add_client(x: 30, y: 0, delivery: [50])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [50])
+        |> Model.add_client(delivery: [50])
+        |> Model.add_client(delivery: [50])
         |> Model.add_vehicle_type(num_available: 3, capacity: [50])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -2114,10 +2109,11 @@ defmodule ExVrp.LocalSearchTest do
     test "many vehicles few clients" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 10, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -2132,12 +2128,13 @@ defmodule ExVrp.LocalSearchTest do
     test "search improves infeasible solution" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [40])
-        |> Model.add_client(x: 20, y: 0, delivery: [40])
-        |> Model.add_client(x: 30, y: 0, delivery: [40])
-        |> Model.add_client(x: 40, y: 0, delivery: [40])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [40])
+        |> Model.add_client(delivery: [40])
+        |> Model.add_client(delivery: [40])
+        |> Model.add_client(delivery: [40])
         |> Model.add_vehicle_type(num_available: 4, capacity: [50])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       {:ok, cost_evaluator} = create_cost_evaluator()
@@ -2293,18 +2290,22 @@ defmodule ExVrp.LocalSearchTest do
 
     model =
       Model.new()
-      |> Model.add_depot(x: 50, y: 50)
+      |> Model.add_depot([])
       |> Model.add_vehicle_type(num_available: div(n, 3) + 1, capacity: [100])
 
     # Add clients in a rough circle around the depot
-    Enum.reduce(1..n, model, fn i, model ->
-      angle = 2 * :math.pi() * i / n
-      x = round(50 + 40 * :math.cos(angle))
-      y = round(50 + 40 * :math.sin(angle))
-      demand = :rand.uniform(20) + 5
-
-      Model.add_client(model, x: x, y: y, delivery: [demand])
+    1..n
+    |> Enum.reduce(model, fn _i, model ->
+      Model.add_client(model, delivery: [:rand.uniform(20) + 5])
     end)
+    |> Model.set_euclidean_matrices([{50, 50} | ring_coordinates(n)])
+  end
+
+  defp ring_coordinates(n) do
+    for i <- 1..n do
+      angle = 2 * :math.pi() * i / n
+      {round(50 + 40 * :math.cos(angle)), round(50 + 40 * :math.sin(angle))}
+    end
   end
 
   defp create_cost_evaluator do

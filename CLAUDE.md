@@ -2,7 +2,9 @@
 
 Elixir bindings for [PyVRP](https://github.com/PyVRP/PyVRP) — a state-of-the-art VRP solver. Direct port of the Python API using the same C++ core via NIFs.
 
-Forked from PyVRP `main` at the ILS rewrite (post-PR #778, ~Dec 2025 / effectively pre-v0.13.0), so the metaheuristic is **Iterated Local Search + Late Acceptance Hill-Climbing**, not the older genetic/HGS algorithm. See the skill's "Fork point & upstream divergence" section for what we've since changed vs inherited.
+The metaheuristic is **Iterated Local Search + Late Acceptance Hill-Climbing** — and so is upstream's. **This is inherited, not a divergence.** PyVRP itself dropped hybrid genetic search in v0.13.0 (PR #778, merged 2025-12-22; tagged 2026-01-15), deleting population management, crossover, diversity, and the repair module. ExVRP forked from `main` inside the three-week window between that merge and that tag, so it never had a GA to remove. Don't "restore" one, and don't read the ILS as a shortcut we took.
+
+Expect the literature to contradict this: PyVRP's own citation (Wouda, Lan & Kool 2024, _INFORMS J. Computing_ 36(4)) still describes the package as hybrid genetic search, because it predates the rewrite. The paper is stale, not the code. See the skill's "Fork Point & Upstream Divergence" section for the full story and for what we've since changed vs inherited.
 
 ## Quick Context
 
@@ -73,7 +75,7 @@ Requires C++20 compiler (gcc 11+ or clang 14+).
 
 ### Adding New Features
 
-1. Check if PyVRP C++ already supports it (look in `c_src/pyvrp/`)
+1. Check if PyVRP C++ already supports it (look in `c_src/ex_vrp/`)
 2. Add NIF binding in `c_src/ex_vrp_nif.cpp` + `lib/ex_vrp/native.ex`
 3. Add Elixir API in the appropriate module (Model, Solution, etc.)
 4. Add validation in `Model.validate/1` if needed

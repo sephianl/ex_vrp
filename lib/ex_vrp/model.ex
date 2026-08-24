@@ -10,18 +10,21 @@ defmodule ExVrp.Model do
 
       model =
         ExVrp.Model.new()
-        |> ExVrp.Model.add_depot(x: 0, y: 0)
+        |> ExVrp.Model.add_depot([])
         |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
-        |> ExVrp.Model.add_client(x: 1, y: 1, delivery: [10])
-        |> ExVrp.Model.add_client(x: 2, y: 2, delivery: [20])
-        |> ExVrp.Model.add_client(x: 3, y: 1, delivery: [15])
+        |> ExVrp.Model.add_client(delivery: [10])
+        |> ExVrp.Model.add_client(delivery: [20])
+        |> ExVrp.Model.add_client(delivery: [15])
+        |> ExVrp.Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}, {3, 1}])
 
       {:ok, result} = ExVrp.solve(model)
 
-  ## Custom Distance/Duration Matrices
+  ## Distance and Duration Matrices
 
-  By default, Euclidean distances are computed from coordinates. You can
-  provide custom matrices instead (one per vehicle profile):
+  Locations carry no coordinates: the matrices are the solver's only notion of
+  distance, and a model without one will not validate. Supply them directly
+  (one per vehicle profile), or derive them from coordinates with
+  `set_euclidean_matrices/2`:
 
       # Matrix rows/columns: [depot, client1, client2, ...]
       distances = [
@@ -32,9 +35,9 @@ defmodule ExVrp.Model do
 
       model =
         ExVrp.Model.new()
-        |> ExVrp.Model.add_depot(x: 0, y: 0)
-        |> ExVrp.Model.add_client(x: 1, y: 0, delivery: [10])
-        |> ExVrp.Model.add_client(x: 2, y: 0, delivery: [20])
+        |> ExVrp.Model.add_depot([])
+        |> ExVrp.Model.add_client(delivery: [10])
+        |> ExVrp.Model.add_client(delivery: [20])
         |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
         |> ExVrp.Model.set_distance_matrices([distances])
         |> ExVrp.Model.set_duration_matrices([distances])
@@ -45,7 +48,7 @@ defmodule ExVrp.Model do
 
       model
       |> ExVrp.Model.add_vehicle_type(num_available: 3, capacity: [1000, 50], time_windows: [{0, 28_800}])
-      |> ExVrp.Model.add_client(x: 1, y: 1, delivery: [200, 10])
+      |> ExVrp.Model.add_client(delivery: [200, 10])
 
   ## Client Groups
 
@@ -55,8 +58,8 @@ defmodule ExVrp.Model do
       {model, group} = ExVrp.Model.add_client_group(model, required: false)
       model =
         model
-        |> ExVrp.Model.add_client(x: 1, y: 1, group: group, required: false, prize: 100)
-        |> ExVrp.Model.add_client(x: 2, y: 2, group: group, required: false, prize: 150)
+        |> ExVrp.Model.add_client(group: group, required: false, prize: 100)
+        |> ExVrp.Model.add_client(group: group, required: false, prize: 150)
 
   ## Same-Vehicle Groups
 
@@ -156,11 +159,11 @@ defmodule ExVrp.Model do
   ## Example
 
       model
-      |> ExVrp.Model.add_client(x: 1, y: 2, delivery: [10])
+      |> ExVrp.Model.add_client(delivery: [10])
 
       # With group assignment
       {model, group} = Model.add_client_group(model, required: false)
-      model = Model.add_client(model, x: 1, y: 1, group: group)
+      model = Model.add_client(model, group: group)
 
   ## Raises
 
@@ -214,7 +217,7 @@ defmodule ExVrp.Model do
   ## Example
 
       model
-      |> ExVrp.Model.add_depot(x: 0, y: 0)
+      |> ExVrp.Model.add_depot([])
 
   """
   @spec add_depot(t(), keyword()) :: t()
@@ -344,26 +347,33 @@ defmodule ExVrp.Model do
     name = Keyword.get(opts, :name, "")
     num_depots = length(model.depots)
 
-    client_indices =
-      Enum.map(clients, fn client ->
-        idx = Enum.find_index(model.clients, &(&1 == client))
-
-        if is_nil(idx) do
-          raise ArgumentError, "Client not in model"
-        end
-
-        # Client indices are offset by the number of depots
-        num_depots + idx
-      end)
+    {client_indices, _taken} = Enum.map_reduce(clients, MapSet.new(), &resolve_client(&1, &2, model.clients))
+    client_indices = Enum.map(client_indices, &(num_depots + &1))
 
     group = %SameVehicleGroup{clients: client_indices, name: name}
     %{model | same_vehicle_groups: model.same_vehicle_groups ++ [group]}
   end
 
+  defp resolve_client(client, taken, clients) do
+    idx =
+      clients
+      |> Enum.with_index()
+      |> Enum.find_value(fn {candidate, idx} ->
+        if candidate == client and not MapSet.member?(taken, idx), do: idx
+      end)
+
+    if is_nil(idx) do
+      raise ArgumentError, "Client not in model"
+    end
+
+    {idx, MapSet.put(taken, idx)}
+  end
+
   @doc """
   Sets custom distance matrices.
 
-  If not provided, Euclidean distances are computed from coordinates.
+  A model must carry at least one distance matrix before it can be solved;
+  `validate/1` rejects a model without one.
 
   ## Example
 
@@ -374,6 +384,33 @@ defmodule ExVrp.Model do
   @spec set_distance_matrices(t(), [[[non_neg_integer()]]]) :: t()
   def set_distance_matrices(%__MODULE__{} = model, matrices) do
     %{model | distance_matrices: matrices}
+  end
+
+  @doc """
+  Sets both matrices to the rounded Euclidean distances between `coordinates`,
+  taking durations to equal distances.
+
+  Coordinates are `{x, y}` tuples in location order — depots first, then
+  clients — and are used only to derive the matrices. Locations themselves do
+  not carry coordinates; the matrices are the solver's only notion of distance.
+
+  ## Example
+
+      model
+      |> ExVrp.Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 0}])
+
+  """
+  @spec set_euclidean_matrices(t(), [{number(), number()}]) :: t()
+  def set_euclidean_matrices(%__MODULE__{} = model, coordinates) do
+    matrix = for from <- coordinates, do: for(to <- coordinates, do: euclidean(from, to))
+
+    %{model | distance_matrices: [matrix], duration_matrices: [matrix]}
+  end
+
+  defp euclidean({x1, y1}, {x2, y2}) do
+    dx = x2 - x1
+    dy = y2 - y1
+    round(:math.sqrt(dx * dx + dy * dy))
   end
 
   @doc """
@@ -403,6 +440,7 @@ defmodule ExVrp.Model do
       []
       |> validate_has_depots(model)
       |> validate_has_vehicle_types(model)
+      |> validate_has_distance_matrix(model)
       |> validate_capacity_dimensions(model)
       |> validate_client_time_windows(model)
       |> validate_client_service_duration(model)
@@ -436,6 +474,12 @@ defmodule ExVrp.Model do
   end
 
   defp validate_has_vehicle_types(errors, _model), do: errors
+
+  defp validate_has_distance_matrix(errors, %{distance_matrices: []}) do
+    ["Model must have at least one distance matrix — see set_distance_matrices/2 or set_euclidean_matrices/2" | errors]
+  end
+
+  defp validate_has_distance_matrix(errors, _model), do: errors
 
   defp validate_capacity_dimensions(errors, %{vehicle_types: []}) do
     errors

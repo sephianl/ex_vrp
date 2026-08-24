@@ -15,9 +15,10 @@ defmodule ExVrp.ResultTest do
     test "has expected fields" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 10)
 
@@ -32,9 +33,10 @@ defmodule ExVrp.ResultTest do
     test "equals distance when there are no fixed vehicle costs or prizes" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 10)
 
@@ -46,9 +48,10 @@ defmodule ExVrp.ResultTest do
     test "includes fixed vehicle cost, so it exceeds distance" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], fixed_cost: 5_000)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 10)
 
@@ -81,9 +84,10 @@ defmodule ExVrp.ResultTest do
     test "returns true for feasible result" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 50)
 
@@ -116,9 +120,10 @@ defmodule ExVrp.ResultTest do
     test "returns summary string" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 10)
 
@@ -138,10 +143,11 @@ defmodule ExVrp.ResultTest do
     test "initial_cost is captured" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 50)
 
@@ -151,9 +157,10 @@ defmodule ExVrp.ResultTest do
     test "final_cost is captured" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 50)
 
@@ -163,10 +170,11 @@ defmodule ExVrp.ResultTest do
     test "final_cost is at most initial_cost" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 100)
 
@@ -178,9 +186,10 @@ defmodule ExVrp.ResultTest do
     test "best has Solution struct" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 10)
 
@@ -190,9 +199,10 @@ defmodule ExVrp.ResultTest do
     test "best solution has routes" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 10)
 
@@ -203,9 +213,10 @@ defmodule ExVrp.ResultTest do
     test "best solution has stats" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 20)
 
@@ -219,9 +230,10 @@ defmodule ExVrp.ResultTest do
     test "is non-negative" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 10)
 
@@ -231,9 +243,10 @@ defmodule ExVrp.ResultTest do
     test "respects max_iterations" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 5)
 
@@ -246,9 +259,10 @@ defmodule ExVrp.ResultTest do
     test "is non-negative" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 10)
 

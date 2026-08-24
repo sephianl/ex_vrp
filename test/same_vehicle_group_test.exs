@@ -61,11 +61,12 @@ defmodule ExVrp.SameVehicleGroupTest do
     test "adds same-vehicle group to model" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1)
-        |> Model.add_client(x: 2, y: 2)
-        |> Model.add_client(x: 3, y: 3)
+        |> Model.add_depot([])
+        |> Model.add_client([])
+        |> Model.add_client([])
+        |> Model.add_client([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}, {3, 3}])
 
       [c1, c2, _c3] = model.clients
 
@@ -81,11 +82,13 @@ defmodule ExVrp.SameVehicleGroupTest do
     test "raises when client not in model" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1)
+        |> Model.add_depot([])
+        |> Model.add_client([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
-      fake_client = ExVrp.Client.new(x: 99, y: 99)
+      # distinct attributes: identity is by value now that coordinates are gone
+      fake_client = ExVrp.Client.new(delivery: [999])
 
       assert_raise ArgumentError, ~r/Client not in model/, fn ->
         Model.add_same_vehicle_group(model, [fake_client])
@@ -98,10 +101,11 @@ defmodule ExVrp.SameVehicleGroupTest do
       # Create model with depot and clients first
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1)
-        |> Model.add_client(x: 2, y: 2)
+        |> Model.add_depot([])
+        |> Model.add_client([])
+        |> Model.add_client([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}])
 
       [c1, c2] = model.clients
 
@@ -111,7 +115,7 @@ defmodule ExVrp.SameVehicleGroupTest do
       assert group_before.clients == [1, 2]
 
       # Add another depot - indices should shift by 1
-      model = Model.add_depot(model, x: 5, y: 5)
+      model = Model.add_depot(model, [])
       [group_after] = model.same_vehicle_groups
       assert group_after.clients == [2, 3]
     end
@@ -121,9 +125,10 @@ defmodule ExVrp.SameVehicleGroupTest do
     test "validates empty same-vehicle groups" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1)
+        |> Model.add_depot([])
+        |> Model.add_client([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       # Manually add empty group
       model = %{model | same_vehicle_groups: [SameVehicleGroup.new()]}
@@ -135,9 +140,10 @@ defmodule ExVrp.SameVehicleGroupTest do
     test "validates invalid client indices in same-vehicle groups" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1)
+        |> Model.add_depot([])
+        |> Model.add_client([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       # Manually add group with invalid client index
       bad_group = SameVehicleGroup.new(clients: [999])
@@ -150,9 +156,10 @@ defmodule ExVrp.SameVehicleGroupTest do
     test "validates duplicate clients in same-vehicle groups" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1)
+        |> Model.add_depot([])
+        |> Model.add_client([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}])
 
       # Manually add group with duplicate client
       bad_group = SameVehicleGroup.new(clients: [1, 1])
@@ -167,11 +174,12 @@ defmodule ExVrp.SameVehicleGroupTest do
     test "feasible when same-group clients are on same route" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1)
-        |> Model.add_client(x: 2, y: 2)
-        |> Model.add_client(x: 3, y: 3)
+        |> Model.add_depot([])
+        |> Model.add_client([])
+        |> Model.add_client([])
+        |> Model.add_client([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}, {3, 3}])
 
       [c1, c2, _c3] = model.clients
 
@@ -190,11 +198,12 @@ defmodule ExVrp.SameVehicleGroupTest do
       # those visited must be on the same route. Unvisited clients are OK.
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1, required: false)
-        |> Model.add_client(x: 2, y: 2, required: false)
-        |> Model.add_client(x: 3, y: 3, required: false)
+        |> Model.add_depot([])
+        |> Model.add_client(required: false)
+        |> Model.add_client(required: false)
+        |> Model.add_client(required: false)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}, {3, 3}])
 
       [c1, c2, c3] = model.clients
 
@@ -210,11 +219,12 @@ defmodule ExVrp.SameVehicleGroupTest do
     test "group_feasible? returns true when constraint is satisfied" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1)
-        |> Model.add_client(x: 2, y: 2)
-        |> Model.add_client(x: 3, y: 3)
+        |> Model.add_depot([])
+        |> Model.add_client([])
+        |> Model.add_client([])
+        |> Model.add_client([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}, {3, 3}])
 
       [c1, c2, _c3] = model.clients
       model = Model.add_same_vehicle_group(model, [c1, c2])
@@ -235,13 +245,13 @@ defmodule ExVrp.SameVehicleGroupTest do
       # but can be served by a single vehicle doing multiple trips.
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # 4 clients each requiring 60 units - too much for one trip (capacity 100)
         # but achievable with multi-trip
-        |> Model.add_client(x: 10, y: 0, delivery: [60])
-        |> Model.add_client(x: 20, y: 0, delivery: [60])
-        |> Model.add_client(x: 30, y: 0, delivery: [60])
-        |> Model.add_client(x: 40, y: 0, delivery: [60])
+        |> Model.add_client(delivery: [60])
+        |> Model.add_client(delivery: [60])
+        |> Model.add_client(delivery: [60])
+        |> Model.add_client(delivery: [60])
         # Single vehicle with reload capability
         |> Model.add_vehicle_type(
           num_available: 1,
@@ -249,6 +259,7 @@ defmodule ExVrp.SameVehicleGroupTest do
           reload_depots: [0],
           max_reloads: 3
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       [c1, c2, c3, c4] = model.clients
 
@@ -278,12 +289,13 @@ defmodule ExVrp.SameVehicleGroupTest do
       # if not for the same-vehicle constraint
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [30])
-        |> Model.add_client(x: 20, y: 0, delivery: [30])
-        |> Model.add_client(x: 30, y: 0, delivery: [30])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
         # Two vehicles, each can handle 2 clients
         |> Model.add_vehicle_type(num_available: 2, capacity: [70])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       [c1, c2, c3] = model.clients
 
@@ -325,19 +337,20 @@ defmodule ExVrp.SameVehicleGroupTest do
       # Two independent same-vehicle groups
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # Group 1: clients at x=10, 20
-        |> Model.add_client(x: 10, y: 0, delivery: [40])
-        |> Model.add_client(x: 20, y: 0, delivery: [40])
+        |> Model.add_client(delivery: [40])
+        |> Model.add_client(delivery: [40])
         # Group 2: clients at x=100, 110
-        |> Model.add_client(x: 100, y: 0, delivery: [40])
-        |> Model.add_client(x: 110, y: 0, delivery: [40])
+        |> Model.add_client(delivery: [40])
+        |> Model.add_client(delivery: [40])
         |> Model.add_vehicle_type(
           num_available: 2,
           capacity: [100],
           reload_depots: [0],
           max_reloads: 2
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {100, 0}, {110, 0}])
 
       [c1, c2, c3, c4] = model.clients
 
@@ -360,11 +373,11 @@ defmodule ExVrp.SameVehicleGroupTest do
       # Both must be on same vehicle but different trips due to time
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # Early client - must be served in first trip
-        |> Model.add_client(x: 10, y: 0, delivery: [30], tw_early: 0, tw_late: 50)
+        |> Model.add_client(delivery: [30], tw_early: 0, tw_late: 50)
         # Late client - must be served after returning to depot
-        |> Model.add_client(x: 20, y: 0, delivery: [30], tw_early: 200, tw_late: 300)
+        |> Model.add_client(delivery: [30], tw_early: 200, tw_late: 300)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
@@ -372,6 +385,7 @@ defmodule ExVrp.SameVehicleGroupTest do
           max_reloads: 2,
           time_windows: [{0, 500}]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       [c1, c2] = model.clients
       model = Model.add_same_vehicle_group(model, [c1, c2])
@@ -410,14 +424,14 @@ defmodule ExVrp.SameVehicleGroupTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # 4 clients with demand 1 each, but vehicle capacity is only 2.
         # All 4 clients must be on the same vehicle (same-vehicle group).
         # This is only possible with multiple routes/shifts of that vehicle.
-        |> Model.add_client(x: 1, y: 0, delivery: [1], required: true)
-        |> Model.add_client(x: 2, y: 0, delivery: [1], required: true)
-        |> Model.add_client(x: 3, y: 0, delivery: [1], required: true)
-        |> Model.add_client(x: 4, y: 0, delivery: [1], required: true)
+        |> Model.add_client(delivery: [1], required: true)
+        |> Model.add_client(delivery: [1], required: true)
+        |> Model.add_client(delivery: [1], required: true)
+        |> Model.add_client(delivery: [1], required: true)
         # Two shifts of the same vehicle (same name, capacity=2 each)
         |> Model.add_vehicle_type(
           num_available: 1,
@@ -482,11 +496,11 @@ defmodule ExVrp.SameVehicleGroupTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 1, y: 0, service_duration: 116, tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 2, y: 0, service_duration: 116, tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 3, y: 0, service_duration: 116, tw_early: 0, tw_late: 1000)
-        |> Model.add_client(x: 4, y: 0, service_duration: 116, tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
+        |> Model.add_client(service_duration: 116, tw_early: 0, tw_late: 1000)
+        |> Model.add_client(service_duration: 116, tw_early: 0, tw_late: 1000)
+        |> Model.add_client(service_duration: 116, tw_early: 0, tw_late: 1000)
+        |> Model.add_client(service_duration: 116, tw_early: 0, tw_late: 1000)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [1000],
@@ -538,12 +552,12 @@ defmodule ExVrp.SameVehicleGroupTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 450, tw_late: 6750)
+        |> Model.add_depot(tw_early: 450, tw_late: 6750)
         # 4 clients with delivery demand of 1000 each - only 1 fits per trip
-        |> Model.add_client(x: 1, y: 0, delivery: [1000], tw_early: 0, tw_late: 7200, required: false, prize: 100_000)
-        |> Model.add_client(x: 2, y: 0, delivery: [1000], tw_early: 0, tw_late: 7200, required: false, prize: 100_000)
-        |> Model.add_client(x: 3, y: 0, delivery: [1000], tw_early: 0, tw_late: 7200, required: false, prize: 100_000)
-        |> Model.add_client(x: 4, y: 0, delivery: [1000], tw_early: 0, tw_late: 7200, required: false, prize: 100_000)
+        |> Model.add_client(delivery: [1000], tw_early: 0, tw_late: 7200, required: false, prize: 100_000)
+        |> Model.add_client(delivery: [1000], tw_early: 0, tw_late: 7200, required: false, prize: 100_000)
+        |> Model.add_client(delivery: [1000], tw_early: 0, tw_late: 7200, required: false, prize: 100_000)
+        |> Model.add_client(delivery: [1000], tw_early: 0, tw_late: 7200, required: false, prize: 100_000)
         # Two vehicles, capacity 2000 allows 2 clients per trip
         |> Model.add_vehicle_type(
           num_available: 1,
@@ -601,12 +615,12 @@ defmodule ExVrp.SameVehicleGroupTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 28_800, service_duration: 60)
+        |> Model.add_depot(tw_early: 0, tw_late: 28_800, service_duration: 60)
         # 4 clients with delivery demand of 1000 each
-        |> Model.add_client(x: 1, y: 0, delivery: [1000], tw_early: 0, tw_late: 28_800, required: false, prize: 100_000)
-        |> Model.add_client(x: 2, y: 0, delivery: [1000], tw_early: 0, tw_late: 28_800, required: false, prize: 100_000)
-        |> Model.add_client(x: 3, y: 0, delivery: [1000], tw_early: 0, tw_late: 28_800, required: false, prize: 100_000)
-        |> Model.add_client(x: 4, y: 0, delivery: [1000], tw_early: 0, tw_late: 28_800, required: false, prize: 100_000)
+        |> Model.add_client(delivery: [1000], tw_early: 0, tw_late: 28_800, required: false, prize: 100_000)
+        |> Model.add_client(delivery: [1000], tw_early: 0, tw_late: 28_800, required: false, prize: 100_000)
+        |> Model.add_client(delivery: [1000], tw_early: 0, tw_late: 28_800, required: false, prize: 100_000)
+        |> Model.add_client(delivery: [1000], tw_early: 0, tw_late: 28_800, required: false, prize: 100_000)
         # One vehicle with capacity 2000 and multi-trip enabled
         |> Model.add_vehicle_type(
           num_available: 1,
@@ -648,21 +662,34 @@ defmodule ExVrp.SameVehicleGroupTest do
       # together even though it costs more distance.
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # Cluster A (east): clients 1-5
-        |> Model.add_client(x: 100, y: 10, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 110, y: -10, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 105, y: 20, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 95, y: -15, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 108, y: 5, delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
         # Cluster B (north): clients 6-10
-        |> Model.add_client(x: -10, y: 100, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 10, y: 110, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: -5, y: 95, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 15, y: 105, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 0, y: 108, delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
         # Two vehicles — natural split is one per cluster
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([
+          {0, 0},
+          {100, 10},
+          {110, -10},
+          {105, 20},
+          {95, -15},
+          {108, 5},
+          {-10, 100},
+          {10, 110},
+          {-5, 95},
+          {15, 105},
+          {0, 108}
+        ])
 
       clients = model.clients
       # SVG: client 3 (cluster A) + client 8 (cluster B) must share a vehicle
@@ -689,19 +716,30 @@ defmodule ExVrp.SameVehicleGroupTest do
       # create pressure for Exchange(2,*) to relocate the pair.
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # Line of clients along x-axis
-        |> Model.add_client(x: 10, y: 0, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 30, y: 0, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 40, y: 0, delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
         # Clients on a separate branch (y-axis)
-        |> Model.add_client(x: 0, y: 50, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 0, y: 60, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 0, y: 70, delivery: [10], prize: 150_000)
-        |> Model.add_client(x: 0, y: 80, delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
+        |> Model.add_client(delivery: [10], prize: 150_000)
         # Two vehicles
         |> Model.add_vehicle_type(num_available: 2, capacity: [50])
+        |> Model.set_euclidean_matrices([
+          {0, 0},
+          {10, 0},
+          {20, 0},
+          {30, 0},
+          {40, 0},
+          {0, 50},
+          {0, 60},
+          {0, 70},
+          {0, 80}
+        ])
 
       clients = model.clients
       # SVG: client 2 (x=20) + client 3 (x=30) — adjacent, likely to be

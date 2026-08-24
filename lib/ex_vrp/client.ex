@@ -7,8 +7,6 @@ defmodule ExVrp.Client do
   """
 
   @type t :: %__MODULE__{
-          x: number(),
-          y: number(),
           delivery: [non_neg_integer()],
           pickup: [non_neg_integer()],
           service_duration: non_neg_integer(),
@@ -21,29 +19,22 @@ defmodule ExVrp.Client do
           name: String.t()
         }
 
-  @enforce_keys [:x, :y]
-  defstruct [
-    :x,
-    :y,
-    delivery: [0],
-    pickup: [0],
-    service_duration: 0,
-    tw_early: 0,
-    tw_late: :infinity,
-    release_time: 0,
-    prize: 0,
-    required: true,
-    group: nil,
-    name: ""
-  ]
+  defstruct delivery: [0],
+            pickup: [0],
+            service_duration: 0,
+            tw_early: 0,
+            tw_late: :infinity,
+            release_time: 0,
+            prize: 0,
+            required: true,
+            group: nil,
+            name: ""
 
   @doc """
   Creates a new client.
 
   ## Required Options
 
-  - `:x` - X coordinate
-  - `:y` - Y coordinate
 
   ## Optional Options
 
@@ -60,9 +51,9 @@ defmodule ExVrp.Client do
 
   ## Examples
 
-      iex> client = ExVrp.Client.new(x: 1, y: 2, delivery: [10])
-      iex> {client.x, client.y, client.delivery}
-      {1, 2, [10]}
+      iex> client = ExVrp.Client.new(delivery: [10])
+      iex> client.delivery
+      [10]
       iex> {client.required, client.prize, client.tw_late}
       {true, 0, :infinity}
 

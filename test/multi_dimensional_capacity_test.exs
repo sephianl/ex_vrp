@@ -26,10 +26,8 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_late: 1000, service_duration: 10)
+        |> Model.add_depot(tw_late: 1000, service_duration: 10)
         |> Model.add_client(
-          x: 1,
-          y: 0,
           delivery: [0, 0],
           pickup: [3, 0],
           service_duration: 0,
@@ -39,8 +37,6 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 2,
-          y: 0,
           delivery: [0, 0],
           pickup: [0, 6],
           service_duration: 0,
@@ -73,10 +69,8 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_late: 1000)
+        |> Model.add_depot(tw_late: 1000)
         |> Model.add_client(
-          x: 1,
-          y: 0,
           delivery: [1, 10],
           pickup: [0, 0],
           service_duration: 0,
@@ -110,10 +104,8 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_late: 1000, service_duration: 10)
+        |> Model.add_depot(tw_late: 1000, service_duration: 10)
         |> Model.add_client(
-          x: 1,
-          y: 0,
           delivery: [0, 0, 0],
           pickup: [2, 0, 0],
           service_duration: 0,
@@ -123,8 +115,6 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 2,
-          y: 0,
           delivery: [0, 0, 0],
           pickup: [0, 0, 7],
           service_duration: 0,
@@ -134,8 +124,6 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 3,
-          y: 0,
           delivery: [0, 0, 0],
           pickup: [0, 4, 0],
           service_duration: 0,
@@ -145,8 +133,6 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 4,
-          y: 0,
           delivery: [0, 0, 0],
           pickup: [2, 4, 0],
           service_duration: 0,
@@ -187,10 +173,8 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_late: 1000, service_duration: 10)
+        |> Model.add_depot(tw_late: 1000, service_duration: 10)
         |> Model.add_client(
-          x: 1,
-          y: 0,
           delivery: [0, 0, 0],
           pickup: [2, 1, 1],
           service_duration: 0,
@@ -200,8 +184,6 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 2,
-          y: 0,
           delivery: [0, 0, 0],
           pickup: [2, 1, 1],
           service_duration: 0,
@@ -244,10 +226,8 @@ defmodule ExVrp.MultiDimensionalCapacityTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_late: 5000)
+        |> Model.add_depot(tw_late: 5000)
         |> Model.add_client(
-          x: 1,
-          y: 0,
           delivery: delivery,
           pickup: pickup,
           service_duration: 5,

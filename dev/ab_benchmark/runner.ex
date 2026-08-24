@@ -1,9 +1,16 @@
 defmodule ExVrp.ABBenchmark.Runner do
   @moduledoc """
   Solves the corpus on the current checkout and returns a results map matching
-  the documented JSON shape. Seeds run in parallel across cores.
+  the documented JSON shape.
+
   A solve that errors, times out, or an instance that fails to load is recorded
   as infeasible rather than omitted, so the A/B comparison never loses an instance.
+
+  All seeds of an instance start together so that each one sees the same CPU
+  contention. Local search runs on dirty CPU schedulers, so asking for more seeds
+  than the machine has of those makes the surplus seeds queue; because every solve
+  stops on wall-clock, the queued seeds then run on an idle machine, complete more
+  iterations, and pull the mean down. `run/1` warns when that is the case.
   """
 
   alias ExVrp.ABBenchmark.Corpus
@@ -19,6 +26,9 @@ defmodule ExVrp.ABBenchmark.Runner do
   @budget_rate_s_per_loc 0.3
   @min_budget_s 10.0
 
+  @spec default_seeds() :: [pos_integer()]
+  def default_seeds, do: @default_seeds
+
   @spec run(keyword()) :: map()
   def run(opts \\ []) do
     entries = Keyword.get(opts, :entries, Corpus.entries())
@@ -28,12 +38,33 @@ defmodule ExVrp.ABBenchmark.Runner do
     budget_override = Keyword.get(opts, :budget_s)
     cap = Keyword.get(opts, :budget_cap_s, @default_budget_cap_s)
 
+    workers = solve_workers()
+    warn_if_oversubscribed(length(seeds), workers)
+
     instances =
       for entry <- entries, into: %{} do
         {entry.id, run_instance(entry, seeds, budget_override, cap)}
       end
 
-    %{"ref" => ref, "commit" => commit, "instances" => instances}
+    %{
+      "ref" => ref,
+      "commit" => commit,
+      "seeds" => seeds,
+      "solve_workers" => workers,
+      "instances" => instances
+    }
+  end
+
+  defp solve_workers, do: :erlang.system_info(:dirty_cpu_schedulers_online)
+
+  defp warn_if_oversubscribed(seed_count, workers) when seed_count <= workers, do: :ok
+
+  defp warn_if_oversubscribed(seed_count, workers) do
+    Logger.warning(
+      "[bench] #{seed_count} seeds but only #{workers} dirty CPU schedulers. " <>
+        "Surplus seeds queue and then solve on an idle machine, so they finish more " <>
+        "iterations than the rest and bias the mean downwards. Use at most #{workers} seeds."
+    )
   end
 
   defp run_instance(entry, seeds, budget_override, cap) do
@@ -61,7 +92,7 @@ defmodule ExVrp.ABBenchmark.Runner do
     seeds
     |> Task.async_stream(
       fn seed -> {seed, solve_once(model, budget_s, seed)} end,
-      max_concurrency: System.schedulers_online(),
+      max_concurrency: length(seeds),
       timeout: round(budget_s * 1000) + 60_000,
       on_timeout: :kill_task,
       ordered: false

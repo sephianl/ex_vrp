@@ -36,10 +36,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
         |> Model.add_client(
-          x: 10,
-          y: 0,
           delivery: [10],
           tw_early: 0,
           tw_late: 400,
@@ -72,10 +70,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 2000, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 2000, service_duration: 10)
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [50],
           tw_early: 0,
           tw_late: 400,
@@ -84,8 +80,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [50],
           tw_early: 700,
           tw_late: 1500,
@@ -123,10 +117,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 3000, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 3000, service_duration: 10)
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [30],
           tw_early: 0,
           tw_late: 300,
@@ -135,8 +127,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [30],
           tw_early: 600,
           tw_late: 900,
@@ -145,8 +135,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [30],
           tw_early: 1200,
           tw_late: 1500,
@@ -186,10 +174,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000, service_duration: 10)
         |> Model.add_client(
-          x: 10,
-          y: 0,
           delivery: [20],
           tw_early: 0,
           tw_late: 1000,
@@ -198,8 +184,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 50_000
         )
         |> Model.add_client(
-          x: 20,
-          y: 0,
           delivery: [20],
           tw_early: 0,
           tw_late: 1000,
@@ -208,8 +192,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 50_000
         )
         |> Model.add_client(
-          x: 30,
-          y: 0,
           delivery: [20],
           tw_early: 0,
           tw_late: 1000,
@@ -244,11 +226,9 @@ defmodule ExVrp.ForbiddenWindowTest do
       model =
         clients
         |> Enum.reduce(
-          Model.add_depot(Model.new(), x: 0, y: 0, tw_early: 0, tw_late: 1200, service_duration: 10),
+          Model.add_depot(Model.new(), tw_early: 0, tw_late: 1200, service_duration: 10),
           fn {x, y, delivery, tw_early, tw_late, service_duration, required, prize}, model ->
             Model.add_client(model,
-              x: x,
-              y: y,
               delivery: [delivery],
               tw_early: tw_early,
               tw_late: tw_late,
@@ -265,6 +245,7 @@ defmodule ExVrp.ForbiddenWindowTest do
           reload_depots: [0],
           max_reloads: 10
         )
+        |> Model.set_euclidean_matrices([{0, 0} | for(client <- clients, do: client_coordinate(client))])
 
       {:ok, result} =
         Solver.solve(model, stop: StoppingCriteria.max_runtime(2), seed: 42)
@@ -285,10 +266,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 2000, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 2000, service_duration: 10)
         |> Model.add_client(
-          x: 10,
-          y: 0,
           delivery: [80],
           tw_early: 0,
           tw_late: 400,
@@ -297,8 +276,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 10,
-          y: 0,
           delivery: [80],
           tw_early: 700,
           tw_late: 1500,
@@ -338,10 +315,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 800, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 800, service_duration: 10)
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [10],
           tw_early: 0,
           tw_late: 300,
@@ -350,8 +325,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [10],
           tw_early: 0,
           tw_late: 800,
@@ -388,10 +361,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1500, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 1500, service_duration: 10)
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [30],
           tw_early: 0,
           tw_late: 300,
@@ -400,8 +371,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [30],
           tw_early: 0,
           tw_late: 1500,
@@ -410,8 +379,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [30],
           tw_early: 0,
           tw_late: 1500,
@@ -448,10 +415,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 2000, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 2000, service_duration: 10)
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [10],
           tw_early: 100,
           tw_late: 300,
@@ -460,8 +425,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [10],
           tw_early: 700,
           tw_late: 900,
@@ -470,8 +433,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [10],
           tw_early: 1300,
           tw_late: 1500,
@@ -508,10 +469,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000, service_duration: 10)
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [80],
           tw_early: 0,
           tw_late: 400,
@@ -520,8 +479,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [80],
           tw_early: 0,
           tw_late: 1000,
@@ -558,10 +515,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1200, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 1200, service_duration: 10)
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [10],
           tw_early: 0,
           tw_late: 400,
@@ -570,8 +525,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [10],
           tw_early: 600,
           tw_late: 1200,
@@ -608,10 +561,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 2000, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 2000, service_duration: 10)
         |> Model.add_client(
-          x: 10,
-          y: 0,
           delivery: [20],
           tw_early: 0,
           tw_late: 400,
@@ -620,8 +571,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 10,
-          y: 0,
           delivery: [20],
           tw_early: 700,
           tw_late: 1200,
@@ -630,8 +579,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 10,
-          y: 0,
           delivery: [20],
           tw_early: 1400,
           tw_late: 2000,
@@ -665,10 +612,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
     defp forbidden_window_multi_seed_model do
       Model.new()
-      |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1500, service_duration: 20)
+      |> Model.add_depot(tw_early: 0, tw_late: 1500, service_duration: 20)
       |> Model.add_client(
-        x: 5,
-        y: 0,
         delivery: [50],
         tw_early: 0,
         tw_late: 1500,
@@ -677,8 +622,6 @@ defmodule ExVrp.ForbiddenWindowTest do
         prize: 80_000
       )
       |> Model.add_client(
-        x: 10,
-        y: 0,
         delivery: [50],
         tw_early: 0,
         tw_late: 1500,
@@ -687,8 +630,6 @@ defmodule ExVrp.ForbiddenWindowTest do
         prize: 80_000
       )
       |> Model.add_client(
-        x: 15,
-        y: 0,
         delivery: [50],
         tw_early: 0,
         tw_late: 1500,
@@ -697,8 +638,6 @@ defmodule ExVrp.ForbiddenWindowTest do
         prize: 80_000
       )
       |> Model.add_client(
-        x: 20,
-        y: 0,
         delivery: [50],
         tw_early: 0,
         tw_late: 1500,
@@ -713,6 +652,7 @@ defmodule ExVrp.ForbiddenWindowTest do
         reload_depots: [0],
         max_reloads: 10
       )
+      |> Model.set_euclidean_matrices([{0, 0}, {5, 0}, {10, 0}, {15, 0}, {20, 0}])
     end
 
     test "no timeout with forbidden windows seed 1" do
@@ -761,10 +701,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1200, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 1200, service_duration: 10)
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [10],
           tw_early: 0,
           tw_late: 300,
@@ -773,8 +711,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [10],
           tw_early: 700,
           tw_late: 1200,
@@ -819,10 +755,8 @@ defmodule ExVrp.ForbiddenWindowTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1500, service_duration: 10)
+        |> Model.add_depot(tw_early: 0, tw_late: 1500, service_duration: 10)
         |> Model.add_client(
-          x: 5,
-          y: 0,
           delivery: [10],
           tw_early: 0,
           tw_late: 1500,
@@ -831,8 +765,6 @@ defmodule ExVrp.ForbiddenWindowTest do
           prize: 100_000
         )
         |> Model.add_client(
-          x: 10,
-          y: 0,
           delivery: [10],
           tw_early: 0,
           tw_late: 1500,
@@ -869,4 +801,6 @@ defmodule ExVrp.ForbiddenWindowTest do
       end
     end
   end
+
+  defp client_coordinate({x, y, _delivery, _tw_early, _tw_late, _service, _required, _prize}), do: {x, y}
 end

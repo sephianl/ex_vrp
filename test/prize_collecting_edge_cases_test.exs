@@ -19,10 +19,11 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # Simple problem: 1 depot, 1 vehicle, 2 clients with prizes
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10], required: false, prize: 1000)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], required: false, prize: 1000)
+        |> Model.add_client(delivery: [10], required: false, prize: 1000)
+        |> Model.add_client(delivery: [10], required: false, prize: 1000)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 100)
 
@@ -35,11 +36,12 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # Use very high prize (100k) that previously caused oscillations
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10], required: false, prize: 100_000)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], required: false, prize: 100_000)
-        |> Model.add_client(x: 30, y: 0, delivery: [10], required: false, prize: 100_000)
+        |> Model.add_client(delivery: [10], required: false, prize: 100_000)
+        |> Model.add_client(delivery: [10], required: false, prize: 100_000)
+        |> Model.add_client(delivery: [10], required: false, prize: 100_000)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       start = System.monotonic_time(:millisecond)
       {:ok, result} = Solver.solve(model, max_iterations: 100)
@@ -54,10 +56,11 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # Client with huge prize far away vs cheap client nearby
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 1, y: 0, delivery: [10], required: false, prize: 10)
-        |> Model.add_client(x: 100, y: 0, delivery: [10], required: false, prize: 10_000)
+        |> Model.add_client(delivery: [10], required: false, prize: 10)
+        |> Model.add_client(delivery: [10], required: false, prize: 10_000)
+        |> Model.set_euclidean_matrices([{0, 0}, {1, 0}, {100, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 200)
 
@@ -76,10 +79,11 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # Previously problematic: clients 352 and 229 oscillated
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 10, y: 10, delivery: [50], required: false, prize: 100_000)
-        |> Model.add_client(x: 15, y: 15, delivery: [50], required: false, prize: 100_000)
+        |> Model.add_client(delivery: [50], required: false, prize: 100_000)
+        |> Model.add_client(delivery: [50], required: false, prize: 100_000)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 10}, {15, 15}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 200, num_starts: 1)
 
@@ -93,18 +97,15 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # 10 clients all with identical high prizes
       model =
         1..10
-        |> Enum.reduce(Model.add_depot(Model.new(), x: 0, y: 0), fn i, acc ->
-          angle = 2 * :math.pi() * i / 10
-
+        |> Enum.reduce(Model.add_depot(Model.new(), []), fn _i, acc ->
           Model.add_client(acc,
-            x: round(100 * :math.cos(angle)),
-            y: round(100 * :math.sin(angle)),
             delivery: [10],
             required: false,
             prize: 50_000
           )
         end)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0} | ring_coordinates(10, 100)])
 
       start = System.monotonic_time(:millisecond)
       {:ok, result} = Solver.solve(model, max_iterations: 500)
@@ -118,12 +119,13 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # Pattern that might trigger swaps
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10], required: false, prize: 100_000)
-        |> Model.add_client(x: 11, y: 0, delivery: [10], required: false, prize: 100)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], required: false, prize: 100_000)
-        |> Model.add_client(x: 21, y: 0, delivery: [10], required: false, prize: 100)
+        |> Model.add_client(delivery: [10], required: false, prize: 100_000)
+        |> Model.add_client(delivery: [10], required: false, prize: 100)
+        |> Model.add_client(delivery: [10], required: false, prize: 100_000)
+        |> Model.add_client(delivery: [10], required: false, prize: 100)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {11, 0}, {20, 0}, {21, 0}])
 
       start = System.monotonic_time(:millisecond)
       {:ok, result} = Solver.solve(model, max_iterations: 300)
@@ -139,17 +141,19 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # Two identical models, one with prizes, one without
       base_model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10], required: true)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], required: false)
+        |> Model.add_client(delivery: [10], required: true)
+        |> Model.add_client(delivery: [10], required: false)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       prize_model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10], required: true)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], required: false, prize: 5000)
+        |> Model.add_client(delivery: [10], required: true)
+        |> Model.add_client(delivery: [10], required: false, prize: 5000)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, base_result} = Solver.solve(base_model, max_iterations: 100)
       {:ok, prize_result} = Solver.solve(prize_model, max_iterations: 100)
@@ -169,15 +173,14 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # Client far away but with prize that offsets distance cost
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], fixed_cost: 0)
         |> Model.add_client(
-          x: 1000,
-          y: 0,
           delivery: [10],
           required: false,
           prize: 10_000
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {1000, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 100)
 
@@ -194,10 +197,11 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
     test "should not visit optional client if capacity violated" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [50])
-        |> Model.add_client(x: 10, y: 0, delivery: [50], required: true)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], required: false, prize: 100_000)
+        |> Model.add_client(delivery: [50], required: true)
+        |> Model.add_client(delivery: [10], required: false, prize: 100_000)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 200)
 
@@ -213,11 +217,9 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # Time window makes it impossible to visit both
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 1000)
+        |> Model.add_depot(tw_early: 0, tw_late: 1000)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], time_windows: [{0, 1000}])
         |> Model.add_client(
-          x: 100,
-          y: 0,
           delivery: [10],
           required: true,
           tw_early: 0,
@@ -225,8 +227,6 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
           service_duration: 50
         )
         |> Model.add_client(
-          x: 100,
-          y: 0,
           delivery: [10],
           required: false,
           prize: 1_000_000,
@@ -234,6 +234,7 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
           tw_late: 100,
           service_duration: 60
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {100, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 200)
 
@@ -247,16 +248,15 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # Moderate problem that should converge quickly
       model =
         1..5
-        |> Enum.reduce(Model.add_depot(Model.new(), x: 0, y: 0), fn i, acc ->
+        |> Enum.reduce(Model.add_depot(Model.new(), []), fn i, acc ->
           Model.add_client(acc,
-            x: i * 10,
-            y: 0,
             delivery: [10],
             required: false,
             prize: 1000 * i
           )
         end)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0} | for(i <- 1..5, do: {i * 10, 0})])
 
       {:ok, result} = Solver.solve(model, max_iterations: 100)
 
@@ -267,9 +267,10 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
     test "empty solution should be valid when all clients optional and prizes low" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], fixed_cost: 10_000)
-        |> Model.add_client(x: 1000, y: 1000, delivery: [10], required: false, prize: 10)
+        |> Model.add_client(delivery: [10], required: false, prize: 10)
+        |> Model.set_euclidean_matrices([{0, 0}, {1000, 1000}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 100)
 
@@ -287,10 +288,11 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # Simplified version of the problematic pattern from production
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 352, y: 0, delivery: [10], required: false, prize: 100_000)
-        |> Model.add_client(x: 229, y: 0, delivery: [10], required: false, prize: 100_000)
+        |> Model.add_client(delivery: [10], required: false, prize: 100_000)
+        |> Model.add_client(delivery: [10], required: false, prize: 100_000)
+        |> Model.set_euclidean_matrices([{0, 0}, {352, 0}, {229, 0}])
 
       start = System.monotonic_time(:millisecond)
       {:ok, result} = Solver.solve(model, max_iterations: 200)
@@ -305,12 +307,8 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # Scaled-down version of production scenario
       model =
         1..50
-        |> Enum.reduce(Model.add_depot(Model.new(), x: 0, y: 0), fn i, acc ->
-          angle = 2 * :math.pi() * i / 50
-
+        |> Enum.reduce(Model.add_depot(Model.new(), []), fn _i, acc ->
           Model.add_client(acc,
-            x: round(1000 * :math.cos(angle)),
-            y: round(1000 * :math.sin(angle)),
             delivery: [10],
             required: false,
             # Lower than production but still significant
@@ -318,6 +316,7 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
           )
         end)
         |> Model.add_vehicle_type(num_available: 5, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0} | ring_coordinates(50, 1000)])
 
       start = System.monotonic_time(:millisecond)
       {:ok, result} = Solver.solve(model, max_iterations: 500)
@@ -326,6 +325,13 @@ defmodule ExVrp.PrizeCollectingEdgeCasesTest do
       # Should handle many clients without hanging
       assert elapsed < 30_000, "Took #{elapsed}ms for 50 clients"
       assert result.num_iterations <= 500
+    end
+  end
+
+  defp ring_coordinates(n, radius) do
+    for i <- 1..n do
+      angle = 2 * :math.pi() * i / n
+      {round(radius * :math.cos(angle)), round(radius * :math.sin(angle))}
     end
   end
 end

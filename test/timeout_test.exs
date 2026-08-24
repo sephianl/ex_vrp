@@ -21,23 +21,23 @@ defmodule ExVrp.TimeoutTest do
 
   defp small_model do
     Model.new()
-    |> Model.add_depot(x: 0, y: 0)
+    |> Model.add_depot([])
     |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-    |> Model.add_client(x: 10, y: 0, delivery: [10], required: false, prize: 1000)
+    |> Model.add_client(delivery: [10], required: false, prize: 1000)
+    |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
   end
 
   defp medium_model do
     1..10
-    |> Enum.reduce(Model.add_depot(Model.new(), x: 0, y: 0), fn i, acc ->
+    |> Enum.reduce(Model.add_depot(Model.new(), []), fn _i, acc ->
       Model.add_client(acc,
-        x: i * 10,
-        y: 0,
         delivery: [5],
         required: false,
         prize: 10_000
       )
     end)
     |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+    |> Model.set_euclidean_matrices([{0, 0} | for(i <- 1..10, do: {i * 10, 0})])
   end
 
   describe "max_runtime" do
@@ -129,9 +129,10 @@ defmodule ExVrp.TimeoutTest do
     test "timeout during initial solution construction" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-        |> Model.add_client(x: 10, y: 0, delivery: [10], required: true)
+        |> Model.add_client(delivery: [10], required: true)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_runtime: 50)
       assert result.best

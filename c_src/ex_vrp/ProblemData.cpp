@@ -53,9 +53,7 @@ bool hasTimeWindow(auto const &arg)
 }
 }  // namespace
 
-ProblemData::Client::Client(Coordinate x,
-                            Coordinate y,
-                            std::vector<Load> delivery,
+ProblemData::Client::Client(std::vector<Load> delivery,
                             std::vector<Load> pickup,
                             Duration serviceDuration,
                             Duration twEarly,
@@ -65,9 +63,7 @@ ProblemData::Client::Client(Coordinate x,
                             bool required,
                             std::optional<size_t> group,
                             std::string name)
-    : x(x),
-      y(y),
-      serviceDuration(serviceDuration),
+    : serviceDuration(serviceDuration),
       twEarly(twEarly),
       twLate(twLate),
       delivery(pad(delivery, pickup)),
@@ -106,9 +102,7 @@ ProblemData::Client::Client(Coordinate x,
 }
 
 ProblemData::Client::Client(Client const &client)
-    : x(client.x),
-      y(client.y),
-      serviceDuration(client.serviceDuration),
+    : serviceDuration(client.serviceDuration),
       twEarly(client.twEarly),
       twLate(client.twLate),
       delivery(client.delivery),
@@ -122,9 +116,7 @@ ProblemData::Client::Client(Client const &client)
 }
 
 ProblemData::Client::Client(Client &&client)
-    : x(client.x),
-      y(client.y),
-      serviceDuration(client.serviceDuration),
+    : serviceDuration(client.serviceDuration),
       twEarly(client.twEarly),
       twLate(client.twLate),
       delivery(std::move(client.delivery)),
@@ -143,9 +135,7 @@ ProblemData::Client::~Client() { delete[] name; }
 bool ProblemData::Client::operator==(Client const &other) const
 {
     // clang-format off
-    return x == other.x
-        && y == other.y
-        && delivery == other.delivery
+    return delivery == other.delivery
         && pickup == other.pickup
         && serviceDuration == other.serviceDuration
         && twEarly == other.twEarly
@@ -282,16 +272,12 @@ void ProblemData::SameVehicleGroup::addClient(size_t client)
 
 void ProblemData::SameVehicleGroup::clear() { clients_.clear(); }
 
-ProblemData::Depot::Depot(Coordinate x,
-                          Coordinate y,
-                          Duration twEarly,
+ProblemData::Depot::Depot(Duration twEarly,
                           Duration twLate,
                           Duration serviceDuration,
                           Cost reloadCost,
                           std::string name)
-    : x(x),
-      y(y),
-      twEarly(twEarly),
+    : twEarly(twEarly),
       twLate(twLate),
       serviceDuration(serviceDuration),
       reloadCost(reloadCost),
@@ -311,9 +297,7 @@ ProblemData::Depot::Depot(Coordinate x,
 }
 
 ProblemData::Depot::Depot(Depot const &depot)
-    : x(depot.x),
-      y(depot.y),
-      twEarly(depot.twEarly),
+    : twEarly(depot.twEarly),
       twLate(depot.twLate),
       serviceDuration(depot.serviceDuration),
       reloadCost(depot.reloadCost),
@@ -322,9 +306,7 @@ ProblemData::Depot::Depot(Depot const &depot)
 }
 
 ProblemData::Depot::Depot(Depot &&depot)
-    : x(depot.x),
-      y(depot.y),
-      twEarly(depot.twEarly),
+    : twEarly(depot.twEarly),
       twLate(depot.twLate),
       serviceDuration(depot.serviceDuration),
       reloadCost(depot.reloadCost),
@@ -338,9 +320,7 @@ ProblemData::Depot::~Depot() { delete[] name; }
 bool ProblemData::Depot::operator==(Depot const &other) const
 {
     // clang-format off
-    return x == other.x
-        && y == other.y
-        && twEarly == other.twEarly
+    return twEarly == other.twEarly
         && twLate == other.twLate
         && serviceDuration == other.serviceDuration
         && reloadCost == other.reloadCost
@@ -639,12 +619,6 @@ ProblemData::vehicleType(size_t vehicleType) const
     return vehicleTypes_[vehicleType];
 }
 
-std::pair<pyvrp::Coordinate, pyvrp::Coordinate> const &
-ProblemData::centroid() const
-{
-    return centroid_;
-}
-
 size_t ProblemData::numClients() const { return clients_.size(); }
 
 size_t ProblemData::numDepots() const { return depots_.size(); }
@@ -879,11 +853,5 @@ ProblemData::ProblemData(std::vector<Client> clients,
                          vehicleTypes_.end(),
                          hasTimeWindow<VehicleType>))
 {
-    for (auto const &client : clients_)
-    {
-        centroid_.first += static_cast<double>(client.x) / numClients();
-        centroid_.second += static_cast<double>(client.y) / numClients();
-    }
-
     validate();
 }

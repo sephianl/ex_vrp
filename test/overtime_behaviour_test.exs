@@ -20,9 +20,9 @@ defmodule ExVrp.OvertimeBehaviourTest do
 
   defp build_model(unit_overtime_cost) do
     Model.new()
-    |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 10_000)
-    |> Model.add_client(x: 1, y: 0, delivery: [1], tw_early: 0, tw_late: 10_000)
-    |> Model.add_client(x: 2, y: 0, delivery: [1], tw_early: 0, tw_late: 10_000)
+    |> Model.add_depot(tw_early: 0, tw_late: 10_000)
+    |> Model.add_client(delivery: [1], tw_early: 0, tw_late: 10_000)
+    |> Model.add_client(delivery: [1], tw_early: 0, tw_late: 10_000)
     |> Model.add_vehicle_type(
       num_available: 2,
       capacity: [2],
@@ -82,8 +82,8 @@ defmodule ExVrp.OvertimeBehaviourTest do
     defp solve_late_client(tw_late, max_overtime, overtime_start \\ :infinity) do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 10_000)
-        |> Model.add_client(x: 1, y: 0, delivery: [1], tw_early: 500, tw_late: 600, prize: 100_000)
+        |> Model.add_depot(tw_early: 0, tw_late: 10_000)
+        |> Model.add_client(delivery: [1], tw_early: 500, tw_late: 600, prize: 100_000)
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [5],
@@ -146,9 +146,9 @@ defmodule ExVrp.OvertimeBehaviourTest do
   describe "search and final routes agree on clock-based overtime" do
     defp forbidden_window_model(time_windows) do
       Model.new()
-      |> Model.add_depot(x: 0, y: 0, tw_early: 0, tw_late: 10_000)
-      |> Model.add_client(x: 1, y: 0, delivery: [1], tw_early: 0, tw_late: 10_000)
-      |> Model.add_client(x: 2, y: 0, delivery: [1], tw_early: 0, tw_late: 10_000)
+      |> Model.add_depot(tw_early: 0, tw_late: 10_000)
+      |> Model.add_client(delivery: [1], tw_early: 0, tw_late: 10_000)
+      |> Model.add_client(delivery: [1], tw_early: 0, tw_late: 10_000)
       |> Model.add_vehicle_type(
         num_available: 1,
         capacity: [10],

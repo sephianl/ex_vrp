@@ -45,6 +45,6 @@ ExtraArgsBefore:
   - "-I"
   - "c_src"
   - "-I"
-  - "c_src/pyvrp"
+  - "c_src/ex_vrp"
   - "-isystem"
   - "deps/fine/c_include"

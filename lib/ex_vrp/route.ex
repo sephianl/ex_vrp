@@ -244,14 +244,6 @@ defmodule ExVrp.Route do
   end
 
   @doc """
-  Returns the centroid of this route as {x, y}.
-  """
-  @spec centroid(t()) :: {float(), float()}
-  def centroid(%__MODULE__{solution_ref: ref, route_idx: idx}) do
-    Native.solution_route_centroid(ref, idx)
-  end
-
-  @doc """
   Returns the vehicle type of this route.
   """
   @spec vehicle_type(t()) :: non_neg_integer()

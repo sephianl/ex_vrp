@@ -11,9 +11,10 @@ defmodule ExVrp.ProblemDataTest do
     test "creates problem data from valid model" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [20])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:ok, problem_data} = Model.to_problem_data(model)
       assert is_reference(problem_data)
@@ -22,9 +23,10 @@ defmodule ExVrp.ProblemDataTest do
     test "returns correct number of load dimensions" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [20, 10], pickup: [0, 0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20, 10], pickup: [0, 0])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100, 50])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_num_load_dims(problem_data) == 2
@@ -33,9 +35,10 @@ defmodule ExVrp.ProblemDataTest do
     test "single dimension model" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [50])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [50])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_num_load_dims(problem_data) == 1
@@ -44,10 +47,11 @@ defmodule ExVrp.ProblemDataTest do
     test "multiple depots" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 100, y: 100)
-        |> Model.add_client(x: 50, y: 50, delivery: [20])
+        |> Model.add_depot([])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 100}, {50, 50}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -55,10 +59,11 @@ defmodule ExVrp.ProblemDataTest do
     test "multiple vehicle types" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [20])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20])
         |> Model.add_vehicle_type(num_available: 2, capacity: [50])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -66,9 +71,10 @@ defmodule ExVrp.ProblemDataTest do
     test "with time windows" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [20], tw_early: 0, tw_late: 100)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20], tw_early: 0, tw_late: 100)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], time_windows: [{0, 200}])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -76,9 +82,10 @@ defmodule ExVrp.ProblemDataTest do
     test "with service durations" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [20], service_duration: 10)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20], service_duration: 10)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -86,8 +93,8 @@ defmodule ExVrp.ProblemDataTest do
     test "with vehicle costs" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [20])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
@@ -95,6 +102,7 @@ defmodule ExVrp.ProblemDataTest do
           unit_distance_cost: 2,
           unit_duration_cost: 1
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -102,8 +110,8 @@ defmodule ExVrp.ProblemDataTest do
     test "with multi-trip fields" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [60])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [60])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
@@ -111,6 +119,7 @@ defmodule ExVrp.ProblemDataTest do
           max_reloads: 2,
           initial_load: [0]
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -118,8 +127,8 @@ defmodule ExVrp.ProblemDataTest do
     test "with overtime settings" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [20])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
@@ -127,6 +136,7 @@ defmodule ExVrp.ProblemDataTest do
           max_duration: 540,
           unit_overtime_cost: 5
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -134,9 +144,10 @@ defmodule ExVrp.ProblemDataTest do
     test "with pickup and delivery" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [20], pickup: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20], pickup: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -144,9 +155,10 @@ defmodule ExVrp.ProblemDataTest do
     test "three load dimensions" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10, 20, 30], pickup: [0, 0, 0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10, 20, 30], pickup: [0, 0, 0])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100, 200, 300])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_num_load_dims(problem_data) == 3
@@ -157,11 +169,12 @@ defmodule ExVrp.ProblemDataTest do
     test "num_clients returns correct count" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
-        |> Model.add_client(x: 30, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_num_clients(problem_data) == 3
@@ -170,10 +183,11 @@ defmodule ExVrp.ProblemDataTest do
     test "num_depots returns correct count" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 100, y: 0)
-        |> Model.add_client(x: 50, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {50, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_num_depots(problem_data) == 2
@@ -182,12 +196,13 @@ defmodule ExVrp.ProblemDataTest do
     test "num_locations returns depots plus clients" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 100, y: 0)
-        |> Model.add_client(x: 25, y: 0, delivery: [10])
-        |> Model.add_client(x: 50, y: 0, delivery: [10])
-        |> Model.add_client(x: 75, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {25, 0}, {50, 0}, {75, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       # 2 depots + 3 clients = 5 locations
@@ -197,11 +212,12 @@ defmodule ExVrp.ProblemDataTest do
     test "num_vehicle_types returns correct count" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [50])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.add_vehicle_type(num_available: 3, capacity: [200])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_num_vehicle_types(problem_data) == 3
@@ -210,10 +226,11 @@ defmodule ExVrp.ProblemDataTest do
     test "num_vehicles returns total fleet size" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [50])
         |> Model.add_vehicle_type(num_available: 3, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       # 2 + 3 = 5 vehicles
@@ -226,9 +243,10 @@ defmodule ExVrp.ProblemDataTest do
       # Based on test_has_time_windows with VRPTW instance
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 100, tw_late: 200)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], tw_early: 100, tw_late: 200)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_has_time_windows_nif(problem_data) == true
@@ -238,9 +256,10 @@ defmodule ExVrp.ProblemDataTest do
       # Based on test_has_time_windows with CVRP instance (no TW)
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_has_time_windows_nif(problem_data) == false
@@ -249,65 +268,16 @@ defmodule ExVrp.ProblemDataTest do
     test "multiple clients with/without TW - has TW if any client has" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # no TW
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(delivery: [10])
         # has TW
-        |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 100, tw_late: 200)
+        |> Model.add_client(delivery: [10], tw_early: 100, tw_late: 200)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_has_time_windows_nif(problem_data) == true
-    end
-  end
-
-  describe "centroid (PyVRP parity)" do
-    test "centroid is average of client coordinates" do
-      # Based on test_centroid
-      model =
-        Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 20, delivery: [10])
-        |> Model.add_client(x: 30, y: 40, delivery: [10])
-        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {x, y} = Native.problem_data_centroid_nif(problem_data)
-
-      # Centroid of clients (10, 20) and (30, 40)
-      assert_in_delta x, 20.0, 0.001
-      assert_in_delta y, 30.0, 0.001
-    end
-
-    test "centroid excludes depots" do
-      model =
-        Model.new()
-        # far away depot
-        |> Model.add_depot(x: 1000, y: 1000)
-        |> Model.add_client(x: 0, y: 0, delivery: [10])
-        |> Model.add_client(x: 10, y: 10, delivery: [10])
-        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {x, y} = Native.problem_data_centroid_nif(problem_data)
-
-      # Centroid should be center of clients only
-      assert_in_delta x, 5.0, 0.001
-      assert_in_delta y, 5.0, 0.001
-    end
-
-    test "single client centroid is client coordinates" do
-      model =
-        Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 42, y: 84, delivery: [10])
-        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-
-      {:ok, problem_data} = Model.to_problem_data(model)
-      {x, y} = Native.problem_data_centroid_nif(problem_data)
-
-      assert_in_delta x, 42.0, 0.001
-      assert_in_delta y, 84.0, 0.001
     end
   end
 
@@ -315,9 +285,10 @@ defmodule ExVrp.ProblemDataTest do
     test "single profile by default" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_num_profiles_nif(problem_data) == 1
@@ -328,8 +299,8 @@ defmodule ExVrp.ProblemDataTest do
     test "vehicle type with all attributes set" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(
           num_available: 7,
           capacity: [13],
@@ -342,6 +313,7 @@ defmodule ExVrp.ProblemDataTest do
           max_duration: 600,
           unit_overtime_cost: 5
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -349,9 +321,10 @@ defmodule ExVrp.ProblemDataTest do
     test "multiple capacities" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10, 20], pickup: [5, 10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10, 20], pickup: [5, 10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100, 200])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_num_load_dims(problem_data) == 2
@@ -361,15 +334,16 @@ defmodule ExVrp.ProblemDataTest do
       # Based on test_validate_raises_for_invalid_reload_depot (valid case)
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 100, y: 0)
-        |> Model.add_client(x: 50, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(
           num_available: 1,
           capacity: [100],
           reload_depots: [0, 1],
           max_reloads: 2
         )
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {50, 0}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -380,10 +354,8 @@ defmodule ExVrp.ProblemDataTest do
       # Based on test_client_constructor_initialises_data_fields_correctly
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_client(
-          x: 10,
-          y: 20,
           delivery: [5],
           pickup: [3],
           service_duration: 60,
@@ -393,6 +365,7 @@ defmodule ExVrp.ProblemDataTest do
           prize: 10
         )
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 20}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -400,9 +373,10 @@ defmodule ExVrp.ProblemDataTest do
     test "float coordinates" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0.5, y: 8.2)
-        |> Model.add_client(x: 1.25, y: 3.75, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0.5, 8.2}, {1.25, 3.75}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -410,9 +384,10 @@ defmodule ExVrp.ProblemDataTest do
     test "negative coordinates" do
       model =
         Model.new()
-        |> Model.add_depot(x: -10, y: -20)
-        |> Model.add_client(x: -5, y: -15, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{-10, -20}, {-5, -15}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -420,9 +395,10 @@ defmodule ExVrp.ProblemDataTest do
     test "zero demand client" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -432,9 +408,10 @@ defmodule ExVrp.ProblemDataTest do
     test "depot with time windows" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 100, tw_late: 1000)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot(tw_early: 100, tw_late: 1000)
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -442,9 +419,10 @@ defmodule ExVrp.ProblemDataTest do
     test "depot with float coordinates" do
       model =
         Model.new()
-        |> Model.add_depot(x: 1.25, y: 0.5)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{1.25, 0.5}, {10, 0}])
 
       assert {:ok, _problem_data} = Model.to_problem_data(model)
     end
@@ -457,9 +435,9 @@ defmodule ExVrp.ProblemDataTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.set_distance_matrices([distances])
         |> Model.set_duration_matrices([durations])
@@ -474,8 +452,9 @@ defmodule ExVrp.ProblemDataTest do
       # Based on test_problem_data_raises_when_no_depot_is_provided
       model =
         Model.new()
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{10, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -484,8 +463,9 @@ defmodule ExVrp.ProblemDataTest do
       # Based on test_problem_data_raises_when_no_vehicle_type_is_provided
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -494,11 +474,12 @@ defmodule ExVrp.ProblemDataTest do
       # Based on test_problem_data_raises_when_pickup_and_delivery_dimensions_differ
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10, 20])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10, 20])
         # different dimensions
-        |> Model.add_client(x: 20, y: 0, delivery: [10, 20, 30])
+        |> Model.add_client(delivery: [10, 20, 30])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100, 100, 100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -507,10 +488,11 @@ defmodule ExVrp.ProblemDataTest do
       # Based on test_problem_data_raises_when_pickup_delivery_capacity_dimensions_differ
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10, 20])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10, 20])
         # 3 dims vs 2
         |> Model.add_vehicle_type(num_available: 1, capacity: [100, 100, 100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -525,9 +507,9 @@ defmodule ExVrp.ProblemDataTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.set_distance_matrices([distances])
         |> Model.set_duration_matrices([distances])
@@ -541,8 +523,8 @@ defmodule ExVrp.ProblemDataTest do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
         |> Model.set_distance_matrices([distances])
         |> Model.set_duration_matrices([[0, 100], [100, 0]])
@@ -553,9 +535,10 @@ defmodule ExVrp.ProblemDataTest do
     test "raises for invalid client time windows (late < early)" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 100, tw_late: 50)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], tw_early: 100, tw_late: 50)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -563,9 +546,10 @@ defmodule ExVrp.ProblemDataTest do
     test "raises for negative client service duration" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], service_duration: -1)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], service_duration: -1)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -573,9 +557,10 @@ defmodule ExVrp.ProblemDataTest do
     test "raises for negative delivery amount" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [-10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [-10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -583,9 +568,10 @@ defmodule ExVrp.ProblemDataTest do
     test "raises for release time > tw_late" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 100, release_time: 200)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 100, release_time: 200)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -593,9 +579,10 @@ defmodule ExVrp.ProblemDataTest do
     test "raises for invalid depot time windows" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0, tw_early: 100, tw_late: 50)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot(tw_early: 100, tw_late: 50)
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -603,9 +590,10 @@ defmodule ExVrp.ProblemDataTest do
     test "raises for zero num_available vehicles" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 0, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -613,9 +601,10 @@ defmodule ExVrp.ProblemDataTest do
     test "raises for negative vehicle capacity" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [-100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -623,9 +612,10 @@ defmodule ExVrp.ProblemDataTest do
     test "raises for invalid vehicle depot index" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], start_depot: 1)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -633,9 +623,10 @@ defmodule ExVrp.ProblemDataTest do
     test "raises for invalid reload depot index" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100], reload_depots: [1])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       assert {:error, _reason} = Model.to_problem_data(model)
     end
@@ -645,21 +636,22 @@ defmodule ExVrp.ProblemDataTest do
     test "large fleet size" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 100, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_num_vehicles(problem_data) == 100
     end
 
     test "many clients" do
-      model = Model.add_depot(Model.new(), x: 0, y: 0)
+      model = Model.add_depot(Model.new(), [])
 
       model =
-        Enum.reduce(1..20, model, fn i, acc ->
-          Model.add_client(acc, x: i * 10, y: 0, delivery: [10])
-        end)
+        1..20
+        |> Enum.reduce(model, fn _i, acc -> Model.add_client(acc, delivery: [10]) end)
+        |> Model.set_euclidean_matrices([{0, 0} | for(i <- 1..20, do: {i * 10, 0})])
 
       model = Model.add_vehicle_type(model, num_available: 5, capacity: [100])
 
@@ -671,14 +663,13 @@ defmodule ExVrp.ProblemDataTest do
       model = Model.new()
 
       model =
-        Enum.reduce(0..4, model, fn i, acc ->
-          Model.add_depot(acc, x: i * 100, y: 0)
-        end)
+        Enum.reduce(0..4, model, fn _i, acc -> Model.add_depot(acc, []) end)
 
       model =
         model
-        |> Model.add_client(x: 50, y: 0, delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices(for(i <- 0..5, do: {i * 100, 0}))
 
       {:ok, problem_data} = Model.to_problem_data(model)
       assert Native.problem_data_num_depots(problem_data) == 5

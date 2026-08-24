@@ -23,11 +23,12 @@ defmodule ExVrp do
 
       iex> model =
       ...>   ExVrp.Model.new()
-      ...>   |> ExVrp.Model.add_depot(x: 0, y: 0)
+      ...>   |> ExVrp.Model.add_depot([])
       ...>   |> ExVrp.Model.add_vehicle_type(num_available: 2, capacity: [100])
-      ...>   |> ExVrp.Model.add_client(x: 10, y: 10, delivery: [20])
-      ...>   |> ExVrp.Model.add_client(x: 20, y: 0, delivery: [30])
-      ...>   |> ExVrp.Model.add_client(x: 0, y: 20, delivery: [25])
+      ...>   |> ExVrp.Model.add_client(delivery: [20])
+      ...>   |> ExVrp.Model.add_client(delivery: [30])
+      ...>   |> ExVrp.Model.add_client(delivery: [25])
+      ...>   |> ExVrp.Model.set_euclidean_matrices([{0, 0}, {10, 10}, {20, 0}, {0, 20}])
       iex> {:ok, result} = ExVrp.solve(model, max_iterations: 1000, seed: 42)
       iex> {result.best.routes, result.best.distance, result.best.is_feasible}
       {[[2, 1, 3]], 68, true}

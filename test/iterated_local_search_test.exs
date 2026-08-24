@@ -169,10 +169,11 @@ defmodule ExVrp.IteratedLocalSearchTest do
       # Create model where solution is always infeasible
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         # Client needs 100, vehicle has 10 - always infeasible
-        |> Model.add_client(x: 10, y: 0, delivery: [100])
+        |> Model.add_client(delivery: [100])
         |> Model.add_vehicle_type(num_available: 1, capacity: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 10)
 
@@ -300,11 +301,12 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "respects time window constraints" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 1000}])
-        |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 100)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 50, tw_late: 200)
-        |> Model.add_client(x: 30, y: 0, delivery: [10], tw_early: 100, tw_late: 300)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 100)
+        |> Model.add_client(delivery: [10], tw_early: 50, tw_late: 200)
+        |> Model.add_client(delivery: [10], tw_early: 100, tw_late: 300)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 200)
 
@@ -317,12 +319,13 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "handles tight capacity constraints" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
+        |> Model.add_depot([])
         |> Model.add_vehicle_type(num_available: 2, capacity: [50])
-        |> Model.add_client(x: 10, y: 0, delivery: [20])
-        |> Model.add_client(x: 20, y: 0, delivery: [20])
-        |> Model.add_client(x: 30, y: 0, delivery: [20])
-        |> Model.add_client(x: 40, y: 0, delivery: [20])
+        |> Model.add_client(delivery: [20])
+        |> Model.add_client(delivery: [20])
+        |> Model.add_client(delivery: [20])
+        |> Model.add_client(delivery: [20])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 200)
 
@@ -440,9 +443,10 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "handles single client" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 10)
 
@@ -455,10 +459,11 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "handles two clients" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 50)
 
@@ -469,12 +474,13 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "handles tight capacity constraints" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [30])
-        |> Model.add_client(x: 20, y: 0, delivery: [30])
-        |> Model.add_client(x: 30, y: 0, delivery: [30])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
+        |> Model.add_client(delivery: [30])
         # Each client needs 30, capacity is 50, need 2 routes
         |> Model.add_vehicle_type(num_available: 3, capacity: [50])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 100)
 
@@ -487,10 +493,11 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "handles impossible capacity" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [100])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [100])
         # Client needs 100, vehicle has 50 - infeasible
         |> Model.add_vehicle_type(num_available: 1, capacity: [50])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 50)
 
@@ -503,11 +510,12 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "handles time windows" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], tw_early: 0, tw_late: 100)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], tw_early: 50, tw_late: 200)
-        |> Model.add_client(x: 30, y: 0, delivery: [10], tw_early: 100, tw_late: 300)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 100)
+        |> Model.add_client(delivery: [10], tw_early: 50, tw_late: 200)
+        |> Model.add_client(delivery: [10], tw_early: 100, tw_late: 300)
         |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 400}])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 200)
 
@@ -517,10 +525,11 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "handles service durations" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10], service_duration: 100)
-        |> Model.add_client(x: 20, y: 0, delivery: [10], service_duration: 50)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10], service_duration: 100)
+        |> Model.add_client(delivery: [10], service_duration: 50)
         |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 100)
 
@@ -532,11 +541,12 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "handles multi-depot" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_depot(x: 100, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 90, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+        |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {10, 0}, {90, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 100)
 
@@ -547,11 +557,12 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "handles heterogeneous fleet" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [10])
-        |> Model.add_client(x: 20, y: 0, delivery: [10])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [10])
         |> Model.add_vehicle_type(num_available: 1, capacity: [30])
         |> Model.add_vehicle_type(num_available: 1, capacity: [50])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 100)
 
@@ -561,10 +572,11 @@ defmodule ExVrp.IteratedLocalSearchTest do
     test "handles multi-dimensional capacity" do
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 10, y: 0, delivery: [20, 10], pickup: [0, 0])
-        |> Model.add_client(x: 20, y: 0, delivery: [15, 15], pickup: [0, 0])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [20, 10], pickup: [0, 0])
+        |> Model.add_client(delivery: [15, 15], pickup: [0, 0])
         |> Model.add_vehicle_type(num_available: 2, capacity: [50, 30])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}])
 
       {:ok, result} = Solver.solve(model, max_iterations: 100)
 
@@ -639,16 +651,20 @@ defmodule ExVrp.IteratedLocalSearchTest do
 
     model =
       Model.new()
-      |> Model.add_depot(x: 50, y: 50)
+      |> Model.add_depot([])
       |> Model.add_vehicle_type(num_available: div(n, 3) + 1, capacity: [100])
 
-    Enum.reduce(1..n, model, fn i, model ->
-      angle = 2 * :math.pi() * i / n
-      x = round(50 + 40 * :math.cos(angle))
-      y = round(50 + 40 * :math.sin(angle))
-      demand = :rand.uniform(20) + 5
-
-      Model.add_client(model, x: x, y: y, delivery: [demand])
+    1..n
+    |> Enum.reduce(model, fn _i, model ->
+      Model.add_client(model, delivery: [:rand.uniform(20) + 5])
     end)
+    |> Model.set_euclidean_matrices([{50, 50} | ring_coordinates(n)])
+  end
+
+  defp ring_coordinates(n) do
+    for i <- 1..n do
+      angle = 2 * :math.pi() * i / n
+      {round(50 + 40 * :math.cos(angle)), round(50 + 40 * :math.sin(angle))}
+    end
   end
 end

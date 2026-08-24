@@ -49,8 +49,6 @@ defmodule ExVrp.OvernightSplitShiftTest do
 
     Model.new()
     |> Model.add_depot(
-      x: 0,
-      y: 0,
       tw_early: 0,
       tw_late: @shift2_end,
       service_duration: @depot_reload_time,
@@ -58,8 +56,6 @@ defmodule ExVrp.OvernightSplitShiftTest do
     )
     # Clients 0,1: shift 1 (20:00-23:59 → solver seconds 0-14340)
     |> Model.add_client(
-      x: 1,
-      y: 0,
       delivery: [10],
       tw_early: 0,
       tw_late: 14_340,
@@ -68,8 +64,6 @@ defmodule ExVrp.OvernightSplitShiftTest do
       prize: @client_prize
     )
     |> Model.add_client(
-      x: 2,
-      y: 0,
       delivery: [10],
       tw_early: 0,
       tw_late: 14_340,
@@ -79,8 +73,6 @@ defmodule ExVrp.OvernightSplitShiftTest do
     )
     # Clients 2,3: shift 2 (00:00-03:00 → solver seconds 14400-25200)
     |> Model.add_client(
-      x: 3,
-      y: 0,
       delivery: [10],
       tw_early: 14_400,
       tw_late: 25_200,
@@ -89,8 +81,6 @@ defmodule ExVrp.OvernightSplitShiftTest do
       prize: @client_prize
     )
     |> Model.add_client(
-      x: 4,
-      y: 0,
       delivery: [10],
       tw_early: 14_400,
       tw_late: 25_200,

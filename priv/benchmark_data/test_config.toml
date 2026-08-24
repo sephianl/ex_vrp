@@ -7,7 +7,7 @@ node_ops = [
 
 
 route_ops = [
-    "SwapStar",
+    "SwapRoutes",
 ]
 
 
