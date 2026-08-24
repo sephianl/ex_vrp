@@ -94,6 +94,44 @@ defmodule ExVrp.SameVehicleGroupTest do
         Model.add_same_vehicle_group(model, [fake_client])
       end
     end
+
+    test "client indices are taken at face value" do
+      model = model_with_three_identical_clients()
+
+      model = Model.add_same_vehicle_group(model, [1, 2], name: "by_index")
+
+      [group] = model.same_vehicle_groups
+      assert group.name == "by_index"
+      # Zero-based client indices, offset by num_depots (1).
+      assert group.clients == [2, 3]
+    end
+
+    test "structs cannot distinguish identical clients, indices can" do
+      model = model_with_three_identical_clients()
+      [_c1, c2, c3] = model.clients
+
+      by_struct = Model.add_same_vehicle_group(model, [c2, c3])
+      by_index = Model.add_same_vehicle_group(model, [1, 2])
+
+      # All three clients are structurally equal, so asking for the last two by
+      # struct binds the first two instead: equality cannot express position.
+      assert [%{clients: [1, 2]}] = by_struct.same_vehicle_groups
+
+      # The same request by index binds what the caller actually meant. This is
+      # why callers holding indices must pass them rather than round-tripping
+      # through structs.
+      assert [%{clients: [2, 3]}] = by_index.same_vehicle_groups
+    end
+
+    defp model_with_three_identical_clients do
+      Model.new()
+      |> Model.add_depot([])
+      |> Model.add_client(delivery: [10])
+      |> Model.add_client(delivery: [10])
+      |> Model.add_client(delivery: [10])
+      |> Model.add_vehicle_type(num_available: 2, capacity: [100])
+      |> Model.set_euclidean_matrices([{0, 0}, {1, 1}, {2, 2}, {3, 3}])
+    end
   end
 
   describe "depot addition updates same-vehicle group indices" do

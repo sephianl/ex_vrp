@@ -108,13 +108,22 @@ model =
 ```
 
 Use `Model.add_same_vehicle_group/3` for the different constraint "if these are visited, one vehicle
-does all of them" — it takes client structs, not indices, and converts them for you.
+does all of them". It takes client indices or client structs — **pass indices if you have them**.
+Structs are matched by structural equality, so two clients carrying identical data are
+indistinguishable: the group binds whichever equal clients come first, which may not be the ones you
+meant, and the result validates cleanly while constraining the wrong stops.
+
+```elixir
+Model.add_same_vehicle_group(model, [1, 2], name: "crane_and_load")
+```
 
 ## Custom matrices are per profile, and their diagonal must be zero
 
-Without matrices, ExVrp computes Euclidean distance from coordinates — fine for tests, wrong for
-road networks. Supply one matrix per profile; a vehicle type's `profile:` is an index into that
-list, which is how you give a van and a bike different travel times over the same locations:
+A model must supply at least one distance matrix; `Model.validate/1` rejects one that does not.
+`Model.set_euclidean_matrices/2` derives both matrices from coordinates if that is all you have —
+fine for tests, wrong for road networks. Supply one matrix per profile; a vehicle type's `profile:`
+is an index into that list, which is how you give a van and a bike different travel times over the
+same locations:
 
 ```elixir
 model

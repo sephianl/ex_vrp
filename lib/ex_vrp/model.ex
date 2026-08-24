@@ -316,7 +316,14 @@ defmodule ExVrp.Model do
   ## Parameters
 
   - `model` - The model to add the group to
-  - `clients` - List of Client structs that must be served by the same vehicle
+  - `clients` - The clients that must be served by the same vehicle, given
+    either as `Client` structs or as zero-based client indices
+
+  **Prefer indices.** Structs are resolved by structural equality, so two
+  clients that happen to carry identical data cannot be told apart: the group
+  binds whichever equal clients are found first, which may not be the ones the
+  caller meant. A caller that already knows its indices should pass them and
+  avoid the ambiguity entirely.
 
   ## Options
 
@@ -330,28 +337,36 @@ defmodule ExVrp.Model do
 
       model =
         Model.new()
-        |> Model.add_depot(x: 0, y: 0)
-        |> Model.add_client(x: 1, y: 1)
-        |> Model.add_client(x: 2, y: 2)
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [10])
+        |> Model.add_client(delivery: [20])
         |> Model.add_vehicle_type(num_available: 2, capacity: [100], time_windows: [{0, 28_800}])
 
-      [c1, c2] = model.clients
-      model = Model.add_same_vehicle_group(model, [c1, c2], name: "group1")
+      model = Model.add_same_vehicle_group(model, [0, 1], name: "group1")
 
   ## Raises
 
-  - `ArgumentError` if any client is not in the model
+  - `ArgumentError` if a client given as a struct is not in the model
   """
-  @spec add_same_vehicle_group(t(), [Client.t()], keyword()) :: t()
+  @spec add_same_vehicle_group(t(), [Client.t()] | [non_neg_integer()], keyword()) :: t()
   def add_same_vehicle_group(%__MODULE__{} = model, clients, opts \\ []) do
     name = Keyword.get(opts, :name, "")
     num_depots = length(model.depots)
 
-    {client_indices, _taken} = Enum.map_reduce(clients, MapSet.new(), &resolve_client(&1, &2, model.clients))
-    client_indices = Enum.map(client_indices, &(num_depots + &1))
+    client_indices =
+      clients
+      |> resolve_group_indices(model.clients)
+      |> Enum.map(&(num_depots + &1))
 
     group = %SameVehicleGroup{clients: client_indices, name: name}
     %{model | same_vehicle_groups: model.same_vehicle_groups ++ [group]}
+  end
+
+  defp resolve_group_indices([first | _rest_of_clients] = clients, _model_clients) when is_integer(first), do: clients
+
+  defp resolve_group_indices(clients, model_clients) do
+    {indices, _taken} = Enum.map_reduce(clients, MapSet.new(), &resolve_client(&1, &2, model_clients))
+    indices
   end
 
   defp resolve_client(client, taken, clients) do

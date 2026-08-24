@@ -57,6 +57,20 @@ are now the solver's only notion of distance, and a model must supply one.
   between the given coordinates, taking durations to equal distances. This is the explicit
   replacement for the implicit generation that used to happen inside `to_problem_data/1`.
 
+- **`add_same_vehicle_group/3` accepts client indices, not just structs**, and callers that
+  know their indices should pass them:
+
+  ```elixir
+  # resolves by structural equality — ambiguous between identical clients
+  Model.add_same_vehicle_group(model, [c2, c3])
+
+  # says exactly which clients are meant
+  Model.add_same_vehicle_group(model, [1, 2])
+  ```
+
+  Struct resolution still works and is unchanged. See the note under **Changed** for why it
+  cannot be made unambiguous.
+
 ### Changed
 
 - `Model.validate/1` now rejects a model with no distance matrix. Previously such a model
@@ -66,6 +80,15 @@ are now the solver's only notion of distance, and a model must supply one.
   clients with identical attributes both resolved to the first matching index and the group
   failed validation with "duplicate clients". Each match is now consumed once. Coordinates
   used to mask this by making otherwise-identical clients distinguishable.
+
+  Consuming each match once fixes the validation failure but not the ambiguity underneath
+  it, and the remaining half is quieter: resolution still starts from the first equal
+  client, so asking for the _last_ two of three identical clients binds the first two
+  instead. The group is well-formed and validates — it just constrains the wrong stops, and
+  nothing reports it. Equality cannot express position, so no amount of care inside this
+  function closes the gap; the information only exists at the call site. **Callers that
+  hold indices must pass indices** (see **Added**). Callers whose clients are genuinely
+  distinguishable are unaffected either way.
 
 - The vendored PyVRP core moved from `c_src/pyvrp/` to `c_src/ex_vrp/`. The old path read as
   pristine upstream, but ~23 of its files carry local feature patches (same-vehicle groups,
