@@ -278,6 +278,32 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
+  Returns the total penalty cost of this solution.
+
+  Subtracting this from `cost/1` gives the solution's real monetary cost,
+  with constraint penalties excluded by construction.
+  """
+  @spec penalty_cost(t()) :: integer()
+  def penalty_cost(%__MODULE__{solution_ref: solution_ref}) do
+    Native.solution_penalty_cost(solution_ref)
+  end
+
+  @doc """
+  Returns how many visits in this solution the visiting route's own routing
+  profile forbids.
+
+  Always zero for a solution the solver produced — `ExVrp.Model.set_forbidden/2`
+  prunes rather than prices, so no move should ever place one. A nonzero value
+  means a violation reached the objective unnoticed and is a bug. It is
+  deliberately kept out of `feasible?/1`: a violation carries no penalty
+  gradient, so failing the solution would leave the search unable to repair it.
+  """
+  @spec num_forbidden_visits(t()) :: non_neg_integer()
+  def num_forbidden_visits(%__MODULE__{solution_ref: solution_ref}) do
+    Native.solution_num_forbidden_visits(solution_ref)
+  end
+
+  @doc """
   Returns the total distance cost of the solution.
   """
   @spec distance_cost(t()) :: non_neg_integer()

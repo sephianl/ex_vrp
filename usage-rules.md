@@ -165,6 +165,54 @@ Price the terms against each other's actual magnitudes on your own data, or one 
 becomes the whole objective. `IteratedLocalSearch.Result.cost/1` reports this total, which is why
 it is not a distance.
 
+## A penalty is soft, a forbidden location is hard
+
+Two ways to say "this vehicle should not go there", and picking the wrong one is the mistake to
+avoid. Both are per routing profile, so both key off a vehicle type's `profile:`.
+
+```elixir
+model
+# location 1 costs 500 extra on profile 0 — expensive, still allowed
+|> Model.set_penalties([[0, 500, 0]])
+# vehicles on profile 1 may never visit location 1 — pruned, not priced
+|> Model.set_forbidden([[], [1]])
+```
+
+**`set_penalties/2` is soft.** It adds a cost, charged once for each visited location, and a large
+enough prize outbids it. One list per profile, one cost per location in matrix order —
+`[depots..., clients...]`. Because it is charged per visit rather than per leg, it does not change
+under reordering within a route. Penalties must be non-negative, and depot entries must be zero —
+use a depot's `reload_cost` to price a reload.
+
+**`set_forbidden/2` is hard.** Local search prunes a forbidden location rather than costing it, so
+no prize reaches it. One list of location indices per profile. It works whatever the profile count,
+including single-profile models. Indices must name clients — a vehicle starts and ends at its depot
+regardless, so forbidding a depot is rejected rather than quietly doing nothing.
+
+`Model.validate/1` checks both — list count against profile count, row length against location
+count, index range, sign, depot entries — so a malformed shape comes back as `{:error, messages}`
+from `solve/2` rather than as an exception out of the NIF. Nothing is dropped silently: an index
+that cannot be honoured is an error at both layers, because the alternative is a caller who asked
+for a restriction, got none, and was never told.
+
+`Solution.num_forbidden_visits/1` reports visits a route's own profile forbids. It is zero on
+anything the solver produces, and a nonzero value is a bug.
+
+Zone restrictions a vehicle may breach at a cost want penalties; restrictions it physically cannot
+breach want forbidding. Callers who want both — expensive _and_ barred to some fleet — should set
+both.
+
+`Solution.penalty_cost/1` reports the penalty total. Penalties are a real objective term rather
+than an infeasibility penalty, so they survive on a feasible solution and `cost/1` minus
+`penalty_cost/1` is the solution's cost with penalties excluded.
+
+**Do not encode unreachability as a huge distance.** Five sites in the search layer used to read a
+distance-matrix cell back and compare it against a hardcoded `1_000_000_000` to decide reachability,
+which made your choice of "unreachable" number part of the solver's interface. They call the
+predicate now. A model that still puts a huge number in the matrix stays roughly correct — a huge
+distance still costs a lot — but it loses pruning, so the search wastes time proposing moves it
+used to skip, and nothing reports it.
+
 ## Overtime needs two fields, and `shift_duration` alone is a hard cap
 
 Three vehicle-type fields interact here, and only two of them are on the same axis:

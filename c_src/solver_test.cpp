@@ -212,9 +212,7 @@ void test_basic_vrp()
 
     std::vector<ProblemData::Client> clients;
     for (size_t i = 1; i < n; ++i)
-        clients.emplace_back(coords[i].first,
-                             coords[i].second,
-                             std::vector<Load>{1},
+        clients.emplace_back(std::vector<Load>{1},
                              std::vector<Load>{},
                              Duration(0),
                              Duration(0),
@@ -227,7 +225,7 @@ void test_basic_vrp()
 
     std::vector<ProblemData::Depot> depots;
     depots.emplace_back(
-        0, 0, Duration(0), Duration(100000), Duration(0), Cost(0), "");
+        Duration(0), Duration(100000), Duration(0), Cost(0), "");
 
     std::vector<ProblemData::VehicleType> vts;
     vts.emplace_back(3,
@@ -282,9 +280,7 @@ void test_prize_collecting()
 
     std::vector<ProblemData::Client> clients;
     for (size_t i = 1; i < n; ++i)
-        clients.emplace_back(coords[i].first,
-                             coords[i].second,
-                             std::vector<Load>{1},
+        clients.emplace_back(std::vector<Load>{1},
                              std::vector<Load>{},
                              Duration(0),
                              Duration(0),
@@ -297,7 +293,7 @@ void test_prize_collecting()
 
     std::vector<ProblemData::Depot> depots;
     depots.emplace_back(
-        0, 0, Duration(0), Duration(100000), Duration(0), Cost(0), "");
+        Duration(0), Duration(100000), Duration(0), Cost(0), "");
 
     std::vector<ProblemData::VehicleType> vts;
     vts.emplace_back(4,
@@ -351,9 +347,7 @@ void test_svg_small()
 
     std::vector<ProblemData::Client> clients;
     for (size_t i = 1; i < n; ++i)
-        clients.emplace_back(coords[i].first,
-                             coords[i].second,
-                             std::vector<Load>{1},
+        clients.emplace_back(std::vector<Load>{1},
                              std::vector<Load>{},
                              Duration(0),
                              Duration(0),
@@ -366,7 +360,7 @@ void test_svg_small()
 
     std::vector<ProblemData::Depot> depots;
     depots.emplace_back(
-        0, 0, Duration(0), Duration(100000), Duration(0), Cost(0), "");
+        Duration(0), Duration(100000), Duration(0), Cost(0), "");
 
     std::vector<ProblemData::VehicleType> vts;
     vts.emplace_back(3,
@@ -424,9 +418,7 @@ void test_svg_large()
 
     std::vector<ProblemData::Client> clients;
     for (size_t i = 1; i < n; ++i)
-        clients.emplace_back(coords[i].first,
-                             coords[i].second,
-                             std::vector<Load>{1},
+        clients.emplace_back(std::vector<Load>{1},
                              std::vector<Load>{},
                              Duration(0),
                              Duration(0),
@@ -439,7 +431,7 @@ void test_svg_large()
 
     std::vector<ProblemData::Depot> depots;
     depots.emplace_back(
-        0, 0, Duration(0), Duration(100000), Duration(0), Cost(0), "");
+        Duration(0), Duration(100000), Duration(0), Cost(0), "");
 
     std::vector<ProblemData::VehicleType> vts;
     vts.emplace_back(8,
@@ -499,9 +491,7 @@ void test_zone_forbidden()
 
     std::vector<ProblemData::Client> clients;
     for (size_t i = 1; i < n; ++i)
-        clients.emplace_back(coords[i].first,
-                             coords[i].second,
-                             std::vector<Load>{1},
+        clients.emplace_back(std::vector<Load>{1},
                              std::vector<Load>{},
                              Duration(0),
                              Duration(0),
@@ -514,7 +504,7 @@ void test_zone_forbidden()
 
     std::vector<ProblemData::Depot> depots;
     depots.emplace_back(
-        0, 0, Duration(0), Duration(100000), Duration(0), Cost(0), "");
+        Duration(0), Duration(100000), Duration(0), Cost(0), "");
 
     // 2 vehicle types with different profiles
     std::vector<ProblemData::VehicleType> vts;
@@ -613,9 +603,7 @@ void test_svg_with_zones()
 
     std::vector<ProblemData::Client> clients;
     for (size_t i = 1; i < n; ++i)
-        clients.emplace_back(coords[i].first,
-                             coords[i].second,
-                             std::vector<Load>{1},
+        clients.emplace_back(std::vector<Load>{1},
                              std::vector<Load>{},
                              Duration(300),
                              Duration(0),
@@ -628,7 +616,7 @@ void test_svg_with_zones()
 
     std::vector<ProblemData::Depot> depots;
     depots.emplace_back(
-        0, 0, Duration(0), Duration(100000), Duration(0), Cost(0), "");
+        Duration(0), Duration(100000), Duration(0), Cost(0), "");
 
     std::vector<ProblemData::VehicleType> vts;
     vts.emplace_back(5,
@@ -727,9 +715,7 @@ void test_multi_dim_capacity()
 
     std::vector<ProblemData::Client> clients;
     for (size_t i = 1; i < n; ++i)
-        clients.emplace_back(coords[i].first,
-                             coords[i].second,
-                             std::vector<Load>{static_cast<int64_t>(i % 5 + 1),
+        clients.emplace_back(std::vector<Load>{static_cast<int64_t>(i % 5 + 1),
                                                static_cast<int64_t>(i % 3),
                                                static_cast<int64_t>(i % 7),
                                                static_cast<int64_t>(i % 2)},
@@ -745,7 +731,7 @@ void test_multi_dim_capacity()
 
     std::vector<ProblemData::Depot> depots;
     depots.emplace_back(
-        0, 0, Duration(0), Duration(100000), Duration(0), Cost(0), "");
+        Duration(0), Duration(100000), Duration(0), Cost(0), "");
 
     std::vector<ProblemData::VehicleType> vts;
     vts.emplace_back(5,
@@ -803,9 +789,7 @@ void test_tight_time_windows()
     {
         Duration twEarly(static_cast<int64_t>((i * 1000) % 20000));
         Duration twLate = twEarly + Duration(7200);  // 2h window
-        clients.emplace_back(coords[i].first,
-                             coords[i].second,
-                             std::vector<Load>{1},
+        clients.emplace_back(std::vector<Load>{1},
                              std::vector<Load>{},
                              Duration(300),
                              twEarly,
@@ -818,8 +802,7 @@ void test_tight_time_windows()
     }
 
     std::vector<ProblemData::Depot> depots;
-    depots.emplace_back(
-        0, 0, Duration(0), Duration(50000), Duration(0), Cost(0), "");
+    depots.emplace_back(Duration(0), Duration(50000), Duration(0), Cost(0), "");
 
     std::vector<ProblemData::VehicleType> vts;
     vts.emplace_back(4,
@@ -876,9 +859,7 @@ void test_perturbation_prize_collecting()
     {
         bool required = (i <= 10);
         Cost prize = required ? Cost(0) : Cost(1);  // small prize for optional
-        clients.emplace_back(coords[i].first,
-                             coords[i].second,
-                             std::vector<Load>{1},
+        clients.emplace_back(std::vector<Load>{1},
                              std::vector<Load>{},
                              Duration(0),
                              Duration(0),
@@ -892,7 +873,7 @@ void test_perturbation_prize_collecting()
 
     std::vector<ProblemData::Depot> depots;
     depots.emplace_back(
-        0, 0, Duration(0), Duration(100000), Duration(0), Cost(0), "");
+        Duration(0), Duration(100000), Duration(0), Cost(0), "");
 
     std::vector<ProblemData::VehicleType> vts;
     vts.emplace_back(3,
@@ -952,9 +933,7 @@ void test_backhaul_like()
 
     std::vector<ProblemData::Client> clients;
     for (size_t i = 1; i < n; ++i)
-        clients.emplace_back(coords[i].first,
-                             coords[i].second,
-                             std::vector<Load>{3},
+        clients.emplace_back(std::vector<Load>{3},
                              std::vector<Load>{},
                              Duration(0),
                              Duration(0),
@@ -967,7 +946,7 @@ void test_backhaul_like()
 
     std::vector<ProblemData::Depot> depots;
     depots.emplace_back(
-        0, 0, Duration(0), Duration(100000), Duration(0), Cost(0), "");
+        Duration(0), Duration(100000), Duration(0), Cost(0), "");
 
     // Tight capacity: 50 clients * 3 demand = 150 total, 3 vehicles * 20 = 60
     // This means not all clients can be placed, forcing insert failures.

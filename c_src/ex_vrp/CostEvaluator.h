@@ -19,6 +19,7 @@ template <typename T>
 concept CostEvaluatable = requires(T arg) {
     { arg.distanceCost() } -> std::same_as<Cost>;
     { arg.durationCost() } -> std::same_as<Cost>;
+    { arg.penaltyCost() } -> std::same_as<Cost>;
     { arg.fixedVehicleCost() } -> std::same_as<Cost>;
     { arg.excessLoad() } -> std::convertible_to<std::vector<Load>>;
     { arg.excessDistance() } -> std::same_as<Distance>;
@@ -48,6 +49,7 @@ concept DeltaCostEvaluatable = requires(T arg, size_t dimension) {
     { arg.route() };
     { arg.distance() } -> std::convertible_to<std::pair<Cost, Distance>>;
     { arg.duration() } -> std::convertible_to<std::pair<Cost, Duration>>;
+    { arg.penalty() } -> std::same_as<Cost>;
     { arg.excessLoad(dimension) } -> std::same_as<Load>;
 };
 
@@ -251,10 +253,17 @@ Cost CostEvaluator::penalisedCost(T const &arg) const
     }
 
     // Standard objective plus infeasibility-related penalty terms.
-    auto const cost
-        = arg.distanceCost() + arg.durationCost() + arg.fixedVehicleCost()
-          + arg.reloadCost() + excessLoadPenalties(arg.excessLoad())
-          + twPenalty(arg.timeWarp()) + distPenalty(arg.excessDistance(), 0);
+    //
+    // Mind the name collision: penaltyCost() is a real objective term in
+    // micro-euros that survives on a feasible solution, whereas twPenalty,
+    // loadPenalty and distPenalty are infeasibility penalties that vanish on
+    // one. That distinction is what lets cost() - penaltyCost() be read back
+    // as the plan's real monetary cost.
+    auto const cost = arg.distanceCost() + arg.durationCost()
+                      + arg.penaltyCost() + arg.fixedVehicleCost()
+                      + arg.reloadCost() + excessLoadPenalties(arg.excessLoad())
+                      + twPenalty(arg.timeWarp())
+                      + distPenalty(arg.excessDistance(), 0);
 
     Cost total = cost;
 
@@ -289,6 +298,7 @@ bool CostEvaluator::deltaCost(Cost &out, T<Args...> const &proposal) const
     if (!route->empty())
     {
         out -= route->distanceCost();
+        out -= route->penaltyCost();
         out -= excessDistPenalty(route->excessDistance());
 
         if constexpr (!skipLoad)
@@ -307,6 +317,13 @@ bool CostEvaluator::deltaCost(Cost &out, T<Args...> const &proposal) const
         out += cost;
         out += excessDistPenalty(excess);
     }
+
+    // Added alongside distance rather than at the end, so that the shortcuts
+    // below see it. Penalties are non-negative, so leaving it until last would
+    // hold `out` below its true value and weaken every prune in proportion to
+    // how large the penalties are. Needs no hasPenaltyCost() gate: an empty
+    // route has zero penalty cost, and an empty proposal returns zero.
+    out += proposal.penalty();
 
     if constexpr (!skipLoad)
     {
@@ -346,6 +363,7 @@ bool CostEvaluator::deltaCost(Cost &out,
     if (!uRoute->empty())
     {
         out -= uRoute->distanceCost();
+        out -= uRoute->penaltyCost();
         out -= excessDistPenalty(uRoute->excessDistance());
 
         if constexpr (!skipLoad)
@@ -359,6 +377,7 @@ bool CostEvaluator::deltaCost(Cost &out,
     if (!vRoute->empty())
     {
         out -= vRoute->distanceCost();
+        out -= vRoute->penaltyCost();
         out -= excessDistPenalty(vRoute->excessDistance());
 
         if constexpr (!skipLoad)
@@ -381,6 +400,10 @@ bool CostEvaluator::deltaCost(Cost &out,
         out += cost;
         out += excessDistPenalty(excess);
     }
+
+    // Added before the shortcuts below rather than at the end; see the
+    // single-route overload for why.
+    out += uProposal.penalty() + vProposal.penalty();
 
     if constexpr (!skipLoad)
     {

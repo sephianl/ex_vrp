@@ -24,6 +24,7 @@ concept Segment = requires(T arg, size_t profile, size_t dimension) {
     { arg.startsAtReloadDepot() } -> std::same_as<bool>;
     { arg.endsAtReloadDepot() } -> std::same_as<bool>;
     { arg.distance(profile) } -> std::convertible_to<Distance>;
+    { arg.penalty(profile) } -> std::convertible_to<Cost>;
     { arg.duration(profile) } -> std::convertible_to<DurationSegment>;
     { arg.load(dimension) } -> std::convertible_to<LoadSegment>;
 };
@@ -101,6 +102,11 @@ public:
          * proposed route.
          */
         std::pair<Cost, Distance> distance() const;
+
+        /**
+         * Returns the total location penalty of the proposed route.
+         */
+        Cost penalty() const;
 
         /**
          * Returns the (duration cost, time warp) attributes of the proposed
@@ -243,6 +249,7 @@ private:
 
         inline SegmentAfter(Route const &route, size_t start);
         inline Distance distance(size_t profile) const;
+        inline Cost penalty(size_t profile) const;
         inline DurationSegment duration(size_t profile) const;
         inline LoadSegment const &load(size_t dimension) const;
     };
@@ -268,6 +275,7 @@ private:
 
         inline SegmentBefore(Route const &route, size_t end);
         inline Distance distance(size_t profile) const;
+        inline Cost penalty(size_t profile) const;
         inline DurationSegment duration(size_t profile) const;
         inline LoadSegment const &load(size_t dimension) const;
     };
@@ -295,6 +303,7 @@ private:
 
         inline SegmentBetween(Route const &route, size_t start, size_t end);
         inline Distance distance(size_t profile) const;
+        inline Cost penalty(size_t profile) const;
         inline DurationSegment duration(size_t profile) const;
         inline LoadSegment load(size_t dimension) const;
     };
@@ -306,6 +315,7 @@ private:
 
     Distance distance_;  // Separately cached cost components
     Cost distanceCost_;
+    Cost penaltyCost_;
     Distance excessDistance_;
     Duration duration_;
     Duration overtime_ = 0;
@@ -325,6 +335,16 @@ private:
     std::vector<size_t> visits;  // Locations in this route, incl. depots
 
     std::vector<Distance> cumDist;  // Dist of start -> node (incl.)
+
+    // Exclusive prefix sum of per-location penalties: cumPenalty[i] is the
+    // penalty of nodes [0, i), so nodes [a, b] inclusive cost
+    // cumPenalty[b + 1] - cumPenalty[a]. Length is nodes.size() + 1.
+    std::vector<Cost> cumPenalty;
+
+    // Bit p is set when profile p allows every client currently on this route,
+    // and so could take them all. Left fully set on instances that forbid
+    // nothing, where it is never read.
+    DynamicBitset transferableProfiles_;
 
     // Load data, for each load dimension. These vectors form matrices, where
     // the rows index the load dimension, and the columns the nodes.
@@ -437,6 +457,17 @@ public:
      * @return Cost of the distance travelled on this route.
      */
     [[nodiscard]] inline Cost distanceCost() const;
+
+    /**
+     * @return Total penalty cost of the locations visited on this route.
+     */
+    [[nodiscard]] inline Cost penaltyCost() const;
+
+    /**
+     * @return Whether the given profile allows every client on this route, and
+     *         so could take them all.
+     */
+    [[nodiscard]] inline bool mayTransferTo(size_t profile) const;
 
     /**
      * @return Cost per unit of distance travelled on this route.
@@ -747,6 +778,13 @@ Distance Route::SegmentAfter::distance([[maybe_unused]] size_t profile) const
     return {route_.cumDist.back() - route_.cumDist[start]};
 }
 
+Cost Route::SegmentAfter::penalty([[maybe_unused]] size_t profile) const
+{
+    assert(profile == route_.profile());
+    assert(start < route_.cumPenalty.size());
+    return route_.cumPenalty.back() - route_.cumPenalty[start];
+}
+
 DurationSegment
 Route::SegmentAfter::duration([[maybe_unused]] size_t profile) const
 {
@@ -763,6 +801,16 @@ Distance Route::SegmentBefore::distance([[maybe_unused]] size_t profile) const
 {
     assert(profile == route_.profile());
     return route_.cumDist[end];
+}
+
+Cost Route::SegmentBefore::penalty([[maybe_unused]] size_t profile) const
+{
+    assert(profile == route_.profile());
+    // cumPenalty is an exclusive prefix of length nodes.size() + 1, so the
+    // penalty of nodes [0, end] is cumPenalty[end + 1]. The +1 is load-bearing
+    // and differs from cumDist, which is an inclusive prefix indexed directly.
+    assert(end + 1 < route_.cumPenalty.size());
+    return route_.cumPenalty[end + 1];
 }
 
 DurationSegment
@@ -838,6 +886,27 @@ Distance Route::SegmentBetween::distance(size_t profile) const
 
     assert(startDist <= endDist);
     return endDist - startDist;
+}
+
+Cost Route::SegmentBetween::penalty(size_t profile) const
+{
+    // SegmentBetween is the segment type that crosses routes, and therefore
+    // profiles, so it is the one that must be able to recompute. Note the
+    // inclusive bound: penalties are node-additive, not edge-additive.
+    if (profile != route_.profile())  // then we have to sum the penalties
+    {                                 // from scratch.
+        auto const &pen = route_.data.penalties(profile);
+        Cost penalty = 0;
+
+        for (size_t step = start; step <= end; ++step)
+            penalty += pen[route_.visits[step]];
+
+        return penalty;
+    }
+
+    assert(start < route_.cumPenalty.size());
+    assert(end + 1 < route_.cumPenalty.size());
+    return route_.cumPenalty[end + 1] - route_.cumPenalty[start];
 }
 
 DurationSegment
@@ -947,6 +1016,19 @@ Cost Route::distanceCost() const
 {
     assert(!dirty);
     return distanceCost_;
+}
+
+Cost Route::penaltyCost() const
+{
+    assert(!dirty);
+    return penaltyCost_;
+}
+
+bool Route::mayTransferTo(size_t profile) const
+{
+    assert(!dirty);
+    assert(profile < transferableProfiles_.size());
+    return transferableProfiles_[profile];
 }
 
 Cost Route::unitDistanceCost() const { return vehicleType_.unitDistanceCost; }
@@ -1142,6 +1224,22 @@ std::pair<Cost, Distance> Route::Proposal<Segments...>::distance() const
         auto const cost = unitDistanceCost * static_cast<Cost>(distance);
         return std::make_pair(cost, excess);
     };
+
+    return std::apply(fn, segments_);
+}
+
+template <Segment... Segments>
+Cost Route::Proposal<Segments...>::penalty() const
+{
+    if (empty())
+        return 0;
+
+    auto const profile = route()->profile();
+
+    // Penalties are node-additive, so unlike distance there is no cross-edge
+    // term between consecutive segments and this is a plain fold.
+    auto const fn
+        = [&](auto &&...segments) { return (segments.penalty(profile) + ...); };
 
     return std::apply(fn, segments_);
 }

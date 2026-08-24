@@ -56,11 +56,13 @@ class Solution
     std::vector<Load> excessLoad_;  // Total excess load over all routes
     Cost fixedVehicleCost_ = 0;     // Fixed cost of all used vehicles
     Cost reloadCost_ = 0;           // Total reload cost over all routes
-    Cost prizes_ = 0;               // Total collected prize value
-    Cost uncollectedPrizes_ = 0;    // Total uncollected prize value
-    Duration timeWarp_ = 0;         // Total time warp over all routes
-    bool isGroupFeas_ = true;       // Is feasible w.r.t. client groups?
-    size_t numSVGViolations_ = 0;   // Number of same-vehicle group violations
+    Cost penaltyCost_ = 0;          // Total location penalty over all routes
+    size_t numForbiddenVisits_ = 0;  // Visits a route's own profile forbids
+    Cost prizes_ = 0;                // Total collected prize value
+    Cost uncollectedPrizes_ = 0;     // Total uncollected prize value
+    Duration timeWarp_ = 0;          // Total time warp over all routes
+    bool isGroupFeas_ = true;        // Is feasible w.r.t. client groups?
+    size_t numSVGViolations_ = 0;    // Number of same-vehicle group violations
 
     Routes routes_;
     Neighbours neighbours_;  // client [pred, succ] pairs, null if unassigned
@@ -223,6 +225,27 @@ public:
     [[nodiscard]] Cost reloadCost() const;
 
     /**
+     * Returns the total location penalty cost over all routes.
+     *
+     * This is a real objective term in micro-euros, not an infeasibility
+     * penalty: subtracting it from the solution's cost leaves the plan's
+     * monetary cost with penalties excluded.
+     */
+    [[nodiscard]] Cost penaltyCost() const;
+
+    /**
+     * Returns the number of visits, over all routes, that the visiting route's
+     * own routing profile forbids.
+     *
+     * Always zero for a solution the search produced, since forbidden
+     * locations are pruned rather than priced. This does not enter
+     * :meth:`~is_feasible`: a violation carries no penalty gradient, so
+     * failing the solution would strand the search with no way to repair it.
+     * It is a reporting channel, and a nonzero value is a bug.
+     */
+    [[nodiscard]] size_t numForbiddenVisits() const;
+
+    /**
      * Returns the total collected prize value over all routes.
      */
     [[nodiscard]] Cost prizes() const;
@@ -268,24 +291,6 @@ public:
 
     // This constructs from the given list of Routes.
     Solution(ProblemData const &data, Routes routes);
-
-    // This constructor does *no* validation. Useful when unserialising objects.
-    Solution(size_t numClients,
-             size_t numMissingClients,
-             Distance distance,
-             Cost distanceCost,
-             Duration duration,
-             Duration overtime,
-             Cost durationCost,
-             Distance excessDistance,
-             std::vector<Load> excessLoad,
-             Cost fixedVehicleCost,
-             Cost prizes,
-             Cost uncollectedPrizes,
-             Duration timeWarp,
-             bool isGroupFeasible,
-             Routes routes,
-             Neighbours neighbours);
 };
 }  // namespace pyvrp
 

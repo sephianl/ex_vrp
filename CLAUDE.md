@@ -25,7 +25,7 @@ Load `.claude/skills/exvrp-reference.md` before diving into implementation — i
 - Delegate test runs to `test-runner` subagent — verbose NIF output pollutes main context
 - Use `exvrp-researcher` subagent for deep PyVRP C++ internals
 - Self-review diffs before presenting
-- **Always run tests (`mix test --include nif_required`) and benchmarks (`mix benchmark`) after any changes** — tests catch correctness regressions, benchmarks catch solution quality regressions across all instance sets
+- **Always run tests (`mix test --include nif_required`) and the quality smoke (`mix bench.smoke`) after any changes** — tests catch correctness regressions, the smoke catches solution quality regressions. For a full A/B, `mix bench.run` on each side then `mix bench.compare` (prefer CI: local runs are noisier)
 
 ### Building & Testing
 

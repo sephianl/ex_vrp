@@ -93,7 +93,9 @@ defmodule ExVrp.Model do
           client_groups: [ClientGroup.t()],
           same_vehicle_groups: [SameVehicleGroup.t()],
           distance_matrices: [[[non_neg_integer()]]],
-          duration_matrices: [[[non_neg_integer()]]]
+          duration_matrices: [[[non_neg_integer()]]],
+          penalties: [[non_neg_integer()]],
+          forbidden: [[non_neg_integer()]]
         }
 
   defstruct clients: [],
@@ -102,7 +104,9 @@ defmodule ExVrp.Model do
             client_groups: [],
             same_vehicle_groups: [],
             distance_matrices: [],
-            duration_matrices: []
+            duration_matrices: [],
+            penalties: [],
+            forbidden: []
 
   @doc """
   Creates a new empty model.
@@ -445,6 +449,58 @@ defmodule ExVrp.Model do
   end
 
   @doc """
+  Sets per-profile, per-location penalties.
+
+  One list per routing profile, each holding one cost per location in the
+  same order the matrices use: depots first, then clients. A penalty is
+  charged once for each visited location, so it is a per-client cost rather
+  than a per-leg one.
+
+  Depot entries must be zero — use `Depot`'s `reload_cost` to price a reload.
+  A nonzero depot penalty is rejected when the model is solved.
+
+  Defaults to no penalties when left unset.
+
+  ## Example
+
+      model
+      |> ExVrp.Model.set_penalties([[0, 500, 0]])
+
+  """
+  @spec set_penalties(t(), [[non_neg_integer()]]) :: t()
+  def set_penalties(%__MODULE__{} = model, penalties) do
+    %{model | penalties: penalties}
+  end
+
+  @doc """
+  Sets per-profile forbidden locations.
+
+  One list per routing profile, each holding the location indices that
+  vehicles on that profile must never visit. Local search prunes these
+  rather than costing them, so a forbidden location is a hard exclusion —
+  use `set_penalties/2` when the intent is merely expensive.
+
+  Works whatever the profile count, single-profile models included. Indices
+  must name clients: a vehicle starts and ends at its depot regardless, so
+  forbidding a depot is rejected rather than quietly doing nothing.
+
+  `ExVrp.Solution.num_forbidden_visits/1` reports violations, and is zero on
+  any solution the solver produced.
+
+  Defaults to nothing forbidden when left unset.
+
+  ## Example
+
+      model
+      |> ExVrp.Model.set_forbidden([[1, 2]])
+
+  """
+  @spec set_forbidden(t(), [[non_neg_integer()]]) :: t()
+  def set_forbidden(%__MODULE__{} = model, forbidden) do
+    %{model | forbidden: forbidden}
+  end
+
+  @doc """
   Validates the model and returns any errors.
 
   Returns `:ok` if valid, `{:error, reasons}` otherwise.
@@ -471,6 +527,8 @@ defmodule ExVrp.Model do
       |> validate_matrix_diagonals(model)
       |> validate_client_groups(model)
       |> validate_same_vehicle_groups(model)
+      |> validate_penalties(model)
+      |> validate_forbidden(model)
 
     case errors do
       [] -> :ok
@@ -662,6 +720,90 @@ defmodule ExVrp.Model do
         ]
     end
   end
+
+  defp validate_penalties(errors, %{penalties: []}), do: errors
+
+  defp validate_penalties(errors, model) do
+    errors
+    |> validate_per_profile_count(model.penalties, model, "penalty")
+    |> validate_penalty_shape(model)
+    |> validate_penalty_values(model)
+    |> validate_depot_penalties_zero(model)
+  end
+
+  defp validate_penalty_shape(errors, model) do
+    expected_size = num_locations(model)
+
+    if Enum.all?(model.penalties, &(is_list(&1) and length(&1) == expected_size)) do
+      errors
+    else
+      ["Each penalty list must hold one cost per location" | errors]
+    end
+  end
+
+  defp validate_penalty_values(errors, model) do
+    if Enum.all?(model.penalties, fn row -> Enum.all?(row, &non_neg_integer?/1) end) do
+      errors
+    else
+      ["Penalties must be non-negative integers" | errors]
+    end
+  end
+
+  defp validate_depot_penalties_zero(errors, model) do
+    num_depots = length(model.depots)
+    depot_entries = Enum.flat_map(model.penalties, &Enum.take(&1, num_depots))
+
+    if Enum.all?(depot_entries, &(&1 == 0)) do
+      errors
+    else
+      ["Depot penalties must be zero — use a depot's reload_cost instead" | errors]
+    end
+  end
+
+  defp validate_forbidden(errors, %{forbidden: []}), do: errors
+
+  defp validate_forbidden(errors, model) do
+    errors
+    |> validate_per_profile_count(model.forbidden, model, "forbidden")
+    |> validate_forbidden_indices(model)
+  end
+
+  defp validate_forbidden_indices(errors, model) do
+    first_client = length(model.depots)
+    last = num_locations(model) - 1
+
+    valid? =
+      Enum.all?(model.forbidden, fn row ->
+        is_list(row) and Enum.all?(row, &(is_integer(&1) and &1 >= first_client and &1 <= last))
+      end)
+
+    if valid? do
+      errors
+    else
+      [
+        "Forbidden location indices must be client indices within #{first_client}..#{last} — a depot cannot be forbidden"
+        | errors
+      ]
+    end
+  end
+
+  defp validate_per_profile_count(errors, lists, model, name) do
+    expected = num_profiles(model)
+
+    if length(lists) == expected do
+      errors
+    else
+      ["Expected one #{name} list per routing profile (#{expected})" | errors]
+    end
+  end
+
+  defp non_neg_integer?(value), do: is_integer(value) and value >= 0
+
+  defp num_profiles(%{distance_matrices: [], vehicle_types: vehicle_types}) do
+    Enum.reduce(vehicle_types, 1, &max(&1.profile + 1, &2))
+  end
+
+  defp num_profiles(%{distance_matrices: matrices}), do: length(matrices)
 
   defp validate_matrix_dimensions(errors, %{distance_matrices: [], duration_matrices: []}) do
     errors

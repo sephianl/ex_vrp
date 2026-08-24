@@ -63,6 +63,9 @@ public:
                   CostEvaluator const &costEvaluator) override;
 
     void apply(Route::Node *U, Route::Node *V) const override;
+
+    // Only U relocates; V stays put and merely marks the insertion point.
+    size_t spanV() const override { return 0; }
 };
 
 template <> bool supports<RelocateWithDepot>(ProblemData const &data);

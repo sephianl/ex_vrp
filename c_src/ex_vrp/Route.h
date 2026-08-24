@@ -114,17 +114,19 @@ private:
     Distance excessDistance_ = 0;  // Excess travel distance
     std::vector<Load> delivery_;   // Total delivery amount served on this route
     std::vector<Load> pickup_;     // Total pickup amount gathered on this route
-    std::vector<Load> excessLoad_;  // Excess pickup or delivery demand
-    Duration duration_ = 0;         // Total duration of this route
-    Duration overtime_ = 0;         // Total overtime of this route
-    Cost durationCost_ = 0;         // Total cost of route duration
-    Duration timeWarp_ = 0;         // Total time warp on this route
-    Duration travel_ = 0;           // Total *travel* duration on this route
-    Duration service_ = 0;          // Total *service* duration on this route
-    Duration startTime_ = 0;        // (earliest) start time of this route
-    Duration slack_ = 0;            // Total time slack on this route
-    Cost prizes_ = 0;               // Total value of prizes on this route
-    Cost reloadCost_ = 0;           // Total reload cost on this route
+    std::vector<Load> excessLoad_;   // Excess pickup or delivery demand
+    Duration duration_ = 0;          // Total duration of this route
+    Duration overtime_ = 0;          // Total overtime of this route
+    Cost durationCost_ = 0;          // Total cost of route duration
+    Duration timeWarp_ = 0;          // Total time warp on this route
+    Duration travel_ = 0;            // Total *travel* duration on this route
+    Duration service_ = 0;           // Total *service* duration on this route
+    Duration startTime_ = 0;         // (earliest) start time of this route
+    Duration slack_ = 0;             // Total time slack on this route
+    Cost prizes_ = 0;                // Total value of prizes on this route
+    Cost reloadCost_ = 0;            // Total reload cost on this route
+    Cost penaltyCost_ = 0;           // Total location penalty on this route
+    size_t numForbiddenVisits_ = 0;  // Visits this route's profile forbids
 
     VehicleType vehicleType_;  // Type of vehicle
     Depot startDepot_;         // Assigned start depot
@@ -290,6 +292,24 @@ public:
     [[nodiscard]] Cost reloadCost() const;
 
     /**
+     * Total location penalty cost incurred on this route.
+     *
+     * This is a real objective term in micro-euros, charged once for each
+     * client visited, and not an infeasibility penalty.
+     */
+    [[nodiscard]] Cost penaltyCost() const;
+
+    /**
+     * Number of clients on this route that its own routing profile forbids.
+     *
+     * Always zero for a route the search produced, since forbidden locations
+     * are pruned rather than priced. A nonzero count means a constraint
+     * violation reached the objective unnoticed, so this is a backstop for
+     * routes built from outside the search — and for gaps in it.
+     */
+    [[nodiscard]] size_t numForbiddenVisits() const;
+
+    /**
      * Index of the type of vehicle used on this route.
      */
     [[nodiscard]] VehicleType vehicleType() const;
@@ -338,30 +358,6 @@ public:
     Route(ProblemData const &data, Trips trips, VehicleType vehicleType);
 
     Route(ProblemData const &data, Visits visits, VehicleType vehicleType);
-
-    // This constructor does *no* validation. Useful when unserialising objects.
-    Route(Trips trips,
-          Distance distance,
-          Cost distanceCost,
-          Distance excessDistance,
-          std::vector<Load> delivery,
-          std::vector<Load> pickup,
-          std::vector<Load> excessLoad,
-          Duration duration,
-          Duration overtime,
-          Cost durationCost,
-          Duration timeWarp,
-          Duration travel,
-          Duration service,
-          Duration startTime,
-          Duration slack,
-          Cost prizes,
-          Cost reloadCost,
-
-          VehicleType vehicleType,
-          Depot startDepot,
-          Depot endDepot,
-          std::vector<ScheduledVisit> schedule);
 };
 }  // namespace pyvrp
 

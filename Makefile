@@ -147,6 +147,6 @@ test-solver: c_src/solver_test.cpp $(TEST_PYVRP_SRC) $(HEADERS)
 clean:
 	rm -rf $(PRIV_DIR)/*.$(SO_EXT)
 	rm -rf $(OBJ_DIR)
-	rm -f solver_test svg_crash_test
+	rm -f solver_test
 
 .PHONY: all clean test-solver

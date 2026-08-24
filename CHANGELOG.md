@@ -1,9 +1,15 @@
 # Changelog
 
-## 0.9.0
+## 0.10.0
 
-Locations no longer carry coordinates, and the SwapStar operator is gone. Distance matrices
-are now the solver's only notion of distance, and a model must supply one.
+The objective gains a third channel. Penalties are per-`(profile, location)` costs carried in
+their own channel rather than smuggled through the distance matrix, which is what frees that
+matrix to hold a real distance.
+
+This release also carries everything that was tagged `v0.9.0` but never published. **There is
+no 0.9.0 on Hex** — upgrading from 0.8.0 lands here, and the coordinate removal below is part
+of that upgrade. Locations no longer carry coordinates, and the SwapStar operator is gone;
+distance matrices are now the solver's only notion of distance, and a model must supply one.
 
 ### Removed
 
@@ -51,7 +57,71 @@ are now the solver's only notion of distance, and a model must supply one.
   SwapStar was never in the default operator set, so this changes no solve. `bench.smoke`
   objectives are unchanged.
 
+- **Internal: the pybind11 bindings are deleted** (`c_src/ex_vrp/bindings.{cpp,h}`,
+  `c_src/ex_vrp/search/bindings.cpp`, ~1 900 lines). They were never in the Makefile, and
+  they had stopped compiling: they include a `pyvrp_docs.h` this repo does not generate, and
+  they read the `Client::x` / `Depot::x` members the coordinate removal deleted.
+
+  With them gone, four C++ members lost their last caller and are removed too:
+  `ProblemData::replace`, `ProblemData::VehicleType::replace`, and the "does no validation,
+  useful when unserialising" constructors on `Route` and `Solution`, which existed for
+  pybind's pickle support. The last had already drifted — it took `overtime` but not
+  `reloadCost`, so it silently built a `Solution` with `reload_cost` zero. No Elixir surface
+  changes.
+
+  `c_src/svg_crash_test.cpp` is deleted for the same reason: no build target and broken by
+  the coordinate removal. `c_src/solver_test.cpp` was broken the same way but is a live
+  valgrind harness behind `make test-solver`, so it is repaired rather than removed.
+
 ### Added
+
+- **`Model.set_penalties/2` sets per-profile, per-location penalties**, one list per routing
+  profile holding one cost per location in matrix order — depots first, then clients:
+
+  ```elixir
+  # location 1 costs 500 extra to visit on profile 0
+  Model.set_penalties(model, [[0, 500, 0]])
+  ```
+
+  A penalty is charged once for each visited location, so it is a per-client cost rather than
+  a per-leg one, and it is invariant under reordering within a route. It is _soft_: a large
+  enough prize outbids it.
+
+  Depot entries must be zero, and a nonzero one is rejected when the model is solved. Exact
+  route evaluation sums penalties over a trip's clients while local search sums them over
+  every visit, depots included; requiring depots to be free is what keeps those two
+  definitions equal. Use a depot's `reload_cost` to price a reload.
+
+- **`Solution.penalty_cost/1` returns a solution's total penalty.** Penalties are a real
+  objective term, not an infeasibility penalty, so they survive on a feasible solution and
+  `cost/1` minus `penalty_cost/1` reads back as the plan's cost with penalties excluded.
+
+- **`Model.set_forbidden/2` marks locations a profile may never visit**, one list of location
+  indices per routing profile:
+
+  ```elixir
+  # vehicles on profile 1 may not visit location 1
+  Model.set_forbidden(model, [[], [1]])
+  ```
+
+  This is the _hard_ counterpart to `set_penalties/2`. Local search prunes a forbidden
+  location rather than costing it, so no prize reaches it — where a large penalty is merely
+  expensive and a big enough prize outbids it. Zone restrictions a vehicle may breach at a
+  cost want `set_penalties/2`; restrictions it physically cannot breach want this. Callers
+  who want both should set both.
+
+  Forbidding works whatever the profile count, including single-profile models. The insertion
+  filter used to skip a model with one profile, on the reasoning that every client is then
+  equally reachable — true while reachability was inferred from a distance sentinel, false
+  once it became explicit. It now skips only when nothing is forbidden anywhere, which
+  preserves the VRPB/backhaul behaviour that guard existed for while letting a single-profile
+  model forbid something and mean it. A car-only fleet with uniform zone exemptions collapses
+  to one profile, so this is an ordinary shape rather than a corner case.
+
+  Indices must name clients: a vehicle starts and ends at its depot regardless, so forbidding a
+  depot is rejected rather than quietly doing nothing.
+  `Solution.num_forbidden_visits/1` reports violations, and is zero on any solution the solver
+  produced.
 
 - `Model.set_euclidean_matrices/2` sets both matrices to the rounded Euclidean distances
   between the given coordinates, taking durations to equal distances. This is the explicit
@@ -73,8 +143,85 @@ are now the solver's only notion of distance, and a model must supply one.
 
 ### Changed
 
+- **The `1_000_000_000` distance sentinel is no longer a reachability contract.** Five sites
+  in the search layer read a distance-matrix cell back and compared it against that hardcoded
+  literal to decide whether a vehicle could reach a location, which made the caller's choice
+  of "unreachable" magic number an undocumented part of the solver's interface. They now call
+  `ProblemData::isAllowed`, backed by the per-profile set `set_forbidden/2` populates.
+
+  Callers that encoded unreachability as a huge distance must move to `set_forbidden/2`. A
+  huge distance still costs a lot, so such a model stays _roughly_ correct — but it loses
+  pruning, so the search wastes time proposing moves it used to skip, and nothing reports it.
+
+  This also unifies the five sites: `isHardToPlace` probed depot `0` for every profile while
+  the other four used the profile's real start depot. The predicate has no depot in it.
+
+- **Fixed: the route operators could move a client onto a profile that forbids it.**
+  `applyRouteOps` had no reachability check, unlike `applyNodeOps`. `SwapTails` and
+  `SwapRoutes` exchange clients between two routes wholesale, across profiles, so either
+  could carry a restricted client onto a vehicle barred from it.
+
+  This was latent rather than new. The distance sentinel enforced the constraint through the
+  objective — such a move cost 1'000'000'000, so `deltaCost < 0` never held and the operator
+  never fired. Once reachability is a predicate and the distance channel carries real
+  distances, nothing was left to stop it. Route operators now refuse to exchange clients
+  between two routes unless every client on each is allowed on the other's profile.
+
+- **Fixed: the node operators only checked the two nodes they were named after.**
+  `applyNodeOps` gated a cross-route move on `U` and `V` alone, but `Exchange<2, *>` carries
+  `n(U)` along and `SwapTails` carries both whole tails, so a forbidden client could ride
+  across as a passenger without ever being the node under consideration. Same latent-not-new
+  story as the route operators above: the distance sentinel used to make such a move
+  non-improving, and nothing replaced it.
+
+  The operators now declare how many nodes they move — `spanU`/`spanV` on `NodeOperator`,
+  alongside the existing `affectsEntireTail` — and the gate checks exactly those. Checking
+  spans rather than conservatively barring the whole pair matters: `Exchange<N, 0>` does not
+  move `V` at all, and refusing those moves would cost solution quality for nothing. The
+  check is now per operator rather than per pair, so one barred operator no longer abandons
+  moves the others could legally make.
+
+- **Fixed: the in-place swap moves inserted without checking reachability.** Two sites in
+  `applyOptionalClientMoves` and `insertConstrainedFirst` replace a client with another at
+  the same position when that is cheaper. Both are insertions, and neither goes through
+  `Solution::insert`, so neither was covered by its filter. Whether they fired depended on
+  there being a cost incentive to swap, which the new penalty channel supplies.
+
 - `Model.validate/1` now rejects a model with no distance matrix. Previously such a model
   silently got Euclidean distances derived from coordinates.
+
+- **`Model.validate/1` now checks the penalty and forbidden shapes**, so a malformed one comes
+  back as `{:error, messages}` from `solve/2` rather than as an exception out of the NIF, which
+  is how every other shape check in the model already behaved. It checks list count against
+  profile count, row length against location count, index range, and that depot penalties are
+  zero. Two changes of behaviour follow: an out-of-range forbidden index used to be dropped in
+  silence, which gave a caller who mis-indexed no restriction and no warning; and a _negative_
+  penalty was accepted, which is load-bearing rather than cosmetic — `CostEvaluator`'s delta
+  shortcut assumes a penalty can only raise a move's cost. The NIF decode stays defensive
+  underneath, since `Native.create_problem_data/1` is reachable directly.
+
+- **`Solution.num_forbidden_visits/1` reports visits a route's own profile forbids.** Zero on
+  anything the solver produces; a nonzero value means a violation reached the objective
+  unnoticed. It deliberately does _not_ enter `feasible?/1` — a violation carries no penalty
+  gradient, so failing the solution would strand the search with no way to repair it. The
+  sentinel used to provide this backstop by accident, because a violating route was ruinously
+  expensive and so showed up in `cost/1`; making reachability a predicate removed that, and
+  this replaces it as an explicit reporting channel. A debug assertion in `Route`'s constructor
+  catches it under `SANITIZE=1`.
+
+- **A forbidden index that cannot be honoured is now an error, not a silent drop.** Out-of-range
+  indices used to be dropped during decode, and depot indices were accepted but never consulted.
+  Both left a caller who asked for a restriction with no restriction and no warning. Both are
+  rejected now, at both layers.
+
+- Penalties are added to the delta cost alongside distance rather than after the pruning
+  shortcuts, so the shortcuts see them. Leaving them until last held `out` below its true value
+  and weakened every prune in proportion to how large the penalties were. Pruning was still
+  sound — it could only ever under-prune — but it got worse the more the feature was used.
+
+- Routes cache which profiles could take their clients wholesale, so the route-operator
+  reachability check is two bit tests rather than a walk over both routes on every pair. The
+  clearing pass only runs when the instance forbids something.
 
 - **Fixed: `add_same_vehicle_group/3` resolved clients by structural equality,** so two
   clients with identical attributes both resolved to the first matching index and the group

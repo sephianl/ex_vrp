@@ -1,6 +1,7 @@
 #ifndef PYVRP_PROBLEMDATA_H
 #define PYVRP_PROBLEMDATA_H
 
+#include "DynamicBitset.h"
 #include "Matrix.h"
 #include "Measure.h"
 
@@ -664,34 +665,6 @@ public:
         ~VehicleType();
 
         /**
-         * Returns a new ``VehicleType`` with the same data as this one, except
-         * for the given parameters, which are used instead.
-         */
-        VehicleType
-        replace(std::optional<size_t> numAvailable,
-                std::optional<std::vector<Load>> capacity,
-                std::optional<size_t> startDepot,
-                std::optional<size_t> endDepot,
-                std::optional<Cost> fixedCost,
-                std::optional<Duration> twEarly,
-                std::optional<Duration> twLate,
-                std::optional<Duration> shiftDuration,
-                std::optional<Distance> maxDistance,
-                std::optional<Cost> unitDistanceCost,
-                std::optional<Cost> unitDurationCost,
-                std::optional<size_t> profile,
-                std::optional<Duration> startLate,
-                std::optional<std::vector<Load>> initialLoad,
-                std::optional<std::vector<size_t>> reloadDepots,
-                std::optional<size_t> maxReloads,
-                std::optional<Duration> maxDuration,
-                std::optional<Cost> unitOvertimeCost,
-                std::optional<std::string> name,
-                std::optional<std::vector<std::pair<Duration, Duration>>>
-                    forbiddenWindows,
-                std::optional<Duration> overtimeStart = std::nullopt) const;
-
-        /**
          * Returns the maximum number of trips these vehicle can execute.
          */
         size_t maxTrips() const;
@@ -718,6 +691,22 @@ private:
     std::vector<ClientGroup> const groups_;        // Client groups
     std::vector<SameVehicleGroup> const
         sameVehicleGroups_;  // Same-vehicle groups
+
+    // Per-profile, per-location cost in micro-euros, added to the objective
+    // once for each visited location. Zone penalties live here rather than in
+    // the distance matrix, which frees that channel to carry real metres.
+    std::vector<std::vector<Cost>> const penalties_;
+
+    // Per-profile reachability. A location whose bit is unset must never be
+    // visited by a vehicle on that profile. This is the search-pruning half of
+    // what the 1'000'000'000 distance sentinel used to do.
+    std::vector<DynamicBitset> const allowed_;
+
+    // Whether any location is forbidden on any profile. Search uses this to
+    // decide whether reachability filtering is worth doing at all, so that a
+    // model that never forbids anything behaves exactly as it did before the
+    // predicate existed.
+    bool const hasForbidden_;
 
     size_t const numVehicles_;
     size_t const numLoadDimensions_;
@@ -853,6 +842,29 @@ public:
     durationMatrix(size_t profile) const;
 
     /**
+     * Per-location penalties (in cost units) for the given routing profile.
+     */
+    [[nodiscard]] inline std::vector<Cost> const &
+    penalties(size_t profile) const;
+
+    /**
+     * Penalty incurred by visiting the given location on the given profile.
+     */
+    [[nodiscard]] inline Cost penalty(size_t profile, size_t location) const;
+
+    /**
+     * Whether the given location may be visited on the given profile.
+     */
+    [[nodiscard]] inline bool isAllowed(size_t profile, size_t location) const;
+
+    /**
+     * Whether any location is forbidden on any profile. When false,
+     * :meth:`~is_allowed` is true everywhere and reachability filtering can be
+     * skipped wholesale.
+     */
+    [[nodiscard]] inline bool hasForbiddenLocations() const;
+
+    /**
      * Determines whether any of the :meth:`~clients` or :meth:`~depots` in this
      * instance have nonstandard time windows, or if any :meth:`~vehicle_types`
      * have nonstandard shift time windows or latest start constraints.
@@ -905,48 +917,15 @@ public:
      */
     [[nodiscard]] size_t numLoadDimensions() const;
 
-    /**
-     * Returns a new ProblemData instance with the same data as this instance,
-     * except for the given parameters, which are used instead.
-     *
-     * Parameters
-     * ----------
-     * clients
-     *    Optional list of clients.
-     * depots
-     *    Optional list of depots.
-     * vehicle_types
-     *    Optional list of vehicle types.
-     * distance_matrices
-     *    Optional distance matrices, one per routing profile.
-     * duration_matrices
-     *    Optional duration matrices, one per routing profile.
-     * groups
-     *    Optional client groups.
-     * same_vehicle_groups
-     *    Optional same-vehicle groups.
-     *
-     * Returns
-     * -------
-     * ProblemData
-     *    A new ProblemData instance with possibly replaced data.
-     */
-    ProblemData replace(
-        std::optional<std::vector<Client>> &clients,
-        std::optional<std::vector<Depot>> &depots,
-        std::optional<std::vector<VehicleType>> &vehicleTypes,
-        std::optional<std::vector<Matrix<Distance>>> &distMats,
-        std::optional<std::vector<Matrix<Duration>>> &durMats,
-        std::optional<std::vector<ClientGroup>> &groups,
-        std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups) const;
-
     ProblemData(std::vector<Client> clients,
                 std::vector<Depot> depots,
                 std::vector<VehicleType> vehicleTypes,
                 std::vector<Matrix<Distance>> distMats,
                 std::vector<Matrix<Duration>> durMats,
                 std::vector<ClientGroup> groups = {},
-                std::vector<SameVehicleGroup> sameVehicleGroups = {});
+                std::vector<SameVehicleGroup> sameVehicleGroups = {},
+                std::vector<std::vector<Cost>> penalties = {},
+                std::vector<DynamicBitset> allowed = {});
 
     ProblemData() = delete;
 };
@@ -974,6 +953,28 @@ Matrix<Duration> const &ProblemData::durationMatrix(size_t profile) const
     assert(profile < durs_.size());
     return durs_[profile];
 }
+
+std::vector<Cost> const &ProblemData::penalties(size_t profile) const
+{
+    assert(profile < penalties_.size());
+    return penalties_[profile];
+}
+
+Cost ProblemData::penalty(size_t profile, size_t location) const
+{
+    assert(profile < penalties_.size());
+    assert(location < penalties_[profile].size());
+    return penalties_[profile][location];
+}
+
+bool ProblemData::isAllowed(size_t profile, size_t location) const
+{
+    assert(profile < allowed_.size());
+    assert(location < allowed_[profile].size());
+    return allowed_[profile][location];
+}
+
+bool ProblemData::hasForbiddenLocations() const { return hasForbidden_; }
 
 bool ProblemData::hasTimeWindows() const { return hasTimeWindows_; }
 }  // namespace pyvrp

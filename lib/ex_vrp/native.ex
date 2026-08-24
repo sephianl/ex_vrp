@@ -93,6 +93,8 @@ defmodule ExVrp.Native do
     solution_route_visits: 2,
     solution_route_schedule: 2,
     solution_fixed_vehicle_cost: 1,
+    solution_penalty_cost: 1,
+    solution_num_forbidden_visits: 1,
     # search::Route NIFs
     create_search_route_nif: 3,
     search_route_idx_nif: 1,
@@ -875,6 +877,18 @@ defmodule ExVrp.Native do
   """
   @spec solution_fixed_vehicle_cost(reference()) :: non_neg_integer()
   def solution_fixed_vehicle_cost(_solution), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Gets the solution's total penalty cost.
+  """
+  @spec solution_penalty_cost(reference()) :: integer()
+  def solution_penalty_cost(_solution), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Gets the number of visits the visiting route's own profile forbids.
+  """
+  @spec solution_num_forbidden_visits(reference()) :: non_neg_integer()
+  def solution_num_forbidden_visits(_solution), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
   # search::Route NIFs (low-level search route manipulation)

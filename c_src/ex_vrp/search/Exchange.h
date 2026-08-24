@@ -51,6 +51,10 @@ public:
                   CostEvaluator const &costEvaluator) override;
 
     void apply(Route::Node *U, Route::Node *V) const override;
+
+    size_t spanU() const override { return N; }
+
+    size_t spanV() const override { return M; }
 };
 
 template <size_t N, size_t M>

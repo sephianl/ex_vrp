@@ -65,6 +65,7 @@ Route::Route(ProblemData const &data, size_t idx, size_t vehicleType)
       vehicleType_(data.vehicleType(vehicleType)),
       idx_(idx),
       reloadCost_(0),
+      transferableProfiles_(data.numProfiles()),
       loadAt(data.numLoadDimensions()),
       loadAfter(data.numLoadDimensions()),
       loadBefore(data.numLoadDimensions()),
@@ -216,6 +217,32 @@ void Route::update()
     for (size_t idx = 1; idx != nodes.size(); ++idx)
         cumDist[idx] = cumDist[idx - 1] + distMat(visits[idx - 1], visits[idx]);
 
+    // Penalties. Note the differing shapes: cumDist is edge-additive and
+    // inclusive of length nodes.size(), whereas cumPenalty is node-additive
+    // and an exclusive prefix of length nodes.size() + 1. Depot penalties are
+    // zero, so including depots in the sum is harmless.
+    auto const &penalties = data.penalties(profile());
+
+    cumPenalty.resize(nodes.size() + 1);
+    cumPenalty[0] = 0;
+    for (size_t idx = 0; idx != nodes.size(); ++idx)
+        cumPenalty[idx + 1] = cumPenalty[idx] + penalties[visits[idx]];
+
+    // Which profiles could take this route's clients wholesale. The clearing
+    // pass only runs when the instance forbids something, so an instance that
+    // forbids nothing — every instance, by default — keeps the all-ones answer
+    // for the price of one word.
+    transferableProfiles_.set();
+
+    if (data.hasForbiddenLocations())
+        for (size_t p = 0; p != data.numProfiles(); ++p)
+            for (auto const *node : *this)
+                if (!data.isAllowed(p, node->client()))
+                {
+                    transferableProfiles_[p] = false;
+                    break;
+                }
+
     // Duration.
     durAt.resize(nodes.size());
 
@@ -331,6 +358,7 @@ void Route::update()
     distance_ = cumDist.back();
     excessDistance_ = std::max<Distance>(distance_ - maxDistance(), 0);
     distanceCost_ = unitDistanceCost() * static_cast<Cost>(distance_);
+    penaltyCost_ = cumPenalty.back();
 
     duration_ = durAfter[0].duration();
     timeWarp_ = durAfter[0].timeWarp(maxDuration());
