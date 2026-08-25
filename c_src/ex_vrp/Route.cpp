@@ -307,17 +307,17 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         {
             penaltyCost_ += penalties[client];
 
+            // Counted, not asserted away. This constructor evaluates whatever
+            // routes it is handed, and callers do hand it forbidden ones: a
+            // warm start via :initial_routes, or a solution built straight
+            // from route lists. Those arrive from outside the search, where
+            // the pruning predicate never ran, so a count here is data rather
+            // than a broken invariant. Search output is a different matter,
+            // and the seed sweep in test/is_allowed_test.exs holds it to zero.
             if (!data.isAllowed(vehData.profile, client))
                 numForbiddenVisits_++;
         }
     }
-
-    // Reachability is enforced by the search layer, which prunes rather than
-    // prices these visits, so nothing above this line can produce one. The
-    // count exists to make it visible if something ever does — a caller
-    // handing us routes directly, or a move operator that grew a new way to
-    // shuffle clients between routes without consulting the predicate.
-    assert(numForbiddenVisits_ == 0);
 
     distanceCost_ = vehData.unitDistanceCost * static_cast<Cost>(distance_);
     excessDistance_ = std::max<Distance>(distance_ - vehData.maxDistance, 0);
