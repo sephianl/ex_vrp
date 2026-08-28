@@ -1166,6 +1166,18 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
     bool has_same_vehicle_groups
         = enif_get_map_value(env, model_term, key, &same_vehicle_groups_term);
 
+    // Get penalties (optional)
+    ERL_NIF_TERM penalties_term;
+    key = enif_make_atom(env, "penalties");
+    bool has_penalties
+        = enif_get_map_value(env, model_term, key, &penalties_term);
+
+    // Get forbidden locations (optional)
+    ERL_NIF_TERM forbidden_term;
+    key = enif_make_atom(env, "forbidden");
+    bool has_forbidden
+        = enif_get_map_value(env, model_term, key, &forbidden_term);
+
     // Decode depots
     std::vector<ProblemData::Depot> depots;
     unsigned depots_len;
@@ -1289,6 +1301,87 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
         }
     }
 
+    size_t const num_locations = depots.size() + clients.size();
+
+    // Decode penalties: one list of per-location costs per profile. An empty
+    // list is the caller declining the feature; anything else that does not
+    // decode is an error, never a silent fallback to "no penalties".
+    std::vector<std::vector<Cost>> penalties;
+    if (has_penalties)
+    {
+        unsigned num_profiles;
+        if (!enif_get_list_length(env, penalties_term, &num_profiles))
+            throw std::invalid_argument("Expected list for penalties");
+
+        penalties.reserve(num_profiles);
+        tail = penalties_term;
+        for (unsigned p = 0; p < num_profiles; p++)
+        {
+            enif_get_list_cell(env, tail, &head, &tail);
+
+            std::vector<Cost> profile_penalties;
+            profile_penalties.reserve(num_locations);
+
+            ERL_NIF_TERM cost_head, cost_tail = head;
+            while (enif_get_list_cell(env, cost_tail, &cost_head, &cost_tail))
+            {
+                ErlNifSInt64 value;
+                if (!enif_get_int64(env, cost_head, &value) || value < 0)
+                    throw std::invalid_argument(
+                        "Penalty must be a non-negative integer");
+
+                profile_penalties.push_back(Cost(value));
+            }
+
+            penalties.push_back(std::move(profile_penalties));
+        }
+    }
+
+    // Decode forbidden: one list of location indices per profile, inverted
+    // into an allowed-set bitset.
+    std::vector<DynamicBitset> allowed;
+    if (has_forbidden)
+    {
+        unsigned num_profiles;
+        if (!enif_get_list_length(env, forbidden_term, &num_profiles))
+            throw std::invalid_argument(
+                "Expected list for forbidden locations");
+
+        allowed.reserve(num_profiles);
+        tail = forbidden_term;
+        for (unsigned p = 0; p < num_profiles; p++)
+        {
+            enif_get_list_cell(env, tail, &head, &tail);
+
+            DynamicBitset profile_allowed(num_locations);
+            profile_allowed.set();
+
+            ERL_NIF_TERM idx_head, idx_tail = head;
+            while (enif_get_list_cell(env, idx_tail, &idx_head, &idx_tail))
+            {
+                unsigned long location;
+                if (!enif_get_ulong(env, idx_head, &location))
+                    throw std::invalid_argument(
+                        "Forbidden location must be an integer");
+
+                // A depot index is rejected rather than dropped. Forbidding
+                // one cannot be honoured — a vehicle starts and ends at its
+                // depot regardless — so accepting it would hand the caller a
+                // restriction that silently does nothing.
+                if (location < depots.size())
+                    throw std::invalid_argument("Cannot forbid a depot");
+
+                if (location >= num_locations)
+                    throw std::invalid_argument(
+                        "Forbidden location out of range");
+
+                profile_allowed[location] = false;
+            }
+
+            allowed.push_back(std::move(profile_allowed));
+        }
+    }
+
     // Create ProblemData
     auto problem_data
         = std::make_shared<ProblemData>(std::move(clients),
@@ -1297,7 +1390,9 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
                                         std::move(dist_matrices),
                                         std::move(dur_matrices),
                                         std::move(client_groups),
-                                        std::move(same_vehicle_groups));
+                                        std::move(same_vehicle_groups),
+                                        std::move(penalties),
+                                        std::move(allowed));
 
     return fine::Ok(fine::make_resource<ProblemDataResource>(problem_data));
 }
@@ -2129,6 +2224,32 @@ int64_t solution_fixed_vehicle_cost(
 }
 
 FINE_NIF(solution_fixed_vehicle_cost, 0);
+
+/**
+ * Get the total location penalty cost of the solution.
+ */
+int64_t
+solution_penalty_cost([[maybe_unused]] ErlNifEnv *env,
+                      fine::ResourcePtr<SolutionResource> solution_resource)
+{
+    auto &solution = solution_resource->solution;
+    return static_cast<int64_t>(solution.penaltyCost());
+}
+
+FINE_NIF(solution_penalty_cost, 0);
+
+/**
+ * Get the number of visits the visiting route's own profile forbids.
+ */
+int64_t solution_num_forbidden_visits(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SolutionResource> solution_resource)
+{
+    auto &solution = solution_resource->solution;
+    return static_cast<int64_t>(solution.numForbiddenVisits());
+}
+
+FINE_NIF(solution_num_forbidden_visits, 0);
 
 // -----------------------------------------------------------------------------
 // CostEvaluator

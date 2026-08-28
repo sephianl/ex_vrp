@@ -79,9 +79,32 @@ class LocalSearch
     bool wouldViolateSameVehicle(Route::Node const *U,
                                  Route const *targetRoute) const;
 
-    // Checks if U is forbidden from targetRoute (prohibitive distance).
+    // Checks if U is forbidden from targetRoute.
     bool wouldViolateForbidden(Route::Node const *U,
                                Route const *targetRoute) const;
+
+    // Checks whether any of the span nodes starting at U is forbidden from
+    // targetRoute. A span of zero means nothing moves, and so never violates.
+    bool wouldSegmentViolateForbidden(Route::Node const *U,
+                                      size_t span,
+                                      Route const *targetRoute) const;
+
+    // Checks whether swapping the tails behind U and V would land a client on
+    // a route whose profile forbids it.
+    bool wouldTailSwapViolateForbidden(Route::Node const *U,
+                                       Route::Node const *V) const;
+
+    // Checks whether applying nodeOp to the pair (U, V) would land a client on
+    // a route whose profile forbids it. Dispatches on the operator's own
+    // account of which nodes it moves, so it is exact rather than merely safe.
+    bool wouldMoveViolateForbidden(NodeOperator const &nodeOp,
+                                   Route::Node const *U,
+                                   Route::Node const *V) const;
+
+    // Checks whether the route operators may exchange clients between these
+    // two routes, that is, whether every client on each is allowed on the
+    // other's profile.
+    bool mayExchangeClients(Route const *U, Route const *V) const;
 
     // Checks if U is hard to place (reachable from very few profiles).
     bool isHardToPlace(Route::Node const *U) const;

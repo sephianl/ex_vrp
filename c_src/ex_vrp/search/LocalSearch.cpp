@@ -283,9 +283,11 @@ bool LocalSearch::isHardToPlace(Route::Node const *U) const
     if (!U->route() || U->isDepot())
         return false;
 
-    // Only meaningful when there are multiple profiles (zone restrictions).
-    // With <= 2 profiles every client is equally restricted, so none are
-    // "hard to place".
+    // "Hard to place" is a relative judgement: it protects the clients that
+    // few profiles can reach from removal. That needs a spread to measure
+    // against, which two profiles do not give — a client barred from one of
+    // two still has a whole half of the fleet, and calling that hard to place
+    // would pin down most of the instance.
     if (data.numProfiles() <= 2)
         return false;
 
@@ -294,12 +296,8 @@ bool LocalSearch::isHardToPlace(Route::Node const *U) const
     // Count how many distinct profiles can reach this client
     size_t reachableProfiles = 0;
     for (size_t p = 0; p < data.numProfiles(); ++p)
-    {
-        auto const &distMatrix = data.distanceMatrix(p);
-        // Check from any depot (use first depot as proxy)
-        if (distMatrix(0, client) < 1'000'000'000)
+        if (data.isAllowed(p, client))
             reachableProfiles++;
-    }
 
     // A client reachable from very few profiles (relative to total) is
     // hard to place — protect it from removal.
@@ -313,10 +311,73 @@ bool LocalSearch::wouldViolateForbidden(Route::Node const *U,
         return false;
 
     auto const profile = data.vehicleType(targetRoute->vehicleType()).profile;
-    auto const &distMatrix = data.distanceMatrix(profile);
-    auto const startDepot
-        = data.vehicleType(targetRoute->vehicleType()).startDepot;
-    return distMatrix(startDepot, U->client()) >= 1'000'000'000;
+    return !data.isAllowed(profile, U->client());
+}
+
+bool LocalSearch::wouldSegmentViolateForbidden(Route::Node const *U,
+                                               size_t span,
+                                               Route const *targetRoute) const
+{
+    auto const *route = U->route();
+    assert(route && targetRoute);
+
+    auto const last = std::min(U->idx() + span, route->size());
+    for (size_t idx = U->idx(); idx != last; ++idx)
+        if (wouldViolateForbidden((*route)[idx], targetRoute))
+            return true;
+
+    return false;
+}
+
+bool LocalSearch::wouldTailSwapViolateForbidden(Route::Node const *U,
+                                                Route::Node const *V) const
+{
+    auto const *rU = U->route();
+    auto const *rV = V->route();
+
+    // U and V themselves stay put under a tail swap; it is everything behind
+    // them that crosses over.
+    for (auto const *node = n(U); !node->isEndDepot(); node = n(node))
+        if (wouldViolateForbidden(node, rV))
+            return true;
+
+    for (auto const *node = n(V); !node->isEndDepot(); node = n(node))
+        if (wouldViolateForbidden(node, rU))
+            return true;
+
+    return false;
+}
+
+bool LocalSearch::wouldMoveViolateForbidden(NodeOperator const &nodeOp,
+                                            Route::Node const *U,
+                                            Route::Node const *V) const
+{
+    if (!data.hasForbiddenLocations())
+        return false;
+
+    if (nodeOp.affectsEntireTail())
+        return wouldTailSwapViolateForbidden(U, V);
+
+    return wouldSegmentViolateForbidden(U, nodeOp.spanU(), V->route())
+           || wouldSegmentViolateForbidden(V, nodeOp.spanV(), U->route());
+}
+
+bool LocalSearch::mayExchangeClients(Route const *U, Route const *V) const
+{
+    assert(U != V);
+
+    auto const uProfile = data.vehicleType(U->vehicleType()).profile;
+    auto const vProfile = data.vehicleType(V->vehicleType()).profile;
+
+    if (uProfile == vProfile)
+        return true;
+
+    // Route operators move whole spans of clients across, and which clients
+    // end up where is operator-specific. Requiring both routes' clients to be
+    // mutually allowed is stricter than any individual operator needs, but the
+    // routes cache the answer, so it costs two bit tests and cannot let a
+    // violation through.
+    return U->mayTransferTo(vProfile) && V->mayTransferTo(uProfile);
 }
 
 bool LocalSearch::wouldViolateSameVehicle(Route::Node const *U,
@@ -405,13 +466,21 @@ bool LocalSearch::applyNodeOps(Route::Node *U,
         if (!nV->isEndDepot() && !nV->isDepot()
             && wouldViolateSameVehicle(nV, rU))
             return false;
-
-        if (wouldViolateForbidden(U, rV) || wouldViolateForbidden(V, rU))
-            return false;
     }
 
     for (auto *nodeOp : nodeOps)
     {
+        // Reachability is checked per operator rather than once for the pair,
+        // because the operators disagree about which nodes actually cross:
+        // Exchange(2, *) carries n(U) along, and SwapTails carries both whole
+        // tails. Under the old distance sentinel this enforced itself — such a
+        // move cost 1'000'000'000, so deltaCost < 0 never held. With the
+        // distance channel carrying real distances, nothing stops it but this.
+        // A barred operator is skipped rather than abandoning the pair, since
+        // another operator may move a subset that is perfectly allowed.
+        if (rU != rV && wouldMoveViolateForbidden(*nodeOp, U, V))
+            continue;
+
         auto const deltaCost = nodeOp->evaluate(U, V, costEvaluator);
         if (deltaCost < 0)
         {
@@ -457,6 +526,14 @@ bool LocalSearch::applyRouteOps(Route *U,
                                 Route *V,
                                 CostEvaluator const &costEvaluator)
 {
+    // Route operators exchange clients between two routes wholesale, so they
+    // can move a client onto a profile that forbids it. Under the old
+    // distance sentinel this enforced itself: such a move cost 1'000'000'000,
+    // so deltaCost < 0 never held. With reachability explicit and the
+    // distance channel carrying real distances, nothing stops it but this.
+    if (data.hasForbiddenLocations() && !mayExchangeClients(U, V))
+        return false;
+
     for (auto *routeOp : routeOps)
     {
         auto const deltaCost = routeOp->evaluate(U, V, costEvaluator);
@@ -724,8 +801,11 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
 
         ProblemData::Client const &vData = data.location(V->client());
 
-        // Check same-vehicle constraint for V before removing it.
+        // Check same-vehicle constraint for V before removing it. U takes
+        // V's place on V's route, so U must be allowed to go there — this is
+        // an insertion, and it does not pass through Solution::insert.
         if (!vData.required && !wouldViolateSameVehicle(V, nullptr)
+            && !wouldViolateForbidden(U, route)
             && inplaceCost(U, V, data, costEvaluator) < 0)
         {
             searchSpace_.markPromising(V);
@@ -798,7 +878,8 @@ void LocalSearch::applyGroupMoves(Route::Node *U,
 
     // Test swapping U and V, and do so if U is better to have than V.
     auto *V = &solution_.nodes[inSol[range.back()]];
-    if (U != V && inplaceCost(U, V, data, costEvaluator) < 0)
+    if (U != V && !wouldViolateForbidden(U, V->route())
+        && inplaceCost(U, V, data, costEvaluator) < 0)
     {
         auto *route = V->route();
         auto const idx = V->idx();
@@ -831,14 +912,11 @@ void LocalSearch::insertConstrainedFirst(CostEvaluator const &costEvaluator)
         for (auto &route : solution_.routes)
         {
             auto const profile = data.vehicleType(route.vehicleType()).profile;
-            auto const &distMatrix = data.distanceMatrix(profile);
-            auto const startDepot
-                = data.vehicleType(route.vehicleType()).startDepot;
 
             bool allReachable = true;
             for (auto const client : group)
             {
-                if (distMatrix(startDepot, client) >= 1'000'000'000)
+                if (!data.isAllowed(profile, client))
                 {
                     allReachable = false;
                     break;
@@ -892,10 +970,7 @@ void LocalSearch::insertConstrainedFirst(CostEvaluator const &costEvaluator)
         for (auto const &route : solution_.routes)
         {
             auto const profile = data.vehicleType(route.vehicleType()).profile;
-            auto const &distMatrix = data.distanceMatrix(profile);
-            auto const startDepot
-                = data.vehicleType(route.vehicleType()).startDepot;
-            if (distMatrix(startDepot, client) < 1'000'000'000)
+            if (data.isAllowed(profile, client))
                 reachable++;
         }
 
@@ -1137,6 +1212,12 @@ void LocalSearch::improveWithMultiTrip(
                 continue;
 
             auto const &vehType = data.vehicleType(route.vehicleType());
+
+            // This is an insertion, and it does not go through
+            // Solution::insert, so the reachability filter there does not
+            // cover it.
+            if (!data.isAllowed(vehType.profile, client))
+                continue;
 
             // Check if multi-trip is available
             if (vehType.reloadDepots.empty())

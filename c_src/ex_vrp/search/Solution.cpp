@@ -200,19 +200,25 @@ bool Solution::insert(Route::Node *U,
         return false;
     };
 
-    // Reachability check: only filter when there are multiple profiles
-    // (zone restrictions). With a single profile all clients are equally
-    // reachable, and filtering can prevent VRPB/backhaul client placement.
+    // Reachability check: only filter when the instance actually forbids
+    // something, because filtering unconditionally prevents VRPB/backhaul
+    // client placement.
+    //
+    // This used to key off numProfiles() <= 1, reasoning that with a single
+    // profile every client is equally reachable. That held while reachability
+    // was inferred from a distance-matrix sentinel: an unreachable client on
+    // the only profile meant a broken model. It stopped holding once
+    // reachability became explicit, since a caller can forbid a location on
+    // the only profile and mean it. Keying off the allowed sets preserves the
+    // VRPB behaviour for every model that forbids nothing — all of them, by
+    // default — while making forbidding work whatever the profile count.
     auto const clientLoc = U->client();
     auto isReachable = [&](Route const *route) -> bool
     {
-        if (data_.numProfiles() <= 1)
+        if (!data_.hasForbiddenLocations())
             return true;
         auto const profile = data_.vehicleType(route->vehicleType()).profile;
-        auto const &distMatrix = data_.distanceMatrix(profile);
-        auto const startDepot
-            = data_.vehicleType(route->vehicleType()).startDepot;
-        return distMatrix(startDepot, clientLoc) < 1'000'000'000;
+        return data_.isAllowed(profile, clientLoc);
     };
 
     Route::Node *UAfter = nullptr;

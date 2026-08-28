@@ -40,6 +40,8 @@ void Solution::evaluate(ProblemData const &data)
         timeWarp_ += route.timeWarp();
         fixedVehicleCost_ += data.vehicleType(route.vehicleType()).fixedCost;
         reloadCost_ += route.reloadCost();
+        penaltyCost_ += route.penaltyCost();
+        numForbiddenVisits_ += route.numForbiddenVisits();
 
         auto const &excessLoad = route.excessLoad();
         for (size_t dim = 0; dim != data.numLoadDimensions(); ++dim)
@@ -115,6 +117,10 @@ Distance Solution::excessDistance() const { return excessDistance_; }
 Cost Solution::fixedVehicleCost() const { return fixedVehicleCost_; }
 
 Cost Solution::reloadCost() const { return reloadCost_; }
+
+Cost Solution::penaltyCost() const { return penaltyCost_; }
+
+size_t Solution::numForbiddenVisits() const { return numForbiddenVisits_; }
 
 Cost Solution::prizes() const { return prizes_; }
 
@@ -353,41 +359,6 @@ Solution::Solution(ProblemData const &data, std::vector<Route> routes)
 
     makeNeighbours();
     evaluate(data);
-}
-
-Solution::Solution(size_t numClients,
-                   size_t numMissingClients,
-                   Distance distance,
-                   Cost distanceCost,
-                   Duration duration,
-                   Duration overtime,
-                   Cost durationCost,
-                   Distance excessDistance,
-                   std::vector<Load> excessLoad,
-                   Cost fixedVehicleCost,
-                   Cost prizes,
-                   Cost uncollectedPrizes,
-                   Duration timeWarp,
-                   bool isGroupFeasible,
-                   Routes routes,
-                   Neighbours neighbours)
-    : numClients_(numClients),
-      numMissingClients_(numMissingClients),
-      distance_(distance),
-      distanceCost_(distanceCost),
-      duration_(duration),
-      overtime_(overtime),
-      durationCost_(durationCost),
-      excessDistance_(excessDistance),
-      excessLoad_(std::move(excessLoad)),
-      fixedVehicleCost_(fixedVehicleCost),
-      prizes_(prizes),
-      uncollectedPrizes_(uncollectedPrizes),
-      timeWarp_(timeWarp),
-      isGroupFeas_(isGroupFeasible),
-      routes_(std::move(routes)),
-      neighbours_(std::move(neighbours))
-{
 }
 
 std::ostream &operator<<(std::ostream &out, Solution const &sol)

@@ -38,6 +38,13 @@ public:
         return 0;
     }
 
+    pyvrp::Cost penalty([[maybe_unused]] size_t profile) const
+    {
+        // Depot penalties are required to be zero (ProblemData::validate), so
+        // a reload depot contributes nothing to the objective's penalty term.
+        return 0;
+    }
+
     pyvrp::DurationSegment duration([[maybe_unused]] size_t profile) const
     {
         // Empty segment - depot service time is handled by

@@ -34,6 +34,11 @@ public:
         return 0;
     }
 
+    pyvrp::Cost penalty(size_t profile) const
+    {
+        return data.penalty(profile, client);
+    }
+
     pyvrp::DurationSegment duration([[maybe_unused]] size_t profile) const
     {
         pyvrp::ProblemData::Client const &clientData = data.location(client);

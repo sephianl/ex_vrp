@@ -295,12 +295,28 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
 
     validate(data);
 
+    auto const &penalties = data.penalties(vehData.profile);
     for (auto const &trip : trips_)  // general statistics
     {
         distance_ += trip.distance();
         service_ += trip.serviceDuration();
         travel_ += trip.travelDuration();
         prizes_ += trip.prizes();
+
+        for (auto const client : trip)
+        {
+            penaltyCost_ += penalties[client];
+
+            // Counted, not asserted away. This constructor evaluates whatever
+            // routes it is handed, and callers do hand it forbidden ones: a
+            // warm start via :initial_routes, or a solution built straight
+            // from route lists. Those arrive from outside the search, where
+            // the pruning predicate never ran, so a count here is data rather
+            // than a broken invariant. Search output is a different matter,
+            // and the seed sweep in test/is_allowed_test.exs holds it to zero.
+            if (!data.isAllowed(vehData.profile, client))
+                numForbiddenVisits_++;
+        }
     }
 
     distanceCost_ = vehData.unitDistanceCost * static_cast<Cost>(distance_);
@@ -398,52 +414,6 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     }
 }
 
-Route::Route(Trips trips,
-             Distance distance,
-             Cost distanceCost,
-             Distance excessDistance,
-             std::vector<Load> delivery,
-             std::vector<Load> pickup,
-             std::vector<Load> excessLoad,
-             Duration duration,
-             Duration overtime,
-             Cost durationCost,
-             Duration timeWarp,
-             Duration travel,
-             Duration service,
-             Duration startTime,
-             Duration slack,
-             Cost prizes,
-             Cost reloadCost,
-
-             size_t vehicleType,
-             size_t startDepot,
-             size_t endDepot,
-             std::vector<ScheduledVisit> schedule)
-    : trips_(std::move(trips)),
-      schedule_(std::move(schedule)),
-      distance_(distance),
-      distanceCost_(distanceCost),
-      excessDistance_(excessDistance),
-      delivery_(std::move(delivery)),
-      pickup_(std::move(pickup)),
-      excessLoad_(std::move(excessLoad)),
-      duration_(duration),
-      overtime_(overtime),
-      durationCost_(durationCost),
-      timeWarp_(timeWarp),
-      travel_(travel),
-      service_(service),
-      startTime_(startTime),
-      slack_(slack),
-      prizes_(prizes),
-      reloadCost_(reloadCost),
-      vehicleType_(vehicleType),
-      startDepot_(startDepot),
-      endDepot_(endDepot)
-{
-}
-
 bool Route::empty() const { return size() == 0; }
 
 size_t Route::size() const
@@ -524,6 +494,10 @@ Duration Route::releaseTime() const { return trips_[0].releaseTime(); }
 Cost Route::prizes() const { return prizes_; }
 
 Cost Route::reloadCost() const { return reloadCost_; }
+
+Cost Route::penaltyCost() const { return penaltyCost_; }
+
+size_t Route::numForbiddenVisits() const { return numForbiddenVisits_; }
 
 size_t Route::vehicleType() const { return vehicleType_; }
 

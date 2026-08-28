@@ -81,6 +81,23 @@ public:
      */
     virtual bool affectsEntireTail() const { return false; }
 
+    /**
+     * Number of consecutive nodes this operator moves off U's route, starting
+     * at U itself. Zero means U's route keeps all its nodes. LocalSearch uses
+     * this to know which nodes cross to the other route, and thus which ones
+     * have to clear that route's reachability predicate.
+     *
+     * Only meaningful when U and V sit on different routes, and ignored
+     * entirely when :meth:`~affects_entire_tail` holds.
+     */
+    virtual size_t spanU() const { return 1; }
+
+    /**
+     * Number of consecutive nodes this operator moves off V's route, starting
+     * at V itself. See :meth:`~span_u`.
+     */
+    virtual size_t spanV() const { return 1; }
+
     LocalSearchOperator(ProblemData const &data) : data(data) {};
     virtual ~LocalSearchOperator() = default;
 };

@@ -51,6 +51,37 @@ bool hasTimeWindow(auto const &arg)
 
     return hasTw;
 }
+
+// An empty penalty argument means "no penalties anywhere". Materialising that
+// to full size here keeps every read site unconditional.
+std::vector<std::vector<pyvrp::Cost>>
+normalisePenalties(std::vector<std::vector<pyvrp::Cost>> penalties,
+                   size_t numProfiles,
+                   size_t numLocations)
+{
+    if (!penalties.empty())
+        return penalties;
+
+    // Deliberately parenthesised: the braced form would select the
+    // initializer_list constructor and build a two-element vector.
+    return std::vector<std::vector<pyvrp::Cost>>(
+        numProfiles, std::vector<pyvrp::Cost>(numLocations, 0));
+}
+
+// An empty allowed argument means "everything is reachable".
+std::vector<pyvrp::DynamicBitset>
+normaliseAllowed(std::vector<pyvrp::DynamicBitset> allowed,
+                 size_t numProfiles,
+                 size_t numLocations)
+{
+    if (!allowed.empty())
+        return allowed;
+
+    pyvrp::DynamicBitset all(numLocations);
+    all.set();
+
+    return std::vector<pyvrp::DynamicBitset>(numProfiles, all);
+}
 }  // namespace
 
 ProblemData::Client::Client(std::vector<Load> delivery,
@@ -483,52 +514,6 @@ ProblemData::VehicleType::VehicleType(VehicleType &&vehicleType)
 
 ProblemData::VehicleType::~VehicleType() { delete[] name; }
 
-ProblemData::VehicleType ProblemData::VehicleType::replace(
-    std::optional<size_t> numAvailable,
-    std::optional<std::vector<Load>> capacity,
-    std::optional<size_t> startDepot,
-    std::optional<size_t> endDepot,
-    std::optional<Cost> fixedCost,
-    std::optional<Duration> twEarly,
-    std::optional<Duration> twLate,
-    std::optional<Duration> shiftDuration,
-    std::optional<Distance> maxDistance,
-    std::optional<Cost> unitDistanceCost,
-    std::optional<Cost> unitDurationCost,
-    std::optional<size_t> profile,
-    std::optional<Duration> startLate,
-    std::optional<std::vector<Load>> initialLoad,
-    std::optional<std::vector<size_t>> reloadDepots,
-    std::optional<size_t> maxReloads,
-    std::optional<Duration> maxDuration,
-    std::optional<Cost> unitOvertimeCost,
-    std::optional<std::string> name,
-    std::optional<std::vector<std::pair<Duration, Duration>>> forbiddenWindows,
-    std::optional<Duration> overtimeStart) const
-{
-    return {numAvailable.value_or(this->numAvailable),
-            capacity.value_or(this->capacity),
-            startDepot.value_or(this->startDepot),
-            endDepot.value_or(this->endDepot),
-            fixedCost.value_or(this->fixedCost),
-            twEarly.value_or(this->twEarly),
-            twLate.value_or(this->twLate),
-            shiftDuration.value_or(this->shiftDuration),
-            maxDistance.value_or(this->maxDistance),
-            unitDistanceCost.value_or(this->unitDistanceCost),
-            unitDurationCost.value_or(this->unitDurationCost),
-            profile.value_or(this->profile),
-            startLate.value_or(this->startLate),
-            initialLoad.value_or(this->initialLoad),
-            reloadDepots.value_or(this->reloadDepots),
-            maxReloads.value_or(this->maxReloads),
-            maxDuration.value_or(this->maxDuration),
-            unitOvertimeCost.value_or(this->unitOvertimeCost),
-            name.value_or(this->name),
-            forbiddenWindows.value_or(this->forbiddenWindows),
-            overtimeStart.value_or(this->overtimeStart)};
-}
-
 size_t ProblemData::VehicleType::maxTrips() const
 {
     // When maxReloads is at its maximum size, maxReloads + 1 wraps around to 0,
@@ -799,24 +784,35 @@ void ProblemData::validate() const
                                             "all zero.");
         }
     }
-}
 
-ProblemData ProblemData::replace(
-    std::optional<std::vector<Client>> &clients,
-    std::optional<std::vector<Depot>> &depots,
-    std::optional<std::vector<VehicleType>> &vehicleTypes,
-    std::optional<std::vector<Matrix<Distance>>> &distMats,
-    std::optional<std::vector<Matrix<Duration>>> &durMats,
-    std::optional<std::vector<ClientGroup>> &groups,
-    std::optional<std::vector<SameVehicleGroup>> &sameVehicleGroups) const
-{
-    return {clients.value_or(clients_),
-            depots.value_or(depots_),
-            vehicleTypes.value_or(vehicleTypes_),
-            distMats.value_or(dists_),
-            durMats.value_or(durs_),
-            groups.value_or(groups_),
-            sameVehicleGroups.value_or(sameVehicleGroups_)};
+    // Penalty and allowed-set checks.
+    if (penalties_.size() != numProfiles())
+        throw std::invalid_argument("Expected one penalty vector per profile.");
+
+    if (allowed_.size() != numProfiles())
+        throw std::invalid_argument("Expected one allowed set per profile.");
+
+    for (size_t profile = 0; profile != numProfiles(); ++profile)
+    {
+        if (penalties_[profile].size() != numLocations())
+            throw std::invalid_argument("Penalty vector shape does not match "
+                                        "the problem size.");
+
+        // Exact route evaluation sums penalties over a trip's clients, while
+        // the search layer's cumPenalty prefix runs over every visit, depots
+        // included. The two agree only if depots are free, so require it here
+        // rather than leave the divergence latent. Use Depot::reloadCost to
+        // price a reload.
+        for (size_t depot = 0; depot != numDepots(); ++depot)
+            if (penalties_[profile][depot] != 0)
+                throw std::invalid_argument("Depot penalties must be zero.");
+
+        // DynamicBitset rounds its size up to a multiple of its block size, so
+        // this is a lower bound rather than an exact match.
+        if (allowed_[profile].size() < numLocations())
+            throw std::invalid_argument("Allowed set shape does not match the "
+                                        "problem size.");
+    }
 }
 
 ProblemData::ProblemData(std::vector<Client> clients,
@@ -825,7 +821,9 @@ ProblemData::ProblemData(std::vector<Client> clients,
                          std::vector<Matrix<Distance>> distMats,
                          std::vector<Matrix<Duration>> durMats,
                          std::vector<ClientGroup> groups,
-                         std::vector<SameVehicleGroup> sameVehicleGroups)
+                         std::vector<SameVehicleGroup> sameVehicleGroups,
+                         std::vector<std::vector<Cost>> penalties,
+                         std::vector<DynamicBitset> allowed)
     : dists_(std::move(distMats)),
       durs_(std::move(durMats)),
       clients_(std::move(clients)),
@@ -833,6 +831,17 @@ ProblemData::ProblemData(std::vector<Client> clients,
       vehicleTypes_(std::move(vehicleTypes)),
       groups_(std::move(groups)),
       sameVehicleGroups_(std::move(sameVehicleGroups)),
+      penalties_(normalisePenalties(std::move(penalties),
+                                    dists_.size(),
+                                    clients_.size() + depots_.size())),
+      allowed_(normaliseAllowed(
+          std::move(allowed), dists_.size(), clients_.size() + depots_.size())),
+      // normaliseAllowed and the NIF both set every bit before clearing the
+      // forbidden ones, padding included, so a fully-permissive set is all().
+      hasForbidden_(std::any_of(allowed_.begin(),
+                                allowed_.end(),
+                                [](DynamicBitset const &set)
+                                { return !set.all(); })),
       numVehicles_(std::accumulate(vehicleTypes_.begin(),
                                    vehicleTypes_.end(),
                                    0,
