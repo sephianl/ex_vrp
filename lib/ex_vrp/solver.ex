@@ -41,6 +41,8 @@ defmodule ExVrp.Solver do
     log_label: nil
   ]
 
+  @repair_budget_share 0.25
+
   @doc """
   Solves a VRP model using Iterated Local Search.
 
@@ -133,7 +135,7 @@ defmodule ExVrp.Solver do
   defp solve_single(problem_data, seed, opts, solve_start) do
     stop_fn = build_stop_fn(opts)
 
-    {local_search, penalty_manager, initial_solution} =
+    {local_search, penalty_manager, initial_origin, initial_solution} =
       setup_solver(problem_data, seed, opts, solve_start)
 
     notify_progress(opts[:on_progress], %{
@@ -144,6 +146,8 @@ defmodule ExVrp.Solver do
       is_feasible: Native.solution_is_feasible(initial_solution),
       best_distance: Native.solution_distance(initial_solution)
     })
+
+    log_initial_solution(initial_origin, initial_solution, start_label(opts))
 
     total_setup_time = System.monotonic_time(:millisecond) - solve_start
     Logger.debug("Total setup time before ILS: #{total_setup_time}ms")
@@ -156,6 +160,83 @@ defmodule ExVrp.Solver do
     Logger.debug("Total solve time: #{total_time}ms (setup: #{total_setup_time}ms, ILS: #{ils_time}ms)")
 
     {:ok, result}
+  end
+
+  defp log_initial_solution(origin, solution, label) do
+    solution
+    |> Native.solution_is_feasible()
+    |> initial_solution_state(origin)
+    |> log_initial_feasibility(solution, label)
+  end
+
+  defp initial_solution_state(true, _origin), do: :feasible
+  defp initial_solution_state(false, :repair_descent), do: :reported_by_repair
+  defp initial_solution_state(false, _descended_from_empty), do: :infeasible_cold_start
+
+  defp log_initial_feasibility(:reported_by_repair, _solution, _label), do: :ok
+
+  defp log_initial_feasibility(:feasible, solution, label) do
+    Logger.debug(
+      "#{label}Initial solution is feasible: #{Native.solution_num_routes(solution)} route(s), " <>
+        "#{Native.solution_num_clients(solution)} client(s)"
+    )
+  end
+
+  defp log_initial_feasibility(:infeasible_cold_start, solution, label) do
+    Logger.debug(
+      "#{label}Initial solution is infeasible — #{describe_solution(solution)}. " <>
+        "One descent from empty does not always reach feasibility; ILS continues from here."
+    )
+  end
+
+  defp describe_solution(solution) do
+    "#{Native.solution_num_routes(solution)} route(s), " <>
+      "#{Native.solution_num_clients(solution)} client(s), " <>
+      "#{initial_violations(solution)}"
+  end
+
+  defp initial_violations(solution) do
+    [
+      violation("time warp", sum_over_routes(solution, &Native.solution_route_time_warp/2), "s"),
+      violation("excess load", sum_over_routes(solution, &route_excess_load/2), ""),
+      violation("excess distance", sum_over_routes(solution, &Native.solution_route_excess_distance/2), ""),
+      violation("same-vehicle groups split", Native.solution_num_same_vehicle_violations(solution), ""),
+      client_group_violation(solution),
+      complete_violation(Native.solution_is_complete(solution))
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> join_violations()
+  end
+
+  defp join_violations([]), do: "no violation reported"
+  defp join_violations(violations), do: Enum.join(violations, ", ")
+
+  defp violation(_label, 0, _unit), do: nil
+  defp violation(label, amount, unit), do: "#{label} #{amount}#{unit}"
+
+  defp client_group_violation(solution) do
+    client_group_violated?(
+      Native.solution_is_group_feasible(solution),
+      Native.solution_num_same_vehicle_violations(solution)
+    )
+  end
+
+  defp client_group_violated?(false, 0), do: "a client group violated"
+  defp client_group_violated?(_group_feasible, _same_vehicle_violations), do: nil
+
+  defp complete_violation(true), do: nil
+  defp complete_violation(false), do: "required clients unvisited"
+
+  defp route_excess_load(solution, route_idx) do
+    solution
+    |> Native.solution_route_excess_load(route_idx)
+    |> Enum.sum()
+  end
+
+  defp sum_over_routes(solution, measure) do
+    route_count = Native.solution_num_routes(solution)
+
+    Enum.sum_by(0..(route_count - 1)//1, &measure.(solution, &1))
   end
 
   defp start_label(opts), do: format_label(opts[:log_label], opts[:start_index])
@@ -282,16 +363,16 @@ defmodule ExVrp.Solver do
     local_search_time = System.monotonic_time(:millisecond) - local_search_start
     Logger.debug("LocalSearch created (neighbours computed) in #{local_search_time}ms")
 
-    initial_solution =
+    {origin, initial_solution} =
       build_initial_solution(problem_data, local_search, penalty_manager, opts, solve_start)
 
-    {local_search, penalty_manager, initial_solution}
+    {local_search, penalty_manager, origin, initial_solution}
   end
 
   defp build_initial_solution(problem_data, local_search, penalty_manager, opts, solve_start) do
     initial_solution_start = System.monotonic_time(:millisecond)
 
-    solution =
+    origin_and_solution =
       case typed_initial_routes(opts[:initial_routes]) do
         [] ->
           build_initial_via_local_search(problem_data, local_search, penalty_manager, opts, solve_start)
@@ -310,7 +391,7 @@ defmodule ExVrp.Solver do
     initial_solution_time = System.monotonic_time(:millisecond) - initial_solution_start
     Logger.debug("Initial solution generated in #{initial_solution_time}ms")
 
-    solution
+    origin_and_solution
   end
 
   defp build_initial_from_routes_or_fallback(
@@ -321,33 +402,105 @@ defmodule ExVrp.Solver do
          solve_start,
          typed_routes
        ) do
-    {:ok, sol} = Native.create_solution_from_routes_with_types(problem_data, typed_routes)
-    sol
-  rescue
-    e in [ArgumentError, RuntimeError] ->
-      Logger.warning("ExVrp.Solver: :initial_routes is invalid, falling back to empty start: #{Exception.message(e)}")
+    problem_data
+    |> solution_from_typed_routes(typed_routes)
+    |> start_from_routes_or_fallback(problem_data, local_search, penalty_manager, opts, solve_start)
+  end
 
-      build_initial_via_local_search(problem_data, local_search, penalty_manager, opts, solve_start)
+  defp solution_from_typed_routes(problem_data, typed_routes) do
+    Native.create_solution_from_routes_with_types(problem_data, typed_routes)
+  rescue
+    e in [ArgumentError, RuntimeError] -> {:error, Exception.message(e)}
+  end
+
+  defp start_from_routes_or_fallback({:ok, sol}, _problem_data, local_search, penalty_manager, opts, solve_start) do
+    repair_if_infeasible(
+      Native.solution_is_feasible(sol),
+      sol,
+      local_search,
+      penalty_manager,
+      opts,
+      solve_start
+    )
+  end
+
+  defp start_from_routes_or_fallback({:error, message}, problem_data, local_search, penalty_manager, opts, solve_start) do
+    Logger.warning("ExVrp.Solver: :initial_routes is invalid, falling back to empty start: #{message}")
+
+    build_initial_via_local_search(problem_data, local_search, penalty_manager, opts, solve_start)
+  end
+
+  defp repair_if_infeasible(true, solution, _local_search, _penalty_manager, _opts, _solve_start),
+    do: {:warm_start, solution}
+
+  defp repair_if_infeasible(false, seed, local_search, penalty_manager, opts, solve_start) do
+    Logger.warning("#{start_label(opts)}Warm start is infeasible — #{initial_violations(seed)}; repairing it")
+
+    kept =
+      seed
+      |> descend(local_search, penalty_manager, repair_budget_ms(opts, solve_start))
+      |> keep_cheaper_of(seed, penalty_manager)
+
+    log_repair(Native.solution_is_feasible(kept), kept, opts)
+
+    {:repair_descent, kept}
+  end
+
+  defp keep_cheaper_of(repaired, seed, penalty_manager) do
+    {:ok, max_cost_eval} = PenaltyManager.max_cost_evaluator(penalty_manager)
+
+    cheaper_solution(
+      Native.solution_penalised_cost(repaired, max_cost_eval) <= Native.solution_penalised_cost(seed, max_cost_eval),
+      repaired,
+      seed
+    )
+  end
+
+  defp cheaper_solution(true, repaired, _seed), do: repaired
+  defp cheaper_solution(false, _repaired, seed), do: seed
+
+  defp log_repair(true, _repaired, opts) do
+    Logger.info("#{start_label(opts)}Warm start repaired to a feasible solution")
+  end
+
+  defp log_repair(false, repaired, opts) do
+    Logger.warning("#{start_label(opts)}Warm start could not be repaired — #{initial_violations(repaired)}")
   end
 
   defp build_initial_via_local_search(problem_data, local_search, penalty_manager, opts, solve_start) do
-    {:ok, max_cost_eval} = PenaltyManager.max_cost_evaluator(penalty_manager)
     {:ok, empty_solution} = Native.create_solution_from_routes(problem_data, [])
 
-    max_runtime_ms = resolve_max_runtime_ms(opts)
+    {:descent_from_empty,
+     descend(empty_solution, local_search, penalty_manager, remaining_budget_ms(opts, solve_start))}
+  end
 
-    init_timeout_ms =
-      if max_runtime_ms do
-        elapsed = System.monotonic_time(:millisecond) - solve_start
-        max(round(max_runtime_ms) - elapsed, 1)
-      else
-        0
-      end
+  defp descend(solution, local_search, penalty_manager, budget_ms) do
+    {:ok, max_cost_eval} = PenaltyManager.max_cost_evaluator(penalty_manager)
 
-    {:ok, initial_solution} =
-      Native.local_search_search_run(local_search, empty_solution, max_cost_eval, init_timeout_ms)
+    {:ok, descended} = Native.local_search_search_run(local_search, solution, max_cost_eval, budget_ms)
 
-    initial_solution
+    descended
+  end
+
+  defp repair_budget_ms(opts, solve_start) do
+    opts
+    |> remaining_budget_ms(solve_start)
+    |> repair_share_of()
+  end
+
+  defp repair_share_of(0), do: 0
+  defp repair_share_of(remaining_ms), do: max(round(remaining_ms * @repair_budget_share), 1)
+
+  defp remaining_budget_ms(opts, solve_start) do
+    opts
+    |> resolve_max_runtime_ms()
+    |> budget_left(solve_start)
+  end
+
+  defp budget_left(nil, _solve_start), do: 0
+
+  defp budget_left(max_runtime_ms, solve_start) do
+    max(round(max_runtime_ms) - (System.monotonic_time(:millisecond) - solve_start), 1)
   end
 
   defp typed_initial_routes(nil), do: []

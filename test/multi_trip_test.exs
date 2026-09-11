@@ -809,7 +809,8 @@ defmodule ExVrp.MultiTripTest do
         )
         |> Model.set_euclidean_matrices([{0, 0}, {0, 0}])
 
-      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+      {:ok, result} =
+        Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000), num_starts: 1)
 
       # Should complete without hanging
       assert result.best
@@ -848,7 +849,8 @@ defmodule ExVrp.MultiTripTest do
         )
         |> Model.set_euclidean_matrices([{0, 0}, {0, 0}])
 
-      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+      {:ok, result} =
+        Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000), num_starts: 1)
 
       # Should complete without hanging
       assert result.best
@@ -889,7 +891,8 @@ defmodule ExVrp.MultiTripTest do
         )
         |> Model.set_euclidean_matrices([{0, 0}, {0, 0}])
 
-      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+      {:ok, result} =
+        Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000), num_starts: 1)
 
       # Should complete without hanging
       assert result.best
@@ -931,7 +934,8 @@ defmodule ExVrp.MultiTripTest do
         |> Model.set_duration_matrices([duration_matrix])
         |> Model.set_distance_matrices([duration_matrix])
 
-      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+      {:ok, result} =
+        Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000), num_starts: 1)
 
       # Should complete without hanging
       assert result.best
@@ -976,7 +980,8 @@ defmodule ExVrp.MultiTripTest do
         )
         |> Model.set_euclidean_matrices([{0, 0}, {0, 0}, {1, 0}])
 
-      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+      {:ok, result} =
+        Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000), num_starts: 1)
 
       # Should complete without hanging
       assert result.best
@@ -1021,7 +1026,8 @@ defmodule ExVrp.MultiTripTest do
         )
         |> Model.set_euclidean_matrices([{0, 0}, {0, 0}, {1, 0}])
 
-      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+      {:ok, result} =
+        Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000), num_starts: 1)
 
       # Should complete without hanging
       assert result.best
@@ -1083,7 +1089,8 @@ defmodule ExVrp.MultiTripTest do
         )
         |> Model.set_euclidean_matrices([{0, 0}, {0, 0}, {1, 0}, {2, 0}, {3, 0}])
 
-      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+      {:ok, result} =
+        Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000), num_starts: 1)
 
       # Should complete without hanging
       assert result.best
@@ -1158,7 +1165,8 @@ defmodule ExVrp.MultiTripTest do
         )
         |> Model.set_euclidean_matrices([{0, 0}, {0, 0}, {1, 0}, {2, 0}, {3, 0}])
 
-      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000))
+      {:ok, result} =
+        Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(1000), num_starts: 1)
 
       # Should complete without hanging
       assert result.best

@@ -202,14 +202,25 @@ defmodule ExVrp.Solution do
   def complete?(%__MODULE__{is_complete: complete}), do: complete
 
   @doc """
-  Checks if the solution is group feasible (same-vehicle constraints satisfied).
+  Checks if the solution satisfies both kinds of group constraint.
 
-  Returns true if all clients in each same-vehicle group that are visited
-  are on the same route.
+  Two unrelated constraints share this one flag: the mutually exclusive client
+  groups a disjunctive time window expands into, and the same-vehicle groups
+  that keep a set of clients on one route. False does not say which broke —
+  pair it with `num_same_vehicle_violations/1`, which is zero when the
+  violation is a client group.
   """
   @spec group_feasible?(t()) :: boolean()
   def group_feasible?(%__MODULE__{solution_ref: solution_ref}) do
     Native.solution_is_group_feasible(solution_ref)
+  end
+
+  @doc """
+  How many same-vehicle groups this solution splits across routes.
+  """
+  @spec num_same_vehicle_violations(t()) :: non_neg_integer()
+  def num_same_vehicle_violations(%__MODULE__{solution_ref: solution_ref}) do
+    Native.solution_num_same_vehicle_violations(solution_ref)
   end
 
   @doc """

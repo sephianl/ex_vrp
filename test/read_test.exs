@@ -77,11 +77,6 @@ defmodule ExVrp.ReadTest do
       # Check that capacity is scaled by 10
       veh_type = hd(model.vehicle_types)
       assert veh_type.capacity == [60_000]
-
-      # Check coordinates are scaled
-      depot = hd(model.depots)
-
-      first_client = hd(model.clients)
     end
 
     test "reads instance with multiple depots" do
@@ -94,8 +89,6 @@ defmodule ExVrp.ReadTest do
 
       # Two vehicle types (one per depot)
       assert length(model.vehicle_types) == 2
-
-      [depot1, depot2] = model.depots
 
       # Check vehicle types have correct depots
       veh_type1 = Enum.find(model.vehicle_types, &(&1.start_depot == 0))
@@ -204,29 +197,28 @@ defmodule ExVrp.ReadTest do
       path = Path.join(@data_dir, "OkSmall.txt")
       model = Read.read(path, round_func: :round)
 
-      # Values are already integers, so should be unchanged
-      depot = hd(model.depots)
+      assert hd(model.distance_matrices) == unrounded_distances()
     end
 
     test ":trunc truncates to integer" do
       path = Path.join(@data_dir, "OkSmall.txt")
       model = Read.read(path, round_func: :trunc)
 
-      depot = hd(model.depots)
+      assert hd(model.distance_matrices) == unrounded_distances()
     end
 
     test ":exact scales by 1000" do
       path = Path.join(@data_dir, "OkSmall.txt")
       model = Read.read(path, round_func: :exact)
 
-      depot = hd(model.depots)
+      assert hd(model.distance_matrices) == scaled_distances(1000)
     end
 
     test "custom rounding function" do
       path = Path.join(@data_dir, "OkSmall.txt")
       model = Read.read(path, round_func: fn x -> x * 2 end)
 
-      depot = hd(model.depots)
+      assert hd(model.distance_matrices) == scaled_distances(2)
     end
 
     test "raises on unknown rounding function" do
@@ -242,8 +234,7 @@ defmodule ExVrp.ReadTest do
       path = Path.join(@data_dir, "OkSmall.txt")
       model = Read.read(path, round_func: :none)
 
-      # Should be integers
-      depot = hd(model.depots)
+      assert hd(model.distance_matrices) == unrounded_distances()
     end
   end
 
@@ -365,5 +356,19 @@ defmodule ExVrp.ReadTest do
       assert result1.stats.initial_cost == result2.stats.initial_cost
       assert result1.best.routes == result2.best.routes
     end
+  end
+
+  defp unrounded_distances do
+    [
+      [0, 1544, 1944, 1931, 1476],
+      [1726, 0, 1992, 1427, 1593],
+      [1965, 1975, 0, 621, 1090],
+      [2063, 1433, 647, 0, 818],
+      [1475, 1594, 1090, 828, 0]
+    ]
+  end
+
+  defp scaled_distances(factor) do
+    Enum.map(unrounded_distances(), fn row -> Enum.map(row, &(&1 * factor)) end)
   end
 end

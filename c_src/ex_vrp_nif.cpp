@@ -1433,7 +1433,12 @@ bool solution_is_feasible([[maybe_unused]] ErlNifEnv *env,
 FINE_NIF(solution_is_feasible, 0);
 
 /**
- * Check if solution is group feasible (same-vehicle constraints satisfied).
+ * Check if solution is group feasible.
+ *
+ * Covers BOTH group constraints at once: the mutually exclusive client groups a
+ * disjunctive time window expands into, and the same-vehicle groups that keep a
+ * set of clients on one route. A false here does not say which was broken —
+ * call solution_num_same_vehicle_violations to tell them apart.
  */
 bool solution_is_group_feasible(
     [[maybe_unused]] ErlNifEnv *env,
@@ -1443,6 +1448,22 @@ bool solution_is_group_feasible(
 }
 
 FINE_NIF(solution_is_group_feasible, 0);
+
+/**
+ * How many same-vehicle groups the solution splits across routes.
+ *
+ * Zero alongside an infeasible isGroupFeasible means the violation is a client
+ * group, not a same-vehicle one.
+ */
+int64_t solution_num_same_vehicle_violations(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SolutionResource> solution_resource)
+{
+    return static_cast<int64_t>(
+        solution_resource->solution.numSameVehicleViolations());
+}
+
+FINE_NIF(solution_num_same_vehicle_violations, 0);
 
 /**
  * Check if solution is complete.
@@ -5140,6 +5161,44 @@ insert_cost_nif([[maybe_unused]] ErlNifEnv *env,
 }
 
 FINE_NIF(insert_cost_nif, 0);
+
+// insert_trip_cost: delta cost of opening a new trip (reload depot at idx,
+// then U) in the given route
+int64_t insert_trip_cost_nif(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchNodeResource> u_resource,
+    fine::ResourcePtr<SearchRouteResource> route_resource,
+    int64_t depot,
+    int64_t idx,
+    fine::ResourcePtr<ProblemDataResource> problem_resource,
+    fine::ResourcePtr<CostEvaluatorResource> evaluator_resource)
+{
+    auto const &data = *problem_resource->data;
+    auto *route = route_resource->route();
+
+    if (!route)
+        throw std::invalid_argument("route resource holds no route");
+
+    // Both indices come straight from Elixir, and the asserts that guard them
+    // downstream are compiled out by -DNDEBUG in release builds. An
+    // out-of-range depot reinterprets a Client as a Depot; an out-of-range idx
+    // walks off the route. Either one segfaults the BEAM.
+    if (depot < 0 || static_cast<size_t>(depot) >= data.numDepots())
+        throw std::invalid_argument("depot is out of range");
+
+    if (idx < 1 || static_cast<size_t>(idx) >= route->size())
+        throw std::invalid_argument("idx must be in [1, route size)");
+
+    return static_cast<int64_t>(
+        search::insertTripCost(u_resource->node,
+                               route,
+                               static_cast<size_t>(depot),
+                               static_cast<size_t>(idx),
+                               data,
+                               evaluator_resource->evaluator));
+}
+
+FINE_NIF(insert_trip_cost_nif, 0);
 
 // remove_cost: delta cost of removing U from its route
 int64_t

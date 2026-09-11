@@ -9,6 +9,17 @@ defmodule ExVrp.ClientTest do
   describe "new/1" do
     test "creates client with required fields" do
       client = Client.new([])
+
+      assert client.delivery == [0]
+      assert client.pickup == [0]
+      assert client.service_duration == 0
+      assert client.tw_early == 0
+      assert client.tw_late == :infinity
+      assert client.release_time == 0
+      assert client.prize == 0
+      assert client.required == true
+      assert client.group == nil
+      assert client.name == ""
     end
 
     test "creates client with all fields" do

@@ -1,64 +1,11 @@
 #include "RelocateWithDepot.h"
 
 #include "Route.h"
+#include "Segments.h"
 
 #include <cassert>
 
 using pyvrp::search::RelocateWithDepot;
-
-namespace
-{
-/**
- * Simple wrapper class that implements the required evaluation interface for
- * a single reload depot.
- */
-class ReloadDepotSegment
-{
-    size_t depot_;
-
-public:
-    ReloadDepotSegment([[maybe_unused]] pyvrp::ProblemData const &data,
-                       size_t depot)
-        : depot_(depot)
-    {
-        assert(depot < data.numDepots());  // must be an actual depot
-    }
-
-    pyvrp::search::Route const *route() const { return nullptr; }
-
-    size_t first() const { return depot_; }
-    size_t last() const { return depot_; }
-    size_t size() const { return 1; }
-
-    bool startsAtReloadDepot() const { return true; }
-    bool endsAtReloadDepot() const { return true; }
-
-    pyvrp::Distance distance([[maybe_unused]] size_t profile) const
-    {
-        return 0;
-    }
-
-    pyvrp::Cost penalty([[maybe_unused]] size_t profile) const
-    {
-        // Depot penalties are required to be zero (ProblemData::validate), so
-        // a reload depot contributes nothing to the objective's penalty term.
-        return 0;
-    }
-
-    pyvrp::DurationSegment duration([[maybe_unused]] size_t profile) const
-    {
-        // Empty segment - depot service time is handled by
-        // Proposal::duration().
-        return pyvrp::DurationSegment(
-            0, 0, 0, std::numeric_limits<pyvrp::Duration>::max(), 0);
-    }
-
-    pyvrp::LoadSegment load([[maybe_unused]] size_t dimension) const
-    {
-        return {};
-    }
-};
-}  // namespace
 
 void RelocateWithDepot::evalDepotBefore(Cost fixedCost,
                                         Route::Node *U,

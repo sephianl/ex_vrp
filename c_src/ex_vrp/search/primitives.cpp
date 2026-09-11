@@ -1,56 +1,9 @@
 #include "primitives.h"
 
+#include "Segments.h"
+
 #include <cassert>
-
-namespace
-{
-/**
- * Simple wrapper class that implements the required evaluation interface for
- * a single client that might not currently be in the solution.
- */
-class ClientSegment
-{
-    pyvrp::ProblemData const &data;
-    size_t client;
-
-public:
-    ClientSegment(pyvrp::ProblemData const &data, size_t client)
-        : data(data), client(client)
-    {
-        assert(client >= data.numDepots());  // must be an actual client
-    }
-
-    pyvrp::search::Route const *route() const { return nullptr; }
-
-    size_t first() const { return client; }
-    size_t last() const { return client; }
-    size_t size() const { return 1; }
-
-    bool startsAtReloadDepot() const { return false; }
-    bool endsAtReloadDepot() const { return false; }
-
-    pyvrp::Distance distance([[maybe_unused]] size_t profile) const
-    {
-        return 0;
-    }
-
-    pyvrp::Cost penalty(size_t profile) const
-    {
-        return data.penalty(profile, client);
-    }
-
-    pyvrp::DurationSegment duration([[maybe_unused]] size_t profile) const
-    {
-        pyvrp::ProblemData::Client const &clientData = data.location(client);
-        return {clientData};
-    }
-
-    pyvrp::LoadSegment load(size_t dimension) const
-    {
-        return {data.location(client), dimension};
-    }
-};
-}  // namespace
+#include <limits>
 
 pyvrp::Cost pyvrp::search::insertCost(Route::Node *U,
                                       Route::Node *V,
@@ -71,6 +24,38 @@ pyvrp::Cost pyvrp::search::insertCost(Route::Node *U,
         Route::Proposal(route->before(V->idx()),
                         ClientSegment(data, U->client()),
                         route->after(V->idx() + 1)));
+
+    return deltaCost;
+}
+
+pyvrp::Cost pyvrp::search::insertTripCost(Route::Node *U,
+                                          Route const *route,
+                                          size_t depot,
+                                          size_t idx,
+                                          ProblemData const &data,
+                                          CostEvaluator const &costEvaluator)
+{
+    // Not a move that can be made, so it must never win a `<` comparison
+    // against a real delta cost the way a zero would.
+    if (!route || U->isDepot())
+        return std::numeric_limits<Cost>::max();
+
+    assert(idx >= 1 && idx < route->size());
+
+    ProblemData::Client const &client = data.location(U->client());
+    ProblemData::Depot const &depotData = data.location(depot);
+
+    // Reload cost is not part of what deltaCost recomputes, so it is added
+    // here the way RelocateWithDepot does.
+    Cost deltaCost = Cost(route->empty()) * route->fixedVehicleCost()
+                     + depotData.reloadCost - client.prize;
+
+    costEvaluator.deltaCost<true>(
+        deltaCost,
+        Route::Proposal(route->before(idx - 1),
+                        ReloadDepotSegment(data, depot),
+                        ClientSegment(data, U->client()),
+                        route->after(idx)));
 
     return deltaCost;
 }

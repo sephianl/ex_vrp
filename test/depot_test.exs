@@ -9,6 +9,12 @@ defmodule ExVrp.DepotTest do
   describe "new/1" do
     test "creates depot with required fields" do
       depot = Depot.new([])
+
+      assert depot.tw_early == 0
+      assert depot.tw_late == :infinity
+      assert depot.service_duration == 0
+      assert depot.reload_cost == 0
+      assert depot.name == ""
     end
 
     test "creates depot with all fields" do

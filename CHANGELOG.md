@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.11.0
+
+### Fixed
+
+- **Opening a new trip is priced in the objective's own currency.** `Solution::insert`'s
+  multi-trip branch estimated a new trip as raw distance units plus reload cost minus the prize,
+  then compared that against `insertCost()`'s exact penalised delta in cost units. The two are
+  not the same unit, so whenever a unit of distance cost more than one the estimate understated
+  and opening a new trip beat plain insertions that were genuinely cheaper. It now goes through
+  a new exact `insertTripCost` primitive. Benchmark objectives are unchanged — the cost was
+  search effort, not solution quality.
+
+  `LocalSearch::improveWithMultiTrip` keeps its optimistic estimate on purpose; the comment
+  there records why, and the measurement.
+
+### Added
+
+- `ExVrp.Native.insert_trip_cost_nif/6`, backing the `insertTripCost` primitive above and
+  completing the set alongside `insert_cost_nif/4` and `remove_cost_nif/3`. It prices opening a
+  new trip in a route — a reload depot inserted at an index, with the node directly after it —
+  as an exact penalised delta, reload cost included.
+
+- `ExVrp.Solution.num_same_vehicle_violations/1`, and the NIF behind it. `isGroupFeasible()` is
+  one flag over two unrelated constraints — the mutually exclusive client groups a disjunctive
+  time window expands into, and the same-vehicle groups that keep clients on one route — so a
+  caller could not tell which broke. The count is zero exactly when the violated group was a
+  client group.
+
+- **An infeasible warm start is now reported and repaired rather than seeded silently.**
+  `IteratedLocalSearch.run/7` takes the initial solution as its incumbent and only replaces it
+  with something cheaper, so a seed that does not satisfy the model leaves the search with no
+  feasible incumbent to fall back on — and nothing said so. `:initial_routes` producing an
+  infeasible solution now runs the same local-search descent that a cold start uses, capped at a
+  quarter of the remaining runtime, and logs the outcome with a violation breakdown (time warp,
+  excess load, excess distance, split groups, unvisited required clients).
+
+  **This is a partial repair.** The descent minimises penalised cost, not violations, so it can
+  take on a client and the time warp that comes with it and end further from feasibility than it
+  started. The seed is kept unless the repair is cheaper on penalised cost. A repair that only
+  ever removes is the outstanding work.
+
 ## 0.10.0
 
 The objective gains a third channel. Penalties are per-`(profile, location)` costs carried in

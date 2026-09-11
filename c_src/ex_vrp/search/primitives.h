@@ -36,6 +36,38 @@ Cost insertCost(Route::Node *U,
                 CostEvaluator const &costEvaluator);
 
 /**
+ * Evaluates the delta cost of opening a new trip in the given route: a reload
+ * depot inserted at idx, and U directly after it. The evaluation is exact.
+ *
+ * Parameters
+ * ----------
+ * U
+ *     Node to insert. Must not be a depot.
+ * route
+ *     Route to open the new trip in.
+ * depot
+ *     Reload depot to open the new trip at.
+ * idx
+ *     Index the reload depot is inserted at, so that the resulting route is
+ *     the nodes before idx, then the depot, then U, then the nodes from idx.
+ * data
+ *     Problem data instance.
+ * cost_evaluator
+ *     Cost evaluator to use.
+ *
+ * Returns
+ * -------
+ * int
+ *     Exact delta cost of opening the new trip, reload cost included.
+ */
+Cost insertTripCost(Route::Node *U,
+                    Route const *route,
+                    size_t depot,
+                    size_t idx,
+                    ProblemData const &data,
+                    CostEvaluator const &costEvaluator);
+
+/**
  * Evaluates the delta cost of inserting U in the place of V. The evaluation is
  * exact.
  *

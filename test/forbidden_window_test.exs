@@ -227,7 +227,7 @@ defmodule ExVrp.ForbiddenWindowTest do
         clients
         |> Enum.reduce(
           Model.add_depot(Model.new(), tw_early: 0, tw_late: 1200, service_duration: 10),
-          fn {x, y, delivery, tw_early, tw_late, service_duration, required, prize}, model ->
+          fn {_x, _y, delivery, tw_early, tw_late, service_duration, required, prize}, model ->
             Model.add_client(model,
               delivery: [delivery],
               tw_early: tw_early,
