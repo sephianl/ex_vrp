@@ -1284,7 +1284,24 @@ void LocalSearch::improveWithMultiTrip(
                     continue;  // Would exceed the hard duration cap
             }
 
-            // Calculate cost: prize gained minus travel cost
+            // Calculate cost: prize gained minus travel cost.
+            //
+            // This is deliberately optimistic, and deliberately not the
+            // objective: raw distance units against a prize, rather than the
+            // penalised delta insertTripCost() would give. Replacing it with
+            // the exact figure was tried and reverted. It is correct, and it
+            // makes this pass nearly a no-op — it can then only find trips the
+            // main search would already have taken, and the whole point of
+            // this last-resort pass is to place clients that search gave up
+            // on. Measured on the 570-client production instance: exact
+            // pricing here dropped coverage from 426/432 clients to 321/346,
+            // failing the 400 gate on three of five seeds.
+            //
+            // Sibling site Solution.cpp does use insertTripCost(); that one is
+            // a genuine comparison against an exactly-priced alternative, so
+            // the two numbers have to be in the same currency. Here there is
+            // no alternative to compare against — the threshold is a bare
+            // zero — so the optimism is the mechanism, not a bug.
             Cost tripCost = -static_cast<Cost>(clientData.prize)
                             + static_cast<Cost>(dist.get());
 

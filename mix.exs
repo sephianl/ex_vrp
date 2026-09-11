@@ -1,7 +1,7 @@
 defmodule ExVrp.MixProject do
   use Mix.Project
 
-  @version "0.10.0"
+  @version "0.11.0"
   @github_url "https://github.com/sephianl/ex_vrp"
 
   def project do
@@ -15,7 +15,7 @@ defmodule ExVrp.MixProject do
       compilers: [:elixir_make] ++ Mix.compilers(),
       make_targets: ["all"],
       make_clean: ["clean"],
-      make_force_build: System.get_env("EX_VRP_FORCE_BUILD") in ["1", "true"],
+      make_force_build: build_nif_from_source?(),
       make_args: ["-j#{System.schedulers_online()}"],
       make_env: &make_env/0,
       make_precompiler: make_precompiler(),
@@ -76,6 +76,12 @@ defmodule ExVrp.MixProject do
   # Precompiled binaries are downloaded when this package is installed as
   # a hex dependency. When working in this repo, mix always builds from source.
   defp make_precompiler, do: {:nif, CCPrecompiler}
+
+  defp build_nif_from_source? do
+    System.get_env("EX_VRP_FORCE_BUILD") in ["1", "true"] or git_checkout?()
+  end
+
+  defp git_checkout?, do: File.exists?(Path.join(__DIR__, ".git"))
 
   defp make_env do
     fine_dir =

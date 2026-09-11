@@ -27,6 +27,7 @@ defmodule ExVrp.Native do
     solution_routes: 1,
     solution_is_feasible: 1,
     solution_is_group_feasible: 1,
+    solution_num_same_vehicle_violations: 1,
     solution_is_complete: 1,
     solution_num_routes: 1,
     solution_num_clients: 1,
@@ -194,6 +195,7 @@ defmodule ExVrp.Native do
     relocate_with_depot_supports_nif: 1,
     # Primitive cost functions
     insert_cost_nif: 4,
+    insert_trip_cost_nif: 6,
     remove_cost_nif: 3,
     inplace_cost_nif: 4,
     # RNG
@@ -292,6 +294,9 @@ defmodule ExVrp.Native do
 
   @spec solution_is_group_feasible(reference()) :: boolean()
   def solution_is_group_feasible(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
+
+  @spec solution_num_same_vehicle_violations(reference()) :: non_neg_integer()
+  def solution_num_same_vehicle_violations(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
 
   @spec solution_is_complete(reference()) :: boolean()
   def solution_is_complete(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
@@ -1196,6 +1201,16 @@ defmodule ExVrp.Native do
   Returns 0 if the move is not possible (e.g., inserting a depot).
   """
   def insert_cost_nif(_u_node, _v_node, _problem_data, _cost_evaluator), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Computes the delta cost of opening a new trip in `route`: the reload depot
+  `depot` inserted at `idx`, and node U directly after it.
+
+  The resulting route is the nodes before `idx`, then the depot, then U, then
+  the nodes from `idx` onwards. Reload cost is included.
+  """
+  def insert_trip_cost_nif(_u_node, _route, _depot, _idx, _problem_data, _cost_evaluator),
+    do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Computes the delta cost of removing node U from its route.

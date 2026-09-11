@@ -68,10 +68,15 @@ Requires C++20 compiler (gcc 11+ or clang 14+).
 
 ### Code Style
 
+**Read [STYLE.md](STYLE.md)** — the 13 non-negotiable rules, shared with Zelo. The ones that bite
+most often here:
+
 - No inline comments on code — explain via function names and moduledoc
 - Pattern match on function heads, not `case` in body
 - Shallow nesting — extract helpers early
-- No `opts` maps; use keyword lists or explicit parameters
+- No `opts` keyword lists as parameters; use explicit, well-named ones
+- Every piece of logic in exactly one place — extend the existing function, don't copy it
+- Names must be meaningful where they are referenced, not just where they are defined
 
 ### Adding New Features
 
