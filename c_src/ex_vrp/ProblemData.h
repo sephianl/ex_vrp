@@ -445,6 +445,7 @@ public:
      *     max_duration: int | None = None,
      *     unit_overtime_cost: int = 0,
      *     overtime_start: int | None = None,
+     *     max_distance_per_trip: int = np.iinfo(np.int64).max,
      *     *,
      *     name: str = "",
      * )
@@ -479,30 +480,25 @@ public:
      *     to let routes run past it at additional cost. Unconstrained if not
      *     explicitly provided.
      * max_distance
-     *     Maximum route distance. Unconstrained if not explicitly provided.
-     * unit_distance_cost
-     *     Cost per unit of distance travelled by vehicles of this type. Default
-     *     1.
-     * unit_duration_cost
-     *     Cost per unit of duration on routes serviced by vehicles of this
-     *     type. Default 0.
-     * profile
-     *     This vehicle type's routing profile. Default 0, the first profile.
-     * start_late
-     *     Latest start of the vehicle type's shift. Unconstrained if not
-     *     provided.
-     * initial_load
-     *     Load already on the vehicle that need to be dropped off at a depot.
-     *     This load is present irrespective of any client visits. By default
-     *     this value is zero, and the vehicle only considers loads from client
-     *     visits.
-     * reload_depots
-     *     List of reload depots (location indices) this vehicle may visit along
-     *     its route, to empty and reload for subsequent client visits. Defaults
-     *     to an empty list, in which case no reloads are allowed.
-     * max_reloads
-     *     Maximum number of reloads the vehicle may perform on a route.
-     *     Unconstrained if not explicitly provided.
+     *     Maximum distance of the whole route, summed over every trip. Models a
+     *     vehicle that never refuels or recharges along its route.
+     * Unconstrained if not explicitly provided. max_distance_per_trip Maximum
+     * distance of any single trip, reset at every reload depot. Models a
+     * vehicle that refuels or recharges whenever it reloads. Independent of
+     * :py:attr:`~max_distance`: set either, both, or neither. Unconstrained if
+     * not explicitly provided. unit_distance_cost Cost per unit of distance
+     * travelled by vehicles of this type. Default 1. unit_duration_cost Cost
+     * per unit of duration on routes serviced by vehicles of this type. Default
+     * 0. profile This vehicle type's routing profile. Default 0, the first
+     * profile. start_late Latest start of the vehicle type's shift.
+     * Unconstrained if not provided. initial_load Load already on the vehicle
+     * that need to be dropped off at a depot. This load is present irrespective
+     * of any client visits. By default this value is zero, and the vehicle only
+     * considers loads from client visits. reload_depots List of reload depots
+     * (location indices) this vehicle may visit along its route, to empty and
+     * reload for subsequent client visits. Defaults to an empty list, in which
+     * case no reloads are allowed. max_reloads Maximum number of reloads the
+     * vehicle may perform on a route. Unconstrained if not explicitly provided.
      * max_duration
      *     Hard maximum route duration, measured as **elapsed** time from route
      *     start to route end. Idle time between stops counts against it, so
@@ -549,9 +545,12 @@ public:
      *     Nominal maximum shift duration of the route this vehicle type is
      *     assigned to. Default unconstrained.
      * max_distance
-     *     Maximum travel distance of the route this vehicle type is assigned
-     *     to. This is a very large number when the maximum distance is
-     *     unconstrained.
+     *     Maximum travel distance of the whole route this vehicle type is
+     *     assigned to, summed over every trip. This is a very large number when
+     *     the maximum distance is unconstrained.
+     * max_distance_per_trip
+     *     Maximum travel distance of any single trip, reset at every reload
+     *     depot. This is a very large number when it is unconstrained.
      * unit_distance_cost
      *     Cost per unit of distance travelled by vehicles of this type.
      * unit_duration_cost
@@ -583,14 +582,15 @@ public:
      */
     struct VehicleType
     {
-        size_t const numAvailable;         // Available vehicles of this type
-        size_t const startDepot;           // Departure depot location
-        size_t const endDepot;             // Return depot location
-        std::vector<Load> const capacity;  // This type's vehicle capacity
-        Duration const twEarly;            // Start of shift
-        Duration const twLate;             // End of shift
-        Duration const shiftDuration;      // Nominal shift duration
-        Distance const maxDistance;        // Maximum route distance
+        size_t const numAvailable;          // Available vehicles of this type
+        size_t const startDepot;            // Departure depot location
+        size_t const endDepot;              // Return depot location
+        std::vector<Load> const capacity;   // This type's vehicle capacity
+        Duration const twEarly;             // Start of shift
+        Duration const twLate;              // End of shift
+        Duration const shiftDuration;       // Nominal shift duration
+        Distance const maxDistance;         // Maximum whole-route distance
+        Distance const maxDistancePerTrip;  // Maximum distance of one trip
         Cost const fixedCost;         // Fixed cost of using this vehicle type
         Cost const unitDistanceCost;  // Variable cost per unit of distance
         Cost const unitDurationCost;  // Variable cost per unit of duration
@@ -628,7 +628,8 @@ public:
             Cost unitOvertimeCost = 0,
             std::string name = "",
             std::vector<std::pair<Duration, Duration>> forbiddenWindows = {},
-            Duration overtimeStart = std::numeric_limits<Duration>::max());
+            Duration overtimeStart = std::numeric_limits<Duration>::max(),
+            Distance maxDistancePerTrip = std::numeric_limits<Distance>::max());
 
         /**
          * Overtime incurred by a route of the given duration that ends at the

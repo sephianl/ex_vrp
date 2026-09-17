@@ -187,7 +187,11 @@ public:
     [[nodiscard]] Cost distanceCost() const;
 
     /**
-     * Distance in excess of the vehicle's maximum distance constraint.
+     * Distance in excess of the vehicle's distance constraints. Sums two
+     * independent violations: the whole route beyond ``max_distance``, and
+     * each individual trip beyond ``max_distance_per_trip``. A route can
+     * breach either, both, or neither, and both are penalised at the same
+     * rate, so this single figure is what the cost evaluator prices.
      */
     [[nodiscard]] Distance excessDistance() const;
 

@@ -14,6 +14,30 @@
 
 namespace pyvrp::search
 {
+/**
+ * A segment's travel distance, split at the trip boundaries inside it.
+ *
+ * ``head`` runs from the segment's start to its first internal reload depot,
+ * ``tail`` from its last internal reload depot to the segment's end, and
+ * ``excess`` is the already-clipped excess of every trip lying wholly inside
+ * the segment. A segment with no internal boundary has ``split == false``,
+ * carries its entire distance in ``head``, and leaves ``tail`` and ``excess``
+ * at zero.
+ *
+ * Head and tail stay unclipped on purpose. Both are partial trips that keep
+ * growing as segments are concatenated, so only the fold in
+ * ``Proposal::tripExcessDistance`` knows when either one finally closes.
+ * ``distance()`` cannot answer this: it is a plain prefix-sum subtraction that
+ * discards trip identity, which is exactly what makes it cheap.
+ */
+struct TripDistance
+{
+    Distance head = 0;
+    Distance excess = 0;
+    Distance tail = 0;
+    bool split = false;
+};
+
 // This defines the minimal interface required for a segment of visits.
 template <typename T>
 concept Segment = requires(T arg, size_t profile, size_t dimension) {
@@ -24,6 +48,7 @@ concept Segment = requires(T arg, size_t profile, size_t dimension) {
     { arg.startsAtReloadDepot() } -> std::same_as<bool>;
     { arg.endsAtReloadDepot() } -> std::same_as<bool>;
     { arg.distance(profile) } -> std::convertible_to<Distance>;
+    { arg.tripDistance(profile) } -> std::convertible_to<TripDistance>;
     { arg.penalty(profile) } -> std::convertible_to<Cost>;
     { arg.duration(profile) } -> std::convertible_to<DurationSegment>;
     { arg.load(dimension) } -> std::convertible_to<LoadSegment>;
@@ -99,9 +124,17 @@ public:
 
         /**
          * Returns the (distance cost, excess distance) attributes of the
-         * proposed route.
+         * proposed route. The excess here is the whole route beyond
+         * ``max_distance``; per-trip violations are reported separately by
+         * ``tripExcessDistance()``.
          */
         std::pair<Cost, Distance> distance() const;
+
+        /**
+         * Returns the proposed route's distance in excess of
+         * ``max_distance_per_trip``, summed over its trips.
+         */
+        Distance tripExcessDistance() const;
 
         /**
          * Returns the total location penalty of the proposed route.
@@ -249,6 +282,7 @@ private:
 
         inline SegmentAfter(Route const &route, size_t start);
         inline Distance distance(size_t profile) const;
+        inline TripDistance tripDistance(size_t profile) const;
         inline Cost penalty(size_t profile) const;
         inline DurationSegment duration(size_t profile) const;
         inline LoadSegment const &load(size_t dimension) const;
@@ -275,6 +309,7 @@ private:
 
         inline SegmentBefore(Route const &route, size_t end);
         inline Distance distance(size_t profile) const;
+        inline TripDistance tripDistance(size_t profile) const;
         inline Cost penalty(size_t profile) const;
         inline DurationSegment duration(size_t profile) const;
         inline LoadSegment const &load(size_t dimension) const;
@@ -303,6 +338,7 @@ private:
 
         inline SegmentBetween(Route const &route, size_t start, size_t end);
         inline Distance distance(size_t profile) const;
+        inline TripDistance tripDistance(size_t profile) const;
         inline Cost penalty(size_t profile) const;
         inline DurationSegment duration(size_t profile) const;
         inline LoadSegment load(size_t dimension) const;
@@ -335,6 +371,23 @@ private:
     std::vector<size_t> visits;  // Locations in this route, incl. depots
 
     std::vector<Distance> cumDist;  // Dist of start -> node (incl.)
+
+    // Node index at which each trip begins, plus a final entry for the end
+    // depot, so trip t spans nodes [tripBounds_[t], tripBounds_[t + 1]]. With
+    // no reload depots this is just {0, end}, i.e. one trip.
+    std::vector<size_t> tripBounds_;
+
+    // Inclusive prefix sum of each trip's excess over max_distance_per_trip:
+    // tripExcess_[t] is the excess of trips [0, t). Lets a segment price the
+    // whole trips it spans without walking them.
+    std::vector<Distance> tripExcess_;
+
+    // Trip a node belongs to, as an index into tripBounds_. Node::trip() is
+    // not that index for the end depot: clear() assigns it trip 1 on an empty
+    // route and every reload bumps it, so it always sits one past the last
+    // trip. Everything else -- clients, and reload depots, which belong to the
+    // trip they begin -- indexes tripBounds_ directly.
+    [[nodiscard]] inline size_t tripOf(size_t idx) const;
 
     // Exclusive prefix sum of per-location penalties: cumPenalty[i] is the
     // penalty of nodes [0, i), so nodes [a, b] inclusive cost
@@ -542,10 +595,16 @@ public:
     [[nodiscard]] inline Duration overtimeStart() const;
 
     /**
-     * @return The maximum route distance that the vehicle servicing this route
-     *         supports.
+     * @return The maximum whole-route distance, summed over every trip, that
+     *         the vehicle servicing this route supports.
      */
     [[nodiscard]] inline Distance maxDistance() const;
+
+    /**
+     * @return The maximum distance of any single trip that the vehicle
+     *         servicing this route supports. Independent of maxDistance().
+     */
+    [[nodiscard]] inline Distance maxDistancePerTrip() const;
 
     /**
      * @return Total time warp on this route.
@@ -778,6 +837,24 @@ Distance Route::SegmentAfter::distance([[maybe_unused]] size_t profile) const
     return {route_.cumDist.back() - route_.cumDist[start]};
 }
 
+TripDistance
+Route::SegmentAfter::tripDistance([[maybe_unused]] size_t profile) const
+{
+    assert(profile == route_.profile());
+
+    auto const last = route_.numTrips() - 1;
+    auto const trip = route_.tripOf(start);
+
+    if (trip == last)  // then the segment stays inside a single trip
+        return {route_.cumDist.back() - route_.cumDist[start], 0, 0, false};
+
+    return {route_.cumDist[route_.tripBounds_[trip + 1]]
+                - route_.cumDist[start],
+            route_.tripExcess_[last] - route_.tripExcess_[trip + 1],
+            route_.cumDist.back() - route_.cumDist[route_.tripBounds_[last]],
+            true};
+}
+
 Cost Route::SegmentAfter::penalty([[maybe_unused]] size_t profile) const
 {
     assert(profile == route_.profile());
@@ -801,6 +878,22 @@ Distance Route::SegmentBefore::distance([[maybe_unused]] size_t profile) const
 {
     assert(profile == route_.profile());
     return route_.cumDist[end];
+}
+
+TripDistance
+Route::SegmentBefore::tripDistance([[maybe_unused]] size_t profile) const
+{
+    assert(profile == route_.profile());
+
+    auto const trip = route_.tripOf(end);
+
+    if (trip == 0)  // then the segment stays inside a single trip
+        return {route_.cumDist[end], 0, 0, false};
+
+    return {route_.cumDist[route_.tripBounds_[1]],
+            route_.tripExcess_[trip] - route_.tripExcess_[1],
+            route_.cumDist[end] - route_.cumDist[route_.tripBounds_[trip]],
+            true};
 }
 
 Cost Route::SegmentBefore::penalty([[maybe_unused]] size_t profile) const
@@ -886,6 +979,15 @@ Distance Route::SegmentBetween::distance(size_t profile) const
 
     assert(startDist <= endDist);
     return endDist - startDist;
+}
+
+TripDistance Route::SegmentBetween::tripDistance(size_t profile) const
+{
+    // A SegmentBetween is a single trip by construction -- at most it also
+    // carries the depot that ends it, which is a boundary at the edge rather
+    // than inside. So it never splits, and endsAtReloadDepot() is what tells
+    // the fold that the trip closes here.
+    return {distance(profile), 0, 0, false};
 }
 
 Cost Route::SegmentBetween::penalty(size_t profile) const
@@ -1035,8 +1137,15 @@ Cost Route::unitDistanceCost() const { return vehicleType_.unitDistanceCost; }
 
 bool Route::hasDistanceCost() const
 {
+    // Every distance constraint must be named here. This gates whether
+    // CostEvaluator::deltaCost prices distance at all, so a cap missing from
+    // this disjunction is a cap local search never sees: it will create and
+    // worsen violations for free. That is the bug fixed for overtime in
+    // v0.8.0, and max_distance_per_trip is exposed to it in the most likely
+    // configuration of all -- a per-trip cap with max_distance left unset.
     return unitDistanceCost() != 0
-           || maxDistance() != std::numeric_limits<Distance>::max();
+           || maxDistance() != std::numeric_limits<Distance>::max()
+           || maxDistancePerTrip() != std::numeric_limits<Distance>::max();
 }
 
 Duration Route::duration() const
@@ -1098,6 +1207,16 @@ Duration Route::maxDuration() const { return vehicleType_.maxDuration; }
 Duration Route::overtimeStart() const { return vehicleType_.overtimeStart; }
 
 Distance Route::maxDistance() const { return vehicleType_.maxDistance; }
+
+Distance Route::maxDistancePerTrip() const
+{
+    return vehicleType_.maxDistancePerTrip;
+}
+
+size_t Route::tripOf(size_t idx) const
+{
+    return std::min(nodes[idx]->trip(), numTrips() - 1);
+}
 
 Duration Route::timeWarp() const
 {
@@ -1223,6 +1342,98 @@ std::pair<Cost, Distance> Route::Proposal<Segments...>::distance() const
         auto const excess = std::max<Distance>(distance - maxDistance, 0);
         auto const cost = unitDistanceCost * static_cast<Cost>(distance);
         return std::make_pair(cost, excess);
+    };
+
+    return std::apply(fn, segments_);
+}
+
+template <Segment... Segments>
+Distance Route::Proposal<Segments...>::tripExcessDistance() const
+{
+    // Checked before empty(), which folds size() over the whole segment pack.
+    // hasDistanceCost() is true for anyone paying per unit of distance, so
+    // deltaCost reaches this on every evaluation, and for every model that
+    // leaves the cap unset the answer is a single load and compare away.
+    auto const maxPerTrip = route()->maxDistancePerTrip();
+
+    if (maxPerTrip == std::numeric_limits<Distance>::max())
+        return 0;
+
+    if (empty())
+        return 0;
+
+    auto const &data = route()->data;
+    auto const profile = route()->profile();
+    auto const &matrix = data.distanceMatrix(profile);
+
+    auto const clip = [&](Distance distance)
+    { return std::max<Distance>(distance - maxPerTrip, 0); };
+
+    auto const fn = [&](auto &&segment, auto &&...args)
+    {
+        // `head` is the first trip and `tail` the one still open at the right
+        // edge; before the first boundary is seen the two are the same trip
+        // and only `head` is used. Both stay unclipped until the fold ends,
+        // because either can still grow when the next segment is appended.
+        auto acc = segment.tripDistance(profile);
+
+        auto const close = [&]  // the open trip ends here
+        {
+            if (acc.split)
+                acc.excess += clip(acc.tail);
+
+            acc.split = true;
+            acc.tail = 0;
+        };
+
+        auto const extend = [&](Distance distance)
+        { (acc.split ? acc.tail : acc.head) += distance; };
+
+        auto const append = [&](TripDistance const &next)
+        {
+            extend(next.head);
+
+            if (!next.split)
+                return;
+
+            close();  // `next`'s first boundary closes the open trip
+            acc.excess += next.excess;
+            acc.tail = next.tail;
+        };
+
+        auto last = segment.last();
+        if (segment.endsAtReloadDepot())
+            close();
+
+        auto const merge = [&](auto const &self, auto &&other, auto &&...args)
+        {
+            // The edge into a reload depot is the closing leg of the trip that
+            // ends there, not the opening leg of the next one, so it is added
+            // before the boundary closes. This matches update(), where trip t
+            // measures cumDist[bounds[t + 1]] - cumDist[bounds[t]] and so
+            // carries its own arrival edge.
+            extend(matrix(last, other.first()));
+
+            if (other.startsAtReloadDepot())
+                close();
+
+            append(other.tripDistance(profile));
+            last = other.last();
+
+            if constexpr (sizeof...(args) != 0)
+            {
+                // Only when the segment is more than the depot itself, which
+                // already closed the trip above. Mirrors Proposal::excessLoad.
+                if (other.endsAtReloadDepot() && other.size() > 1)
+                    close();
+
+                self(self, std::forward<decltype(args)>(args)...);
+            }
+        };
+
+        merge(merge, std::forward<decltype(args)>(args)...);
+
+        return acc.excess + clip(acc.head) + (acc.split ? clip(acc.tail) : 0);
     };
 
     return std::apply(fn, segments_);

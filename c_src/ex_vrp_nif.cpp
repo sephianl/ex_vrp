@@ -634,6 +634,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     int64_t shift_duration = std::numeric_limits<int64_t>::max();
     int64_t overtime_start = std::numeric_limits<int64_t>::max();
     int64_t max_distance = std::numeric_limits<int64_t>::max();
+    int64_t max_distance_per_trip = std::numeric_limits<int64_t>::max();
     int64_t unit_distance_cost = 1;
     int64_t unit_duration_cost = 0;
     int64_t profile = 0;
@@ -755,6 +756,22 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                 else
                 {
                     nif_get_int64(env, value, &max_distance);
+                }
+            }
+            else if (key_str == "max_distance_per_trip")
+            {
+                char buf[32];
+                if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1))
+                {
+                    if (std::string(buf) == "infinity")
+                    {
+                        max_distance_per_trip
+                            = std::numeric_limits<int64_t>::max();
+                    }
+                }
+                else
+                {
+                    nif_get_int64(env, value, &max_distance_per_trip);
                 }
             }
             else if (key_str == "unit_distance_cost")
@@ -917,7 +934,8 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
         Cost(unit_overtime_cost),
         std::move(name),
         std::move(forbidden_windows),
-        Duration(overtime_start));
+        Duration(overtime_start),
+        Distance(max_distance_per_trip));
 }
 
 // Decode distance/duration matrix from nested list

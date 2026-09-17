@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.12.0
+
+### Fixed
+
+- **Object files follow `MIX_APP_PATH` instead of a fixed `c_src/obj`.** One object directory was
+  shared by every build of the same source tree, and the toolchain stamp living inside it clears
+  the whole directory whenever its hash differs — so this repo's own build and a consumer
+  depending on it by path would delete each other's objects and fail mid-link with
+  `unable to rename temporary ... No such file or directory`. A second `mix compile` usually
+  recovered, which is what kept it looking like flakiness rather than a bug.
+
+### Added
+
+- **`max_distance_per_trip` on the vehicle type: a distance cap that resets at every reload.**
+  `max_distance` bounds the whole route, summed over its trips, which models a vehicle that
+  cannot refuel or recharge anywhere along the way — reloading buys it no extra range. That is
+  the wrong model for a vehicle that refuels or charges while it is at the depot, whose real
+  limit is one tank per trip. The two are independent: set either, both, or neither. A vehicle
+  with `max_distance_per_trip: 250_000` may drive 140km, reload, and drive another 120km, which
+  the same figure as `max_distance` would reject.
+
+  Priced through the existing `excessDistance` channel rather than a new one, so `CostEvaluator`
+  and `Solution` need no interface change and both violations are penalised at the same rate.
+
+  `Route::hasDistanceCost()` now names the new cap too. It gates whether `CostEvaluator::deltaCost`
+  prices distance at all, so omitting it would have left local search blind to the constraint in
+  the most likely configuration of all — a per-trip cap with `max_distance` unset. That is the
+  failure mode fixed for overtime in 0.8.0, and `test/max_distance_per_trip_test.exs` holds the
+  gate to it.
+
+  Delta evaluation decomposes each segment at its trip boundaries (`TripDistance`,
+  `Proposal::tripExcessDistance`) instead of reusing `Proposal::distance`, whose flat prefix-sum
+  subtraction deliberately discards trip identity. The fold that stitches segments together puts
+  the arc _into_ a reload depot in the trip that ends there, not the one that starts there, which
+  is where `Route::update()` puts it — the two paths have to agree on the same arrangement or
+  local search chases violations that are only an artefact of the disagreement. Unlike
+  `Proposal::excessLoad`, whose structure this mirrors, the accounting here is arc-additive, and
+  that arc is the only place the boundary can land on the wrong side.
+
 ## 0.11.0
 
 ### Fixed

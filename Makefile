@@ -96,8 +96,16 @@ PYVRP_SEARCH_SRC = \
 
 ALL_SRC = $(NIF_SRC) $(PYVRP_CORE_SRC) $(PYVRP_SEARCH_SRC)
 
-# Object files
+# Object files - follow PRIV_DIR into MIX_APP_PATH when there is one. A fixed
+# c_src/obj is shared by every build of this source tree, and the toolchain
+# stamp that lives in it clears the whole directory whenever the hash differs.
+# So the repo's own build and a consumer depending on it by path delete each
+# other's objects and fail mid-link. One object directory per app path.
+ifdef MIX_APP_PATH
+OBJ_DIR = $(MIX_APP_PATH)/obj
+else
 OBJ_DIR = c_src/obj
+endif
 OBJS = $(patsubst c_src/%.cpp,$(OBJ_DIR)/%.o,$(ALL_SRC))
 
 # Toolchain fingerprint: force full rebuild when compiler or system libs change.

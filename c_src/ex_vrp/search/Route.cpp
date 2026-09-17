@@ -217,6 +217,28 @@ void Route::update()
     for (size_t idx = 1; idx != nodes.size(); ++idx)
         cumDist[idx] = cumDist[idx - 1] + distMat(visits[idx - 1], visits[idx]);
 
+    // Trip boundaries, and each trip's excess over the per-trip distance cap.
+    // A reload depot both ends one trip and starts the next, so it appears
+    // once here, as the bound the two trips share.
+    tripBounds_.clear();
+    tripBounds_.push_back(0);
+    for (size_t idx = 1; idx + 1 != nodes.size(); ++idx)
+        if (nodes[idx]->isReloadDepot())
+            tripBounds_.push_back(idx);
+    tripBounds_.push_back(nodes.size() - 1);
+
+    tripExcess_.resize(tripBounds_.size());
+    tripExcess_[0] = 0;
+    for (size_t trip = 0; trip + 1 != tripBounds_.size(); ++trip)
+    {
+        auto const distance
+            = cumDist[tripBounds_[trip + 1]] - cumDist[tripBounds_[trip]];
+
+        tripExcess_[trip + 1]
+            = tripExcess_[trip]
+              + std::max<Distance>(distance - maxDistancePerTrip(), 0);
+    }
+
     // Penalties. Note the differing shapes: cumDist is edge-additive and
     // inclusive of length nodes.size(), whereas cumPenalty is node-additive
     // and an exclusive prefix of length nodes.size() + 1. Depot penalties are
@@ -356,7 +378,8 @@ void Route::update()
     // These cost components are separately cached as well because they are
     // requested *a lot*.
     distance_ = cumDist.back();
-    excessDistance_ = std::max<Distance>(distance_ - maxDistance(), 0);
+    excessDistance_
+        = std::max<Distance>(distance_ - maxDistance(), 0) + tripExcess_.back();
     distanceCost_ = unitDistanceCost() * static_cast<Cost>(distance_);
     penaltyCost_ = cumPenalty.back();
 
