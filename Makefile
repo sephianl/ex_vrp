@@ -108,21 +108,24 @@ OBJ_DIR = c_src/obj
 endif
 OBJS = $(patsubst c_src/%.cpp,$(OBJ_DIR)/%.o,$(ALL_SRC))
 
-# Toolchain fingerprint: force full rebuild when compiler or system libs change.
-# Without this, a devenv/nix update can swap the compiler or glibc under us,
-# leaving stale .o files that link against the wrong libraries and silently
-# degrade NIF performance by ~2x.
-TOOLCHAIN_ID := $(shell $(CXX) --version | head -1)$(shell $(CXX) -print-file-name=libc.so)
+# Build fingerprint: force a full rebuild when the compiler, its system
+# libraries, or the compile flags change. Without the first two, a devenv/nix
+# update can swap the compiler or glibc under us, leaving stale .o files that
+# link against the wrong libraries and silently degrade NIF performance by ~2x.
+# The flags matter for the same reason: a SANITIZE=1 build would otherwise
+# reuse the normal build's -flto objects, which are LLVM bitcode that the
+# sanitizer link (no -flto) cannot read — "file format not recognized".
+BUILD_ID := $(shell $(CXX) --version | head -1)$(shell $(CXX) -print-file-name=libc.so)$(CXXFLAGS)
 SHASUM := $(shell command -v shasum 2>/dev/null || command -v sha1sum 2>/dev/null || echo "md5sum")
-TOOLCHAIN_HASH := $(shell echo "$(TOOLCHAIN_ID)" | $(SHASUM) | cut -c1-16)
-TOOLCHAIN_STAMP = $(OBJ_DIR)/.toolchain_$(TOOLCHAIN_HASH)
+BUILD_HASH := $(shell echo "$(BUILD_ID)" | $(SHASUM) | cut -c1-16)
+BUILD_STAMP = $(OBJ_DIR)/.build_$(BUILD_HASH)
 
-all: $(PRIV_DIR) $(TOOLCHAIN_STAMP) $(NIF_SO)
+all: $(PRIV_DIR) $(BUILD_STAMP) $(NIF_SO)
 
 $(PRIV_DIR):
 	mkdir -p $(PRIV_DIR)
 
-$(TOOLCHAIN_STAMP):
+$(BUILD_STAMP):
 	@rm -rf $(OBJ_DIR)
 	@mkdir -p $(OBJ_DIR)/ex_vrp/search
 	@touch $@
@@ -133,9 +136,9 @@ $(TOOLCHAIN_STAMP):
 # full rebuild takes <10s.
 HEADERS = $(wildcard c_src/*.h c_src/ex_vrp/*.h c_src/ex_vrp/search/*.h)
 
-# Object files depend on toolchain stamp via order-only prerequisite
+# Object files depend on the build stamp via order-only prerequisite
 # to prevent parallel make from compiling while the stamp rule cleans obj/
-$(OBJ_DIR)/%.o: c_src/%.cpp $(HEADERS) | $(TOOLCHAIN_STAMP)
+$(OBJ_DIR)/%.o: c_src/%.cpp $(HEADERS) | $(BUILD_STAMP)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 

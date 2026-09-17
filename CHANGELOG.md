@@ -5,11 +5,19 @@
 ### Fixed
 
 - **Object files follow `MIX_APP_PATH` instead of a fixed `c_src/obj`.** One object directory was
-  shared by every build of the same source tree, and the toolchain stamp living inside it clears
+  shared by every build of the same source tree, and the build stamp living inside it clears
   the whole directory whenever its hash differs — so this repo's own build and a consumer
   depending on it by path would delete each other's objects and fail mid-link with
   `unable to rename temporary ... No such file or directory`. A second `mix compile` usually
   recovered, which is what kept it looking like flakiness rather than a bug.
+
+- **The build stamp fingerprints the compile flags, not just the compiler.** It already forced a
+  rebuild when a devenv/nix update swapped the compiler or glibc, but flags were invisible to it.
+  A `SANITIZE=1` build therefore reused the normal build's `-flto` objects, which are LLVM bitcode
+  the sanitizer link cannot read: `file not recognized: file format not recognized`. That was
+  masked for as long as `task test:asan` wiped the objects by hand, and surfaced the moment the
+  object directory moved. The stamp now covers `CXXFLAGS`, so any flag change forces a clean
+  rebuild on its own, and `clean:nif` no longer points at the old path.
 
 ### Added
 
