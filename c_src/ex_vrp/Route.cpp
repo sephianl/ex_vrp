@@ -299,6 +299,8 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     for (auto const &trip : trips_)  // general statistics
     {
         distance_ += trip.distance();
+        excessDistance_ += std::max<Distance>(
+            trip.distance() - vehData.maxDistancePerTrip, 0);
         service_ += trip.serviceDuration();
         travel_ += trip.travelDuration();
         prizes_ += trip.prizes();
@@ -320,7 +322,7 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     }
 
     distanceCost_ = vehData.unitDistanceCost * static_cast<Cost>(distance_);
-    excessDistance_ = std::max<Distance>(distance_ - vehData.maxDistance, 0);
+    excessDistance_ += std::max<Distance>(distance_ - vehData.maxDistance, 0);
 
     for (size_t idx = 0; idx != trips_.size(); ++idx)  // load statistics
     {

@@ -1,9 +1,93 @@
 defmodule ExVrp.VehicleType do
   @moduledoc """
-  Represents a vehicle type in a VRP.
+  A class of interchangeable vehicles: how many there are, what they can carry,
+  what they cost to run, and the limits they must respect.
 
-  Vehicle types define the characteristics of vehicles in the fleet,
-  including capacity, costs, time windows, and depot assignments.
+  A vehicle type describes a *kind* of vehicle, not a single vehicle. Five
+  identical vans are one vehicle type with `num_available: 5`. Add one to a
+  model with `ExVrp.Model.add_vehicle_type/2`.
+
+  Every limit is optional and defaults to `:infinity`, which constrains nothing.
+
+  ## Routes and trips
+
+  A **route** is one vehicle's whole working period: leave the start depot,
+  visit clients, arrive at the end depot. A **trip** is one depot-to-depot leg
+  of that route.
+
+  Without `:reload_depots` a route is exactly one trip. With them, the vehicle
+  can return to a depot mid-route to empty out or refill, and each such stop
+  starts a new trip:
+
+      depot ──trip 1──▶ reload ──trip 2──▶ reload ──trip 3──▶ depot
+            clients            clients            clients
+
+  Count them with `ExVrp.Route.num_trips/1`.
+
+  ## What bounds what
+
+  Each option bounds either the whole route or a single trip:
+
+  | Option                   | Bounds          | Measures                               |
+  | ------------------------ | --------------- | -------------------------------------- |
+  | `:max_distance`          | the whole route | distance, summed over every trip       |
+  | `:max_distance_per_trip` | one trip        | distance, reset at every reload        |
+  | `:shift_duration`        | the whole route | elapsed time, idle included            |
+  | `:max_duration`          | the whole route | elapsed time, idle included (hard cap) |
+  | `:overtime_start`        | the whole route | clock time past the contracted end     |
+  | `:max_reloads`           | the whole route | number of reloads, so trips - 1        |
+  | `:capacity`              | one trip        | load carried, reset at every reload    |
+  | `:time_windows`          | the whole route | when the vehicle may be on the road    |
+
+  Without `:reload_depots` every row means the same thing.
+
+  ## The two distance caps
+
+  `:max_distance` bounds the route, summed over every trip — a vehicle that
+  cannot refuel anywhere. `:max_distance_per_trip` bounds each trip and resets
+  at every reload — a vehicle that refuels at the depot, so each trip starts
+  with a full tank. They are independent: set either, both, or neither.
+
+      iex> diesel = ExVrp.VehicleType.new(num_available: 1, capacity: [100], max_distance: 250_000)
+      iex> electric = ExVrp.VehicleType.new(num_available: 1, capacity: [100], max_distance_per_trip: 250_000)
+      iex> {diesel.max_distance, diesel.max_distance_per_trip}
+      {250_000, :infinity}
+      iex> {electric.max_distance, electric.max_distance_per_trip}
+      {:infinity, 250_000}
+
+  A vehicle that drives 140km, reloads, then drives another 120km breaches
+  `max_distance: 250_000` by 10km, but satisfies
+  `max_distance_per_trip: 250_000` — neither trip exceeded 250km on its own.
+
+  Both violations are penalised at the same rate and reported together by
+  `ExVrp.Route.excess_distance/1`, which does not say which cap was breached.
+  A cap set too tight does not shorten routes: the solution is rejected and the
+  vehicle drops out of the plan.
+
+  ## Duration
+
+  `:shift_duration` is the nominal shift, and the baseline for duration-based
+  overtime. `:max_duration` is a hard ceiling that defaults to
+  `:shift_duration`; raise it to allow overtime. `:overtime_start` marks a
+  clock time after which work counts as overtime.
+
+  All three measure *elapsed* time from route start to route end, so waiting
+  for a customer's window to open counts against them like driving does. There
+  is no per-trip duration cap: a second trip spends the same budget as the
+  first. For time actually worked:
+
+      ExVrp.Route.duration(route) - ExVrp.Route.wait_duration(route)
+
+  ## Time windows
+
+  `:time_windows` takes `{start, end}` tuples and is the only supported way to
+  set when a vehicle may be on the road. `new/1` merges overlapping and
+  adjacent windows, then derives `:tw_early`, `:tw_late`, and
+  `:forbidden_windows` from the result. Setting those three directly raises —
+  see `new/1`.
+
+  All values are integers in your matrices' own units; the solver does not
+  interpret them.
   """
 
   @type t :: %__MODULE__{
@@ -16,6 +100,7 @@ defmodule ExVrp.VehicleType do
           tw_late: non_neg_integer() | :infinity,
           shift_duration: non_neg_integer() | :infinity,
           max_distance: non_neg_integer() | :infinity,
+          max_distance_per_trip: non_neg_integer() | :infinity,
           unit_distance_cost: non_neg_integer(),
           unit_duration_cost: non_neg_integer(),
           profile: non_neg_integer(),
@@ -41,6 +126,7 @@ defmodule ExVrp.VehicleType do
     tw_late: :infinity,
     shift_duration: :infinity,
     max_distance: :infinity,
+    max_distance_per_trip: :infinity,
     unit_distance_cost: 1,
     unit_duration_cost: 0,
     profile: 0,
@@ -58,6 +144,12 @@ defmodule ExVrp.VehicleType do
   @doc """
   Creates a new vehicle type.
 
+  `ExVrp.Model.add_vehicle_type/2` calls this and adds the result to a model in
+  one step.
+
+  Whether a limit bounds the whole route or a single trip is in
+  [What bounds what](#module-what-bounds-what).
+
   ## Required Options
 
   - `:num_available` - Number of vehicles of this type available
@@ -72,8 +164,16 @@ defmodule ExVrp.VehicleType do
   - `:start_depot` - Index of starting depot (default: `0`)
   - `:end_depot` - Index of ending depot (default: `0`)
   - `:fixed_cost` - Fixed cost for using this vehicle (default: `0`)
-  - `:shift_duration` - Maximum shift duration (default: `:infinity`)
-  - `:max_distance` - Maximum distance allowed (default: `:infinity`)
+  - `:shift_duration` - Nominal maximum duration of the **whole route**, and the
+    baseline duration-based overtime is measured against (default: `:infinity`).
+    Elapsed, not worked — see the scope table above
+  - `:max_distance` - Maximum distance of the **whole route**, summed over every
+    trip (default: `:infinity`). Reloading buys no extra range, so this models a
+    vehicle that never refuels or recharges on the road
+  - `:max_distance_per_trip` - Maximum distance of **one trip**, reset at every
+    reload depot (default: `:infinity`). Models a vehicle that refuels or
+    recharges each time it reloads, so every trip starts with a full tank.
+    Independent of `:max_distance` — set either, both, or neither
   - `:unit_distance_cost` - Cost per unit distance (default: `1`)
   - `:unit_duration_cost` - Cost per unit time (default: `0`)
   - `:profile` - Index of distance/duration matrix to use (default: `0`)

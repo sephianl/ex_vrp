@@ -30,8 +30,10 @@ tasks:
       ASAN_SYMBOLIZER_PATH:
         sh: which llvm-symbolizer
     cmds:
-      # Clean before - ensure fresh ASan build
-      - rm -rf _build/test/lib/ex_vrp/priv c_src/obj priv/*.so
+      # Clean before - ensure fresh ASan build. The Makefile's build stamp
+      # already forces a rebuild when the flags change, so this is belt and
+      # braces rather than the thing that makes the sanitizer build correct.
+      - task: clean:nif
       - mix compile
       - defer: { task: clean:nif }
       - mix test {{.CLI_ARGS}}
@@ -73,7 +75,9 @@ tasks:
   clean:nif:
     desc: Clean NIF build artifacts (leaves Elixir build intact)
     cmds:
-      - rm -rf _build/test/lib/ex_vrp/priv c_src/obj priv/*.so
+      # Objects live under MIX_APP_PATH; c_src/obj is only used by a standalone
+      # make, outside mix. Both are listed so either layout is cleaned.
+      - rm -rf _build/*/lib/ex_vrp/priv _build/*/lib/ex_vrp/obj c_src/obj priv/*.so
 
   clean:
     desc: Clean all build artifacts

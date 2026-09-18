@@ -36,6 +36,11 @@ public:
 
     Distance distance([[maybe_unused]] size_t profile) const { return 0; }
 
+    TripDistance tripDistance([[maybe_unused]] size_t profile) const
+    {
+        return {};
+    }
+
     Cost penalty(size_t profile) const { return data.penalty(profile, client); }
 
     DurationSegment duration([[maybe_unused]] size_t profile) const
@@ -75,6 +80,14 @@ public:
     bool endsAtReloadDepot() const { return true; }
 
     Distance distance([[maybe_unused]] size_t profile) const { return 0; }
+
+    // A lone depot carries no distance of its own. It splits the trip around
+    // it, which the fold reads off startsAtReloadDepot()/endsAtReloadDepot()
+    // rather than from this value.
+    TripDistance tripDistance([[maybe_unused]] size_t profile) const
+    {
+        return {};
+    }
 
     Cost penalty([[maybe_unused]] size_t profile) const
     {

@@ -380,7 +380,8 @@ ProblemData::VehicleType::VehicleType(
     Cost unitOvertimeCost,
     std::string name,
     std::vector<std::pair<Duration, Duration>> forbiddenWindows,
-    Duration overtimeStart)
+    Duration overtimeStart,
+    Distance maxDistancePerTrip)
     : numAvailable(numAvailable),
       startDepot(startDepot),
       endDepot(endDepot),
@@ -389,6 +390,7 @@ ProblemData::VehicleType::VehicleType(
       twLate(twLate),
       shiftDuration(shiftDuration),
       maxDistance(maxDistance),
+      maxDistancePerTrip(maxDistancePerTrip),
       fixedCost(fixedCost),
       unitDistanceCost(unitDistanceCost),
       unitDurationCost(unitDurationCost),
@@ -423,6 +425,9 @@ ProblemData::VehicleType::VehicleType(
 
     if (maxDistance < 0)
         throw std::invalid_argument("max_distance must be >= 0.");
+
+    if (maxDistancePerTrip < 0)
+        throw std::invalid_argument("max_distance_per_trip must be >= 0.");
 
     if (fixedCost < 0)
         throw std::invalid_argument("fixed_cost must be >= 0.");
@@ -470,6 +475,7 @@ ProblemData::VehicleType::VehicleType(VehicleType const &vehicleType)
       twLate(vehicleType.twLate),
       shiftDuration(vehicleType.shiftDuration),
       maxDistance(vehicleType.maxDistance),
+      maxDistancePerTrip(vehicleType.maxDistancePerTrip),
       fixedCost(vehicleType.fixedCost),
       unitDistanceCost(vehicleType.unitDistanceCost),
       unitDurationCost(vehicleType.unitDurationCost),
@@ -495,6 +501,7 @@ ProblemData::VehicleType::VehicleType(VehicleType &&vehicleType)
       twLate(vehicleType.twLate),
       shiftDuration(vehicleType.shiftDuration),
       maxDistance(vehicleType.maxDistance),
+      maxDistancePerTrip(vehicleType.maxDistancePerTrip),
       fixedCost(vehicleType.fixedCost),
       unitDistanceCost(vehicleType.unitDistanceCost),
       unitDurationCost(vehicleType.unitDurationCost),
@@ -533,6 +540,7 @@ bool ProblemData::VehicleType::operator==(VehicleType const &other) const
         && twLate == other.twLate
         && shiftDuration == other.shiftDuration
         && maxDistance == other.maxDistance
+        && maxDistancePerTrip == other.maxDistancePerTrip
         && unitDistanceCost == other.unitDistanceCost
         && unitDurationCost == other.unitDurationCost
         && profile == other.profile

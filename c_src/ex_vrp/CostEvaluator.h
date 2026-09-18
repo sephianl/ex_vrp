@@ -48,6 +48,7 @@ template <typename T>
 concept DeltaCostEvaluatable = requires(T arg, size_t dimension) {
     { arg.route() };
     { arg.distance() } -> std::convertible_to<std::pair<Cost, Distance>>;
+    { arg.tripExcessDistance() } -> std::convertible_to<Distance>;
     { arg.duration() } -> std::convertible_to<std::pair<Cost, Duration>>;
     { arg.penalty() } -> std::same_as<Cost>;
     { arg.excessLoad(dimension) } -> std::same_as<Load>;
@@ -315,7 +316,7 @@ bool CostEvaluator::deltaCost(Cost &out, T<Args...> const &proposal) const
     {
         auto const [cost, excess] = proposal.distance();
         out += cost;
-        out += excessDistPenalty(excess);
+        out += excessDistPenalty(excess + proposal.tripExcessDistance());
     }
 
     // Added alongside distance rather than at the end, so that the shortcuts
@@ -391,14 +392,14 @@ bool CostEvaluator::deltaCost(Cost &out,
     {
         auto const [cost, excess] = uProposal.distance();
         out += cost;
-        out += excessDistPenalty(excess);
+        out += excessDistPenalty(excess + uProposal.tripExcessDistance());
     }
 
     if (vRoute->hasDistanceCost())
     {
         auto const [cost, excess] = vProposal.distance();
         out += cost;
-        out += excessDistPenalty(excess);
+        out += excessDistPenalty(excess + vProposal.tripExcessDistance());
     }
 
     // Added before the shortcuts below rather than at the end; see the

@@ -323,6 +323,40 @@ Count the reload stops with `ExVrp.Route.num_trips/1`. Do **not** read `route.tr
 declared on the struct but `ExVrp.Solution.routes/1` never fills it, so it is always `[]` even on a
 route that made three trips.
 
+## Know which scope each cap applies to
+
+Once a route has reloads it has more than one **trip**, and the vehicle type's caps stop meaning
+the same thing as each other. Each bounds either the whole route or a single trip, and confusing
+the two is the easiest mistake to make here. `ExVrp.VehicleType` documents which is which, option
+by option; what follows is what that choice costs you.
+
+The two distance caps model different vehicles, and compose freely:
+
+```elixir
+# A diesel van that never refuels on the road: 250km covers its entire day,
+# reloads included.
+Model.add_vehicle_type(model, num_available: 1, capacity: [100], max_distance: 250_000)
+
+# An electric van that charges whenever it is back at the depot: 250km per
+# trip, and as many trips as the day allows.
+Model.add_vehicle_type(model,
+  num_available: 1,
+  capacity: [100],
+  reload_depots: [0],
+  max_distance_per_trip: 250_000
+)
+```
+
+Under `max_distance_per_trip: 250_000` a vehicle may drive 140km, reload, and drive another 120km —
+260km across the day, and feasible, because neither trip exceeded its own 250km. The same numbers
+under `max_distance: 250_000` are infeasible.
+
+Note what picking the wrong one costs. Excess distance is penalised, and a solution that cannot
+shed the penalty is discarded whole — so an over-tight cap does not shorten routes, it drops the
+vehicle from the plan entirely.
+
+Without `reload_depots` a route is exactly one trip, and the two distance caps coincide.
+
 ## Validate before you blame the solver
 
 `ExVrp.solve/2` validates first and returns `{:error, reasons}` — a list of human-readable strings —
