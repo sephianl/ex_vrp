@@ -43,6 +43,11 @@ defmodule ExVrp.Solver do
 
   @repair_budget_share 0.25
 
+  # A backstop, not a budget: each accepted step drops one visit, so the loop is bounded by the
+  # seed's own visit count long before this. Hitting it means the trim is not converging, and the
+  # descent's own result is handed over rather than spinning.
+  @max_repair_drops 1_000
+
   @doc """
   Solves a VRP model using Iterated Local Search.
 
@@ -413,10 +418,11 @@ defmodule ExVrp.Solver do
     e in [ArgumentError, RuntimeError] -> {:error, Exception.message(e)}
   end
 
-  defp start_from_routes_or_fallback({:ok, sol}, _problem_data, local_search, penalty_manager, opts, solve_start) do
+  defp start_from_routes_or_fallback({:ok, sol}, problem_data, local_search, penalty_manager, opts, solve_start) do
     repair_if_infeasible(
       Native.solution_is_feasible(sol),
       sol,
+      problem_data,
       local_search,
       penalty_manager,
       opts,
@@ -430,16 +436,17 @@ defmodule ExVrp.Solver do
     build_initial_via_local_search(problem_data, local_search, penalty_manager, opts, solve_start)
   end
 
-  defp repair_if_infeasible(true, solution, _local_search, _penalty_manager, _opts, _solve_start),
+  defp repair_if_infeasible(true, solution, _problem_data, _local_search, _penalty_manager, _opts, _solve_start),
     do: {:warm_start, solution}
 
-  defp repair_if_infeasible(false, seed, local_search, penalty_manager, opts, solve_start) do
+  defp repair_if_infeasible(false, seed, problem_data, local_search, penalty_manager, opts, solve_start) do
     Logger.warning("#{start_label(opts)}Warm start is infeasible — #{initial_violations(seed)}; repairing it")
 
     kept =
       seed
       |> descend(local_search, penalty_manager, repair_budget_ms(opts, solve_start))
       |> keep_cheaper_of(seed, penalty_manager)
+      |> drop_until_feasible(problem_data, opts, repair_budget_ms(opts, solve_start))
 
     log_repair(Native.solution_is_feasible(kept), kept, opts)
 
@@ -458,6 +465,190 @@ defmodule ExVrp.Solver do
 
   defp cheaper_solution(true, repaired, _seed), do: repaired
   defp cheaper_solution(false, _repaired, seed), do: seed
+
+  # The descent minimises penalised cost, not violations. Every client carries a prize and every
+  # violation only a finite penalty, so a descent can take on a client and the time warp that comes
+  # with it. Where relocation is free it still lands on a feasible solution; where a same-vehicle
+  # group forbids moving a client off its route, the only way to accept one is to overload the
+  # route, and the seed can end further from feasibility than it started.
+  #
+  # Dropping visits is the one move that walks that back — but only for the violations a smaller
+  # plan relieves. Feasibility also demands that every required client be visited and every required
+  # client group be satisfied, and a removal only ever moves those the wrong way. So a removal is
+  # taken only where it strictly improves the violation score, and the trimmed seed is kept only
+  # where it came out feasible; otherwise the descent's own result stands.
+  defp drop_until_feasible(solution, problem_data, opts, budget_ms) do
+    drop_if_trimmable(trimmable?(solution), solution, problem_data, opts, budget_ms)
+  end
+
+  # What a trim cannot reach, it should not spend visits on. A seed already missing a required
+  # client can never be completed by removing more of them. A seed carrying reload trips cannot
+  # survive the rebuild each candidate goes through either: `Native.solution_routes/1` reports a
+  # route's clients without its trip boundaries, so rebuilding collapses a multi-trip route into a
+  # single load it was never sized for.
+  defp trimmable?(solution) do
+    Native.solution_is_complete(solution) and single_trip_routes?(solution)
+  end
+
+  defp single_trip_routes?(solution) do
+    Enum.all?(
+      0..(Native.solution_num_routes(solution) - 1)//1,
+      &(Native.solution_route_num_trips(solution, &1) == 1)
+    )
+  end
+
+  defp drop_if_trimmable(false, solution, _problem_data, _opts, _budget_ms), do: solution
+
+  defp drop_if_trimmable(true, solution, problem_data, opts, budget_ms) do
+    solution
+    |> trim(problem_data, deadline(budget_ms), 0)
+    |> keep_trim_if_feasible(solution, opts)
+  end
+
+  # Pricing every position of a route costs a rebuild per stop, so an unbounded trim can outlast the
+  # run it is preparing. A run without a runtime cap reports no budget, and trims to completion.
+  defp deadline(0), do: :infinity
+  defp deadline(budget_ms), do: System.monotonic_time(:millisecond) + budget_ms
+
+  defp within_deadline?(:infinity), do: true
+  defp within_deadline?(deadline), do: System.monotonic_time(:millisecond) < deadline
+
+  defp trim(solution, problem_data, deadline, dropped) do
+    trim_further(worth_trimming?(solution, deadline, dropped), solution, problem_data, deadline, dropped)
+  end
+
+  defp worth_trimming?(solution, deadline, dropped) do
+    not Native.solution_is_feasible(solution) and dropped < @max_repair_drops and within_deadline?(deadline)
+  end
+
+  defp trim_further(false, solution, _problem_data, _deadline, dropped), do: {solution, dropped}
+
+  defp trim_further(true, solution, problem_data, deadline, dropped) do
+    solution
+    |> worst_route()
+    |> best_removal(solution, problem_data)
+    |> accept_removal(solution, problem_data, deadline, dropped)
+  end
+
+  defp accept_removal(:no_removal, solution, _problem_data, _deadline, dropped), do: {solution, dropped}
+
+  defp accept_removal({:ok, trimmed}, solution, problem_data, deadline, dropped) do
+    continue_from(
+      violation_score(trimmed) < violation_score(solution),
+      trimmed,
+      solution,
+      problem_data,
+      deadline,
+      dropped
+    )
+  end
+
+  defp continue_from(false, _trimmed, solution, _problem_data, _deadline, dropped), do: {solution, dropped}
+
+  defp continue_from(true, trimmed, _solution, problem_data, deadline, dropped) do
+    trim(trimmed, problem_data, deadline, dropped + 1)
+  end
+
+  defp keep_trim_if_feasible({trimmed, dropped}, solution, opts) do
+    trimmed_or_descended(Native.solution_is_feasible(trimmed), trimmed, solution, dropped, opts)
+  end
+
+  defp trimmed_or_descended(true, trimmed, _solution, dropped, opts) do
+    log_drops(dropped, opts)
+
+    trimmed
+  end
+
+  defp trimmed_or_descended(false, _trimmed, solution, _dropped, _opts), do: solution
+
+  # Ordered by what a removal can and cannot undo. Missing required clients and unsatisfied client
+  # groups come first because dropping only ever adds to them, so a candidate that trades real load
+  # or time warp for one of those ranks worse and ends the trim instead of emptying the plan.
+  defp violation_score(solution) do
+    {
+      rank_of(Native.solution_is_complete(solution)),
+      rank_of(Native.solution_is_group_feasible(solution)),
+      Native.solution_num_same_vehicle_violations(solution),
+      sum_over_routes(solution, &route_excess_load/2),
+      sum_over_routes(solution, &Native.solution_route_time_warp/2),
+      sum_over_routes(solution, &Native.solution_route_excess_distance/2)
+    }
+  end
+
+  # Ranked by the violations the route reports, then by length: the longest route is the best guess
+  # when no route reports one of its own but the solution is still infeasible — a split group, say —
+  # and it keeps the recursion making progress rather than picking the same empty-handed route
+  # forever.
+  defp worst_route(solution) do
+    solution
+    |> Native.solution_routes()
+    |> Enum.with_index()
+    |> Enum.reject(fn {visits, _idx} -> visits == [] end)
+    |> Enum.max_by(fn {visits, idx} -> {route_violations(solution, idx), length(visits)} end, fn -> nil end)
+  end
+
+  defp route_violations(solution, route_idx) do
+    {
+      Native.solution_route_time_warp(solution, route_idx),
+      route_excess_load(solution, route_idx),
+      Native.solution_route_excess_distance(solution, route_idx)
+    }
+  end
+
+  # Which visit to give up, measured rather than guessed. Time warp accrues from wherever a vehicle
+  # first runs late, so the last visit of a late route is usually the one whose removal changes
+  # least — dropping it repeatedly empties routes without repairing them. Pricing every position
+  # and keeping the best costs one rebuild per stop of a single route and reaches feasibility in
+  # the handful of drops the arithmetic actually calls for.
+  defp best_removal(nil, _solution, _problem_data), do: :no_removal
+
+  defp best_removal({visits, route_idx}, solution, problem_data) do
+    typed = typed_routes(solution)
+
+    0..(length(visits) - 1)//1
+    |> Enum.map(&rebuild_without(typed, route_idx, &1, problem_data))
+    |> Enum.filter(&match?({:ok, _candidate}, &1))
+    |> least_violating()
+  end
+
+  defp rebuild_without(typed, route_idx, position, problem_data) do
+    typed
+    |> Enum.with_index()
+    |> Enum.map(fn {{vehicle_type, visits}, idx} -> {vehicle_type, drop_at(idx == route_idx, visits, position)} end)
+    |> Enum.reject(fn {_vehicle_type, visits} -> visits == [] end)
+    |> then(&solution_from_typed_routes(problem_data, &1))
+  end
+
+  defp drop_at(true, visits, position), do: List.delete_at(visits, position)
+  defp drop_at(false, visits, _position), do: visits
+
+  defp least_violating([]), do: :no_removal
+
+  defp least_violating(candidates) do
+    candidates
+    |> Enum.map(fn {:ok, candidate} -> candidate end)
+    |> Enum.min_by(&violation_score/1)
+    |> then(&{:ok, &1})
+  end
+
+  defp rank_of(true), do: 0
+  defp rank_of(false), do: 1
+
+  # What the seed cost to make usable. The search is free to re-insert these wherever they fit, so
+  # this is not the same as what the run ends up leaving unplanned — but a large number here is
+  # the difference between "the day does not fit" and "we handed the search a wrecked plan".
+  defp log_drops(0, _opts), do: :ok
+
+  defp log_drops(dropped, opts) do
+    Logger.info("#{start_label(opts)}Warm start repair dropped #{dropped} visit(s) to reach feasibility")
+  end
+
+  defp typed_routes(solution) do
+    solution
+    |> Native.solution_routes()
+    |> Enum.with_index()
+    |> Enum.map(fn {visits, idx} -> {Native.solution_route_vehicle_type(solution, idx), visits} end)
+  end
 
   defp log_repair(true, _repaired, opts) do
     Logger.info("#{start_label(opts)}Warm start repaired to a feasible solution")

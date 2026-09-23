@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.12.1
+
+### Fixed
+
+- **An infeasible warm start is now trimmed to feasibility where dropping visits can reach it.** The
+  repair descent minimises penalised cost, not violations. Every client carries a prize and every
+  violation only a finite penalty, so the descent can rationally take on a client and the time warp
+  that comes with it. Where relocation is free it still lands somewhere feasible; where a
+  same-vehicle group forbids moving a client off its route, the only way to accept one is to
+  overload the route, and the seed can end up further from feasibility than it started — which is
+  what produced `Warm start could not be repaired`.
+
+  After the descent, visits are dropped until the seed is feasible. Rather than dropping the last
+  stop of the latest route — which empties routes without repairing them — every position on the
+  worst route is priced and the least-violating removal is kept. The dropped clients are exactly the
+  ones the search is then free to re-insert wherever they do fit, so this costs coverage only where
+  the day genuinely does not fit. The number of dropped visits is logged.
+
+  Trimming applies only where it can finish, which is narrower than it sounds. Feasibility also
+  requires that every required client be visited and every required client group be satisfied, and a
+  removal only ever moves those the wrong way; and a route carrying reload trips cannot survive the
+  rebuild each candidate goes through, because a route's clients are read back without their trip
+  boundaries. So a seed already missing a required client, and a seed with multi-trip routes, are
+  handed to the search untouched. Everywhere else a removal is taken only where it strictly improves
+  the violation score, and the trimmed seed is kept only where it came out feasible — a trim that
+  cannot finish leaves the descent's own result standing. The upshot is that this can only ever add
+  coverage to a warm start, never take it away. The trim shares the repair time budget, with a
+  backstop of 1000 drops behind it.
+
 ## 0.12.0
 
 ### Fixed

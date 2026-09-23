@@ -159,6 +159,86 @@ defmodule ExVrp.WarmStartRepairTest do
     end
   end
 
+  describe "a warm start a descent cannot repair" do
+    @doc """
+    The case the descent alone loses. Two clients are pinned to one vehicle by a same-vehicle
+    group, so the relocation that would relieve the route is forbidden; the descent can only
+    take clients on, and a client's prize outweighs a finite violation penalty. Both clients are
+    optional here, so giving one up is a move the trim is allowed to make.
+    """
+    @tag :nif_required
+    test "drops visits until the seed is feasible" do
+      model =
+        Model.new()
+        |> Model.add_depot(tw_early: 0, tw_late: 10_000)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 10_000, required: false, prize: 100_000)
+        |> Model.add_client(delivery: [10], tw_early: 0, tw_late: 1, required: false, prize: 100_000)
+        |> Model.set_duration_matrices([[[0, 900, 900], [900, 0, 900], [900, 900, 0]]])
+        |> Model.set_distance_matrices([[[0, 900, 900], [900, 0, 900], [900, 900, 0]]])
+
+      [c1, c2] = model.clients
+      model = Model.add_same_vehicle_group(model, [c1, c2])
+
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            ExVrp.solve(model, initial_routes: [[1, 2]], max_iterations: 50, num_starts: 1, seed: 1)
+
+          assert Solution.feasible?(result.best)
+        end)
+
+      assert log =~ "Warm start is infeasible"
+      refute log =~ "could not be repaired"
+    end
+
+    @doc """
+    The other half of that bargain. Feasibility also demands every required client be visited, so
+    where the clients are required there is no removal that gets closer to it — dropping one trades
+    the time warp for a missing client and leaves the seed no more usable than before. Trimming has
+    to recognise it has nothing to offer and hand the descent's own plan over whole, rather than
+    spending the plan on a feasibility it cannot reach.
+    """
+    @tag :nif_required
+    test "hands over an unreachable seed intact rather than emptying it" do
+      clients = 10
+      far = List.duplicate(900, clients + 1)
+      matrix = for row <- 0..clients, do: List.replace_at(far, row, 0)
+
+      model =
+        Enum.reduce(1..clients, base_model(), fn client, acc ->
+          Model.add_client(acc, delivery: [1], tw_early: 0, tw_late: tw_late_for(client, clients))
+        end)
+
+      model =
+        model
+        |> Model.set_duration_matrices([matrix])
+        |> Model.set_distance_matrices([matrix])
+
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            ExVrp.solve(model, initial_routes: [Enum.to_list(1..clients)], max_iterations: 1, num_starts: 1, seed: 1)
+
+          assert Solution.num_clients(result.best) == clients
+        end)
+
+      assert log =~ "could not be repaired"
+      refute log =~ "required clients unvisited"
+      refute log =~ "dropped"
+    end
+  end
+
+  defp base_model do
+    Model.new()
+    |> Model.add_depot(tw_early: 0, tw_late: 100_000)
+    |> Model.add_vehicle_type(num_available: 1, capacity: [1_000])
+  end
+
+  defp tw_late_for(client, client), do: 1
+  defp tw_late_for(_client, _last), do: 100_000
+
   describe "an invalid warm start" do
     @doc """
     A structurally invalid seed falls back to a descent from empty. What the run reports has to
