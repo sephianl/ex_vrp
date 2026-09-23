@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.12.2
+
+### Fixed
+
+- **New orders now get placed around a plan whose routes are held by same-vehicle groups.** When a
+  warm-started plan had every route held as one group, the search mostly stayed on that plan and
+  placed none of the unassigned optional clients, even where they fit. Perturbation was removing
+  group members from routes that were already feasible; it now leaves them in place and spends
+  the perturbation on inserting the unplaced clients instead. On synthetic held plans, the share of
+  runs that placed new orders went from 2/20 to 12/20 and from 0/20 to 9/20, with the held clients
+  visited unchanged. Removal is still allowed on infeasible routes, so route repair is unaffected.
+  Why those removals trapped the search is not established; the change is justified by the
+  measured effect only.
+
 ## 0.12.1
 
 ### Fixed
