@@ -24,7 +24,8 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
     loadSolution(solution);
 
     if (!exhaustive)
-        perturbationManager_.perturb(solution_, searchSpace_, costEvaluator);
+        perturbationManager_.perturb(
+            solution_, searchSpace_, costEvaluator, clientToSameVehicleGroups_);
 
     markMissingAsPromising();
 
