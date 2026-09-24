@@ -95,6 +95,7 @@ defmodule ExVrp.Native do
     solution_route_schedule: 2,
     solution_fixed_vehicle_cost: 1,
     solution_penalty_cost: 1,
+    solution_lock_cost: 1,
     solution_num_forbidden_visits: 1,
     # search::Route NIFs
     create_search_route_nif: 3,
@@ -888,6 +889,12 @@ defmodule ExVrp.Native do
   """
   @spec solution_penalty_cost(reference()) :: integer()
   def solution_penalty_cost(_solution), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Gets the vehicle-lock share of the solution's penalty cost.
+  """
+  @spec solution_lock_cost(reference()) :: non_neg_integer()
+  def solution_lock_cost(_solution), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Gets the number of visits the visiting route's own profile forbids.

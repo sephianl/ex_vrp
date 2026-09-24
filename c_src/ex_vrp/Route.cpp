@@ -309,6 +309,10 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         {
             penaltyCost_ += penalties[client];
 
+            auto const lock = data.lockPenalty(vehType, client);
+            lockCost_ += lock;
+            penaltyCost_ += lock;
+
             // Counted, not asserted away. This constructor evaluates whatever
             // routes it is handed, and callers do hand it forbidden ones: a
             // warm start via :initial_routes, or a solution built straight
@@ -498,6 +502,8 @@ Cost Route::prizes() const { return prizes_; }
 Cost Route::reloadCost() const { return reloadCost_; }
 
 Cost Route::penaltyCost() const { return penaltyCost_; }
+
+Cost Route::lockCost() const { return lockCost_; }
 
 size_t Route::numForbiddenVisits() const { return numForbiddenVisits_; }
 

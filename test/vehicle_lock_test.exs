@@ -54,4 +54,39 @@ defmodule ExVrp.VehicleLockTest do
       assert {:error, _errors} = Model.validate(model)
     end
   end
+
+  describe "solution cost" do
+    alias ExVrp.Solution
+    alias ExVrp.Solver
+
+    defp solve(model, initial_routes \\ nil) do
+      Solver.solve(model,
+        stop: ExVrp.StoppingCriteria.max_iterations(200),
+        initial_routes: initial_routes
+      )
+    end
+
+    test "a client served by its locked vehicle type pays nothing" do
+      model = Model.set_vehicle_locks(base_model(), [%{location: 1, vehicle_type: 0, price: 500}])
+
+      {:ok, result} = solve(model, [[1, 2], []])
+
+      assert Solution.lock_cost(result.best) == 0
+    end
+
+    test "a lock price is part of the solution's penalty cost" do
+      locked = Model.set_vehicle_locks(base_model(), [%{location: 1, vehicle_type: 1, price: 5}])
+
+      {:ok, result} = Solver.solve(locked, stop: ExVrp.StoppingCriteria.max_iterations(0), initial_routes: [[1, 2], []])
+
+      assert Solution.lock_cost(result.best) == 5
+      assert Solution.penalty_cost(result.best) == 5
+    end
+
+    test "a model without locks reports no lock cost" do
+      {:ok, result} = solve(base_model())
+
+      assert Solution.lock_cost(result.best) == 0
+    end
+  end
 end

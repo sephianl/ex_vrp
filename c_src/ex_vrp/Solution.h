@@ -57,6 +57,7 @@ class Solution
     Cost fixedVehicleCost_ = 0;     // Fixed cost of all used vehicles
     Cost reloadCost_ = 0;           // Total reload cost over all routes
     Cost penaltyCost_ = 0;          // Total location penalty over all routes
+    Cost lockCost_ = 0;             // Lock share of penaltyCost_
     size_t numForbiddenVisits_ = 0;  // Visits a route's own profile forbids
     Cost prizes_ = 0;                // Total collected prize value
     Cost uncollectedPrizes_ = 0;     // Total uncollected prize value
@@ -232,6 +233,11 @@ public:
      * monetary cost with penalties excluded.
      */
     [[nodiscard]] Cost penaltyCost() const;
+
+    /**
+     * The part of :meth:`~penaltyCost` charged by vehicle locks.
+     */
+    [[nodiscard]] Cost lockCost() const;
 
     /**
      * Returns the number of visits, over all routes, that the visiting route's

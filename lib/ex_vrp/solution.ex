@@ -300,6 +300,14 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
+  Returns the vehicle-lock share of this solution's `penalty_cost/1`.
+  """
+  @spec lock_cost(t()) :: non_neg_integer()
+  def lock_cost(%__MODULE__{solution_ref: solution_ref}) do
+    Native.solution_lock_cost(solution_ref)
+  end
+
+  @doc """
   Returns how many visits in this solution the visiting route's own routing
   profile forbids.
 

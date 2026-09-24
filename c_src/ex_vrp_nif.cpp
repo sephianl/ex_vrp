@@ -2344,6 +2344,18 @@ solution_penalty_cost([[maybe_unused]] ErlNifEnv *env,
 FINE_NIF(solution_penalty_cost, 0);
 
 /**
+ * Get the vehicle-lock share of the solution's penalty cost.
+ */
+int64_t
+solution_lock_cost([[maybe_unused]] ErlNifEnv *env,
+                   fine::ResourcePtr<SolutionResource> solution_resource)
+{
+    return static_cast<int64_t>(solution_resource->solution.lockCost());
+}
+
+FINE_NIF(solution_lock_cost, 0);
+
+/**
  * Get the number of visits the visiting route's own profile forbids.
  */
 int64_t solution_num_forbidden_visits(
