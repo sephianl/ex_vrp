@@ -827,7 +827,7 @@ defmodule ExVrp.Model do
         ["vehicle lock on location #{inspect(loc)} has a non-negative-integer vehicle_type, got: #{inspect(vt)}"]
 
       vt >= num_vehicle_types ->
-        ["vehicle lock on location #{loc}: vehicle type #{vt} does not exist"]
+        ["vehicle lock on location #{inspect(loc)}: vehicle type #{vt} does not exist"]
 
       true ->
         []
@@ -838,7 +838,7 @@ defmodule ExVrp.Model do
     if non_neg_integer?(price) do
       []
     else
-      ["vehicle lock on location #{loc}: price must be a non-negative integer"]
+      ["vehicle lock on location #{inspect(loc)}: price must be a non-negative integer"]
     end
   end
 
@@ -848,7 +848,7 @@ defmodule ExVrp.Model do
       |> Enum.filter(&match?(%{location: _location}, &1))
       |> Enum.frequencies_by(& &1.location)
       |> Enum.filter(fn {_loc, count} -> count > 1 end)
-      |> Enum.map(fn {loc, _count} -> "location #{loc} has more than one lock" end)
+      |> Enum.map(fn {loc, _count} -> "location #{inspect(loc)} has more than one lock" end)
 
     duplicate_errors ++ errors
   end

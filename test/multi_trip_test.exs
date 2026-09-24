@@ -1201,6 +1201,21 @@ defmodule ExVrp.MultiTripTest do
       refute log =~ ":initial_routes is invalid"
     end
 
+    test "a trips seed whose value is not a list falls back to a cold start" do
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            Solver.solve(two_trip_model(),
+              stop: ExVrp.StoppingCriteria.max_iterations(0),
+              initial_routes: [{:trips, nil}]
+            )
+
+          assert_cold_start(result)
+        end)
+
+      assert log =~ ":initial_routes is invalid"
+    end
+
     test "a leading empty trip does not break an otherwise seeded warm start" do
       model = two_trip_model()
 

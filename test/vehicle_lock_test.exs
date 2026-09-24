@@ -97,6 +97,17 @@ defmodule ExVrp.VehicleLockTest do
       assert {:error, errors} = Model.validate(model)
       assert Enum.any?(errors, &(&1 =~ "vehicle lock"))
     end
+
+    test "a non-integer location alongside other bad fields is rejected instead of raising" do
+      model =
+        Model.set_vehicle_locks(base_model(), [
+          %{location: {1}, vehicle_type: 99, price: -1},
+          %{location: {1}, vehicle_type: 0, price: 500}
+        ])
+
+      assert {:error, errors} = Model.validate(model)
+      assert Enum.any?(errors, &(&1 =~ "more than one lock"))
+    end
   end
 
   describe "solution cost" do

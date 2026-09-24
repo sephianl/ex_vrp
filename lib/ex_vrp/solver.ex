@@ -734,8 +734,10 @@ defmodule ExVrp.Solver do
   # as an unused vehicle type: skip it exactly like a flat `[]` would be, rather than building an
   # empty route the NIF's Solution rejects. `match?/2` never raises, so a malformed trip (not a
   # map, or missing `:clients`) counts as non-empty here and is left for the NIF's own validation
-  # to reject with its usual invalid-start warning.
-  defp all_trips_empty?(trips), do: Enum.all?(trips, &match?(%{clients: []}, &1))
+  # to reject with its usual invalid-start warning. A `{:trips, ...}` whose value is not a list
+  # goes the same way.
+  defp all_trips_empty?(trips) when is_list(trips), do: Enum.all?(trips, &match?(%{clients: []}, &1))
+  defp all_trips_empty?(_not_a_list), do: false
 
   defp run_ils(problem_data, penalty_manager, local_search, initial_solution, stop_fn, opts, seed, solve_start) do
     ils_params = opts[:ils_params] || %IteratedLocalSearch.Params{}

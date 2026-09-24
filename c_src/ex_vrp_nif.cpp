@@ -1416,7 +1416,8 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
             if (location >= num_locations || price < 0)
                 throw std::invalid_argument("Invalid vehicle lock");
 
-            locks[location].emplace(vehicle_type, Cost(price));
+            locks[location].emplace(
+                ProblemData::VehicleLock{vehicle_type, Cost(price)});
         }
     }
 
