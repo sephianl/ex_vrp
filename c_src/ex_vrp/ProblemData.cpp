@@ -821,6 +821,23 @@ void ProblemData::validate() const
             throw std::invalid_argument("Allowed set shape does not match the "
                                         "problem size.");
     }
+
+    // Vehicle lock checks.
+    if (!locks_.empty())
+    {
+        if (locks_.size() != numLocations())
+            throw std::invalid_argument("Lock vector shape does not match the "
+                                        "problem size.");
+
+        for (size_t loc = 0; loc != numDepots(); ++loc)
+            if (locks_[loc].has_value())
+                throw std::invalid_argument("Depots cannot be locked.");
+
+        for (auto const &lock : locks_)
+            if (lock && lock->vehicleType >= numVehicleTypes())
+                throw std::invalid_argument("Vehicle lock has invalid vehicle "
+                                            "type.");
+    }
 }
 
 ProblemData::ProblemData(std::vector<Client> clients,
@@ -831,7 +848,8 @@ ProblemData::ProblemData(std::vector<Client> clients,
                          std::vector<ClientGroup> groups,
                          std::vector<SameVehicleGroup> sameVehicleGroups,
                          std::vector<std::vector<Cost>> penalties,
-                         std::vector<DynamicBitset> allowed)
+                         std::vector<DynamicBitset> allowed,
+                         std::vector<std::optional<VehicleLock>> locks)
     : dists_(std::move(distMats)),
       durs_(std::move(durMats)),
       clients_(std::move(clients)),
@@ -842,6 +860,7 @@ ProblemData::ProblemData(std::vector<Client> clients,
       penalties_(normalisePenalties(std::move(penalties),
                                     dists_.size(),
                                     clients_.size() + depots_.size())),
+      locks_(std::move(locks)),
       allowed_(normaliseAllowed(
           std::move(allowed), dists_.size(), clients_.size() + depots_.size())),
       // normaliseAllowed and the NIF both set every bit before clearing the

@@ -95,7 +95,8 @@ defmodule ExVrp.Model do
           distance_matrices: [[[non_neg_integer()]]],
           duration_matrices: [[[non_neg_integer()]]],
           penalties: [[non_neg_integer()]],
-          forbidden: [[non_neg_integer()]]
+          forbidden: [[non_neg_integer()]],
+          vehicle_locks: [map()]
         }
 
   defstruct clients: [],
@@ -106,7 +107,8 @@ defmodule ExVrp.Model do
             distance_matrices: [],
             duration_matrices: [],
             penalties: [],
-            forbidden: []
+            forbidden: [],
+            vehicle_locks: []
 
   @doc """
   Creates a new empty model.
@@ -473,6 +475,24 @@ defmodule ExVrp.Model do
   end
 
   @doc """
+  Locks clients to vehicle types. A locked client pays `price` whenever a vehicle type other than
+  `vehicle_type` serves it, and nothing when its own does or when it is not served at all.
+
+  `location` is a location index in matrix order (depots first, then clients), as for
+  `set_penalties/2`. At most one lock per client. Defaults to no locks.
+
+  ## Example
+
+      model
+      |> ExVrp.Model.set_vehicle_locks([%{location: 3, vehicle_type: 0, price: 5_000}])
+  """
+  @spec set_vehicle_locks(t(), [
+          %{location: non_neg_integer(), vehicle_type: non_neg_integer(), price: non_neg_integer()}
+        ]) ::
+          t()
+  def set_vehicle_locks(%__MODULE__{} = model, locks), do: %{model | vehicle_locks: locks}
+
+  @doc """
   Sets per-profile forbidden locations.
 
   One list per routing profile, each holding the location indices that
@@ -528,6 +548,7 @@ defmodule ExVrp.Model do
       |> validate_client_groups(model)
       |> validate_same_vehicle_groups(model)
       |> validate_penalties(model)
+      |> validate_vehicle_locks(model)
       |> validate_forbidden(model)
 
     case errors do
@@ -758,6 +779,45 @@ defmodule ExVrp.Model do
     else
       ["Depot penalties must be zero — use a depot's reload_cost instead" | errors]
     end
+  end
+
+  defp validate_vehicle_locks(errors, %{vehicle_locks: []}), do: errors
+
+  defp validate_vehicle_locks(errors, model) do
+    num_depots = length(model.depots)
+    num_locations = num_locations(model)
+    num_vehicle_types = length(model.vehicle_types)
+
+    errors
+    |> validate_lock_entries(model.vehicle_locks, num_depots, num_locations, num_vehicle_types)
+    |> validate_lock_duplicates(model.vehicle_locks)
+  end
+
+  defp validate_lock_entries(errors, locks, num_depots, num_locations, num_vehicle_types) do
+    new_errors = Enum.flat_map(locks, &lock_errors(&1, num_depots, num_locations, num_vehicle_types))
+    new_errors ++ errors
+  end
+
+  defp lock_errors(%{location: loc, vehicle_type: vt, price: price}, num_depots, num_locations, num_vehicle_types) do
+    Enum.filter(
+      [
+        loc < num_depots && "vehicle lock on location #{loc}: depots cannot be locked",
+        loc >= num_locations && "vehicle lock on location #{loc}: no such location",
+        vt >= num_vehicle_types && "vehicle lock on location #{loc}: vehicle type #{vt} does not exist",
+        (not is_integer(price) or price < 0) && "vehicle lock on location #{loc}: price must be a non-negative integer"
+      ],
+      &is_binary/1
+    )
+  end
+
+  defp validate_lock_duplicates(errors, locks) do
+    duplicate_errors =
+      locks
+      |> Enum.frequencies_by(& &1.location)
+      |> Enum.filter(fn {_loc, count} -> count > 1 end)
+      |> Enum.map(fn {loc, _count} -> "location #{loc} has more than one lock" end)
+
+    duplicate_errors ++ errors
   end
 
   defp validate_forbidden(errors, %{forbidden: []}), do: errors

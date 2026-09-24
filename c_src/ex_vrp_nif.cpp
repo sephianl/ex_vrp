@@ -47,6 +47,38 @@ static inline int nif_get_int64(ErlNifEnv *env, ERL_NIF_TERM term, int64_t *ip)
     return ret;
 }
 
+// Reads a required non-negative integer field from an Elixir map, throwing
+// when the key is missing or the value does not decode.
+static size_t get_map_uint(ErlNifEnv *env, ERL_NIF_TERM map, char const *field)
+{
+    ERL_NIF_TERM value;
+    ERL_NIF_TERM key = enif_make_atom(env, field);
+    int64_t result;
+    if (!enif_get_map_value(env, map, key, &value)
+        || !nif_get_int64(env, value, &result) || result < 0)
+        throw std::invalid_argument(std::string("Expected non-negative "
+                                                "integer field ")
+                                    + field);
+
+    return static_cast<size_t>(result);
+}
+
+// Reads a required integer field from an Elixir map, throwing when the key
+// is missing or the value does not decode.
+static int64_t
+get_map_int64(ErlNifEnv *env, ERL_NIF_TERM map, char const *field)
+{
+    ERL_NIF_TERM value;
+    ERL_NIF_TERM key = enif_make_atom(env, field);
+    int64_t result;
+    if (!enif_get_map_value(env, map, key, &value)
+        || !nif_get_int64(env, value, &result))
+        throw std::invalid_argument(std::string("Expected integer field ")
+                                    + field);
+
+    return result;
+}
+
 // Forward declarations
 std::string decode_binary_to_string([[maybe_unused]] ErlNifEnv *env,
                                     ERL_NIF_TERM term);
@@ -1190,6 +1222,11 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
     bool has_penalties
         = enif_get_map_value(env, model_term, key, &penalties_term);
 
+    // Get vehicle locks (optional)
+    ERL_NIF_TERM locks_term;
+    key = enif_make_atom(env, "vehicle_locks");
+    bool has_locks = enif_get_map_value(env, model_term, key, &locks_term);
+
     // Get forbidden locations (optional)
     ERL_NIF_TERM forbidden_term;
     key = enif_make_atom(env, "forbidden");
@@ -1355,6 +1392,34 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
         }
     }
 
+    // Decode vehicle locks: a list of %{location, vehicle_type, price} maps,
+    // spread into one optional lock per location. Empty means no locks.
+    std::vector<std::optional<ProblemData::VehicleLock>> locks;
+    if (has_locks)
+    {
+        unsigned num_locks;
+        if (!enif_get_list_length(env, locks_term, &num_locks))
+            throw std::invalid_argument("Expected list for vehicle_locks");
+
+        if (num_locks > 0)
+            locks.resize(num_locations);
+
+        tail = locks_term;
+        for (unsigned idx = 0; idx < num_locks; idx++)
+        {
+            enif_get_list_cell(env, tail, &head, &tail);
+
+            auto const location = get_map_uint(env, head, "location");
+            auto const vehicle_type = get_map_uint(env, head, "vehicle_type");
+            auto const price = get_map_int64(env, head, "price");
+
+            if (location >= num_locations || price < 0)
+                throw std::invalid_argument("Invalid vehicle lock");
+
+            locks[location].emplace(vehicle_type, Cost(price));
+        }
+    }
+
     // Decode forbidden: one list of location indices per profile, inverted
     // into an allowed-set bitset.
     std::vector<DynamicBitset> allowed;
@@ -1410,7 +1475,8 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
                                         std::move(client_groups),
                                         std::move(same_vehicle_groups),
                                         std::move(penalties),
-                                        std::move(allowed));
+                                        std::move(allowed),
+                                        std::move(locks));
 
     return fine::Ok(fine::make_resource<ProblemDataResource>(problem_data));
 }
