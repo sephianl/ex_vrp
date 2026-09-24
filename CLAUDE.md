@@ -11,13 +11,13 @@ Expect the literature to contradict this: PyVRP's own citation (Wouda, Lan & Koo
 - **What**: Library (hex package) that wraps PyVRP's C++ solver for Elixir
 - **Consumer**: [Zelo](https://github.com/sephianl/zelo) planner pipeline uses this as a dependency
 - **PyVRP docs**: https://pyvrp.readthedocs.io/ for algorithm concepts
-- **Elixir API**: `mix usage_rules.docs ExVrp` or see `.claude/skills/exvrp-reference.md`
+- **Elixir API**: the `@moduledoc`/`@doc`/`@type` in `lib/ex_vrp/*.ex`
 
 ## Working on This Project
 
 ### Use the skill
 
-Load `.claude/skills/exvrp-reference.md` before diving into implementation — it has the full API surface, data structures, solve pipeline, and test map.
+Load the `exvrp-reference` skill (`.claude/skills/exvrp-reference/SKILL.md`) before diving into implementation — it has what the code docs don't: the solve pipeline, how each constraint is enforced in the C++ search, fork history, and the test map. `mix run .claude/skills/verify_citations.exs` checks that every code reference in it still resolves.
 
 ### Workflow
 
