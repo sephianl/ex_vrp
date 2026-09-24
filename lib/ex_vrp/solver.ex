@@ -725,11 +725,17 @@ defmodule ExVrp.Solver do
     |> Enum.with_index()
     |> Enum.flat_map(fn
       {[], _idx} -> []
-      {{:trips, []}, _idx} -> []
+      {{:trips, trips}, idx} -> if all_trips_empty?(trips), do: [], else: [{idx, {:trips, trips}}]
       {clients, idx} when is_list(clients) -> [{idx, clients}]
-      {{:trips, _trips} = trips, idx} -> [{idx, trips}]
     end)
   end
+
+  # A `{:trips, [...]}` entry whose trips all carry zero clients is, as a warm start, the same
+  # as an unused vehicle type: skip it exactly like a flat `[]` would be, rather than building an
+  # empty route the NIF's Solution rejects. `match?/2` never raises, so a malformed trip (not a
+  # map, or missing `:clients`) counts as non-empty here and is left for the NIF's own validation
+  # to reject with its usual invalid-start warning.
+  defp all_trips_empty?(trips), do: Enum.all?(trips, &match?(%{clients: []}, &1))
 
   defp run_ils(problem_data, penalty_manager, local_search, initial_solution, stop_fn, opts, seed, solve_start) do
     ils_params = opts[:ils_params] || %IteratedLocalSearch.Params{}

@@ -1181,6 +1181,60 @@ defmodule ExVrp.MultiTripTest do
   end
 
   describe "trip-aware warm starts" do
+    test "an all-empty trips seed for one vehicle type keeps another vehicle type's seed" do
+      model = Model.add_vehicle_type(two_trip_model(), num_available: 1, capacity: [2])
+
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            Solver.solve(model,
+              stop: ExVrp.StoppingCriteria.max_iterations(0),
+              initial_routes: [
+                {:trips, [%{reload_depot: nil, clients: []}, %{reload_depot: 0, clients: []}]},
+                [1, 2]
+              ]
+            )
+
+          assert [[1, 2]] == Native.solution_routes(result.best.solution_ref)
+        end)
+
+      refute log =~ ":initial_routes is invalid"
+    end
+
+    test "a leading empty trip does not break an otherwise seeded warm start" do
+      model = two_trip_model()
+
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            Solver.solve(model,
+              stop: ExVrp.StoppingCriteria.max_iterations(0),
+              initial_routes: [{:trips, [%{reload_depot: nil, clients: []}, %{reload_depot: 0, clients: [1, 2]}]}]
+            )
+
+          assert Solution.num_clients(result.best) == 2
+        end)
+
+      refute log =~ ":initial_routes is invalid"
+    end
+
+    test "a trailing empty trip does not break an otherwise seeded warm start" do
+      model = two_trip_model()
+
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            Solver.solve(model,
+              stop: ExVrp.StoppingCriteria.max_iterations(0),
+              initial_routes: [{:trips, [%{reload_depot: nil, clients: [1, 2]}, %{reload_depot: 0, clients: []}]}]
+            )
+
+          assert Solution.num_clients(result.best) == 2
+        end)
+
+      refute log =~ ":initial_routes is invalid"
+    end
+
     test "a warm start given as trips comes back with the same trips" do
       model = two_trip_model()
 
@@ -1213,7 +1267,6 @@ defmodule ExVrp.MultiTripTest do
               initial_routes: [{:trips, [%{reload_depot: nil, clients: [1]}, %{reload_depot: 5, clients: [2]}]}]
             )
 
-          assert Solution.num_clients(result.best) >= 0
           assert_cold_start(result)
         end)
 

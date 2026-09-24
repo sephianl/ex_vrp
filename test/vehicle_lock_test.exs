@@ -69,6 +69,34 @@ defmodule ExVrp.VehicleLockTest do
 
       assert {:error, _errors} = Model.validate(model)
     end
+
+    test "a negative vehicle type is rejected" do
+      model = Model.set_vehicle_locks(base_model(), [%{location: 1, vehicle_type: -1, price: 500}])
+
+      assert {:error, errors} = Model.validate(model)
+      assert Enum.any?(errors, &(&1 =~ "vehicle_type"))
+    end
+
+    test "a float location is rejected" do
+      model = Model.set_vehicle_locks(base_model(), [%{location: 1.0, vehicle_type: 0, price: 500}])
+
+      assert {:error, errors} = Model.validate(model)
+      assert Enum.any?(errors, &(&1 =~ "location"))
+    end
+
+    test "a float vehicle type is rejected" do
+      model = Model.set_vehicle_locks(base_model(), [%{location: 1, vehicle_type: 0.0, price: 500}])
+
+      assert {:error, errors} = Model.validate(model)
+      assert Enum.any?(errors, &(&1 =~ "vehicle_type"))
+    end
+
+    test "a lock map missing a key is rejected instead of raising" do
+      model = Model.set_vehicle_locks(base_model(), [%{location: 1, vehicle_type: 0}])
+
+      assert {:error, errors} = Model.validate(model)
+      assert Enum.any?(errors, &(&1 =~ "vehicle lock"))
+    end
   end
 
   describe "solution cost" do
@@ -110,10 +138,10 @@ defmodule ExVrp.VehicleLockTest do
     alias ExVrp.Solution
     alias ExVrp.Solver
 
-    # A line of locations; vehicle type 0 starts at the far left, type 1 at the far right, both
-    # at depot 0 for simplicity of the matrix but with a fixed cost difference per side. Every
-    # odd client is locked to type 1, every even one to type 0. Without locks the solver
-    # partitions by position; with a high price it must partition by lock instead.
+    # A line of locations, one depot at 0, two identical vehicle types. Every odd client is
+    # locked to vehicle type 1, every even one to vehicle type 0. Without locks the solver is
+    # free to split clients however routing cost prefers; a high enough price forces it to
+    # split by lock instead.
     defp line_model(n, price) do
       locations = 0..n
 
