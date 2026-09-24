@@ -89,4 +89,70 @@ defmodule ExVrp.VehicleLockTest do
       assert Solution.lock_cost(result.best) == 0
     end
   end
+
+  describe "locks under local search" do
+    alias ExVrp.Solution
+    alias ExVrp.Solver
+
+    # A line of locations; vehicle type 0 starts at the far left, type 1 at the far right, both
+    # at depot 0 for simplicity of the matrix but with a fixed cost difference per side. Every
+    # odd client is locked to type 1, every even one to type 0. Without locks the solver
+    # partitions by position; with a high price it must partition by lock instead.
+    defp line_model(n, price) do
+      locations = 0..n
+
+      matrix = for i <- locations, do: for(j <- locations, do: abs(i - j) * 10)
+
+      model =
+        1..n
+        |> Enum.reduce(Model.add_depot(Model.new(), tw_late: 100_000), fn _i, m ->
+          Model.add_client(m, delivery: [1], tw_late: 100_000, required: true)
+        end)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [n], unit_distance_cost: 1)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [n], unit_distance_cost: 1)
+        |> Model.set_distance_matrices([matrix])
+        |> Model.set_duration_matrices([matrix])
+
+      locks = for loc <- 1..n, do: %{location: loc, vehicle_type: rem(loc, 2), price: price}
+
+      Model.set_vehicle_locks(model, locks)
+    end
+
+    test "a price above any routing gain puts every locked client on its vehicle type" do
+      {:ok, result} = Solver.solve(line_model(12, 1_000_000), stop: ExVrp.StoppingCriteria.max_iterations(2_000))
+
+      assert Solution.feasible?(result.best)
+      assert Solution.lock_cost(result.best) == 0
+    end
+
+    test "a zero price leaves the solver free to ignore the locks" do
+      {:ok, result} = Solver.solve(line_model(12, 0), stop: ExVrp.StoppingCriteria.max_iterations(2_000))
+
+      assert Solution.lock_cost(result.best) == 0
+      assert Solution.num_clients(result.best) == 12
+    end
+
+    test "a warm start with every client on the wrong vehicle type is moved back" do
+      n = 12
+      wrong = [Enum.filter(1..n, &(rem(&1, 2) == 1)), Enum.filter(1..n, &(rem(&1, 2) == 0))]
+
+      {:ok, result} =
+        Solver.solve(line_model(n, 1_000_000),
+          stop: ExVrp.StoppingCriteria.max_iterations(2_000),
+          initial_routes: wrong
+        )
+
+      assert Solution.lock_cost(result.best) == 0
+    end
+
+    test "a vehicle type sharing the locked type's profile still pays the lock" do
+      # Both vehicle types use profile 0, so SegmentBetween cannot short-circuit on profile alone.
+      model = line_model(4, 1_000)
+
+      {:ok, result} =
+        Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(0), initial_routes: [[1, 3], [2, 4]])
+
+      assert Solution.lock_cost(result.best) == 4 * 1_000
+    end
+  end
 end
