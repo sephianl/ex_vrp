@@ -52,7 +52,10 @@ in
       files = ".ex[s]?$";
     };
 
-    prettier.enable = !config.devenv.isTesting;
+    prettier = {
+      enable = !config.devenv.isTesting;
+      excludes = [ "^\\.claude/" ];
+    };
     nixfmt-rfc-style.enable = !config.devenv.isTesting;
     clang-format.enable = !config.devenv.isTesting;
 
