@@ -48,6 +48,22 @@ defmodule ExVrp.VehicleLockTest do
       assert Enum.any?(errors, &(&1 =~ "more than one lock"))
     end
 
+    test "a lock on a member of a mutually exclusive client group validates" do
+      model = Model.add_depot(Model.new(), tw_late: 1000)
+      {model, group} = Model.add_client_group(model, required: true, mutually_exclusive: true)
+
+      model =
+        model
+        |> Model.add_client(delivery: [1], tw_late: 1000, required: false, group: group)
+        |> Model.add_client(delivery: [1], tw_late: 1000, required: false, group: group)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [10])
+        |> Model.set_distance_matrices([[[0, 10, 10], [10, 0, 10], [10, 10, 0]]])
+        |> Model.set_duration_matrices([[[0, 10, 10], [10, 0, 10], [10, 10, 0]]])
+        |> Model.set_vehicle_locks([%{location: 1, vehicle_type: 0, price: 500}])
+
+      assert :ok == Model.validate(model)
+    end
+
     test "a negative price is rejected" do
       model = Model.set_vehicle_locks(base_model(), [%{location: 1, vehicle_type: 0, price: -1}])
 
@@ -145,14 +161,114 @@ defmodule ExVrp.VehicleLockTest do
       assert Solution.lock_cost(result.best) == 0
     end
 
-    test "a vehicle type sharing the locked type's profile still pays the lock" do
-      # Both vehicle types use profile 0, so SegmentBetween cannot short-circuit on profile alone.
+    test "a warm start's cost includes the lock price" do
       model = line_model(4, 1_000)
 
       {:ok, result} =
         Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(0), initial_routes: [[1, 3], [2, 4]])
 
       assert Solution.lock_cost(result.best) == 4 * 1_000
+    end
+  end
+
+  describe "locks in a move's delta" do
+    alias ExVrp.Native
+
+    @price 50
+
+    # Clients on a line: 1 at 100, 2 at -100, 3 at 101. Moving 1 away from 2 and next to 3 saves
+    # 200 distance whichever route it leaves, so every move below is improving and its delta exact.
+    # Both vehicle types share profile 0, so only the vehicle type tells the routes apart.
+    defp relocate_delta(locks, from_visits, from_type, to_visits, to_type) do
+      xs = [0, 100, -100, 101]
+      matrix = for i <- xs, do: for(j <- xs, do: abs(i - j))
+
+      model =
+        Model.new()
+        |> Model.add_depot(tw_late: 100_000)
+        |> Model.add_client(delivery: [1], tw_late: 100_000)
+        |> Model.add_client(delivery: [1], tw_late: 100_000)
+        |> Model.add_client(delivery: [1], tw_late: 100_000)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [10], unit_distance_cost: 1)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [10], unit_distance_cost: 1)
+        |> Model.set_distance_matrices([matrix])
+        |> Model.set_duration_matrices([matrix])
+        |> Model.set_vehicle_locks(locks)
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+      {:ok, cost_evaluator} = Native.create_cost_evaluator(load_penalties: [20.0], tw_penalty: 6.0, dist_penalty: 0.0)
+
+      from = Native.make_search_route_nif(problem_data, from_visits, from_type, from_type)
+      to = Native.make_search_route_nif(problem_data, to_visits, to_type, to_type)
+
+      client1 = Native.search_route_get_node_nif(from, Enum.find_index(from_visits, &(&1 == 1)) + 1)
+      depot = Native.search_route_get_node_nif(to, 0)
+
+      Native.exchange10_evaluate_nif(Native.create_exchange10_nif(problem_data), client1, depot, cost_evaluator)
+    end
+
+    test "moving a client onto its locked vehicle type saves the price" do
+      lock = [%{location: 1, vehicle_type: 1, price: @price}]
+
+      free = relocate_delta([], [1, 2], 0, [3], 1)
+      locked = relocate_delta(lock, [1, 2], 0, [3], 1)
+
+      assert free == -200
+      assert locked == free - @price
+    end
+
+    test "moving a client off its locked vehicle type costs the price" do
+      lock = [%{location: 1, vehicle_type: 1, price: @price}]
+
+      free = relocate_delta([], [1, 2], 1, [3], 0)
+      locked = relocate_delta(lock, [1, 2], 1, [3], 0)
+
+      assert free == -200
+      assert locked == free + @price
+    end
+  end
+
+  describe "locks on a mutually exclusive client group" do
+    alias ExVrp.Solution
+    alias ExVrp.Solver
+
+    @group_price 1_000_000
+
+    # Client 3 is required; clients 1 and 2 form a required mutually exclusive group, so exactly
+    # one of them is visited. Both group members are locked to vehicle type 0.
+    defp group_model do
+      model = Model.add_depot(Model.new(), tw_late: 1000)
+      {model, group} = Model.add_client_group(model, required: true, mutually_exclusive: true)
+
+      model
+      |> Model.add_client(delivery: [1], tw_late: 1000, required: false, group: group)
+      |> Model.add_client(delivery: [1], tw_late: 1000, required: false, group: group)
+      |> Model.add_client(delivery: [1], tw_late: 1000)
+      |> Model.add_vehicle_type(num_available: 1, capacity: [10], unit_distance_cost: 1)
+      |> Model.add_vehicle_type(num_available: 1, capacity: [10], unit_distance_cost: 1)
+      |> Model.set_distance_matrices([[[0, 10, 10, 10], [10, 0, 10, 10], [10, 10, 0, 10], [10, 10, 10, 0]]])
+      |> Model.set_duration_matrices([[[0, 10, 10, 10], [10, 0, 10, 10], [10, 10, 0, 10], [10, 10, 10, 0]]])
+      |> Model.set_vehicle_locks([
+        %{location: 1, vehicle_type: 0, price: @group_price},
+        %{location: 2, vehicle_type: 0, price: @group_price}
+      ])
+    end
+
+    test "the search puts the visited member on its locked vehicle type" do
+      {:ok, result} =
+        Solver.solve(group_model(), stop: ExVrp.StoppingCriteria.max_iterations(500), initial_routes: [[3], [1]])
+
+      visited = result.best.routes |> List.flatten() |> Enum.filter(&(&1 in [1, 2]))
+
+      assert length(visited) == 1
+      assert Solution.lock_cost(result.best) == 0
+    end
+
+    test "only the visited member pays the lock" do
+      {:ok, result} =
+        Solver.solve(group_model(), stop: ExVrp.StoppingCriteria.max_iterations(0), initial_routes: [[3], [1]])
+
+      assert Solution.lock_cost(result.best) == @group_price
     end
   end
 end
