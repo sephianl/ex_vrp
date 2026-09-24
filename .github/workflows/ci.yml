@@ -54,6 +54,10 @@ jobs:
         run: |
           devenv shell mix format --check-formatted
 
+      - name: Verify skill citations
+        run: |
+          devenv shell mix run .claude/skills/verify_citations.exs
+
       - name: Check C++ formatting
         run: |
           devenv shell task cpp:format:check
