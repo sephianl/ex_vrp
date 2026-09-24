@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.13.0
+
+### Added
+
+- **Vehicle locks.** `ExVrp.Model.set_vehicle_locks/2` locks a client to a vehicle type: any other
+  vehicle type serving it pays the lock's price. Node-additive like the penalty channel, so every
+  local-search move is priced with it. `ExVrp.Solution.lock_cost/1` reports the lock share of
+  `penalty_cost/1`.
+- **Trip-aware warm starts.** `:initial_routes` accepts `{:trips, [...]}` per vehicle type, and
+  `ExVrp.Native.solution_trips/1` reads trips back. The warm-start trim now also runs on
+  multi-trip routes.
+
+### Removed
+
+- The 0.12.2 perturbation guard for same-vehicle groups. It served whole-route groups used as dock
+  holds, which vehicle locks replace, and slowed convergence of small groups.
+
 ## 0.12.2
 
 ### Fixed
