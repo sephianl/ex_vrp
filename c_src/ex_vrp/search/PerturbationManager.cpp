@@ -6,7 +6,6 @@
 
 using pyvrp::search::PerturbationManager;
 using pyvrp::search::PerturbationParams;
-using pyvrp::search::Route;
 
 namespace
 {
@@ -42,11 +41,9 @@ void PerturbationManager::shuffle(RandomNumberGenerator &rng)
     numPerturbations_ = params_.minPerturbations + rng.randint(range + 1);
 }
 
-void PerturbationManager::perturb(
-    Solution &solution,
-    SearchSpace &searchSpace,
-    CostEvaluator const &costEvaluator,
-    std::vector<std::vector<size_t>> const &clientToSameVehicleGroups) const
+void PerturbationManager::perturb(Solution &solution,
+                                  SearchSpace &searchSpace,
+                                  CostEvaluator const &costEvaluator) const
 {
     size_t movesLeft = numPerturbations_;
 
@@ -56,19 +53,6 @@ void PerturbationManager::perturb(
     // Clear the set of promising nodes. Perturbation determines the initial
     // set of promising nodes for further (local search) improvement.
     searchSpace.unmarkAllPromising();
-
-    // A same-vehicle group member on a feasible route is left in place. When
-    // most clients are grouped, removing them keeps the search on its starting
-    // plan and it rarely places unassigned optional clients; skipping those
-    // removals spends the perturbation on inserting them instead (see
-    // test/same_vehicle_perturbation_test.exs). On an infeasible route removal
-    // is still allowed: that is how the search repairs a route it cannot
-    // otherwise fix.
-    auto const strandsTheClient = [&](auto const *node, Route const *route)
-    {
-        return !clientToSameVehicleGroups[node->client()].empty()
-               && route->isFeasible();
-    };
 
     DynamicBitset perturbed = {solution.nodes.size()};
     auto const perturb = [&](auto *node, PerturbType action)
@@ -80,8 +64,7 @@ void PerturbationManager::perturb(
 
         // Remove if node is in a route and we are currently removing.
         auto *route = node->route();
-        if (route && action == PerturbType::REMOVE
-            && !strandsTheClient(node, route))
+        if (route && action == PerturbType::REMOVE)
         {
             searchSpace.markPromising(node);
             route->remove(node->idx());
