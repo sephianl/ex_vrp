@@ -1620,6 +1620,58 @@ solution_routes([[maybe_unused]] ErlNifEnv *env,
 FINE_NIF(solution_routes, 0);
 
 /**
+ * Get routes from solution as, per route, its trips: a list of
+ * %{start_depot: depot, clients: [client, ...]} maps. The inverse of the
+ * {:trips, ...} warm-start form, where only the first trip starts at the
+ * vehicle type's start depot and every later one at a reload depot.
+ */
+fine::Term solution_trips([[maybe_unused]] ErlNifEnv *env,
+                          fine::ResourcePtr<SolutionResource> solution_resource)
+{
+    auto &solution = solution_resource->solution;
+
+    ERL_NIF_TERM keys[]
+        = {enif_make_atom(env, "start_depot"), enif_make_atom(env, "clients")};
+
+    auto const &routes = solution.routes();
+    std::vector<ERL_NIF_TERM> route_terms;
+    route_terms.reserve(routes.size());
+
+    for (auto const &route : routes)
+    {
+        std::vector<ERL_NIF_TERM> trip_terms;
+        trip_terms.reserve(route.numTrips());
+
+        for (auto const &trip : route.trips())
+        {
+            std::vector<ERL_NIF_TERM> client_terms;
+            client_terms.reserve(trip.size());
+
+            for (auto const client : trip)
+                client_terms.push_back(
+                    enif_make_int64(env, static_cast<int64_t>(client)));
+
+            ERL_NIF_TERM values[] = {
+                enif_make_int64(env, static_cast<int64_t>(trip.startDepot())),
+                enif_make_list_from_array(
+                    env, client_terms.data(), client_terms.size())};
+
+            ERL_NIF_TERM trip_term;
+            enif_make_map_from_arrays(env, keys, values, 2, &trip_term);
+            trip_terms.push_back(trip_term);
+        }
+
+        route_terms.push_back(enif_make_list_from_array(
+            env, trip_terms.data(), trip_terms.size()));
+    }
+
+    return fine::Term(
+        enif_make_list_from_array(env, route_terms.data(), route_terms.size()));
+}
+
+FINE_NIF(solution_trips, 0);
+
+/**
  * Get unassigned client indices from solution.
  */
 fine::Term
@@ -2583,14 +2635,186 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> create_solution_from_routes_nif(
 
 FINE_NIF(create_solution_from_routes_nif, 0);
 
+// Decodes a warm-start list of client IDs, rejecting any ID that names a
+// depot or a location the problem does not have.
+static std::vector<size_t> decode_warm_start_clients(ErlNifEnv *env,
+                                                     ProblemData const &data,
+                                                     ERL_NIF_TERM clients_term)
+{
+    unsigned route_len;
+    if (!enif_get_list_length(env, clients_term, &route_len))
+    {
+        throw std::runtime_error("Expected list for client_ids");
+    }
+
+    auto const num_depots = data.numDepots();
+    auto const num_locations = data.numLocations();
+
+    std::vector<size_t> visits;
+    visits.reserve(route_len);
+
+    ERL_NIF_TERM client_head, client_tail = clients_term;
+    for (unsigned j = 0; j < route_len; j++)
+    {
+        if (!enif_get_list_cell(env, client_tail, &client_head, &client_tail))
+        {
+            throw std::runtime_error("Failed to get client from route");
+        }
+
+        int64_t client_id;
+        if (!nif_get_int64(env, client_head, &client_id))
+        {
+            throw std::runtime_error("Expected integer for client ID");
+        }
+        if (client_id < static_cast<int64_t>(num_depots)
+            || static_cast<size_t>(client_id) >= num_locations)
+        {
+            std::ostringstream msg;
+            msg << "client_id " << client_id << " is out of range (expected ["
+                << num_depots << ", " << num_locations << "))";
+            throw std::invalid_argument(msg.str());
+        }
+        visits.push_back(static_cast<size_t>(client_id));
+    }
+
+    return visits;
+}
+
+// Reads a trip's reload depot: nil for the first trip, which leaves from the
+// vehicle type's start depot, and a depot the vehicle type may reload at for
+// every later one. The Trip constructor alone would also accept the vehicle's
+// start or end depot here, which is not a reload the vehicle type allows.
+static std::optional<size_t>
+decode_reload_depot(ErlNifEnv *env,
+                    ProblemData::VehicleType const &vehicle_type,
+                    ERL_NIF_TERM trip_term,
+                    size_t trip_idx)
+{
+    ERL_NIF_TERM value;
+    if (!enif_get_map_value(
+            env, trip_term, enif_make_atom(env, "reload_depot"), &value))
+    {
+        throw std::invalid_argument("Each trip needs a reload_depot key");
+    }
+
+    bool const is_nil = enif_is_identical(value, enif_make_atom(env, "nil"));
+
+    if (trip_idx == 0)
+    {
+        if (!is_nil)
+        {
+            throw std::invalid_argument(
+                "The first trip starts at the vehicle type's start depot, so "
+                "its reload_depot must be nil");
+        }
+
+        return std::nullopt;
+    }
+
+    int64_t depot;
+    if (is_nil || !nif_get_int64(env, value, &depot) || depot < 0)
+    {
+        throw std::invalid_argument(
+            "Every trip after the first needs a non-negative reload_depot");
+    }
+
+    auto const &reloads = vehicle_type.reloadDepots;
+    if (std::find(reloads.begin(), reloads.end(), static_cast<size_t>(depot))
+        == reloads.end())
+    {
+        std::ostringstream msg;
+        msg << "reload depot " << depot
+            << " is not one of the vehicle type's reload_depots";
+        throw std::invalid_argument(msg.str());
+    }
+
+    return static_cast<size_t>(depot);
+}
+
+// Builds a route from a warm start's `[%{reload_depot:, clients:}, ...]`
+// trips. Each trip ends where the next one starts, and the last trip at the
+// vehicle type's end depot, so the route the search receives carries the
+// seed's reloads rather than one load it was never sized for.
+static Route decode_warm_start_trips(ErlNifEnv *env,
+                                     ProblemData const &data,
+                                     ERL_NIF_TERM trips_term,
+                                     size_t vehicle_type)
+{
+    auto const &vehData = data.vehicleType(vehicle_type);
+
+    unsigned num_trips;
+    if (!enif_get_list_length(env, trips_term, &num_trips))
+    {
+        throw std::runtime_error("Expected list for trips");
+    }
+
+    if (num_trips > vehData.maxTrips())
+    {
+        std::ostringstream msg;
+        msg << num_trips << " trips exceed the vehicle type's "
+            << vehData.maxTrips() << " (max_reloads + 1)";
+        throw std::invalid_argument(msg.str());
+    }
+
+    std::vector<std::optional<size_t>> start_depots;
+    std::vector<std::vector<size_t>> trip_visits;
+    start_depots.reserve(num_trips);
+    trip_visits.reserve(num_trips);
+
+    ERL_NIF_TERM trip_head, trip_tail = trips_term;
+    for (unsigned idx = 0; idx < num_trips; idx++)
+    {
+        if (!enif_get_list_cell(env, trip_tail, &trip_head, &trip_tail))
+        {
+            throw std::runtime_error("Failed to get trip from list");
+        }
+
+        ERL_NIF_TERM clients_term;
+        if (!enif_is_map(env, trip_head)
+            || !enif_get_map_value(
+                env, trip_head, enif_make_atom(env, "clients"), &clients_term))
+        {
+            throw std::invalid_argument(
+                "Each trip must be a %{reload_depot:, clients:} map");
+        }
+
+        start_depots.push_back(
+            decode_reload_depot(env, vehData, trip_head, idx));
+        trip_visits.push_back(
+            decode_warm_start_clients(env, data, clients_term));
+    }
+
+    std::vector<Trip> trips;
+    trips.reserve(num_trips);
+
+    for (size_t idx = 0; idx != num_trips; ++idx)
+    {
+        auto const end_depot = idx + 1 == num_trips ? std::optional<size_t>{}
+                                                    : start_depots[idx + 1];
+
+        trips.emplace_back(data,
+                           std::move(trip_visits[idx]),
+                           vehicle_type,
+                           start_depots[idx],
+                           end_depot);
+    }
+
+    return Route(data, std::move(trips), vehicle_type);
+}
+
 /**
  * Create a solution from explicit routes with vehicle types.
  *
- * Routes is a list of {vehicle_type, [client_id, ...]} 2-tuples. Each route
- * is constructed with the given vehicle type, allowing warm-starting
+ * Routes is a list of {vehicle_type, visits} 2-tuples. Each route is
+ * constructed with the given vehicle type, allowing warm-starting
  * heterogeneous-fleet problems where the default
  * `create_solution_from_routes_nif` (which assigns all routes to vehicle
  * type 0) is insufficient.
+ *
+ * `visits` is either a flat list of client IDs, which is one trip, or
+ * `{:trips, [%{reload_depot: depot | nil, clients: [client_id, ...]}, ...]}`,
+ * where the first trip's reload_depot is nil and every later trip names the
+ * reload depot it leaves from.
  */
 fine::Ok<fine::ResourcePtr<SolutionResource>>
 create_solution_from_routes_with_types_nif(
@@ -2642,47 +2866,24 @@ create_solution_from_routes_with_types_nif(
             throw std::invalid_argument(msg.str());
         }
 
-        unsigned route_len;
-        if (!enif_get_list_length(env, tuple_elems[1], &route_len))
+        auto const vehicle_type = static_cast<size_t>(vehicle_type_raw);
+
+        int trips_arity;
+        const ERL_NIF_TERM *trips_elems;
+        if (enif_get_tuple(env, tuple_elems[1], &trips_arity, &trips_elems)
+            && trips_arity == 2
+            && enif_is_identical(trips_elems[0], enif_make_atom(env, "trips")))
         {
-            throw std::runtime_error("Expected list for client_ids");
+            routes.push_back(decode_warm_start_trips(
+                env, *problem_data, trips_elems[1], vehicle_type));
         }
-
-        auto const num_depots = problem_data->numDepots();
-        auto const num_locations = problem_data->numLocations();
-
-        std::vector<size_t> visits;
-        visits.reserve(route_len);
-
-        ERL_NIF_TERM client_head, client_tail = tuple_elems[1];
-        for (unsigned j = 0; j < route_len; j++)
+        else
         {
-            if (!enif_get_list_cell(
-                    env, client_tail, &client_head, &client_tail))
-            {
-                throw std::runtime_error("Failed to get client from route");
-            }
-
-            int64_t client_id;
-            if (!nif_get_int64(env, client_head, &client_id))
-            {
-                throw std::runtime_error("Expected integer for client ID");
-            }
-            if (client_id < static_cast<int64_t>(num_depots)
-                || static_cast<size_t>(client_id) >= num_locations)
-            {
-                std::ostringstream msg;
-                msg << "client_id " << client_id
-                    << " is out of range (expected [" << num_depots << ", "
-                    << num_locations << "))";
-                throw std::invalid_argument(msg.str());
-            }
-            visits.push_back(static_cast<size_t>(client_id));
+            routes.emplace_back(
+                *problem_data,
+                decode_warm_start_clients(env, *problem_data, tuple_elems[1]),
+                vehicle_type);
         }
-
-        routes.emplace_back(*problem_data,
-                            std::move(visits),
-                            static_cast<size_t>(vehicle_type_raw));
     }
 
     Solution solution(*problem_data, std::move(routes));

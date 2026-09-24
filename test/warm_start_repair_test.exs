@@ -194,6 +194,40 @@ defmodule ExVrp.WarmStartRepairTest do
     end
 
     @doc """
+    The same trim on a seed that reloads. Two trips of capacity two cannot carry five clients, and
+    each client's prize outweighs the overload penalty, so the descent keeps them all. The trim
+    rebuilds every candidate trip by trip, and has to keep the reload to land on four clients.
+    """
+    @tag :nif_required
+    test "drops visits from a multi-trip seed until it is feasible, keeping its trips" do
+      Logger.configure(level: :info)
+      on_exit(fn -> Logger.configure(level: :warning) end)
+
+      model =
+        1..5
+        |> Enum.reduce(Model.add_depot(Model.new(), []), fn _client, acc ->
+          Model.add_client(acc, delivery: [1], required: false, prize: 10_000_000)
+        end)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [2], reload_depots: [0], max_reloads: 1)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {0, 10}, {0, 20}])
+
+      seed = [{:trips, [%{reload_depot: nil, clients: [1, 2, 3]}, %{reload_depot: 0, clients: [4, 5]}]}]
+
+      log =
+        capture_log(fn ->
+          {:ok, result} = ExVrp.solve(model, initial_routes: seed, max_iterations: 0, num_starts: 1, seed: 1)
+
+          assert Solution.feasible?(result.best)
+          assert Solution.num_clients(result.best) == 4
+          assert [[_first, _second]] = Native.solution_trips(result.best.solution_ref)
+        end)
+
+      assert log =~ "Warm start is infeasible"
+      assert log =~ "Warm start repair dropped 1 visit(s)"
+      refute log =~ "could not be repaired"
+    end
+
+    @doc """
     The other half of that bargain. Feasibility also demands every required client be visited, so
     where the clients are required there is no removal that gets closer to it — dropping one trades
     the time warp for a missing client and leaves the seed no more usable than before. Trimming has

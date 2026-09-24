@@ -24,7 +24,7 @@ defmodule ExVrp.Solver do
           penalty_params: PenaltyManager.Params.t(),
           ils_params: IteratedLocalSearch.Params.t(),
           on_progress: (map() -> any()) | nil,
-          initial_routes: [[non_neg_integer()]] | nil,
+          initial_routes: [Native.warm_start_visits()] | nil,
           log_label: String.t() | nil
         ]
 
@@ -83,12 +83,21 @@ defmodule ExVrp.Solver do
     initial solution directly. Example: `[[1, 2, 3], [], [4, 5]]` warm-starts
     with vehicle type 0 visiting clients 1, 2, 3 and vehicle type 2 visiting 4, 5.
 
+    A flat client list is a single trip. A vehicle type that reloads is seeded
+    trip by trip with `{:trips, [%{reload_depot: depot_idx | nil, clients: [client_idx]}]}`:
+    the first trip's `reload_depot` is `nil` (it starts at the vehicle type's
+    start depot), and each later trip names the reload depot it starts from.
+    Example: `[{:trips, [%{reload_depot: nil, clients: [1, 2]}, %{reload_depot: 0, clients: [3, 4]}]}]`
+    warm-starts vehicle type 0 with clients 1, 2, a reload at depot 0, then
+    clients 3, 4. `ExVrp.Native.solution_trips/1` reads a solution's trips back.
+
     Capacity-overloaded and time-window-violating starts are passed through to
     the solver — these are valid infeasible starting points that the solver can
     repair via penalties. Structurally invalid inputs (duplicate clients,
     out-of-range vehicle types or client IDs, too many routes for
-    `num_available`) are logged as warnings and the solver falls back to a
-    cold (empty) start rather than crashing.
+    `num_available`, a reload depot not in the vehicle type's `reload_depots`,
+    more trips than its `max_reloads + 1`) are logged as warnings and the
+    solver falls back to a cold (empty) start rather than crashing.
 
   ## Returns
 
@@ -481,21 +490,12 @@ defmodule ExVrp.Solver do
     drop_if_trimmable(trimmable?(solution), solution, problem_data, opts, budget_ms)
   end
 
-  # What a trim cannot reach, it should not spend visits on. A seed already missing a required
-  # client can never be completed by removing more of them. A seed carrying reload trips cannot
-  # survive the rebuild each candidate goes through either: `Native.solution_routes/1` reports a
-  # route's clients without its trip boundaries, so rebuilding collapses a multi-trip route into a
-  # single load it was never sized for.
-  defp trimmable?(solution) do
-    Native.solution_is_complete(solution) and single_trip_routes?(solution)
-  end
-
-  defp single_trip_routes?(solution) do
-    Enum.all?(
-      0..(Native.solution_num_routes(solution) - 1)//1,
-      &(Native.solution_route_num_trips(solution, &1) == 1)
-    )
-  end
+  # What a trim cannot reach, it should not spend visits on: a seed already missing a required
+  # client can never be completed by removing more of them. A seed carrying reload trips is fair
+  # game. Each candidate is rebuilt from `Native.solution_trips/1` as a `{:trips, ...}` warm
+  # start, so a multi-trip route keeps its reloads through the rebuild rather than collapsing into
+  # a single load it was never sized for.
+  defp trimmable?(solution), do: Native.solution_is_complete(solution)
 
   defp drop_if_trimmable(false, solution, _problem_data, _opts, _budget_ms), do: solution
 
@@ -614,13 +614,37 @@ defmodule ExVrp.Solver do
   defp rebuild_without(typed, route_idx, position, problem_data) do
     typed
     |> Enum.with_index()
-    |> Enum.map(fn {{vehicle_type, visits}, idx} -> {vehicle_type, drop_at(idx == route_idx, visits, position)} end)
-    |> Enum.reject(fn {_vehicle_type, visits} -> visits == [] end)
+    |> Enum.map(fn {{vehicle_type, trips}, idx} -> {vehicle_type, drop_at(idx == route_idx, trips, position)} end)
+    |> Enum.reject(fn {_vehicle_type, trips} -> trips == [] end)
+    |> Enum.map(fn {vehicle_type, trips} -> {vehicle_type, {:trips, as_warm_start(trips)}} end)
     |> then(&solution_from_typed_routes(problem_data, &1))
   end
 
-  defp drop_at(true, visits, position), do: List.delete_at(visits, position)
-  defp drop_at(false, visits, _position), do: visits
+  # `position` counts visits across the whole route, as `worst_route/1` sees it. A trip the removal
+  # empties is a reload that carries nothing, so it goes too — and when that was the first trip,
+  # the next one becomes first and leaves from the start depot instead.
+  defp drop_at(true, trips, position) do
+    trips
+    |> drop_visit(position)
+    |> Enum.reject(&(&1.clients == []))
+  end
+
+  defp drop_at(false, trips, _position), do: trips
+
+  defp drop_visit([%{clients: clients} = trip | trips], position),
+    do: drop_visit_from(position < length(clients), trip, trips, position)
+
+  defp drop_visit_from(true, trip, trips, position),
+    do: [%{trip | clients: List.delete_at(trip.clients, position)} | trips]
+
+  defp drop_visit_from(false, trip, trips, position), do: [trip | drop_visit(trips, position - length(trip.clients))]
+
+  defp as_warm_start([first | reloads]) do
+    [
+      %{reload_depot: nil, clients: first.clients}
+      | Enum.map(reloads, &%{reload_depot: &1.start_depot, clients: &1.clients})
+    ]
+  end
 
   defp least_violating([]), do: :no_removal
 
@@ -645,9 +669,9 @@ defmodule ExVrp.Solver do
 
   defp typed_routes(solution) do
     solution
-    |> Native.solution_routes()
+    |> Native.solution_trips()
     |> Enum.with_index()
-    |> Enum.map(fn {visits, idx} -> {Native.solution_route_vehicle_type(solution, idx), visits} end)
+    |> Enum.map(fn {trips, idx} -> {Native.solution_route_vehicle_type(solution, idx), trips} end)
   end
 
   defp log_repair(true, _repaired, opts) do
@@ -701,7 +725,9 @@ defmodule ExVrp.Solver do
     |> Enum.with_index()
     |> Enum.flat_map(fn
       {[], _idx} -> []
+      {{:trips, []}, _idx} -> []
       {clients, idx} when is_list(clients) -> [{idx, clients}]
+      {{:trips, _trips} = trips, idx} -> [{idx, trips}]
     end)
   end
 

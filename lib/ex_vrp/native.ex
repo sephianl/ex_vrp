@@ -14,6 +14,14 @@ defmodule ExVrp.Native do
   """
   @type model_input :: struct()
 
+  @typedoc """
+  One vehicle's warm-start visits: a flat client list (a single trip), or its trips, where the
+  first trip's `reload_depot` is `nil` and each later trip names the reload depot it starts from.
+  """
+  @type warm_start_visits ::
+          [non_neg_integer()]
+          | {:trips, [%{reload_depot: non_neg_integer() | nil, clients: [non_neg_integer()]}]}
+
   # NIF stubs call :erlang.nif_error/1 which Dialyzer infers as no_return().
   # The @nifs attribute generates nif_start primops in Core Erlang, but Dialyzer's
   # constraint solver still fails for complex NIF modules. Suppress until fixed in OTP.
@@ -25,6 +33,7 @@ defmodule ExVrp.Native do
     solution_distance: 1,
     solution_duration: 1,
     solution_routes: 1,
+    solution_trips: 1,
     solution_is_feasible: 1,
     solution_is_group_feasible: 1,
     solution_num_same_vehicle_violations: 1,
@@ -290,6 +299,16 @@ defmodule ExVrp.Native do
   @spec solution_routes(reference()) :: [[non_neg_integer()]]
   def solution_routes(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
 
+  @doc """
+  Per route, its trips: the depot each trip starts from and the clients it visits.
+
+  `solution_routes/1` reports a route's clients without its trip boundaries. This keeps them, in
+  the shape the `{:trips, ...}` warm start takes back: the first trip starts at the vehicle type's
+  start depot, every later one at the reload depot it leaves from.
+  """
+  @spec solution_trips(reference()) :: [[%{start_depot: non_neg_integer(), clients: [non_neg_integer()]}]]
+  def solution_trips(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
+
   @spec solution_is_feasible(reference()) :: boolean()
   def solution_is_feasible(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
 
@@ -382,16 +401,24 @@ defmodule ExVrp.Native do
   @doc """
   Creates a solution from explicit routes with vehicle types.
 
-  Routes is a list of `{vehicle_type, [client_id, ...]}` 2-tuples. Each route is
+  Routes is a list of `{vehicle_type, visits}` 2-tuples. Each route is
   constructed with the given vehicle type, allowing warm-starting heterogeneous-fleet
   problems where `create_solution_from_routes/2` (which assigns all routes to vehicle
   type 0) is insufficient.
+
+  `visits` is either a flat list of client IDs, which is a single trip, or
+  `{:trips, [%{reload_depot: depot_idx | nil, clients: [client_id, ...]}, ...]}`: the
+  first trip's `reload_depot` is `nil` (it starts at the vehicle type's start depot),
+  and each later trip names the reload depot it starts from.
 
   Inputs are bounds-checked before constructing the underlying C++ solution:
 
   - Raises `ArgumentError` if `vehicle_type` is not in `[0, num_vehicle_types)`.
   - Raises `ArgumentError` if `client_id` is not in `[num_depots, num_locations)`
     (i.e. references a depot or a non-existent location).
+  - Raises `ArgumentError` if a trip's `reload_depot` is not one of the vehicle
+    type's `reload_depots`, if the first trip names one, or if there are more
+    trips than the vehicle type's `max_reloads + 1`.
   - Raises `RuntimeError` for PyVRP-level structural violations such as
     duplicate clients across or within routes, or more routes than
     `num_available` for a vehicle type.
@@ -402,7 +429,7 @@ defmodule ExVrp.Native do
   """
   @spec create_solution_from_routes_with_types(
           reference(),
-          [{non_neg_integer(), [non_neg_integer()]}]
+          [{non_neg_integer(), warm_start_visits()}]
         ) :: {:ok, reference()} | {:error, term()}
   def create_solution_from_routes_with_types(problem_data, routes) do
     create_solution_from_routes_with_types_nif(problem_data, routes)
