@@ -1359,6 +1359,59 @@ defmodule ExVrp.MultiTripTest do
     end
   end
 
+  describe "Solution.warm_start/1" do
+    test "a multi-trip route comes back as the trips seed that built it" do
+      trips = [%{reload_depot: nil, clients: [1, 2]}, %{reload_depot: 0, clients: [3, 4]}]
+
+      {:ok, result} =
+        Solver.solve(two_trip_model(),
+          stop: ExVrp.StoppingCriteria.max_iterations(0),
+          initial_routes: [{:trips, trips}]
+        )
+
+      assert {:ok, [{:trips, ^trips}]} = Solution.warm_start(result.best)
+    end
+
+    test "a single-trip route comes back flat, and an unused vehicle type as an empty list" do
+      model = Model.add_vehicle_type(two_trip_model(), num_available: 1, capacity: [4])
+
+      {:ok, result} =
+        Solver.solve(model,
+          stop: ExVrp.StoppingCriteria.max_iterations(0),
+          initial_routes: [[], [1, 2, 3, 4]]
+        )
+
+      assert {:ok, [[], [1, 2, 3, 4]]} = Solution.warm_start(result.best)
+    end
+
+    test "a solved plan fed back in as a warm start keeps its trips" do
+      {:ok, solved} = Solver.solve(two_trip_model(), stop: ExVrp.StoppingCriteria.max_iterations(50), seed: 1)
+      {:ok, initial_routes} = Solution.warm_start(solved.best)
+
+      {:ok, resumed} =
+        Solver.solve(two_trip_model(),
+          stop: ExVrp.StoppingCriteria.max_iterations(0),
+          initial_routes: initial_routes
+        )
+
+      assert Native.solution_trips(resumed.best.solution_ref) == Native.solution_trips(solved.best.solution_ref)
+    end
+
+    test "two routes on one vehicle type cannot be expressed as a warm start" do
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_vehicle_type(num_available: 2, capacity: [1])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {0, 10}])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(0))
+
+      assert {:error, {:vehicle_type_has_several_routes, 0}} = Solution.warm_start(result.best)
+    end
+  end
+
   defp two_trip_model do
     Model.new()
     |> Model.add_depot([])

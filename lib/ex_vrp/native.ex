@@ -305,8 +305,7 @@ defmodule ExVrp.Native do
   `solution_routes/1` reports a route's clients without its trip boundaries; this keeps them. The
   shape is not the one a `{:trips, ...}` warm start takes back: each trip's key is `start_depot`,
   not `reload_depot`, and the first trip's `start_depot` is the vehicle type's actual start depot
-  rather than `nil`. Turning a route's trips back into a warm start means renaming `start_depot`
-  to `reload_depot` on every trip after the first and setting the first trip's to `nil`.
+  rather than `nil`. `ExVrp.Solution.warm_start/1` does that conversion.
   """
   @spec solution_trips(reference()) :: [[%{start_depot: non_neg_integer(), clients: [non_neg_integer()]}]]
   def solution_trips(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)

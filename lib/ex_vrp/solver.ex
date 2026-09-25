@@ -12,6 +12,7 @@ defmodule ExVrp.Solver do
   alias ExVrp.Native
   alias ExVrp.PenaltyManager
   alias ExVrp.StoppingCriteria
+  alias ExVrp.WarmStart
 
   require Logger
 
@@ -89,7 +90,7 @@ defmodule ExVrp.Solver do
     start depot), and each later trip names the reload depot it starts from.
     Example: `[{:trips, [%{reload_depot: nil, clients: [1, 2]}, %{reload_depot: 0, clients: [3, 4]}]}]`
     warm-starts vehicle type 0 with clients 1, 2, a reload at depot 0, then
-    clients 3, 4. `ExVrp.Native.solution_trips/1` reads a solution's trips back.
+    clients 3, 4. `ExVrp.Solution.warm_start/1` turns a solution back into this form.
 
     Capacity-overloaded and time-window-violating starts are passed through to
     the solver — these are valid infeasible starting points that the solver can
@@ -603,7 +604,7 @@ defmodule ExVrp.Solver do
   defp best_removal(nil, _solution, _problem_data), do: :no_removal
 
   defp best_removal({visits, route_idx}, solution, problem_data) do
-    typed = typed_routes(solution)
+    typed = WarmStart.vehicle_type_trips(solution)
 
     0..(length(visits) - 1)//1
     |> Enum.map(&rebuild_without(typed, route_idx, &1, problem_data))
@@ -616,7 +617,7 @@ defmodule ExVrp.Solver do
     |> Enum.with_index()
     |> Enum.map(fn {{vehicle_type, trips}, idx} -> {vehicle_type, drop_at(idx == route_idx, trips, position)} end)
     |> Enum.reject(fn {_vehicle_type, trips} -> trips == [] end)
-    |> Enum.map(fn {vehicle_type, trips} -> {vehicle_type, {:trips, as_warm_start(trips)}} end)
+    |> Enum.map(fn {vehicle_type, trips} -> {vehicle_type, WarmStart.from_trips(trips)} end)
     |> then(&solution_from_typed_routes(problem_data, &1))
   end
 
@@ -639,13 +640,6 @@ defmodule ExVrp.Solver do
 
   defp drop_visit_from(false, trip, trips, position), do: [trip | drop_visit(trips, position - length(trip.clients))]
 
-  defp as_warm_start([first | reloads]) do
-    [
-      %{reload_depot: nil, clients: first.clients}
-      | Enum.map(reloads, &%{reload_depot: &1.start_depot, clients: &1.clients})
-    ]
-  end
-
   defp least_violating([]), do: :no_removal
 
   defp least_violating(candidates) do
@@ -665,13 +659,6 @@ defmodule ExVrp.Solver do
 
   defp log_drops(dropped, opts) do
     Logger.info("#{start_label(opts)}Warm start repair dropped #{dropped} visit(s) to reach feasibility")
-  end
-
-  defp typed_routes(solution) do
-    solution
-    |> Native.solution_trips()
-    |> Enum.with_index()
-    |> Enum.map(fn {trips, idx} -> {Native.solution_route_vehicle_type(solution, idx), trips} end)
   end
 
   defp log_repair(true, _repaired, opts) do
