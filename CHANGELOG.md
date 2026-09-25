@@ -9,13 +9,20 @@
   local-search move is priced with it. `ExVrp.Solution.lock_cost/1` reports the lock share of
   `penalty_cost/1`.
 - **Trip-aware warm starts.** `:initial_routes` accepts `{:trips, [...]}` per vehicle type, and
-  `ExVrp.Native.solution_trips/1` reads trips back. The warm-start trim now also runs on
-  multi-trip routes.
+  `ExVrp.Solution.warm_start/1` turns a solution back into `:initial_routes`, trips included. The
+  warm-start trim now also runs on multi-trip routes.
+
+### Fixed
+
+- Builds with clang 14.
 
 ### Removed
 
 - The 0.12.2 perturbation guard for same-vehicle groups. It served whole-route groups used as dock
-  holds, which vehicle locks replace, and slowed convergence of small groups.
+  holds, which vehicle locks replace, and slowed convergence of small groups. **Upgrading:** a
+  caller that holds clients on a vehicle with a whole-route same-vehicle group should switch to
+  `set_vehicle_locks/2` in the same change. Without the guard, the search around such a plan goes
+  back to rarely placing new optional clients, the problem 0.12.2 fixed.
 
 ## 0.12.2
 

@@ -59,6 +59,8 @@ Route entries are _location_ indices, not client indices — locations are order
 - Prize-collecting with optional clients
 - Multi-trip routes with depot reloads
 - Same-vehicle grouping constraints
+- Vehicle locks, per-location penalties and forbidden locations
+- Warm starts from an existing plan, reload trips included
 - Custom distance/duration matrices
 - Configurable stopping criteria
 - Progress callbacks

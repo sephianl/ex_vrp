@@ -32,8 +32,8 @@ Model → Model.validate/1 → to_problem_data → C++ ProblemData (immutable, s
    or a warm start from `:initial_routes` (per vehicle type: flat client list, or
    `{:trips, [...]}` for multi-trip; see the option's `@doc`). Structurally invalid seeds warn and
    fall back to cold. An infeasible seed is **trimmed** by dropping the least-violating visits
-   (`Solver` trim, 0.12.1): each candidate is rebuilt from `Native.solution_trips/1` as a
-   `{:trips, ...}` start, so multi-trip routes keep their reloads. The trim ranks by
+   (`Solver` trim, 0.12.1): each candidate is rebuilt through `WarmStart.from_trips/1`, the same
+   conversion `Solution.warm_start/1` exposes, so multi-trip routes keep their reloads. The trim ranks by
    `violation_score/1` — completeness and group feasibility first, because dropping only worsens
    those.
 6. `num_starts` ILS chains in parallel (`:auto` = `div(schedulers_online, 2)`), best kept. Ours,
