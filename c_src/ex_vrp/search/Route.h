@@ -40,19 +40,20 @@ struct TripDistance
 
 // This defines the minimal interface required for a segment of visits.
 template <typename T>
-concept Segment = requires(T arg, size_t profile, size_t dimension) {
-    { arg.route() };
-    { arg.first() } -> std::same_as<size_t>;
-    { arg.last() } -> std::same_as<size_t>;
-    { arg.size() } -> std::same_as<size_t>;
-    { arg.startsAtReloadDepot() } -> std::same_as<bool>;
-    { arg.endsAtReloadDepot() } -> std::same_as<bool>;
-    { arg.distance(profile) } -> std::convertible_to<Distance>;
-    { arg.tripDistance(profile) } -> std::convertible_to<TripDistance>;
-    { arg.penalty(profile) } -> std::convertible_to<Cost>;
-    { arg.duration(profile) } -> std::convertible_to<DurationSegment>;
-    { arg.load(dimension) } -> std::convertible_to<LoadSegment>;
-};
+concept Segment
+    = requires(T arg, size_t profile, size_t vehicleType, size_t dimension) {
+          { arg.route() };
+          { arg.first() } -> std::same_as<size_t>;
+          { arg.last() } -> std::same_as<size_t>;
+          { arg.size() } -> std::same_as<size_t>;
+          { arg.startsAtReloadDepot() } -> std::same_as<bool>;
+          { arg.endsAtReloadDepot() } -> std::same_as<bool>;
+          { arg.distance(profile) } -> std::convertible_to<Distance>;
+          { arg.tripDistance(profile) } -> std::convertible_to<TripDistance>;
+          { arg.penalty(profile, vehicleType) } -> std::convertible_to<Cost>;
+          { arg.duration(profile) } -> std::convertible_to<DurationSegment>;
+          { arg.load(dimension) } -> std::convertible_to<LoadSegment>;
+      };
 
 namespace detail
 {
@@ -283,7 +284,7 @@ private:
         inline SegmentAfter(Route const &route, size_t start);
         inline Distance distance(size_t profile) const;
         inline TripDistance tripDistance(size_t profile) const;
-        inline Cost penalty(size_t profile) const;
+        inline Cost penalty(size_t profile, size_t vehicleType) const;
         inline DurationSegment duration(size_t profile) const;
         inline LoadSegment const &load(size_t dimension) const;
     };
@@ -310,7 +311,7 @@ private:
         inline SegmentBefore(Route const &route, size_t end);
         inline Distance distance(size_t profile) const;
         inline TripDistance tripDistance(size_t profile) const;
-        inline Cost penalty(size_t profile) const;
+        inline Cost penalty(size_t profile, size_t vehicleType) const;
         inline DurationSegment duration(size_t profile) const;
         inline LoadSegment const &load(size_t dimension) const;
     };
@@ -339,7 +340,7 @@ private:
         inline SegmentBetween(Route const &route, size_t start, size_t end);
         inline Distance distance(size_t profile) const;
         inline TripDistance tripDistance(size_t profile) const;
-        inline Cost penalty(size_t profile) const;
+        inline Cost penalty(size_t profile, size_t vehicleType) const;
         inline DurationSegment duration(size_t profile) const;
         inline LoadSegment load(size_t dimension) const;
     };
@@ -855,9 +856,11 @@ Route::SegmentAfter::tripDistance([[maybe_unused]] size_t profile) const
             true};
 }
 
-Cost Route::SegmentAfter::penalty([[maybe_unused]] size_t profile) const
+Cost Route::SegmentAfter::penalty([[maybe_unused]] size_t profile,
+                                  [[maybe_unused]] size_t vehicleType) const
 {
     assert(profile == route_.profile());
+    assert(vehicleType == route_.vehicleType());
     assert(start < route_.cumPenalty.size());
     return route_.cumPenalty.back() - route_.cumPenalty[start];
 }
@@ -896,9 +899,11 @@ Route::SegmentBefore::tripDistance([[maybe_unused]] size_t profile) const
             true};
 }
 
-Cost Route::SegmentBefore::penalty([[maybe_unused]] size_t profile) const
+Cost Route::SegmentBefore::penalty([[maybe_unused]] size_t profile,
+                                   [[maybe_unused]] size_t vehicleType) const
 {
     assert(profile == route_.profile());
+    assert(vehicleType == route_.vehicleType());
     // cumPenalty is an exclusive prefix of length nodes.size() + 1, so the
     // penalty of nodes [0, end] is cumPenalty[end + 1]. The +1 is load-bearing
     // and differs from cumDist, which is an inclusive prefix indexed directly.
@@ -990,18 +995,27 @@ TripDistance Route::SegmentBetween::tripDistance(size_t profile) const
     return {distance(profile), 0, 0, false};
 }
 
-Cost Route::SegmentBetween::penalty(size_t profile) const
+Cost Route::SegmentBetween::penalty(size_t profile, size_t vehicleType) const
 {
     // SegmentBetween is the segment type that crosses routes, and therefore
-    // profiles, so it is the one that must be able to recompute. Note the
-    // inclusive bound: penalties are node-additive, not edge-additive.
-    if (profile != route_.profile())  // then we have to sum the penalties
-    {                                 // from scratch.
+    // profiles and vehicle types, so it is the one that must be able to
+    // recompute. Note the inclusive bound: penalties are node-additive. A
+    // vehicle type change only matters when some location is locked, so an
+    // instance without locks keeps the prefix-sum fast path across types.
+    auto const lockChanges
+        = route_.data.hasVehicleLocks() && vehicleType != route_.vehicleType();
+
+    if (profile != route_.profile() || lockChanges)
+    {
         auto const &pen = route_.data.penalties(profile);
         Cost penalty = 0;
 
         for (size_t step = start; step <= end; ++step)
-            penalty += pen[route_.visits[step]];
+        {
+            auto const location = route_.visits[step];
+            penalty += pen[location]
+                       + route_.data.lockPenalty(vehicleType, location);
+        }
 
         return penalty;
     }
@@ -1446,11 +1460,12 @@ Cost Route::Proposal<Segments...>::penalty() const
         return 0;
 
     auto const profile = route()->profile();
+    auto const vehicleType = route()->vehicleType();
 
-    // Penalties are node-additive, so unlike distance there is no cross-edge
-    // term between consecutive segments and this is a plain fold.
-    auto const fn
-        = [&](auto &&...segments) { return (segments.penalty(profile) + ...); };
+    // Penalties and locks are node-additive, so unlike distance there is no
+    // cross-edge term between consecutive segments and this is a plain fold.
+    auto const fn = [&](auto &&...segments)
+    { return (segments.penalty(profile, vehicleType) + ...); };
 
     return std::apply(fn, segments_);
 }

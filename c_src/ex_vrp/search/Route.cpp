@@ -241,14 +241,17 @@ void Route::update()
 
     // Penalties. Note the differing shapes: cumDist is edge-additive and
     // inclusive of length nodes.size(), whereas cumPenalty is node-additive
-    // and an exclusive prefix of length nodes.size() + 1. Depot penalties are
-    // zero, so including depots in the sum is harmless.
+    // and an exclusive prefix of length nodes.size() + 1. Depot penalties and
+    // locks are zero, so including depots in the sum is harmless. The prefix
+    // is for this route's own profile and vehicle type; segments evaluated
+    // for another route recompute (see SegmentBetween::penalty).
     auto const &penalties = data.penalties(profile());
 
     cumPenalty.resize(nodes.size() + 1);
     cumPenalty[0] = 0;
     for (size_t idx = 0; idx != nodes.size(); ++idx)
-        cumPenalty[idx + 1] = cumPenalty[idx] + penalties[visits[idx]];
+        cumPenalty[idx + 1] = cumPenalty[idx] + penalties[visits[idx]]
+                              + data.lockPenalty(vehicleType(), visits[idx]);
 
     // Which profiles could take this route's clients wholesale. The clearing
     // pass only runs when the instance forbids something, so an instance that

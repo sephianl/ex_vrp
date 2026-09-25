@@ -1,6 +1,8 @@
 defmodule ExVrp.SolveTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   alias ExVrp.IteratedLocalSearch
   alias ExVrp.Model
   alias ExVrp.PenaltyManager
@@ -463,6 +465,31 @@ defmodule ExVrp.SolveTest do
       seeds = messages |> Enum.map(& &1.seed) |> Enum.uniq() |> Enum.sort()
       assert 42 in seeds
       assert 43 in seeds
+    end
+  end
+
+  describe "multi-trip warm start" do
+    # Prizes large enough that the repair descent keeps the overload rather than give a client up,
+    # so feasibility here is the trim's work.
+    test "an overloaded trip is trimmed to feasibility" do
+      model =
+        1..4
+        |> Enum.reduce(Model.add_depot(Model.new(), []), fn _client, acc ->
+          Model.add_client(acc, delivery: [1], required: false, prize: 10_000_000)
+        end)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [2], reload_depots: [0], max_reloads: 1)
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {0, 10}, {0, 20}])
+
+      capture_log(fn ->
+        {:ok, result} =
+          Solver.solve(model,
+            stop: StoppingCriteria.max_iterations(0),
+            num_starts: 1,
+            initial_routes: [{:trips, [%{reload_depot: nil, clients: [1, 2, 3]}, %{reload_depot: 0, clients: [4]}]}]
+          )
+
+        assert ExVrp.Solution.feasible?(result.best)
+      end)
     end
   end
 

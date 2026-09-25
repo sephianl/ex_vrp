@@ -202,9 +202,31 @@ Zone restrictions a vehicle may breach at a cost want penalties; restrictions it
 breach want forbidding. Callers who want both — expensive _and_ barred to some fleet — should set
 both.
 
-`Solution.penalty_cost/1` reports the penalty total. Penalties are a real objective term rather
-than an infeasibility penalty, so they survive on a feasible solution and `cost/1` minus
-`penalty_cost/1` is the solution's cost with penalties excluded.
+`Solution.penalty_cost/1` reports the penalty total, vehicle-lock prices included (next section).
+Penalties are a real objective term rather than an infeasibility penalty, so they survive on a
+feasible solution and `cost/1` minus `penalty_cost/1` is the solution's cost with penalties
+excluded.
+
+## Vehicle locks keep a client on its vehicle type
+
+To keep a client on a particular vehicle, such as an order already loaded at that vehicle's dock,
+lock it:
+
+```elixir
+Model.set_vehicle_locks(model, [%{location: 3, vehicle_type: 0, price: 5_000}])
+```
+
+A locked client pays `price` whenever any other vehicle type serves it, and nothing when its own
+vehicle type does or when nobody serves it. Locks are soft, like penalties: they are priced into
+every local-search move, so a price above any routing gain keeps the client in place and a lower
+one lets the solver move it when that saves more. They key on **vehicle type**, not vehicle, so
+locking to one vehicle means giving that vehicle its own vehicle type with `num_available: 1`.
+
+`location` is in matrix order, as for `set_penalties/2`. At most one lock per client; depots cannot
+be locked. `Solution.lock_cost/1` reports the lock share of `penalty_cost/1`.
+
+Do not hold a client on a vehicle with a same-vehicle group spanning the whole route. Since 0.13.0
+the search around such a plan rarely places new optional clients; locks replace that trick.
 
 **Do not encode unreachability as a huge distance.** Five sites in the search layer used to read a
 distance-matrix cell back and compare it against a hardcoded `1_000_000_000` to decide reachability,
@@ -296,10 +318,31 @@ orders into — seed the solver instead of cold-starting:
 ExVrp.solve(model, initial_routes: [[1, 2, 3], [], [4, 5]])
 ```
 
-Position in the outer list is the **vehicle type** index; empty inner lists mean that vehicle type
-is unused. The inner lists are **location** indices, the same numbering `result.best.routes` gives
-back, so a solution can be fed straight back in. An invalid warm start is not an error: the solver
-logs a warning and falls back to an empty start, so check your logs rather than assuming it took.
+Position in the outer list is the **vehicle type** index, so there is at most one route per
+vehicle type; empty inner lists mean that vehicle type is unused. The inner lists are **location**
+indices. An invalid warm start is not an error: the solver logs a warning and falls back to an
+empty start, so check your logs rather than assuming it took.
+
+A vehicle type that reloads is seeded trip by trip. The first trip leaves from the start depot, so
+its `reload_depot` is `nil`; each later trip names the reload depot it leaves from:
+
+```elixir
+ExVrp.solve(model,
+  initial_routes: [{:trips, [%{reload_depot: nil, clients: [1, 2]}, %{reload_depot: 0, clients: [3, 4]}]}]
+)
+```
+
+To resume from a solution, use `Solution.warm_start/1`, **not** `result.best.routes`. `routes` is
+in route order rather than vehicle type order, and it lists a route's clients without its reloads,
+so seeding with it can put routes on the wrong vehicle types and merges every trip into one load:
+
+```elixir
+{:ok, initial_routes} = ExVrp.Solution.warm_start(result.best)
+ExVrp.solve(updated_model, initial_routes: initial_routes)
+```
+
+It returns `{:error, {:vehicle_type_has_several_routes, vehicle_type}}` for a solution that runs
+more than one route on a vehicle type, since `:initial_routes` cannot hold that.
 
 ## Multi-trip routes need `reload_depots`
 

@@ -64,6 +64,7 @@ defmodule ExVrp.Solution do
   """
 
   alias ExVrp.Native
+  alias ExVrp.WarmStart
 
   @type t :: %__MODULE__{
           routes: [[non_neg_integer()]],
@@ -184,6 +185,46 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
+  Returns this solution as an `:initial_routes` warm start, so a solve can resume from it.
+
+  One entry per vehicle type, in vehicle type order: `[]` for a vehicle type without a route, a
+  flat client list for a single-trip route, and `{:trips, [...]}` for a route that reloads, so
+  its trip boundaries survive the round trip. `routes` is not a substitute: it lists a route's
+  clients without its reloads, and seeding with it merges every trip into one load.
+
+  `:initial_routes` holds at most one route per vehicle type, so a solution that runs several
+  routes on one vehicle type returns `{:error, {:vehicle_type_has_several_routes, vehicle_type}}`.
+
+  ## Example
+
+      {:ok, result} = ExVrp.solve(model)
+      {:ok, initial_routes} = ExVrp.Solution.warm_start(result.best)
+      {:ok, resumed} = ExVrp.solve(updated_model, initial_routes: initial_routes)
+
+  """
+  @spec warm_start(t()) ::
+          {:ok, [Native.warm_start_visits()]}
+          | {:error, {:vehicle_type_has_several_routes, non_neg_integer()}}
+  def warm_start(%__MODULE__{solution_ref: ref, problem_data: problem_data}) do
+    vehicle_type_trips = WarmStart.vehicle_type_trips(ref)
+
+    vehicle_type_trips
+    |> Enum.frequencies_by(fn {vehicle_type, _trips} -> vehicle_type end)
+    |> Enum.find(fn {_vehicle_type, num_routes} -> num_routes > 1 end)
+    |> warm_start_by_vehicle_type(vehicle_type_trips, Native.problem_data_num_vehicle_types(problem_data))
+  end
+
+  defp warm_start_by_vehicle_type({vehicle_type, _num_routes}, _vehicle_type_trips, _num_vehicle_types),
+    do: {:error, {:vehicle_type_has_several_routes, vehicle_type}}
+
+  defp warm_start_by_vehicle_type(nil, vehicle_type_trips, num_vehicle_types) do
+    visits_by_vehicle_type =
+      Map.new(vehicle_type_trips, fn {vehicle_type, trips} -> {vehicle_type, WarmStart.from_trips(trips)} end)
+
+    {:ok, Enum.map(0..(num_vehicle_types - 1)//1, &Map.get(visits_by_vehicle_type, &1, []))}
+  end
+
+  @doc """
   Returns the number of assigned clients in the solution.
   """
   @spec num_clients(t()) :: non_neg_integer()
@@ -193,6 +234,11 @@ defmodule ExVrp.Solution do
   Checks if the solution is feasible (satisfies all constraints).
   """
   @spec feasible?(t()) :: boolean()
+
+  # ==========================================
+  # Solution-Level Aggregate Functions (PyVRP parity)
+  # ==========================================
+
   def feasible?(%__MODULE__{is_feasible: feasible}), do: feasible
 
   @doc """
@@ -230,10 +276,6 @@ defmodule ExVrp.Solution do
   def unassigned(%__MODULE__{solution_ref: solution_ref}) do
     Native.solution_unassigned(solution_ref)
   end
-
-  # ==========================================
-  # Solution-Level Aggregate Functions (PyVRP parity)
-  # ==========================================
 
   @doc """
   Returns the total time warp of the solution (sum across all routes).
@@ -300,6 +342,14 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
+  Returns the vehicle-lock share of this solution's `penalty_cost/1`.
+  """
+  @spec lock_cost(t()) :: non_neg_integer()
+  def lock_cost(%__MODULE__{solution_ref: solution_ref}) do
+    Native.solution_lock_cost(solution_ref)
+  end
+
+  @doc """
   Returns how many visits in this solution the visiting route's own routing
   profile forbids.
 
@@ -329,6 +379,10 @@ defmodule ExVrp.Solution do
   def duration_cost(%__MODULE__{} = sol) do
     sum_over_routes(sol, &route_duration_cost/2)
   end
+
+  # ==========================================
+  # New Route Query Functions (PyVRP parity)
+  # ==========================================
 
   @doc """
   Returns the total reload cost of the solution.
@@ -408,10 +462,6 @@ defmodule ExVrp.Solution do
   def route_feasible?(%__MODULE__{solution_ref: solution_ref}, route_idx) do
     Native.solution_route_is_feasible(solution_ref, route_idx)
   end
-
-  # ==========================================
-  # New Route Query Functions (PyVRP parity)
-  # ==========================================
 
   @doc """
   Returns the excess load of a specific route (per dimension).

@@ -41,6 +41,7 @@ void Solution::evaluate(ProblemData const &data)
         fixedVehicleCost_ += data.vehicleType(route.vehicleType()).fixedCost;
         reloadCost_ += route.reloadCost();
         penaltyCost_ += route.penaltyCost();
+        lockCost_ += route.lockCost();
         numForbiddenVisits_ += route.numForbiddenVisits();
 
         auto const &excessLoad = route.excessLoad();
@@ -119,6 +120,8 @@ Cost Solution::fixedVehicleCost() const { return fixedVehicleCost_; }
 Cost Solution::reloadCost() const { return reloadCost_; }
 
 Cost Solution::penaltyCost() const { return penaltyCost_; }
+
+Cost Solution::lockCost() const { return lockCost_; }
 
 size_t Solution::numForbiddenVisits() const { return numForbiddenVisits_; }
 

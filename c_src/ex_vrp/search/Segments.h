@@ -41,7 +41,11 @@ public:
         return {};
     }
 
-    Cost penalty(size_t profile) const { return data.penalty(profile, client); }
+    Cost penalty(size_t profile, size_t vehicleType) const
+    {
+        return data.penalty(profile, client)
+               + data.lockPenalty(vehicleType, client);
+    }
 
     DurationSegment duration([[maybe_unused]] size_t profile) const
     {
@@ -89,10 +93,12 @@ public:
         return {};
     }
 
-    Cost penalty([[maybe_unused]] size_t profile) const
+    Cost penalty([[maybe_unused]] size_t profile,
+                 [[maybe_unused]] size_t vehicleType) const
     {
-        // Depot penalties are required to be zero (ProblemData::validate), so
-        // a reload depot contributes nothing to the objective's penalty term.
+        // Depot penalties are required to be zero (ProblemData::validate), and
+        // depots cannot be locked, so a reload depot contributes nothing to
+        // the objective's penalty term.
         return 0;
     }
 

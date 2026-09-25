@@ -52,7 +52,20 @@ in
       files = ".ex[s]?$";
     };
 
-    prettier.enable = !config.devenv.isTesting;
+    # Skills cite code by name; a rename on either side breaks them silently
+    skill-citations = {
+      enable = !config.devenv.isTesting;
+      name = "skill-citations";
+      entry = "mix run .claude/skills/verify_citations.exs";
+      pass_filenames = false;
+      stages = [ "pre-commit" ];
+      files = "^\\.claude/skills/|\\.(ex|exs|cpp|h)$";
+    };
+
+    prettier = {
+      enable = !config.devenv.isTesting;
+      excludes = [ "^\\.claude/" ];
+    };
     nixfmt-rfc-style.enable = !config.devenv.isTesting;
     clang-format.enable = !config.devenv.isTesting;
 

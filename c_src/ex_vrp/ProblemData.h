@@ -671,6 +671,18 @@ public:
         size_t maxTrips() const;
     };
 
+    /**
+     * A per-location vehicle lock: the vehicle type a location is locked to,
+     * and the price charged when a different vehicle type serves it instead.
+     */
+    struct VehicleLock
+    {
+        size_t const vehicleType;
+        Cost const price;
+
+        bool operator==(VehicleLock const &other) const = default;
+    };
+
 private:
     /**
      * Simple union type that distinguishes between client and depot locations.
@@ -697,6 +709,12 @@ private:
     // once for each visited location. Zone penalties live here rather than in
     // the distance matrix, which frees that channel to carry real metres.
     std::vector<std::vector<Cost>> const penalties_;
+
+    // Per-location vehicle lock: visiting a locked location on any vehicle
+    // type other than the locked one costs the lock's price. Node-additive
+    // like penalties_, but keyed by vehicle type rather than profile. Empty
+    // when the model sets no locks.
+    std::vector<std::optional<VehicleLock>> const locks_;
 
     // Per-profile reachability. A location whose bit is unset must never be
     // visited by a vehicle on that profile. This is the search-pruning half of
@@ -854,6 +872,18 @@ public:
     [[nodiscard]] inline Cost penalty(size_t profile, size_t location) const;
 
     /**
+     * Price charged for visiting ``location`` on ``vehicleType``: the lock's
+     * price when the location is locked to another vehicle type, else zero.
+     */
+    [[nodiscard]] inline Cost lockPenalty(size_t vehicleType,
+                                          size_t location) const;
+
+    /**
+     * Whether any location carries a vehicle lock.
+     */
+    [[nodiscard]] inline bool hasVehicleLocks() const;
+
+    /**
      * Whether the given location may be visited on the given profile.
      */
     [[nodiscard]] inline bool isAllowed(size_t profile, size_t location) const;
@@ -926,7 +956,8 @@ public:
                 std::vector<ClientGroup> groups = {},
                 std::vector<SameVehicleGroup> sameVehicleGroups = {},
                 std::vector<std::vector<Cost>> penalties = {},
-                std::vector<DynamicBitset> allowed = {});
+                std::vector<DynamicBitset> allowed = {},
+                std::vector<std::optional<VehicleLock>> locks = {});
 
     ProblemData() = delete;
 };
@@ -967,6 +998,18 @@ Cost ProblemData::penalty(size_t profile, size_t location) const
     assert(location < penalties_[profile].size());
     return penalties_[profile][location];
 }
+
+Cost ProblemData::lockPenalty(size_t vehicleType, size_t location) const
+{
+    if (locks_.empty())
+        return 0;
+
+    assert(location < locks_.size());
+    auto const &lock = locks_[location];
+    return lock && lock->vehicleType != vehicleType ? lock->price : 0;
+}
+
+bool ProblemData::hasVehicleLocks() const { return !locks_.empty(); }
 
 bool ProblemData::isAllowed(size_t profile, size_t location) const
 {

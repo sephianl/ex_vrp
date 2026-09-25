@@ -126,6 +126,7 @@ private:
     Cost prizes_ = 0;                // Total value of prizes on this route
     Cost reloadCost_ = 0;            // Total reload cost on this route
     Cost penaltyCost_ = 0;           // Total location penalty on this route
+    Cost lockCost_ = 0;              // Lock share of penaltyCost_
     size_t numForbiddenVisits_ = 0;  // Visits this route's profile forbids
 
     VehicleType vehicleType_;  // Type of vehicle
@@ -302,6 +303,13 @@ public:
      * client visited, and not an infeasibility penalty.
      */
     [[nodiscard]] Cost penaltyCost() const;
+
+    /**
+     * Lock share of this route's penalty cost.
+     *
+     * The part of :meth:`~penaltyCost` charged by vehicle locks.
+     */
+    [[nodiscard]] Cost lockCost() const;
 
     /**
      * Number of clients on this route that its own routing profile forbids.

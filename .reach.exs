@@ -23,6 +23,7 @@
       "ExVrp.Route",
       "ExVrp.Solution",
       "ExVrp.Trip",
+      "ExVrp.WarmStart",
       "ExVrp.VehicleType",
       "ExVrp.SameVehicleGroup",
       "ExVrp.ScheduledVisit",

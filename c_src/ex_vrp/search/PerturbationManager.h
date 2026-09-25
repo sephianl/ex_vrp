@@ -7,7 +7,6 @@
 #include "Solution.h"
 
 #include <iosfwd>
-#include <vector>
 
 namespace pyvrp::search
 {
@@ -77,15 +76,10 @@ public:
      *     The search space to use for perturbation.
      * cost_evaluator
      *     Evaluator to use for insertions.
-     * client_to_same_vehicle_groups
-     *     For each location, the same-vehicle groups it belongs to. A group
-     *     member on a feasible route is never removed.
      */
     void perturb(Solution &solution,
                  SearchSpace &searchSpace,
-                 CostEvaluator const &costEvaluator,
-                 std::vector<std::vector<size_t>> const
-                     &clientToSameVehicleGroups) const;
+                 CostEvaluator const &costEvaluator) const;
 };
 }  // namespace pyvrp::search
 

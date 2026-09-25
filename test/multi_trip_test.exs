@@ -7,8 +7,11 @@ defmodule ExVrp.MultiTripTest do
   """
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   alias ExVrp.Depot
   alias ExVrp.Model
+  alias ExVrp.Native
   alias ExVrp.Route
   alias ExVrp.ScheduledVisit
   alias ExVrp.Solution
@@ -1175,5 +1178,257 @@ defmodule ExVrp.MultiTripTest do
       # Should serve 2 clients total (one per shift)
       assert Solution.num_clients(result.best) == 2
     end
+  end
+
+  describe "trip-aware warm starts" do
+    test "an all-empty trips seed for one vehicle type keeps another vehicle type's seed" do
+      model = Model.add_vehicle_type(two_trip_model(), num_available: 1, capacity: [2])
+
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            Solver.solve(model,
+              stop: ExVrp.StoppingCriteria.max_iterations(0),
+              initial_routes: [
+                {:trips, [%{reload_depot: nil, clients: []}, %{reload_depot: 0, clients: []}]},
+                [1, 2]
+              ]
+            )
+
+          assert [[1, 2]] == Native.solution_routes(result.best.solution_ref)
+        end)
+
+      refute log =~ ":initial_routes is invalid"
+    end
+
+    test "a trips seed whose value is not a list falls back to a cold start" do
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            Solver.solve(two_trip_model(),
+              stop: ExVrp.StoppingCriteria.max_iterations(0),
+              initial_routes: [{:trips, nil}]
+            )
+
+          assert_cold_start(result)
+        end)
+
+      assert log =~ ":initial_routes is invalid"
+    end
+
+    test "a leading empty trip does not break an otherwise seeded warm start" do
+      model = two_trip_model()
+
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            Solver.solve(model,
+              stop: ExVrp.StoppingCriteria.max_iterations(0),
+              initial_routes: [{:trips, [%{reload_depot: nil, clients: []}, %{reload_depot: 0, clients: [1, 2]}]}]
+            )
+
+          assert Solution.num_clients(result.best) == 2
+        end)
+
+      refute log =~ ":initial_routes is invalid"
+    end
+
+    test "a trailing empty trip does not break an otherwise seeded warm start" do
+      model = two_trip_model()
+
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            Solver.solve(model,
+              stop: ExVrp.StoppingCriteria.max_iterations(0),
+              initial_routes: [{:trips, [%{reload_depot: nil, clients: [1, 2]}, %{reload_depot: 0, clients: []}]}]
+            )
+
+          assert Solution.num_clients(result.best) == 2
+        end)
+
+      refute log =~ ":initial_routes is invalid"
+    end
+
+    test "a warm start given as trips comes back with the same trips" do
+      model = two_trip_model()
+
+      {:ok, result} =
+        Solver.solve(model,
+          stop: ExVrp.StoppingCriteria.max_iterations(0),
+          initial_routes: [{:trips, [%{reload_depot: nil, clients: [1, 2]}, %{reload_depot: 0, clients: [3, 4]}]}]
+        )
+
+      assert [[%{start_depot: 0, clients: [1, 2]}, %{start_depot: 0, clients: [3, 4]}]] =
+               Native.solution_trips(result.best.solution_ref)
+    end
+
+    test "a flat client list is still one trip, however much it overloads the vehicle" do
+      {:ok, problem_data} = Model.to_problem_data(two_trip_model())
+      {:ok, solution} = Native.create_solution_from_routes_with_types(problem_data, [{0, [1, 2, 3, 4]}])
+
+      assert [[%{start_depot: 0, clients: [1, 2, 3, 4]}]] = Native.solution_trips(solution)
+    end
+
+    test "a reload depot the vehicle type cannot use is rejected and the solve starts cold" do
+      model = two_trip_model()
+
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            Solver.solve(model,
+              stop: ExVrp.StoppingCriteria.max_iterations(0),
+              num_starts: 1,
+              initial_routes: [{:trips, [%{reload_depot: nil, clients: [1]}, %{reload_depot: 5, clients: [2]}]}]
+            )
+
+          assert_cold_start(result)
+        end)
+
+      assert log =~ ":initial_routes is invalid, falling back to empty start"
+    end
+
+    test "a depot outside the vehicle type's reload depots is rejected even when it is the start depot" do
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [1], reload_depots: [1], max_reloads: 1)
+        |> Model.set_euclidean_matrices([{0, 0}, {5, 0}, {10, 0}, {20, 0}])
+
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            Solver.solve(model,
+              stop: ExVrp.StoppingCriteria.max_iterations(0),
+              num_starts: 1,
+              initial_routes: [{:trips, [%{reload_depot: nil, clients: [2]}, %{reload_depot: 0, clients: [3]}]}]
+            )
+
+          for [_first | reloads] <- Native.solution_trips(result.best.solution_ref),
+              do: assert(Enum.all?(reloads, &(&1.start_depot == 1)))
+        end)
+
+      assert log =~ ":initial_routes is invalid, falling back to empty start"
+      assert log =~ "reload depot 0"
+    end
+
+    test "more trips than max_reloads allows are rejected and the solve starts cold" do
+      model = two_trip_model()
+
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            Solver.solve(model,
+              stop: ExVrp.StoppingCriteria.max_iterations(0),
+              num_starts: 1,
+              initial_routes: [
+                {:trips,
+                 [
+                   %{reload_depot: nil, clients: [1]},
+                   %{reload_depot: 0, clients: [2]},
+                   %{reload_depot: 0, clients: [3]}
+                 ]}
+              ]
+            )
+
+          assert Enum.all?(Native.solution_trips(result.best.solution_ref), &(length(&1) <= 2))
+        end)
+
+      assert log =~ ":initial_routes is invalid, falling back to empty start"
+    end
+
+    test "a first trip that names a reload depot is rejected" do
+      model = two_trip_model()
+
+      log =
+        capture_log(fn ->
+          {:ok, result} =
+            Solver.solve(model,
+              stop: ExVrp.StoppingCriteria.max_iterations(0),
+              num_starts: 1,
+              initial_routes: [{:trips, [%{reload_depot: 0, clients: [1, 2]}, %{reload_depot: 0, clients: [3, 4]}]}]
+            )
+
+          assert Solution.num_clients(result.best) == 4
+        end)
+
+      assert log =~ ":initial_routes is invalid, falling back to empty start"
+    end
+  end
+
+  describe "Solution.warm_start/1" do
+    test "a multi-trip route comes back as the trips seed that built it" do
+      trips = [%{reload_depot: nil, clients: [1, 2]}, %{reload_depot: 0, clients: [3, 4]}]
+
+      {:ok, result} =
+        Solver.solve(two_trip_model(),
+          stop: ExVrp.StoppingCriteria.max_iterations(0),
+          initial_routes: [{:trips, trips}]
+        )
+
+      assert {:ok, [{:trips, ^trips}]} = Solution.warm_start(result.best)
+    end
+
+    test "a single-trip route comes back flat, and an unused vehicle type as an empty list" do
+      model = Model.add_vehicle_type(two_trip_model(), num_available: 1, capacity: [4])
+
+      {:ok, result} =
+        Solver.solve(model,
+          stop: ExVrp.StoppingCriteria.max_iterations(0),
+          initial_routes: [[], [1, 2, 3, 4]]
+        )
+
+      assert {:ok, [[], [1, 2, 3, 4]]} = Solution.warm_start(result.best)
+    end
+
+    test "a solved plan fed back in as a warm start keeps its trips" do
+      {:ok, solved} = Solver.solve(two_trip_model(), stop: ExVrp.StoppingCriteria.max_iterations(50), seed: 1)
+      {:ok, initial_routes} = Solution.warm_start(solved.best)
+
+      {:ok, resumed} =
+        Solver.solve(two_trip_model(),
+          stop: ExVrp.StoppingCriteria.max_iterations(0),
+          initial_routes: initial_routes
+        )
+
+      assert Native.solution_trips(resumed.best.solution_ref) == Native.solution_trips(solved.best.solution_ref)
+    end
+
+    test "two routes on one vehicle type cannot be expressed as a warm start" do
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_vehicle_type(num_available: 2, capacity: [1])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {0, 10}])
+
+      {:ok, result} = Solver.solve(model, stop: ExVrp.StoppingCriteria.max_iterations(0))
+
+      assert {:error, {:vehicle_type_has_several_routes, 0}} = Solution.warm_start(result.best)
+    end
+  end
+
+  defp two_trip_model do
+    Model.new()
+    |> Model.add_depot([])
+    |> Model.add_client(delivery: [1])
+    |> Model.add_client(delivery: [1])
+    |> Model.add_client(delivery: [1])
+    |> Model.add_client(delivery: [1])
+    |> Model.add_vehicle_type(num_available: 1, capacity: [2], reload_depots: [0], max_reloads: 1)
+    |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {0, 10}, {0, 20}])
+  end
+
+  # The seed split clients 1 and 2 over two trips, the second from a depot the model lacks. A
+  # cold start never reloads there, and does not come back with the seed's split.
+  defp assert_cold_start(result) do
+    trips = Native.solution_trips(result.best.solution_ref)
+
+    assert Enum.all?(List.flatten(trips), &(&1.start_depot == 0))
+    refute match?([[%{clients: [1]}, %{clients: [2]}]], trips)
   end
 end
