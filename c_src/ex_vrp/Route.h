@@ -119,6 +119,7 @@ private:
     Duration overtime_ = 0;          // Total overtime of this route
     Cost durationCost_ = 0;          // Total cost of route duration
     Duration timeWarp_ = 0;          // Total time warp on this route
+    Duration driveExcess_ = 0;       // Travel past max_drive
     Duration travel_ = 0;            // Total *travel* duration on this route
     Duration service_ = 0;           // Total *service* duration on this route
     Duration startTime_ = 0;         // (earliest) start time of this route
@@ -235,6 +236,12 @@ public:
      * Amount of time warp incurred on this route.
      */
     [[nodiscard]] Duration timeWarp() const;
+
+    /**
+     * Travel duration past the vehicle type's ``max_drive``, which is also
+     * counted in :meth:`time_warp`.
+     */
+    [[nodiscard]] Duration driveExcess() const;
 
     /**
      * Total duration of travel on this route.

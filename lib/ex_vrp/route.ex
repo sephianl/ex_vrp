@@ -151,6 +151,16 @@ defmodule ExVrp.Route do
     Native.solution_route_overtime(ref, idx)
   end
 
+  @doc """
+  Returns the travel duration past the vehicle type's `:max_drive`.
+
+  Also counted in `time_warp/1`.
+  """
+  @spec drive_excess(t()) :: non_neg_integer()
+  def drive_excess(%__MODULE__{solution_ref: ref, route_idx: idx}) do
+    Native.solution_route_drive_excess(ref, idx)
+  end
+
   # ---------------------------------------------------------------------------
   # Costs
   # ---------------------------------------------------------------------------

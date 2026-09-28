@@ -83,6 +83,7 @@ defmodule ExVrp.Native do
     solution_route_time_warp: 2,
     solution_route_excess_distance: 2,
     solution_route_overtime: 2,
+    solution_route_drive_excess: 2,
     solution_route_has_excess_load: 2,
     solution_route_has_time_warp: 2,
     solution_route_has_excess_distance: 2,
@@ -787,6 +788,12 @@ defmodule ExVrp.Native do
   """
   @spec solution_route_overtime(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_overtime(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Gets drive excess (travel past `:max_drive`) of a specific route.
+  """
+  @spec solution_route_drive_excess(reference(), non_neg_integer()) :: non_neg_integer()
+  def solution_route_drive_excess(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Checks if a specific route has excess load.

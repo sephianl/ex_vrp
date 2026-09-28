@@ -451,6 +451,54 @@ defmodule ExVrp.RouteOperatorsTest do
     end
   end
 
+  describe "max_drive delta consistency" do
+    # Proposal::duration() (the delta path insert_cost_nif exercises) computes
+    # endTime and overtime from ds.timeWarp(maxDuration) alone, and only adds
+    # the drive excess to the returned time-warp component afterwards.
+    # Route::update() must fold max_drive's excess into timeWarp_ the same
+    # way, or local search would price a move differently from what applying
+    # it actually produces, and the two would fight over the route forever.
+    defp max_drive_problem do
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          unit_distance_cost: 0,
+          max_drive: 100
+        )
+        |> Model.set_euclidean_matrices([{0, 0}, {20, 0}, {40, 0}, {90, 0}])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      {:ok, cost_evaluator} =
+        Native.create_cost_evaluator(load_penalties: [0.0], tw_penalty: 1.0, dist_penalty: 0.0)
+
+      {problem_data, cost_evaluator}
+    end
+
+    test "an evaluated insert's time-warp delta matches the rebuilt route" do
+      {problem_data, cost_evaluator} = max_drive_problem()
+
+      route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
+      after_client_2 = Native.search_route_get_node_nif(route, 2)
+      client_3 = Native.create_search_node_nif(problem_data, 3)
+
+      delta = Native.insert_cost_nif(client_3, after_client_2, problem_data, cost_evaluator)
+
+      before_time_warp = Native.search_route_time_warp_nif(route)
+
+      after_route = Native.make_search_route_nif(problem_data, [1, 2, 3], 0, 0)
+      after_time_warp = Native.search_route_time_warp_nif(after_route)
+
+      assert delta == after_time_warp - before_time_warp
+    end
+  end
+
   # =========================================================================
   # Helper Functions
   # =========================================================================

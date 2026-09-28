@@ -590,6 +590,12 @@ public:
     [[nodiscard]] inline Duration maxDuration() const;
 
     /**
+     * @return The maximum total travel duration, across trips, that the
+     *         vehicle servicing this route supports.
+     */
+    [[nodiscard]] inline Duration maxDrive() const;
+
+    /**
      * @return The contracted end of shift past which work counts as overtime,
      *         or the maximum representable duration when unset.
      */
@@ -1205,7 +1211,8 @@ bool Route::hasDurationCost() const
     return data.hasTimeWindows()
         || unitDurationCost() != 0
         || hasOvertimeCost
-        || maxDuration() != unbounded;
+        || maxDuration() != unbounded
+        || maxDrive() != unbounded;
     // clang-format on
 }
 
@@ -1217,6 +1224,8 @@ ProblemData::VehicleType const &Route::vehicleTypeData() const
 }
 
 Duration Route::maxDuration() const { return vehicleType_.maxDuration; }
+
+Duration Route::maxDrive() const { return vehicleType_.maxDrive; }
 
 Duration Route::overtimeStart() const { return vehicleType_.overtimeStart; }
 
@@ -1481,6 +1490,7 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
     auto const unitOvertimeCost = route()->unitOvertimeCost();
     auto const &vehType = route()->vehicleTypeData();
     auto const maxDuration = route()->maxDuration();
+    auto const maxDrive = route()->maxDrive();
     auto const profile = route()->profile();
     auto const &matrix = data.durationMatrix(profile);
 
@@ -1548,7 +1558,7 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
         auto const overtime = vehType.overtime(endTime, duration);
         auto const cost = unitDurationCost * static_cast<Cost>(duration)
                           + unitOvertimeCost * static_cast<Cost>(overtime);
-        return std::make_pair(cost, timeWarp);
+        return std::make_pair(cost, timeWarp + ds.driveExcess(maxDrive));
     };
 
     return std::apply(fn, detail::reverse(segments_));

@@ -388,13 +388,18 @@ void Route::update()
 
     duration_ = durAfter[0].duration();
     timeWarp_ = durAfter[0].timeWarp(maxDuration());
+    auto const driveExcess = durAfter[0].driveExcess(maxDrive());
 
     // Save DurationSegment-only values before forbidden window corrections.
     // Proposal::duration() also uses DurationSegment without forbidden window
     // awareness, so delta evaluation must subtract these DS-only values (not
-    // the corrected ones) to keep the delta consistent.
+    // the corrected ones) to keep the delta consistent. Drive excess is not a
+    // shift along the timeline, so the DS-only end time and overtime below
+    // are computed from timeWarpDSBase alone, and the excess is folded into
+    // timeWarpDS_ only afterwards, to match what Proposal::duration() returns.
     auto const durationDS = duration_;
-    timeWarpDS_ = timeWarp_;
+    auto const timeWarpDSBase = timeWarp_;
+    timeWarpDS_ = timeWarpDSBase + driveExcess;
 
     // Clock time at which the route ends. The DurationSegment view is the
     // right answer only while no forbidden window is in play; once one is, the
@@ -545,12 +550,14 @@ void Route::update()
         endTime = now;
     }
 
+    timeWarp_ += driveExcess;
+
     overtime_ = vehicleType_.overtime(endTime, duration_);
     durationCost_ = unitDurationCost() * static_cast<Cost>(duration_)
                     + unitOvertimeCost() * static_cast<Cost>(overtime_);
 
     auto const overtimeDS = vehicleType_.overtime(
-        startTime + durationDS - timeWarpDS_, durationDS);
+        startTime + durationDS - timeWarpDSBase, durationDS);
     durationCostDS_ = unitDurationCost() * static_cast<Cost>(durationDS)
                       + unitOvertimeCost() * static_cast<Cost>(overtimeDS);
 

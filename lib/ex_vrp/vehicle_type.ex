@@ -32,6 +32,7 @@ defmodule ExVrp.VehicleType do
   | ------------------------ | --------------- | -------------------------------------- |
   | `:max_distance`          | the whole route | distance, summed over every trip       |
   | `:max_distance_per_trip` | one trip        | distance, reset at every reload        |
+  | `:max_drive`             | the whole route | travel only, no service or waiting     |
   | `:shift_duration`        | the whole route | elapsed time, idle included            |
   | `:max_duration`          | the whole route | elapsed time, idle included (hard cap) |
   | `:overtime_start`        | the whole route | clock time past the contracted end     |
@@ -101,6 +102,7 @@ defmodule ExVrp.VehicleType do
           shift_duration: non_neg_integer() | :infinity,
           max_distance: non_neg_integer() | :infinity,
           max_distance_per_trip: non_neg_integer() | :infinity,
+          max_drive: non_neg_integer() | :infinity,
           unit_distance_cost: non_neg_integer(),
           unit_duration_cost: non_neg_integer(),
           profile: non_neg_integer(),
@@ -127,6 +129,7 @@ defmodule ExVrp.VehicleType do
     shift_duration: :infinity,
     max_distance: :infinity,
     max_distance_per_trip: :infinity,
+    max_drive: :infinity,
     unit_distance_cost: 1,
     unit_duration_cost: 0,
     profile: 0,
@@ -174,6 +177,10 @@ defmodule ExVrp.VehicleType do
     reload depot (default: `:infinity`). Models a vehicle that refuels or
     recharges each time it reloads, so every trip starts with a full tank.
     Independent of `:max_distance` — set either, both, or neither
+  - `:max_drive` - Maximum **travel** duration of the whole route, across trips
+    (default: `:infinity`). Service, waiting and reload time do not count, so
+    this is the quantity a legal driving-time limit measures. Excess counts as
+    time warp and is reported by `ExVrp.Route.drive_excess/1`
   - `:unit_distance_cost` - Cost per unit distance (default: `1`)
   - `:unit_duration_cost` - Cost per unit time (default: `0`)
   - `:profile` - Index of distance/duration matrix to use (default: `0`)

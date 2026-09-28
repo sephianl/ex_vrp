@@ -394,9 +394,16 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     startTime_ = ds.startEarly();
     slack_ = ds.slack();
     timeWarp_ = ds.timeWarp(vehData.maxDuration);
+
+    // overtime_ reads timeWarp_ through endTime(), and drive excess is not a
+    // shift along the timeline, so it must be computed before driveExcess_ is
+    // folded into timeWarp_ below.
     overtime_ = vehData.overtime(endTime(), duration_);
     durationCost_ = vehData.unitDurationCost * static_cast<Cost>(duration_)
                     + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
+
+    driveExcess_ = ds.driveExcess(vehData.maxDrive);
+    timeWarp_ += driveExcess_;
 
     makeSchedule(data);
 
@@ -417,6 +424,7 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
             timeWarp_ += visit.timeWarp;
         if (duration_ > vehData.maxDuration)
             timeWarp_ += duration_ - vehData.maxDuration;
+        timeWarp_ += driveExcess_;
     }
 }
 
@@ -484,6 +492,8 @@ Cost Route::durationCost() const { return durationCost_; }
 Duration Route::serviceDuration() const { return service_; }
 
 Duration Route::timeWarp() const { return timeWarp_; }
+
+Duration Route::driveExcess() const { return driveExcess_; }
 
 Duration Route::waitDuration() const { return duration_ - travel_ - service_; }
 
