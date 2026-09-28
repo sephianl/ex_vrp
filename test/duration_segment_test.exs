@@ -229,4 +229,58 @@ defmodule ExVrp.DurationSegmentTest do
       assert DurationSegment.duration(finalise_back) == DurationSegment.duration(finalise_front)
     end
   end
+
+  describe "drive/1" do
+    test "a fresh segment has not driven" do
+      assert DurationSegment.drive(DurationSegment.new(5, 0, 0, 10, 0)) == 0
+    end
+
+    test "merging adds the edge, never service or waiting" do
+      service = DurationSegment.new(5, 0, 0, @int_max, 0)
+      opens_late = DurationSegment.new(3, 0, 100, @int_max, 0)
+
+      merged = DurationSegment.merge(7, service, opens_late)
+
+      assert DurationSegment.duration(merged) == 5 + 7 + 3
+      assert DurationSegment.drive(merged) == 7
+    end
+
+    test "edges add up over repeated merges in either order" do
+      a = DurationSegment.new(1, 0, 0, @int_max, 0)
+      b = DurationSegment.new(1, 0, 0, @int_max, 0)
+      c = DurationSegment.new(1, 0, 0, @int_max, 0)
+
+      left = DurationSegment.merge(4, DurationSegment.merge(3, a, b), c)
+      right = DurationSegment.merge(3, a, DurationSegment.merge(4, b, c))
+
+      assert DurationSegment.drive(left) == 7
+      assert DurationSegment.drive(right) == 7
+    end
+
+    test "drive survives finalising across a trip boundary" do
+      trip =
+        DurationSegment.merge(9, DurationSegment.new(0, 0, 0, @int_max, 0), DurationSegment.new(0, 0, 0, @int_max, 0))
+
+      assert DurationSegment.drive(DurationSegment.finalise_back(trip)) == 9
+      assert DurationSegment.drive(DurationSegment.finalise_front(trip)) == 9
+    end
+  end
+
+  describe "drive_excess/2" do
+    test "is the driving past the cap" do
+      merged =
+        DurationSegment.merge(50, DurationSegment.new(0, 0, 0, @int_max, 0), DurationSegment.new(0, 0, 0, @int_max, 0))
+
+      assert DurationSegment.drive_excess(merged, 30) == 20
+      assert DurationSegment.drive_excess(merged, 50) == 0
+      assert DurationSegment.drive_excess(merged, @int_max) == 0
+    end
+
+    test "is not time warp" do
+      merged =
+        DurationSegment.merge(50, DurationSegment.new(0, 0, 0, @int_max, 0), DurationSegment.new(0, 0, 0, @int_max, 0))
+
+      assert DurationSegment.time_warp(merged) == 0
+    end
+  end
 end

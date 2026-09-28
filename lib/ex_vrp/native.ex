@@ -234,9 +234,11 @@ defmodule ExVrp.Native do
     dynamic_bitset_not_nif: 1,
     dynamic_bitset_eq_nif: 2,
     # DurationSegment
-    create_duration_segment_nif: 8,
+    create_duration_segment_nif: 9,
     duration_segment_merge_nif: 3,
     duration_segment_duration_nif: 1,
+    duration_segment_drive_nif: 1,
+    duration_segment_drive_excess_nif: 2,
     duration_segment_time_warp_nif: 2,
     duration_segment_start_early_nif: 1,
     duration_segment_start_late_nif: 1,
@@ -1375,6 +1377,7 @@ defmodule ExVrp.Native do
           integer(),
           integer(),
           integer(),
+          integer(),
           integer()
         ) :: reference()
   def create_duration_segment_nif(
@@ -1385,7 +1388,8 @@ defmodule ExVrp.Native do
         _release_time,
         _cum_duration,
         _cum_time_warp,
-        _prev_end_late
+        _prev_end_late,
+        _drive
       ), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Merges two segments with an edge duration."
@@ -1395,6 +1399,14 @@ defmodule ExVrp.Native do
   @doc "Gets the duration of a segment."
   @spec duration_segment_duration_nif(reference()) :: integer()
   def duration_segment_duration_nif(_seg), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc "Gets the drive time of a segment."
+  @spec duration_segment_drive_nif(reference()) :: integer()
+  def duration_segment_drive_nif(_seg), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc "Gets the drive time of a segment past a cap."
+  @spec duration_segment_drive_excess_nif(reference(), integer()) :: integer()
+  def duration_segment_drive_excess_nif(_seg, _max_drive), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Gets the time warp of a segment, optionally with max_duration constraint."
   @spec duration_segment_time_warp_nif(reference(), integer()) :: integer()

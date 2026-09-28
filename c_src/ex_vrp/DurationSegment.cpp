@@ -42,6 +42,7 @@ std::ostream &operator<<(std::ostream &out, DurationSegment const &segment)
                << ", start_early=" << segment.startEarly()
                << ", start_late=" << segment.startLate()
                << ", release_time=" << segment.releaseTime()
-               << ", prev_end_late=" << segment.prevEndLate();
+               << ", prev_end_late=" << segment.prevEndLate()
+               << ", drive=" << segment.drive();
     // clang-format on
 }

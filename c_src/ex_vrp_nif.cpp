@@ -5815,7 +5815,8 @@ create_duration_segment_nif([[maybe_unused]] ErlNifEnv *env,
                             int64_t release_time,
                             int64_t cum_duration,
                             int64_t cum_time_warp,
-                            int64_t prev_end_late)
+                            int64_t prev_end_late,
+                            int64_t drive)
 {
     DurationSegment seg{Duration{duration},
                         Duration{time_warp},
@@ -5824,7 +5825,8 @@ create_duration_segment_nif([[maybe_unused]] ErlNifEnv *env,
                         Duration{release_time},
                         Duration{cum_duration},
                         Duration{cum_time_warp},
-                        Duration{prev_end_late}};
+                        Duration{prev_end_late},
+                        Duration{drive}};
     return fine::make_resource<DurationSegmentResource>(seg);
 }
 
@@ -5853,6 +5855,27 @@ duration_segment_duration_nif([[maybe_unused]] ErlNifEnv *env,
 }
 
 FINE_NIF(duration_segment_duration_nif, 0);
+
+// Get the drive time
+int64_t
+duration_segment_drive_nif([[maybe_unused]] ErlNifEnv *env,
+                           fine::ResourcePtr<DurationSegmentResource> seg)
+{
+    return static_cast<int64_t>(seg->segment.drive());
+}
+
+FINE_NIF(duration_segment_drive_nif, 0);
+
+// Get the drive time past a cap
+int64_t duration_segment_drive_excess_nif(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<DurationSegmentResource> seg,
+    int64_t max_drive)
+{
+    return static_cast<int64_t>(seg->segment.driveExcess(Duration{max_drive}));
+}
+
+FINE_NIF(duration_segment_drive_excess_nif, 0);
 
 // Get the time warp (optionally with max_duration constraint)
 int64_t
