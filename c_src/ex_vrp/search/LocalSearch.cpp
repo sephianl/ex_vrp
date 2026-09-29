@@ -89,6 +89,10 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
     // infeasible, strip non-required clients until feasible.
     stripInfeasibleForbiddenWindowClients();
 
+    // The strip can leave a route with stale breaks, or none at all. Every
+    // route handed back has its breaks in place, as virtual ones are not.
+    repairBreaks(costEvaluator);
+
     return solution_.unload();
 }
 
@@ -138,6 +142,8 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
     // infeasible, strip non-required clients until feasible.
     stripInfeasibleForbiddenWindowClients();
 
+    repairBreaks(costEvaluator);  // as in operator()
+
     return solution_.unload();
 }
 
@@ -146,6 +152,7 @@ pyvrp::Solution LocalSearch::intensify(pyvrp::Solution const &solution,
 {
     loadSolution(solution);
     intensify(costEvaluator);
+    repairBreaks(costEvaluator);  // as in operator()
     return solution_.unload();
 }
 
@@ -286,28 +293,28 @@ bool LocalSearch::repairBreaks(CostEvaluator const &costEvaluator)
     if (!breakRepair_.hasBreaks())  // then there is nothing to place
         return false;
 
-    // A backstop: apply() only inserts on strict improvement and removes
-    // what costs nothing, so it settles within a round or two.
-    static constexpr int MAX_ROUNDS = 8;
-
+    // Releasing every route first frees the breaks some routes no longer
+    // need, so the pool has them when another route materialises its own.
     bool changed = false;
-    for (auto &route : solution_.routes)
+    auto const settle = [&](Route &route, bool routeChanged)
     {
-        if (route.empty())
-            continue;
+        if (!routeChanged)
+            return;
 
-        for (int round = 0; round != MAX_ROUNDS; ++round)
-        {
-            if (!breakRepair_.apply(route, solution_, costEvaluator))
-                break;
+        update(&route, &route);
+        changed = true;
 
-            update(&route, &route);
-            changed = true;
+        for (auto *node : route)               // their moves are now priced
+            searchSpace_.markPromising(node);  // differently
+    };
 
-            for (auto *node : route)               // their moves are now priced
-                searchSpace_.markPromising(node);  // differently
-        }
-    }
+    for (auto &route : solution_.routes)
+        if (route.size() > 2)  // a route of only breaks releases them all
+            settle(route, breakRepair_.release(route, costEvaluator));
+
+    for (auto &route : solution_.routes)
+        if (route.size() > 2)
+            settle(route, breakRepair_.apply(route, solution_, costEvaluator));
 
     return changed;
 }

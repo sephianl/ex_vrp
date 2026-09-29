@@ -57,6 +57,7 @@ concept Segment = requires(T arg,
     { arg.first() } -> std::same_as<size_t>;
     { arg.last() } -> std::same_as<size_t>;
     { arg.size() } -> std::same_as<size_t>;
+    { arg.numBreaks() } -> std::same_as<size_t>;
     { arg.startsAtReloadDepot() } -> std::same_as<bool>;
     { arg.endsAtReloadDepot() } -> std::same_as<bool>;
     { arg.distance(profile) } -> std::convertible_to<Distance>;
@@ -138,8 +139,9 @@ public:
          */
         bool empty() const;
 
-        // Overrun of the proposed route's clock over the given quantity.
-        template <ClockQuantity Quantity> Duration clockOverrun() const;
+        // The proposed route's clock over the given quantity; empty without
+        // a limit or clients.
+        template <ClockQuantity Quantity> DriveClock clock() const;
 
     public:
         Proposal(Segments &&...segments);
@@ -172,10 +174,18 @@ public:
 
         /**
          * Returns the (duration cost, time warp) attributes of the proposed
-         * route. The time warp includes driveClockOverrun() and
-         * workClockOverrun().
+         * route. Clock overrun is priced as the missingBreaks() that would
+         * fix it, taken just before the end depot (see Route::summarise()),
+         * not as time warp.
          */
         std::pair<Cost, Duration> duration() const;
+
+        /**
+         * Returns the breaks the proposed route still lacks: per clock, the
+         * stretches' ceil(stretch / limit) - 1, and the larger of the two
+         * clocks, since a break resets both. Zero without a break rule.
+         */
+        size_t missingBreaks() const;
 
         /**
          * Returns the proposed route's driving in excess of
@@ -320,6 +330,7 @@ private:
         inline size_t first() const;  // first non-break client from start
         inline size_t last() const;   // end depot
         inline size_t size() const;
+        inline size_t numBreaks() const;
 
         inline bool startsAtReloadDepot() const;
         inline bool endsAtReloadDepot() const;
@@ -359,6 +370,7 @@ private:
         inline size_t first() const;  // start depot
         inline size_t last() const;   // last non-break client up to end
         inline size_t size() const;
+        inline size_t numBreaks() const;
 
         inline bool startsAtReloadDepot() const;
         inline bool endsAtReloadDepot() const;
@@ -400,6 +412,7 @@ private:
         inline size_t first() const;      // first non-break client
         inline size_t last() const;       // last non-break client
         inline size_t size() const;
+        inline size_t numBreaks() const;
 
         inline bool startsAtReloadDepot() const;
         inline bool endsAtReloadDepot() const;
@@ -441,6 +454,7 @@ private:
     Duration timeWarp_;
     Duration driveExcess_ = 0;  // Travel past max_drive, folded into timeWarp_
     Duration totalClockExcess_ = 0;  // Drive + work clock overrun, likewise
+    size_t virtualBreaks_ = 0;       // missing breaks priced in duration_
     Cost reloadCost_;
 
     // DurationSegment-only values (before forbidden window corrections).
@@ -450,6 +464,14 @@ private:
     Duration timeWarpDS_;
 
     std::vector<Node> depots_;  // start, end, and reload depots (in that order)
+
+    // Break nodes on this route, kept as nodes come and go, like depots_, so
+    // numClients() is right between updates too.
+    size_t numBreaks_ = 0;
+
+    // cumBreaks_[idx] is the number of breaks among nodes [0, idx), so it has
+    // one entry more than there are nodes. Segments count theirs from it.
+    std::vector<size_t> cumBreaks_;
 
     std::vector<Node *> nodes;   // Nodes in this route, including depots
     std::vector<size_t> visits;  // Locations in this route, incl. depots
@@ -504,12 +526,14 @@ private:
     //   arrival node's own quantity.
     // - excess: excess[r] is the clipped excess of the closed stretches
     //   [1, r).
+    // - need: need[r] is the breaks those same stretches lack.
     struct ClockPrefix
     {
         std::vector<Duration> cum;
         std::vector<Duration> close;
         std::vector<Duration> start;
         std::vector<Duration> excess;
+        std::vector<size_t> need;
     };
 
     std::array<ClockPrefix, 2> clocks_;  // indexed by ClockQuantity
@@ -532,9 +556,34 @@ private:
     [[nodiscard]] inline DriveClock
     foldClock(size_t start, size_t end, size_t profile, Duration limit) const;
 
-    // Overrun of this whole route's clock; zero without a limit or clients.
+    // This whole route's clock; empty without a limit or clients.
     template <ClockQuantity Quantity>
-    [[nodiscard]] inline Duration clockOverrun() const;
+    [[nodiscard]] inline DriveClock wholeClock() const;
+
+    // Breaks lacking given both clocks: the larger count, as a break resets
+    // both. Shared by update() and Proposal::missingBreaks().
+    [[nodiscard]] static inline size_t
+    missingBreaks(DriveClock const &drive,
+                  DriveClock const &work,
+                  ProblemData::VehicleType const &vehicleType);
+
+    struct DurationSummary
+    {
+        Duration duration;
+        Duration timeWarp;
+        Duration endTime;
+    };
+
+    // Duration, time warp and end time of a route whose duration segment is
+    // `ds`, with `extra` of missing break time taken just before the end
+    // depot: it lengthens the route (max duration, shift, overtime) and is
+    // late past `latestEnd`. It pushes no client, so it cannot see waiting it
+    // might fill or windows it might break; BreakRepair's real breaks can.
+    // Shared by update() and Proposal::duration(), so deltas stay exact.
+    [[nodiscard]] static inline DurationSummary summarise(DurationSegment ds,
+                                                          Duration maxDuration,
+                                                          Duration extra,
+                                                          Duration latestEnd);
 
     // Number of reset legs, when the clock structures are built.
     [[nodiscard]] inline size_t numResets() const;
@@ -775,7 +824,9 @@ public:
     [[nodiscard]] inline Distance maxDistancePerTrip() const;
 
     /**
-     * @return Total time warp on this route.
+     * @return Total time warp on this route, as the search prices it: clock
+     *         overrun is not part of it, but the virtualBreaks() that would
+     *         fix it lengthen duration() and can be late at the end depot.
      */
     [[nodiscard]] inline Duration timeWarp() const;
 
@@ -783,15 +834,21 @@ public:
      * @return The part of timeWarp() that is an actual shift along the
      *         timeline, for deriving clock times. Excludes penalty-only
      *         terms folded into timeWarp() that do not move when the route
-     *         starts or ends (today, drive excess past maxDrive() and the
-     *         drive and work clock overruns).
+     *         starts or ends (today, drive excess past maxDrive()).
      */
     [[nodiscard]] inline Duration timelineTimeWarp() const;
 
     /**
-     * @return The drive and work clock overrun on this route, summed. Part of
-     *         timeWarp(). pyvrp::Route keeps the two apart, as clockExcess()
-     *         (drive) and workClockExcess().
+     * @return The breaks this route still lacks, priced in duration() and
+     *         timeWarp() until BreakRepair places real ones.
+     */
+    [[nodiscard]] inline size_t virtualBreaks() const;
+
+    /**
+     * @return The true drive and work clock overrun on this route, summed.
+     *         Not part of timeWarp() (see virtualBreaks()); pyvrp::Route
+     *         counts it as time warp, apart as clockExcess() (drive) and
+     *         workClockExcess().
      */
     [[nodiscard]] inline Duration totalClockExcess() const;
 
@@ -843,9 +900,15 @@ public:
     [[nodiscard]] inline size_t size() const;
 
     /**
-     * Number of clients in this route.
+     * Number of clients in this route. Breaks are not clients: a route that
+     * holds only breaks is empty().
      */
     [[nodiscard]] inline size_t numClients() const;
+
+    /**
+     * Number of breaks in this route.
+     */
+    [[nodiscard]] inline size_t numBreaks() const;
 
     /**
      * Returns the number of start, end, and reload depots in this route.
@@ -1099,6 +1162,7 @@ DriveClock Route::SegmentAfter::clockOver([[maybe_unused]] size_t profile,
     clock.tail = prefix.cum.back() - prefix.start[numResets];
     clock.resets = numResets - outside;
     clock.excess = prefix.excess[numResets] - prefix.excess[outside + 1];
+    clock.need = prefix.need[numResets] - prefix.need[outside + 1];
     return clock;
 }
 
@@ -1179,6 +1243,7 @@ Route::SegmentBefore::clockOver([[maybe_unused]] size_t profile,
         clock.head = prefix.close[1];
         clock.tail = drive - prefix.start[inside];
         clock.excess = prefix.excess[inside];
+        clock.need = prefix.need[inside];
     }
 
     return clock;
@@ -1196,6 +1261,11 @@ size_t Route::SegmentBefore::first() const { return route_.visits.front(); }
 size_t Route::SegmentBefore::last() const { return route_.locs_[end]; }
 size_t Route::SegmentBefore::size() const { return end + 1; }
 
+size_t Route::SegmentBefore::numBreaks() const
+{
+    return route_.cumBreaks_[end + 1];
+}
+
 bool Route::SegmentBefore::startsAtReloadDepot() const { return false; }
 bool Route::SegmentBefore::endsAtReloadDepot() const
 {
@@ -1211,6 +1281,11 @@ size_t Route::SegmentAfter::first() const
 }
 size_t Route::SegmentAfter::last() const { return route_.visits.back(); }
 size_t Route::SegmentAfter::size() const { return route_.size() - start; }
+
+size_t Route::SegmentAfter::numBreaks() const
+{
+    return route_.cumBreaks_.back() - route_.cumBreaks_[start];
+}
 
 bool Route::SegmentAfter::startsAtReloadDepot() const
 {
@@ -1240,6 +1315,11 @@ size_t Route::SegmentBetween::last() const
 }
 
 size_t Route::SegmentBetween::size() const { return end - start + 1; }
+
+size_t Route::SegmentBetween::numBreaks() const
+{
+    return route_.cumBreaks_[end + 1] - route_.cumBreaks_[start];
+}
 
 bool Route::SegmentBetween::startsAtReloadDepot() const
 {
@@ -1606,14 +1686,44 @@ Route::foldClock(size_t start, size_t end, size_t profile, Duration limit) const
     return clock;
 }
 
-template <ClockQuantity Quantity> Duration Route::clockOverrun() const
+template <ClockQuantity Quantity> DriveClock Route::wholeClock() const
 {
     auto const limit = breakLimit<Quantity>();
-    if (limit == std::numeric_limits<Duration>::max() || nodes.size() == 2)
-        return 0;  // as Proposal::clockOverrun(), which skips empty routes
+    if (limit == std::numeric_limits<Duration>::max() || empty())
+        return {};  // as Proposal::clock(), which skips empty routes
 
     auto const last = SegmentBefore(*this, nodes.size() - 1);
-    return clockOf<Quantity>(last, profile(), limit).overrun(limit);
+    return clockOf<Quantity>(last, profile(), limit);
+}
+
+size_t Route::missingBreaks(DriveClock const &drive,
+                            DriveClock const &work,
+                            ProblemData::VehicleType const &vehicleType)
+{
+    return std::max(drive.missing(vehicleType.breakLimit(ClockQuantity::Drive)),
+                    work.missing(vehicleType.breakLimit(ClockQuantity::Work)));
+}
+
+Route::DurationSummary Route::summarise(DurationSegment ds,
+                                        Duration maxDuration,
+                                        Duration extra,
+                                        Duration latestEnd)
+{
+    auto const baseEnd
+        = ds.startEarly() + ds.duration() - ds.timeWarp(maxDuration);
+
+    Duration late = 0;
+    if (extra > 0)
+    {
+        DurationSegment const breaks(
+            extra, 0, 0, std::numeric_limits<Duration>::max(), 0);
+        ds = DurationSegment::merge(0, ds, breaks);
+        late = baseEnd + extra > latestEnd ? baseEnd + extra - latestEnd : 0;
+    }
+
+    auto const duration = ds.duration();
+    auto const timeWarp = ds.timeWarp(maxDuration) + late;
+    return {duration, timeWarp, ds.startEarly() + duration - timeWarp};
 }
 
 Duration Route::overtimeStart() const { return vehicleType_.overtimeStart; }
@@ -1639,7 +1749,13 @@ Duration Route::timeWarp() const
 Duration Route::timelineTimeWarp() const
 {
     assert(!dirty);
-    return timeWarp_ - driveExcess_ - totalClockExcess_;
+    return timeWarp_ - driveExcess_;
+}
+
+size_t Route::virtualBreaks() const
+{
+    assert(!dirty);
+    return virtualBreaks_;
 }
 
 Duration Route::totalClockExcess() const
@@ -1678,7 +1794,9 @@ bool Route::empty() const { return numClients() == 0; }
 
 size_t Route::size() const { return nodes.size(); }
 
-size_t Route::numClients() const { return size() - numDepots(); }
+size_t Route::numClients() const { return size() - numDepots() - numBreaks_; }
+
+size_t Route::numBreaks() const { return numBreaks_; }
 
 size_t Route::numDepots() const { return depots_.size(); }
 
@@ -1733,7 +1851,11 @@ template <Segment... Segments> size_t Route::Proposal<Segments...>::size() const
 
 template <Segment... Segments> bool Route::Proposal<Segments...>::empty() const
 {
-    return size() == 2;  // empty if proposal only contains start and end depot
+    // Empty if the proposal holds only the start and end depot, and breaks:
+    // those are placed for clients, so without clients they go too.
+    auto const numBreaks = std::apply(
+        [](auto &&...args) { return (args.numBreaks() + ...); }, segments_);
+    return size() - numBreaks == 2;
 }
 
 template <Segment... Segments>
@@ -1914,6 +2036,9 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
     auto const profile = route()->profile();
     auto const vehicleType = route()->vehicleType();
     auto const &matrix = data.durationMatrix(profile);
+    auto const extra
+        = static_cast<Duration>(missingBreaks()) * vehType.breakDuration;
+    auto const latestEnd = route()->durAt.back().startLate();
 
     // Finalising is expensive with duration segments. However, finaliseFront is
     // significantly less expensive than finaliseBack. To use it, we iterate the
@@ -1981,17 +2106,14 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
 
         merge(merge, std::forward<decltype(args)>(args)...);
 
-        auto const duration = ds.duration();
-        auto const timeWarp = ds.timeWarp(maxDuration);
-        auto const endTime = ds.startEarly() + duration - timeWarp;
+        auto const [duration, timeWarp, endTime]
+            = summarise(ds, maxDuration, extra, latestEnd);
         auto const overtime = vehType.overtime(endTime, duration);
         auto const cost = unitDurationCost * static_cast<Cost>(duration)
                           + unitOvertimeCost * static_cast<Cost>(overtime);
-        // Drive and clock excess are penalty-only, so they join the time
-        // warp only after endTime and overtime are derived above.
-        return std::make_pair(cost,
-                              timeWarp + ds.driveExcess(maxDrive)
-                                  + driveClockOverrun() + workClockOverrun());
+        // Drive excess is penalty-only, so it joins the time warp only after
+        // endTime and overtime are derived above.
+        return std::make_pair(cost, timeWarp + ds.driveExcess(maxDrive));
     };
 
     return std::apply(fn, detail::reverse(segments_));
@@ -2000,28 +2122,41 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
 template <Segment... Segments>
 Duration Route::Proposal<Segments...>::driveClockOverrun() const
 {
-    return clockOverrun<ClockQuantity::Drive>();
+    auto const limit = route()->template breakLimit<ClockQuantity::Drive>();
+    return clock<ClockQuantity::Drive>().overrun(limit);
 }
 
 template <Segment... Segments>
 Duration Route::Proposal<Segments...>::workClockOverrun() const
 {
-    return clockOverrun<ClockQuantity::Work>();
+    auto const limit = route()->template breakLimit<ClockQuantity::Work>();
+    return clock<ClockQuantity::Work>().overrun(limit);
+}
+
+template <Segment... Segments>
+size_t Route::Proposal<Segments...>::missingBreaks() const
+{
+    auto const &vehType = route()->vehicleTypeData();
+    if (!vehType.hasBreakRule())  // models without one pay a load and compare
+        return 0;
+
+    return Route::missingBreaks(
+        clock<ClockQuantity::Drive>(), clock<ClockQuantity::Work>(), vehType);
 }
 
 template <Segment... Segments>
 template <ClockQuantity Quantity>
-Duration Route::Proposal<Segments...>::clockOverrun() const
+DriveClock Route::Proposal<Segments...>::clock() const
 {
     // Checked first, as in tripExcessDistance(): models without a break rule
     // pay one load and compare.
     auto const limit = route()->template breakLimit<Quantity>();
 
     if (limit == std::numeric_limits<Duration>::max())
-        return 0;
+        return {};
 
     if (empty())
-        return 0;
+        return {};
 
     auto const &data = route()->data;
     auto const profile = route()->profile();
@@ -2056,7 +2191,7 @@ Duration Route::Proposal<Segments...>::clockOverrun() const
         };
 
         merge(merge, std::forward<decltype(args)>(args)...);
-        return clock.overrun(limit);
+        return clock;
     };
 
     return std::apply(fn, segments_);

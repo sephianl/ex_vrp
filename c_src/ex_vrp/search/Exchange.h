@@ -104,8 +104,10 @@ Cost Exchange<N, M>::evalRelocateMove(Route::Node *U,
         if (V->isStartDepot() && vRoute->empty())
             deltaCost += vRoute->fixedVehicleCost();
 
-        // We lose U's fixed cost if we're moving all U's clients.
-        if (uRoute->numClients() == N)
+        // We lose U's fixed cost if we're moving all U's clients. The N nodes
+        // may carry breaks, which are not clients.
+        auto const moved = uRoute->between(U->idx(), U->idx() + N - 1);
+        if (uRoute->numClients() == N - moved.numBreaks())
             deltaCost -= uRoute->fixedVehicleCost();
 
         auto const uProposal = Route::Proposal(uRoute->before(U->idx() - 1),

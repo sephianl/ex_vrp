@@ -19,13 +19,13 @@ defmodule ExVrp.BreakNodesTest do
 
   @break 3
   @break_duration 45
-  @break_rule %{max_drive_between_breaks: 270, duration: @break_duration}
+  @break_rule [max_drive_between_breaks: 270, break_duration: @break_duration]
   @points [{0, 0}, {10, 0}, {30, 0}, {1000, 0}, {0, 50}]
 
   defp model(opts) do
     vehicle =
       Keyword.merge(
-        [num_available: 2, capacity: [0], unit_distance_cost: 1, unit_duration_cost: 1, break_rule: @break_rule],
+        [num_available: 2, capacity: [0], unit_distance_cost: 1, unit_duration_cost: 1] ++ @break_rule,
         Keyword.get(opts, :vehicle, [])
       )
 
@@ -88,7 +88,7 @@ defmodule ExVrp.BreakNodesTest do
     end
 
     test "the break lasts the vehicle type's break duration" do
-      opts = [vehicle: [break_rule: %{max_drive_between_breaks: 270, duration: 60}]]
+      opts = [vehicle: [break_duration: 60]]
 
       assert stats([1, @break, 2], opts).duration == stats([1, 2], opts).duration + 60
     end
@@ -117,9 +117,14 @@ defmodule ExVrp.BreakNodesTest do
     @opts [client_2_tw: {100, 10_000}]
     @routes {[1, @break, 2], [4]}
 
-    defp route_cost(route) do
-      Native.search_route_distance_cost_nif(route) + Native.search_route_duration_cost_nif(route) +
-        Native.search_route_time_warp_nif(route) + Native.search_route_excess_distance_nif(route)
+    defp route_cost(route), do: route_cost(route, Native.search_route_empty_nif(route))
+
+    defp route_cost(_route, true = _empty), do: 0
+
+    defp route_cost(route, false = _empty) do
+      Native.search_route_fixed_vehicle_cost_nif(route) + Native.search_route_distance_cost_nif(route) +
+        Native.search_route_duration_cost_nif(route) + Native.search_route_time_warp_nif(route) +
+        Native.search_route_excess_distance_nif(route)
     end
 
     defp operator(:exchange10),
@@ -232,7 +237,7 @@ defmodule ExVrp.BreakNodesTest do
         |> Model.add_client([])
         |> Model.add_client(required: false, is_break: true)
         |> Model.add_client(required: false, is_break: true)
-        |> Model.add_vehicle_type(num_available: 1, capacity: [0], break_rule: @break_rule)
+        |> Model.add_vehicle_type([num_available: 1, capacity: [0]] ++ @break_rule)
         |> Model.set_euclidean_matrices([{0, 0}, {700, 0}, {0, 0}, {0, 0}])
         |> Model.to_problem_data()
 
@@ -255,18 +260,69 @@ defmodule ExVrp.BreakNodesTest do
       assert Route.end_time(route) == Route.start_time(route) + Route.duration(route)
     end
 
-    test "the search route agrees with the solution route" do
+    test "the search prices the missing break as its duration, not as time warp" do
       data = problem_data(@long)
       search_route = Native.make_search_route_nif(data, [1, 2], 0, 0)
+      plain = stats([1, 2], @long)
 
-      assert Native.search_route_time_warp_nif(search_route) == 30
-      assert Native.search_route_timeline_time_warp_nif(search_route) == 0
+      assert plain.time_warp == 30
+      assert Native.search_route_virtual_breaks_nif(search_route) == 1
+      assert Native.search_route_time_warp_nif(search_route) == 0
+      assert Native.search_route_duration_nif(search_route) == plain.duration + @break_duration
+    end
+
+    test "a real break replaces the virtual one" do
+      data = problem_data(@long)
+      search_route = Native.make_search_route_nif(data, [1, 2, @break], 0, 0)
+
+      assert Native.search_route_virtual_breaks_nif(search_route) == 0
+      assert Native.search_route_duration_nif(search_route) == stats([1, 2, @break], @long).duration
+    end
+
+    test "a stretch past twice the limit lacks two breaks" do
+      data = problem_data([vehicle: [max_drive_between_breaks: 140]] ++ @long)
+      search_route = Native.make_search_route_nif(data, [1, 2], 0, 0)
+
+      assert Native.search_route_virtual_breaks_nif(search_route) == 2
+    end
+
+    test "a missing break that runs past the vehicle's latest end is time warp" do
+      # [1, 2] drives 300 and ends at 300; with the virtual break at 345.
+      data = problem_data([vehicle: [time_windows: [{0, 320}]]] ++ @long)
+      search_route = Native.make_search_route_nif(data, [1, 2], 0, 0)
+
+      assert Native.search_route_time_warp_nif(search_route) == 25
+    end
+
+    test "a missing break counts against the maximum duration" do
+      data = problem_data([vehicle: [max_duration: 330]] ++ @long)
+      search_route = Native.make_search_route_nif(data, [1, 2], 0, 0)
+
+      assert Native.search_route_time_warp_nif(search_route) == 15
     end
 
     test "inserting a break is priced by the delta exactly as applied" do
-      # Moving the break off [4] saves its 45; on [1, 2] it costs 45 but clears
-      # the 30 of clock excess.
-      assert assert_delta_matches_applied(:exchange10, {[4, @break], [1, 2]}, 2, 1, @long) == -30
+      # Moving the break off [4] saves its 45; on [1, 2] it costs 45 but
+      # replaces the virtual break, which cost 45 too.
+      assert assert_delta_matches_applied(:exchange10, {[4, @break], [1, 2]}, 2, 1, @long) == -45
+    end
+
+    test "moving the last client off a route with a break empties it, and saves its fixed cost" do
+      routes = {[4, @break], [1, 2]}
+      free = assert_delta_matches_applied(:exchange10, routes, 1, 1, @long)
+      fixed = assert_delta_matches_applied(:exchange10, routes, 1, 1, [{:vehicle, [fixed_cost: 1_000]} | @long])
+
+      assert fixed == free - 1_000
+    end
+
+    test "SwapTails that leaves a route only a break empties it, and saves its fixed cost" do
+      # Client 4's tail is the lone break, and it swaps with all of [1, 2]:
+      # the second route keeps only the break.
+      routes = {[4, @break], [1, 2]}
+      free = assert_delta_matches_applied(:swap_tails, routes, 1, 0, @long)
+      fixed = assert_delta_matches_applied(:swap_tails, routes, 1, 0, [{:vehicle, [fixed_cost: 1_000]} | @long])
+
+      assert fixed == free - 1_000
     end
 
     test "every proposal case agrees with its applied change under an active clock" do
@@ -291,7 +347,7 @@ defmodule ExVrp.BreakNodesTest do
     test "a break moved to another vehicle type takes that type's break duration" do
       # Type 1's breaks last 60, not 45, and its limit is lower, so both the
       # duration and the clock differ once the break crosses over.
-      opts = [{:second_vehicle, [break_rule: %{max_drive_between_breaks: 200, duration: 60}]} | @long]
+      opts = [{:second_vehicle, [max_drive_between_breaks: 200, break_duration: 60]} | @long]
 
       for {name, routes, u, v} <- [
             {:exchange10, {[1, @break, 2], [4]}, 2, 1},
@@ -306,11 +362,11 @@ defmodule ExVrp.BreakNodesTest do
   end
 
   describe "working-time clock and carries" do
-    # A square with 2 h sides: stops 1..4 at its corners, stop 4 back on the
-    # depot, so the route [1, 2, 3, 4] drives four 2 h legs (8 h) and a 0 s
+    # A square with 1.5 h sides: stops 1..4 at its corners, stop 4 back on the
+    # depot, so the route [1, 2, 3, 4] drives four 1.5 h legs (6 h) and a 0 s
     # leg home, with 1 h of service at each stop (4 h). Client 5 is the break.
     @hour 3_600
-    @square [{0, 0}, {7_200, 0}, {7_200, 7_200}, {0, 7_200}, {0, 0}, {100_000, 0}]
+    @square [{0, 0}, {5_400, 0}, {5_400, 5_400}, {0, 5_400}, {0, 0}, {100_000, 0}]
     @work_break 5
 
     defp square_stats(visits, vehicle) do
@@ -332,51 +388,62 @@ defmodule ExVrp.BreakNodesTest do
         drive: Route.clock_excess(route),
         time_warp: Route.time_warp(route),
         timeline: Route.end_time(route) - Route.start_time(route) - Route.duration(route),
+        duration: Route.duration(route),
         search_time_warp: Native.search_route_time_warp_nif(search_route),
-        search_timeline: Native.search_route_timeline_time_warp_nif(search_route)
+        search_timeline: Native.search_route_timeline_time_warp_nif(search_route),
+        search_duration: Native.search_route_duration_nif(search_route),
+        virtual_breaks: Native.search_route_virtual_breaks_nif(search_route)
       }
     end
 
-    @work_rule [break_rule: %{max_work_between_breaks: 21_600, duration: 2_700}]
+    @work_break_duration 1_800
+    @work_rule [max_work_between_breaks: 18_000, break_duration: @work_break_duration]
 
-    test "work past six hours without a break overruns; a break after the second stop clears it" do
-      # No break: one stretch of 4 x (2 h + 1 h) = 12 h, 6 h over.
+    test "work past the limit without a break overruns; a break after the second stop clears it" do
+      # No break: one stretch of 4 x (1.5 h + 1 h) = 10 h, 5 h over.
       plain = square_stats([1, 2, 3, 4], @work_rule)
-      assert plain.work == 21_600
+      assert plain.work == 18_000
       assert plain.drive == 0
-      assert plain.time_warp == 21_600
-      assert plain.search_time_warp == 21_600
+      assert plain.time_warp == 18_000
       assert plain.timeline == 0
-      assert plain.search_timeline == 0
 
-      # A break on leg 2 -> 3: stretches of 2 x 3 h = 6 h each, both at the limit.
-      assert square_stats([1, 2, @work_break, 3, 4], @work_rule).work == 0
+      # The search prices the missing break as its duration instead.
+      assert plain.virtual_breaks == 1
+      assert plain.search_time_warp == 0
+      assert plain.search_timeline == 0
+      assert plain.search_duration == plain.duration + @work_break_duration
+
+      # A break on leg 2 -> 3: stretches of 2 x 2.5 h = 5 h each, both at the limit.
+      with_break = square_stats([1, 2, @work_break, 3, 4], @work_rule)
+      assert with_break.work == 0
+      assert with_break.virtual_breaks == 0
     end
 
     test "work carried in overruns one stop earlier" do
-      # 1 h carried in makes the first stretch 1 h + 6 h = 7 h: the break after
-      # the second stop no longer suffices, 1 h over.
+      # 1 h carried in makes the first stretch 1 h + 5 h = 6 h: the break after
+      # the second stop no longer suffices, 1 h over, and one break is missing.
       stats = square_stats([1, 2, @work_break, 3, 4], [work_carry_in: @hour] ++ @work_rule)
 
       assert stats.work == @hour
-      assert stats.search_time_warp == @hour
+      assert stats.virtual_breaks == 1
+      assert stats.search_duration == stats.duration + @work_break_duration
     end
 
     test "work after the end of the route joins its last stretch" do
-      # The last stretch is 6 h, exactly the limit; 30 min of unloading after
+      # The last stretch is 5 h, exactly the limit; 30 min of unloading after
       # the end makes it 30 min over.
       stats = square_stats([1, 2, @work_break, 3, 4], [work_after_end: 1_800] ++ @work_rule)
 
       assert stats.work == 1_800
-      assert stats.search_time_warp == 1_800
+      assert stats.virtual_breaks == 1
     end
 
     test "driving carried in joins the first stretch of the drive clock" do
-      # 4 h of driving carried in leaves 30 min to the 4.5 h limit. Stop 1 at
+      # 3.5 h of driving carried in leaves 30 min to the 4 h limit. Stop 1 at
       # 900 s from the depot is a 30 min round trip: 0 over. Stop 2 at 1 800 s
-      # is a 1 h round trip: 3 600 - 1 800 = 1 800 over.
+      # is a 1 h round trip: 3 600 - 1 800 = 1 800 over, one break missing.
       points = [{0, 0}, {900, 0}, {1_800, 0}, {0, 0}, {0, 0}, {100_000, 0}]
-      rule = [break_rule: %{max_drive_between_breaks: 16_200, duration: 2_700}, drive_carry_in: 14_400]
+      rule = [max_drive_between_breaks: 14_400, break_duration: 1_800, drive_carry_in: 12_600]
 
       {:ok, data} =
         Model.new()
@@ -391,11 +458,11 @@ defmodule ExVrp.BreakNodesTest do
         {:ok, ref} = Native.create_solution_from_routes(data, [visits])
         search_route = Native.make_search_route_nif(data, visits, 0, 0)
         route = %Solution{solution_ref: ref, routes: [visits]} |> Solution.routes() |> hd()
-        {Route.clock_excess(route), Native.search_route_time_warp_nif(search_route)}
+        {Route.clock_excess(route), Native.search_route_virtual_breaks_nif(search_route)}
       end
 
       assert excess.([1]) == {0, 0}
-      assert excess.([2]) == {1_800, 1_800}
+      assert excess.([2]) == {1_800, 1}
       # A break on the way out resets the clock before any of the 1 h: 0 over.
       assert excess.([@work_break, 2]) == {0, 0}
     end
@@ -403,12 +470,12 @@ defmodule ExVrp.BreakNodesTest do
     test "every proposal case agrees with its applied change under both clocks and carries" do
       # [1, 2] drives 300 and serves 2 x 20: work 30 carried in + 340 + 20
       # after the end = 390, over the 300 work limit, so the work clock is live.
-      rule = %{max_drive_between_breaks: 270, max_work_between_breaks: 300, duration: @break_duration}
+      rule = [max_drive_between_breaks: 270, max_work_between_breaks: 300, break_duration: @break_duration]
 
       opts =
         [
           service: 20,
-          vehicle: [break_rule: rule, work_carry_in: 30, work_after_end: 20, drive_carry_in: 10],
+          vehicle: rule ++ [work_carry_in: 30, work_after_end: 20, drive_carry_in: 10],
           second_vehicle: [work_carry_in: 0, work_after_end: 50, drive_carry_in: 40]
         ] ++ @long
 
@@ -431,25 +498,35 @@ defmodule ExVrp.BreakNodesTest do
         assert_delta_matches_applied(name, routes, u, v, opts)
       end
     end
-
-    test "a work-only rule needs a break duration" do
-      assert_raise ArgumentError, ~r/break_duration must be set exactly when a break limit is/, fn ->
-        square_stats([1], break_rule: %{max_work_between_breaks: 21_600, duration: 0})
-      end
-    end
   end
 
-  test "break_rule fields must be set together" do
-    assert_raise ArgumentError, ~r/break_duration must be set exactly when a break limit is/, fn ->
+  describe "validation" do
+    defp validate_vehicle(vehicle) do
       Model.new()
       |> Model.add_depot([])
-      |> Model.add_vehicle_type(
-        num_available: 1,
-        capacity: [0],
-        break_rule: %{max_drive_between_breaks: 270, duration: 0}
-      )
+      |> Model.add_vehicle_type([num_available: 1, capacity: [0]] ++ vehicle)
       |> Model.set_euclidean_matrices([{0, 0}])
-      |> Model.to_problem_data()
+      |> Model.validate()
+    end
+
+    test "a limit needs a break duration, and a break duration a limit" do
+      for vehicle <- [[max_work_between_breaks: 300], [max_drive_between_breaks: 270], [break_duration: 45]] do
+        assert {:error, [message]} = validate_vehicle(vehicle)
+        assert message =~ "break_duration must be positive exactly when"
+      end
+
+      assert validate_vehicle(max_drive_between_breaks: 270, break_duration: 45) == :ok
+    end
+
+    test "a carry that alone overruns its limit is rejected, as no break can fix it" do
+      rule = [max_drive_between_breaks: 270, max_work_between_breaks: 300, break_duration: 45]
+
+      for carry <- [[drive_carry_in: 271], [work_carry_in: 301], [work_after_end: 301]] do
+        assert {:error, [message]} = validate_vehicle(rule ++ carry)
+        assert message =~ "exceeds its limit between breaks"
+      end
+
+      assert validate_vehicle(rule ++ [drive_carry_in: 270, work_carry_in: 300]) == :ok
     end
   end
 

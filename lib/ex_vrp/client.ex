@@ -51,9 +51,9 @@ defmodule ExVrp.Client do
   - `:group` - Client group index for mutual exclusivity (default: `nil`)
   - `:name` - Client name for identification (default: `""`)
   - `:is_break` - Internal (default: `false`). `ExVrp.Model` sets it on the
-    break clients it adds for a `:break_rule`. Don't set it yourself: such a
-    client vanishes from `visits`, `unassigned` and `num_clients`, and costs
-    nothing on a vehicle type without a `:break_rule`
+    break clients it adds for a vehicle type's limits between breaks. Don't
+    set it yourself: such a client vanishes from `visits`, `unassigned` and
+    `num_clients`, and costs nothing on a vehicle type without those limits
 
   ## Examples
 

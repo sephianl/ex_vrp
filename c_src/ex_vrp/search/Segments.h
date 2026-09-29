@@ -32,6 +32,7 @@ public:
     size_t first() const { return client; }
     size_t last() const { return client; }
     size_t size() const { return 1; }
+    size_t numBreaks() const { return 0; }
 
     bool startsAtReloadDepot() const { return false; }
     bool endsAtReloadDepot() const { return false; }
@@ -100,6 +101,7 @@ public:
     size_t first() const { return depot_; }
     size_t last() const { return depot_; }
     size_t size() const { return 1; }
+    size_t numBreaks() const { return 0; }
 
     bool startsAtReloadDepot() const { return true; }
     bool endsAtReloadDepot() const { return true; }
@@ -174,6 +176,7 @@ public:
     size_t first() const { return client; }
     size_t last() const { return client; }
     size_t size() const { return count; }
+    size_t numBreaks() const { return count; }
 
     bool startsAtReloadDepot() const { return false; }
     bool endsAtReloadDepot() const { return false; }

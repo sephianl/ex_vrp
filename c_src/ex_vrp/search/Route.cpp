@@ -99,6 +99,7 @@ void Route::clear()
 
     nodes.clear();
     depots_.clear();
+    numBreaks_ = 0;
 
     depots_.emplace_back(vehicleType_.startDepot);
     depots_.emplace_back(vehicleType_.endDepot);
@@ -137,6 +138,7 @@ void Route::insert(size_t idx, Node *node)
 
     nodes.insert(nodes.begin() + idx, node);
     node->assign(this, idx, nodes[idx - 1]->trip());
+    numBreaks_ += data.isBreak(node->client());
 
     for (size_t after = idx; after != nodes.size(); ++after)
     {
@@ -153,6 +155,7 @@ void Route::remove(size_t idx)
     assert(0 < idx && idx < nodes.size() - 1);  // is not start or end depot
     assert(nodes[idx]->route() == this);        // must be in this route
     auto const isDepot = nodes[idx]->isReloadDepot();
+    numBreaks_ -= data.isBreak(nodes[idx]->client());
 
     if (isDepot)
     {
@@ -183,6 +186,18 @@ void Route::remove(size_t idx)
 void Route::swap(Node *first, Node *second)
 {
     assert(!first->isDepot() && !second->isDepot());
+
+    // Each route loses one node and gains the other.
+    auto const recount = [](Node const *leaving, Node const *arriving)
+    {
+        if (auto *route = leaving->route_)
+            route->numBreaks_ = route->numBreaks_
+                                - route->data.isBreak(leaving->client())
+                                + route->data.isBreak(arriving->client());
+    };
+
+    recount(first, second);
+    recount(second, first);
 
     // TODO specialise std::swap for Node
     if (first->route_)
@@ -247,7 +262,8 @@ template <ClockQuantity Quantity> void Route::updateClock()
 
     auto const &durations = data.durationMatrix(profile());
     auto const size = nodes.size();
-    auto &[cum, close, start, excess] = clocks_[static_cast<size_t>(Quantity)];
+    auto &[cum, close, start, excess, need]
+        = clocks_[static_cast<size_t>(Quantity)];
 
     // Each node's own quantity is part of cum, so the carry-in sits in cum[0]
     // and every SegmentBefore sees it; the work after the end sits in
@@ -278,9 +294,13 @@ template <ClockQuantity Quantity> void Route::updateClock()
 
     // Stretch r, for 1 <= r < m, is closed on both sides by reset legs.
     excess.assign(numResets + 1, 0);
+    need.assign(numResets + 1, 0);
     for (size_t r = 2; r <= numResets; ++r)
-        excess[r]
-            = excess[r - 1] + DriveClock::clip(close[r] - start[r - 1], limit);
+    {
+        auto const stretch = close[r] - start[r - 1];
+        excess[r] = excess[r - 1] + DriveClock::clip(stretch, limit);
+        need[r] = need[r - 1] + DriveClock::needOf(stretch, limit);
+    }
 
 #ifndef NDEBUG
     // The prefix answers must match a plain fold over the same nodes.
@@ -314,6 +334,13 @@ void Route::update()
     for (size_t idx = nodes.size() - 1; idx != 0; --idx)
         nextReal_[idx - 1]
             = data.isBreak(visits[idx - 1]) ? nextReal_[idx] : idx - 1;
+
+    cumBreaks_.resize(nodes.size() + 1);
+    cumBreaks_[0] = 0;
+    for (size_t idx = 0; idx != nodes.size(); ++idx)
+        cumBreaks_[idx + 1] = cumBreaks_[idx] + data.isBreak(visits[idx]);
+
+    assert(cumBreaks_.back() == numBreaks_);
 
     // Distance.
     auto const &distMat = data.distanceMatrix(profile());
@@ -520,31 +547,41 @@ void Route::update()
     distanceCost_ = unitDistanceCost() * static_cast<Cost>(distance_);
     penaltyCost_ = cumPenalty.back();
 
-    duration_ = durAfter[0].duration();
-    timeWarp_ = durAfter[0].timeWarp(maxDuration());
-    auto const driveExcess = durAfter[0].driveExcess(maxDrive());
+    // Clock overrun is priced as the breaks that would fix it, as in
+    // Proposal::duration(); the true overrun is kept for BreakRepair.
+    auto const driveClock = wholeClock<ClockQuantity::Drive>();
+    auto const workClock = wholeClock<ClockQuantity::Work>();
+    totalClockExcess_ = driveClock.overrun(breakLimit<ClockQuantity::Drive>())
+                        + workClock.overrun(breakLimit<ClockQuantity::Work>());
+    virtualBreaks_ = vehicleType_.hasBreakRule()
+                         ? missingBreaks(driveClock, workClock, vehicleType_)
+                         : 0;
 
-    auto const clockExcess = clockOverrun<ClockQuantity::Drive>()
-                             + clockOverrun<ClockQuantity::Work>();
+    auto const extra
+        = static_cast<Duration>(virtualBreaks_) * vehicleType_.breakDuration;
+    auto const summary = summarise(
+        durAfter[0], maxDuration(), extra, durAt.back().startLate());
+
+    duration_ = summary.duration;
+    timeWarp_ = summary.timeWarp;
+    auto const driveExcess = durAfter[0].driveExcess(maxDrive());
 
     // Save DurationSegment-only values before forbidden window corrections.
     // Proposal::duration() also uses DurationSegment without forbidden window
     // awareness, so delta evaluation must subtract these DS-only values (not
-    // the corrected ones) to keep the delta consistent. Drive and clock excess
-    // are not shifts along the timeline, so the DS-only end time and overtime
-    // below are computed from timeWarpDSBase alone, and the excess is folded
-    // into timeWarpDS_ only afterwards, to match Proposal::duration().
+    // the corrected ones) to keep the delta consistent. Drive excess is not a
+    // shift along the timeline, so the DS-only end time and overtime below
+    // come from the summary alone, and the excess is folded into timeWarpDS_
+    // only afterwards, to match Proposal::duration().
     auto const durationDS = duration_;
-    auto const timeWarpDSBase = timeWarp_;
-    timeWarpDS_ = timeWarpDSBase + driveExcess + clockExcess;
+    timeWarpDS_ = timeWarp_ + driveExcess;
 
     // Clock time at which the route ends. The DurationSegment view is the
     // right answer only while no forbidden window is in play; once one is, the
     // walk below tracks the real end time, and timeWarp_ picks up violation
     // penalties that are not shifts along the timeline and so must not be
     // subtracted from it.
-    auto const startTime = durAfter[0].startEarly();
-    auto endTime = startTime + duration_ - timeWarp_;
+    auto endTime = summary.endTime;
 
     // Account for forbidden time windows: the vehicle must be idle at the
     // depot during these periods, so no travel, service, or reloading may
@@ -569,6 +606,9 @@ void Route::update()
                 assert(!data.isBreak(from) && !data.isBreak(to));
                 now += durations(from, to);
             }
+
+            if (idx == nodes.size() - 1)  // missing breaks, as in summarise()
+                now += extra;
 
             // Check forbidden window at every node (client, reload depot,
             // end depot) — not just clients.
@@ -696,16 +736,14 @@ void Route::update()
         endTime = now;
     }
 
-    timeWarp_ += driveExcess + clockExcess;
+    timeWarp_ += driveExcess;
     driveExcess_ = driveExcess;
-    totalClockExcess_ = clockExcess;
 
     overtime_ = vehicleType_.overtime(endTime, duration_);
     durationCost_ = unitDurationCost() * static_cast<Cost>(duration_)
                     + unitOvertimeCost() * static_cast<Cost>(overtime_);
 
-    auto const overtimeDS = vehicleType_.overtime(
-        startTime + durationDS - timeWarpDSBase, durationDS);
+    auto const overtimeDS = vehicleType_.overtime(summary.endTime, durationDS);
     durationCostDS_ = unitDurationCost() * static_cast<Cost>(durationDS)
                       + unitOvertimeCost() * static_cast<Cost>(overtimeDS);
 
@@ -751,7 +789,7 @@ bool Route::operator==(pyvrp::Route const &other) const
                               && timeWarp_ == other.timeWarp()
                               && vehicleType() == other.vehicleType()
                               && numTrips() == other.numTrips()
-                              && numClients() == other.size();
+                              && size() - numDepots() == other.size();
     // clang-format on
 
     if (!simpleChecks)

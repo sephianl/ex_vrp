@@ -4703,6 +4703,16 @@ int64_t search_route_timeline_time_warp_nif(
 
 FINE_NIF(search_route_timeline_time_warp_nif, 0);
 
+// Get the breaks the route still lacks, as priced in its duration
+int64_t search_route_virtual_breaks_nif(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
+{
+    return static_cast<int64_t>(route_resource->route()->virtualBreaks());
+}
+
+FINE_NIF(search_route_virtual_breaks_nif, 0);
+
 // Get route overtime
 int64_t
 search_route_overtime_nif([[maybe_unused]] ErlNifEnv *env,

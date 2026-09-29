@@ -314,33 +314,38 @@ Driving past the cap is priced as time warp, so the route is infeasible, and
 move `ExVrp.Route.end_time/1`.
 
 **There is no "no more than N hours worked per day" constraint.** `:max_drive` leaves service time
-out, and `:break_rule`'s `:max_work_between_breaks` (next section) caps work between two breaks,
-not over the day. If worked time per day is what you need to cap, the solver cannot enforce it;
-measure it after the fact and reject or re-plan yourself:
+out, and `:max_work_between_breaks` (next section) caps work between two breaks, not over the day.
+If worked time per day is what you need to cap, the solver cannot enforce it; measure it after the
+fact and reject or re-plan yourself:
 
 ```elixir
 worked = ExVrp.Route.travel_duration(route) + ExVrp.Route.service_duration(route)
 # not duration - wait_duration: that also counts break time
 ```
 
-## Breaks with `:break_rule`
+## Breaks between limits
 
-A vehicle type with a `:break_rule` gets rest breaks placed by the solver:
+A vehicle type with a limit between breaks gets breaks placed by the solver:
 
 ```elixir
 Model.add_vehicle_type(model,
-  break_rule: %{duration: 2_700, max_drive_between_breaks: 16_200, max_work_between_breaks: 21_600}
+  break_duration: 1_800,
+  max_drive_between_breaks: 14_400,
+  max_work_between_breaks: 18_000
 )
 ```
 
-Set at least one limit. The drive clock counts travel; the work clock counts travel plus client and
-reload service. Every break resets both; waiting resets neither. The model adds a pool of break
-clients and the search places them, so they never appear in `visits`, schedules, `num_clients` or
-`unassigned`. A break that falls where the vehicle would wait anyway shortens the wait instead of
-lengthening the route.
+Set `:break_duration` together with at least one limit; `Model.validate/1` rejects either alone.
+The drive clock counts travel; the work clock counts travel plus client and reload service. Every
+break resets both; waiting resets neither. The model adds a pool of break clients and the search
+places them, so they never appear in `visits`, schedules, `num_clients` or `unassigned`. A break
+that falls where the vehicle would wait anyway shortens the wait instead of lengthening the route.
 
-A clock past its limit is priced as time warp, reported by `ExVrp.Route.clock_excess/1` (drive)
-and `ExVrp.Route.work_clock_excess/1`. Like `drive_excess/1`, neither moves `end_time/1`.
+The search weighs a longer route that needs a break like any other longer route: the break costs
+its duration (against shift, overtime and `:unit_duration_cost`), not a feasibility penalty, so
+one route with a break can beat two routes without. A clock left past its limit in a returned
+solution is time warp, reported by `ExVrp.Route.clock_excess/1` (drive) and
+`ExVrp.Route.work_clock_excess/1`. Like `drive_excess/1`, neither moves `end_time/1`.
 
 Work before the route counts too: `:drive_carry_in` and `:work_carry_in` add driving and work done
 since the last break (an earlier route that day) to the first stretch, and `:work_after_end` adds

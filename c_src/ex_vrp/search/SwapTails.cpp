@@ -13,6 +13,31 @@ bool onLastTrip(pyvrp::search::Route::Node *node)
     auto const *route = node->route();
     return node->trip() + 1 == route->numTrips();
 }
+
+// Clients after node, up to the end depot. Breaks there are not clients.
+size_t clientsAfter(pyvrp::search::Route::Node *node)
+{
+    auto const *route = node->route();
+    auto const last = route->size() - 2;
+    if (node->idx() == last)
+        return 0;
+
+    return last - node->idx()
+           - route->between(node->idx() + 1, last).numBreaks();
+}
+
+// Change in fixed cost when route's tail after `node` becomes `incoming`
+// clients: a route that gains its first client pays it, one that loses its
+// last is spared it.
+pyvrp::Cost fixedCostDelta(pyvrp::search::Route::Node *node, size_t incoming)
+{
+    auto const *route = node->route();
+    auto const before = route->numClients();
+    auto const after = before - clientsAfter(node) + incoming;
+    return route->fixedVehicleCost()
+           * (static_cast<pyvrp::Cost>(after > 0)
+              - static_cast<pyvrp::Cost>(before > 0));
+}
 }  // namespace
 
 pyvrp::Cost SwapTails::evaluate(Route::Node *U,
@@ -39,20 +64,11 @@ pyvrp::Cost SwapTails::evaluate(Route::Node *U,
 
     Cost deltaCost = 0;
 
-    // We're going to incur fixed cost if a route is currently empty but
-    // becomes non-empty due to the proposed move.
-    if (uRoute->empty() && !n(V)->isEndDepot())
-        deltaCost += uRoute->fixedVehicleCost();
-
-    if (vRoute->empty() && !n(U)->isEndDepot())
-        deltaCost += vRoute->fixedVehicleCost();
-
-    // We lose fixed cost if a route becomes empty due to the proposed move.
-    if (!uRoute->empty() && U->isStartDepot() && n(V)->isEndDepot())
-        deltaCost -= uRoute->fixedVehicleCost();
-
-    if (!vRoute->empty() && V->isStartDepot() && n(U)->isEndDepot())
-        deltaCost -= vRoute->fixedVehicleCost();
+    // We incur fixed cost if a route is currently empty but gains clients,
+    // and lose it if a route loses its last client. Breaks in the tails are
+    // not clients, so this counts clients rather than asking for depots.
+    deltaCost += fixedCostDelta(U, clientsAfter(V));
+    deltaCost += fixedCostDelta(V, clientsAfter(U));
 
     if (!n(U)->isEndDepot() && !n(V)->isEndDepot())
     {

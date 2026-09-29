@@ -1,12 +1,14 @@
 defmodule ExVrp.BreakPlanningTest do
   @moduledoc """
-  The model adds a pool of break clients for every vehicle type with a break
-  rule, and local search places them: `BreakRepair` inserts a break where a
-  stretch first overruns and removes breaks that cost nothing to lose.
+  The model adds a pool of break clients for every vehicle type with a limit
+  between breaks, and the search places them. Moves price a stretch that no
+  break covers yet as the breaks it lacks; `BreakRepair` then puts real ones
+  on the route, wherever it is cheapest, and removes breaks that fix nothing.
 
   Unless a test says otherwise, a vehicle type leaves `unit_duration_cost` at
-  0, so a break that fixes nothing costs nothing to remove and is removed.
-  Break time is what `duration` holds beyond travel, service and waiting.
+  0, so a break costs nothing either way: it must be placed because the clock
+  needs it, not because it pays. Break time is what `duration` holds beyond
+  travel, service and waiting.
   """
   use ExUnit.Case, async: true
 
@@ -18,7 +20,7 @@ defmodule ExVrp.BreakPlanningTest do
 
   @moduletag :nif_required
 
-  @rule %{max_drive_between_breaks: 270, duration: 45}
+  @rule [max_drive_between_breaks: 270, break_duration: 45]
 
   # Depot 0 and clients at 150, 300 and 450 on a line (1 unit = 1 s of drive).
   defp model(vehicle_opts) do
@@ -51,6 +53,21 @@ defmodule ExVrp.BreakPlanningTest do
     |> Model.set_euclidean_matrices([{0, 0}, {150, 0}])
   end
 
+  # Depot 0 and four clients at 100..103, 40 of service each. One route drives
+  # about 206 and works about 366, past a 300 work limit: it needs one break,
+  # and 366 + 45 fits the 500 shift. Split over two routes, each works under
+  # 300 and needs none.
+  defp cluster_model(client_opts, vehicle_opts) do
+    vehicle = [capacity: [10], max_work_between_breaks: 300, break_duration: 45, shift_duration: 500]
+    client = Keyword.merge([delivery: [1], service_duration: 40], client_opts)
+
+    Model.new()
+    |> Model.add_depot([])
+    |> then(fn model -> Enum.reduce(1..4, model, fn _client, acc -> Model.add_client(acc, client) end) end)
+    |> Model.add_vehicle_type(Keyword.merge(vehicle, vehicle_opts))
+    |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {101, 0}, {102, 0}, {103, 0}])
+  end
+
   defp client_start(solution, client) do
     [visit] = solution |> Solution.route_schedule(0) |> Enum.filter(&(&1.location == client))
     visit.start_service - Route.start_time(hd(Solution.routes(solution)))
@@ -58,7 +75,7 @@ defmodule ExVrp.BreakPlanningTest do
 
   # Out and back is 900 of drive, three times one 270 limit: at least three breaks.
   test "the solver inserts the breaks the clock needs and the plan is feasible" do
-    solution = [break_rule: @rule] |> model() |> best()
+    solution = @rule |> model() |> best()
     [route] = Solution.routes(solution)
 
     assert Solution.feasible?(solution)
@@ -68,7 +85,35 @@ defmodule ExVrp.BreakPlanningTest do
     assert break_time(route) >= 3 * 45
   end
 
-  test "without a break rule nothing changes" do
+  test "one route with a break beats a second vehicle" do
+    solution = [] |> cluster_model(num_available: 2, fixed_cost: 10_000) |> best()
+
+    assert Solution.feasible?(solution)
+    assert [route] = Solution.routes(solution)
+    assert Solution.num_clients(solution) == 4
+    assert break_time(route) == 45
+  end
+
+  test "optional clients worth more than a break are all served" do
+    solution = [required: false, prize: 10_000] |> cluster_model(num_available: 1) |> best()
+    [route] = Solution.routes(solution)
+
+    assert Solution.feasible?(solution)
+    assert Solution.num_clients(solution) == 4
+    assert break_time(route) == 45
+  end
+
+  test "every solution the solver hands back has its breaks in place" do
+    for seed <- 1..5, iterations <- [1, 50] do
+      solution = @rule |> model() |> best(seed: seed, stop: StoppingCriteria.max_iterations(iterations))
+
+      for route <- Solution.routes(solution) do
+        assert Route.clock_excess(route) + Route.work_clock_excess(route) == 0
+      end
+    end
+  end
+
+  test "without a limit between breaks nothing changes" do
     solution = [] |> model() |> best()
     [route] = Solution.routes(solution)
 
@@ -77,7 +122,7 @@ defmodule ExVrp.BreakPlanningTest do
   end
 
   test "callers never see the break clients" do
-    solution = [break_rule: @rule] |> model() |> best()
+    solution = @rule |> model() |> best()
     [route] = Solution.routes(solution)
 
     assert Solution.num_clients(solution) == 3
@@ -90,14 +135,14 @@ defmodule ExVrp.BreakPlanningTest do
   # Capacity 2 per vehicle and three unit deliveries: both vehicles must drive.
   # Only the ruled type has a break duration, so a break on the ruleless route
   # would cost nothing and fix nothing, and must not stay there.
-  test "a vehicle type without a rule never carries a break" do
+  test "a vehicle type without limits never carries a break" do
     solution =
       Model.new()
       |> Model.add_depot([])
       |> Model.add_client(delivery: [1])
       |> Model.add_client(delivery: [1])
       |> Model.add_client(delivery: [1])
-      |> Model.add_vehicle_type(num_available: 1, capacity: [2], break_rule: @rule)
+      |> Model.add_vehicle_type([num_available: 1, capacity: [2]] ++ @rule)
       |> Model.add_vehicle_type(num_available: 1, capacity: [2])
       |> Model.set_euclidean_matrices([{0, 0}, {150, 0}, {300, 0}, {450, 0}])
       |> best()
@@ -120,7 +165,7 @@ defmodule ExVrp.BreakPlanningTest do
       Model.new()
       |> Model.add_depot([])
       |> Model.add_client(delivery: [1])
-      |> Model.add_vehicle_type(num_available: 1, capacity: [10], unit_duration_cost: 1, break_rule: @rule)
+      |> Model.add_vehicle_type([num_available: 1, capacity: [10], unit_duration_cost: 1] ++ @rule)
       |> Model.set_euclidean_matrices([{0, 0}, {100, 0}])
 
     solution = best(model, initial_routes: [[1, 2]])
@@ -139,7 +184,7 @@ defmodule ExVrp.BreakPlanningTest do
       Model.new()
       |> Model.add_depot([])
       |> Model.add_client(delivery: [1])
-      |> Model.add_vehicle_type(num_available: 1, capacity: [10], break_rule: @rule)
+      |> Model.add_vehicle_type([num_available: 1, capacity: [10]] ++ @rule)
       |> Model.set_euclidean_matrices([{0, 0}, {600, 0}])
 
     solution = best(model)
@@ -155,7 +200,7 @@ defmodule ExVrp.BreakPlanningTest do
   # client, the stretch after it would still hold 500.
   test "the work clock alone makes the solver insert a break" do
     solution =
-      [service_duration: 200] |> one_client_model(break_rule: %{max_work_between_breaks: 400, duration: 45}) |> best()
+      [service_duration: 200] |> one_client_model(max_work_between_breaks: 400, break_duration: 45) |> best()
 
     [route] = Solution.routes(solution)
 
@@ -165,7 +210,7 @@ defmodule ExVrp.BreakPlanningTest do
     assert client_start(solution, 1) == 150
 
     drive_only =
-      [service_duration: 200] |> one_client_model(break_rule: %{max_drive_between_breaks: 400, duration: 45}) |> best()
+      [service_duration: 200] |> one_client_model(max_drive_between_breaks: 400, break_duration: 45) |> best()
 
     assert drive_only |> Solution.routes() |> hd() |> break_time() == 0
   end
@@ -175,13 +220,13 @@ defmodule ExVrp.BreakPlanningTest do
   # and the whole 300 after it needs a second one.
   for {carry, limit} <- [drive_carry_in: :max_drive_between_breaks, work_carry_in: :max_work_between_breaks] do
     test "#{carry} brings the first break a leg earlier" do
-      rule = %{unquote(limit) => 270, duration: 45}
+      rule = [{unquote(limit), 270}, break_duration: 45]
 
-      fresh = [] |> one_client_model(break_rule: rule) |> best()
+      fresh = [] |> one_client_model(rule) |> best()
       assert fresh |> Solution.routes() |> hd() |> break_time() == 45
       assert client_start(fresh, 1) == 150
 
-      carried = [] |> one_client_model([{unquote(carry), 150}, break_rule: rule]) |> best()
+      carried = [] |> one_client_model([{unquote(carry), 150} | rule]) |> best()
       [route] = Solution.routes(carried)
 
       assert Solution.feasible?(carried)
@@ -193,11 +238,11 @@ defmodule ExVrp.BreakPlanningTest do
 
   # 300 of work fits a 350 limit; 100 more after the last stop does not.
   test "work_after_end counts against the last stretch" do
-    rule = %{max_work_between_breaks: 350, duration: 45}
+    rule = [max_work_between_breaks: 350, break_duration: 45]
 
-    assert [] |> one_client_model(break_rule: rule) |> best() |> Solution.routes() |> hd() |> break_time() == 0
+    assert [] |> one_client_model(rule) |> best() |> Solution.routes() |> hd() |> break_time() == 0
 
-    solution = [] |> one_client_model(break_rule: rule, work_after_end: 100) |> best()
+    solution = [] |> one_client_model([work_after_end: 100] ++ rule) |> best()
     [route] = Solution.routes(solution)
 
     assert Solution.feasible?(solution)
@@ -223,7 +268,7 @@ defmodule ExVrp.BreakPlanningTest do
     end
 
     [plain] = [] |> model.() |> best() |> Solution.routes()
-    solution = [break_rule: @rule] |> model.() |> best()
+    solution = @rule |> model.() |> best()
     [route] = Solution.routes(solution)
 
     assert Solution.feasible?(solution)
@@ -241,7 +286,7 @@ defmodule ExVrp.BreakPlanningTest do
       |> Model.add_depot([])
       |> Model.add_client(delivery: [1])
       |> Model.add_client(delivery: [1])
-      |> Model.add_vehicle_type(num_available: 1, capacity: [1], reload_depots: [0], break_rule: @rule)
+      |> Model.add_vehicle_type([num_available: 1, capacity: [1], reload_depots: [0]] ++ @rule)
       |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {-100, 0}])
       |> best()
 
@@ -256,7 +301,7 @@ defmodule ExVrp.BreakPlanningTest do
 
   # The route runs past 500, so it meets the vehicle's 500-600 gap.
   test "breaks and a forbidden window go together" do
-    solution = [break_rule: @rule, time_windows: [{0, 500}, {600, 100_000}]] |> model() |> best()
+    solution = [time_windows: [{0, 500}, {600, 100_000}]] |> Keyword.merge(@rule) |> model() |> best()
     [route] = Solution.routes(solution)
 
     assert Solution.feasible?(solution)
@@ -266,7 +311,7 @@ defmodule ExVrp.BreakPlanningTest do
   end
 
   test "a warm start leaves the breaks out" do
-    solution = [break_rule: @rule] |> model() |> best()
+    solution = @rule |> model() |> best()
 
     assert {:ok, [visits]} = Solution.warm_start(solution)
     assert Enum.sort(visits) == [1, 2, 3]
@@ -275,7 +320,7 @@ defmodule ExVrp.BreakPlanningTest do
   # Breaks are optional clients, but a random start never takes one: only
   # local search places them. Trips keep breaks, so they would show there.
   test "a random solution carries no breaks" do
-    {:ok, problem_data} = [break_rule: @rule] |> model() |> Model.to_problem_data()
+    {:ok, problem_data} = @rule |> model() |> Model.to_problem_data()
 
     for seed <- 1..20 do
       {:ok, solution} = ExVrp.Native.create_random_solution(problem_data, seed: seed)
@@ -285,17 +330,17 @@ defmodule ExVrp.BreakPlanningTest do
     end
   end
 
-  # 8 per vehicle at most: max_drive and shift_duration are both unset.
+  # 12 per vehicle at most: max_drive and shift_duration are both unset.
   test "the pool holds enough breaks per vehicle, after every user client" do
-    {:ok, problem_data} = [break_rule: @rule, num_available: 2] |> model() |> Model.to_problem_data()
+    {:ok, problem_data} = [num_available: 2] |> Keyword.merge(@rule) |> model() |> Model.to_problem_data()
 
-    assert ExVrp.Native.problem_data_num_clients(problem_data) == 3 + 2 * 8
+    assert ExVrp.Native.problem_data_num_clients(problem_data) == 3 + 2 * 12
   end
 
-  # max_drive 900 over a 270 limit: ceil(900 / 270) = 4 breaks per vehicle.
+  # max_drive 900 over a 270 limit: ceil(900 / 270) = 4 breaks, plus one spare.
   test "max_drive sizes the pool" do
-    {:ok, problem_data} = [break_rule: @rule, max_drive: 900] |> model() |> Model.to_problem_data()
+    {:ok, problem_data} = [max_drive: 900] |> Keyword.merge(@rule) |> model() |> Model.to_problem_data()
 
-    assert ExVrp.Native.problem_data_num_clients(problem_data) == 3 + 4
+    assert ExVrp.Native.problem_data_num_clients(problem_data) == 3 + 5
   end
 end

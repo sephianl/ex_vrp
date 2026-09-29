@@ -129,6 +129,7 @@ defmodule ExVrp.Native do
     search_route_duration_nif: 1,
     search_route_time_warp_nif: 1,
     search_route_timeline_time_warp_nif: 1,
+    search_route_virtual_breaks_nif: 1,
     search_route_overtime_nif: 1,
     search_route_excess_distance_nif: 1,
     search_route_load_nif: 1,
@@ -1030,6 +1031,9 @@ defmodule ExVrp.Native do
 
   @doc "Gets the route time warp with drive excess (a penalty, not a timeline shift) excluded."
   def search_route_timeline_time_warp_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc "Gets the breaks the route still lacks, which the search prices as their duration (test-only)."
+  def search_route_virtual_breaks_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Gets the route overtime."
   def search_route_overtime_nif(_route), do: :erlang.nif_error(:nif_not_loaded)

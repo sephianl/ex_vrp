@@ -33,7 +33,8 @@ defmodule ExVrp.VehicleType do
   | `:max_distance`          | the whole route | distance, summed over every trip       |
   | `:max_distance_per_trip` | one trip        | distance, reset at every reload        |
   | `:max_drive`             | the whole route | travel only, no service or waiting     |
-  | `:break_rule`            | between breaks  | travel / work, reset at every break    |
+  | `:max_drive_between_breaks` | between breaks | travel only, reset at every break   |
+  | `:max_work_between_breaks`  | between breaks | travel and service, reset likewise  |
   | `:shift_duration`        | the whole route | elapsed time, idle included            |
   | `:max_duration`          | the whole route | elapsed time, idle included (hard cap) |
   | `:overtime_start`        | the whole route | clock time past the contracted end     |
@@ -97,10 +98,9 @@ defmodule ExVrp.VehicleType do
 
   `:max_drive` caps how long the vehicle is actually moving: the travel time of
   every edge on the route, from the duration matrix, summed over all trips.
-  Service, waiting for a window to open and reload time do not count. That is
-  what a legal driving-time limit measures, and what the elapsed-time caps
-  above cannot express. A route that drives 300 but waits 600 in between has
-  an elapsed duration of 900:
+  Service, waiting for a window to open and reload time do not count, which
+  the elapsed-time caps above cannot express. A route that drives 300 but
+  waits 600 in between has an elapsed duration of 900:
 
   | Cap                 | Measures | Verdict    |
   | ------------------- | -------- | ---------- |
@@ -120,6 +120,32 @@ defmodule ExVrp.VehicleType do
 
       ExVrp.Route.drive_excess(route)
       ExVrp.Solution.drive_excess(solution)
+
+  ## Breaks
+
+  `:max_drive_between_breaks` and `:max_work_between_breaks` cap what a
+  vehicle does between two breaks, and `:break_duration` is how long each
+  break lasts. Set `:break_duration` together with at least one of the two.
+  The solver then places the breaks itself: the model adds a pool of break
+  clients that never show up in `visits`, schedules, `num_clients` or
+  `unassigned`.
+
+  The drive clock counts travel; the work clock counts travel plus client and
+  reload service. Waiting counts toward neither, and every break resets both.
+
+      iex> vt = ExVrp.VehicleType.new(num_available: 1, capacity: [10],
+      ...>   break_duration: 30, max_drive_between_breaks: 240)
+      iex> {vt.break_duration, vt.max_drive_between_breaks, vt.max_work_between_breaks}
+      {30, 240, :infinity}
+
+  A break the vehicle can take while it would wait anyway shortens that wait
+  instead of lengthening the route. Break time is part of
+  `ExVrp.Route.duration/1`, but not of `wait_duration/1`.
+
+  A clock left past its limit is infeasible: the excess counts as time warp,
+  reported by `ExVrp.Route.clock_excess/1` (drive) and
+  `ExVrp.Route.work_clock_excess/1`. Like `drive_excess/1`, it never moves
+  `end_time/1`.
 
   ## Time windows
 
@@ -232,20 +258,15 @@ defmodule ExVrp.VehicleType do
     recharges each time it reloads, so every trip starts with a full tank.
     Independent of `:max_distance` — set either, both, or neither
   - `:max_drive` - Maximum **travel** duration of the whole route, across trips
-    (default: `:infinity`). Service, waiting and reload time do not count, so
-    this is the quantity a legal driving-time limit measures. Excess counts as
-    time warp and is reported by `ExVrp.Route.drive_excess/1` — see "Driving
-    time" above
-  - `:break_rule` - a map with `:duration` and at least one of
-    `:max_drive_between_breaks` and `:max_work_between_breaks`, or `nil`
-    (default: `nil`). The model adds break clients for it and the solver
-    places them; callers never see them. Travel between two breaks
-    may not exceed `:max_drive_between_breaks`, work (travel plus client and
-    reload service, not waiting) may not exceed `:max_work_between_breaks`,
-    and each break on this type's routes lasts `:duration`. Excess counts as
-    time warp and is reported by `ExVrp.Route.clock_excess/1` and
-    `ExVrp.Route.work_clock_excess/1`. Sets the struct fields of those names,
-    with `:duration` as `:break_duration`
+    (default: `:infinity`). Service, waiting and reload time do not count.
+    Excess counts as time warp and is reported by `ExVrp.Route.drive_excess/1`
+    — see "Driving time" above
+  - `:max_drive_between_breaks` - Maximum travel between two breaks (default:
+    `:infinity`) — see "Breaks" above
+  - `:max_work_between_breaks` - Maximum work, travel plus client and reload
+    service, between two breaks (default: `:infinity`)
+  - `:break_duration` - How long each break lasts (default: `0`). Set it
+    exactly when at least one of the two limits above is set
   - `:drive_carry_in` / `:work_carry_in` - Driving / work since the last break
     before the route starts, added to its first stretch (default: `0`)
   - `:work_after_end` - Work after the route ends (the last unload), added to
@@ -300,7 +321,6 @@ defmodule ExVrp.VehicleType do
   def new(opts) do
     validate_no_legacy_options!(opts)
     {time_windows, rest} = Keyword.pop(opts, :time_windows, [{0, :infinity}])
-    {break_rule, rest} = Keyword.pop(rest, :break_rule)
 
     validate_time_windows!(time_windows)
 
@@ -318,31 +338,13 @@ defmodule ExVrp.VehicleType do
 
     struct!(
       __MODULE__,
-      rest
-      |> Keyword.merge(break_rule_fields(break_rule))
-      |> Keyword.merge(
+      Keyword.merge(rest,
         tw_early: tw_early,
         tw_late: tw_late,
         max_duration: resolve_max_duration(rest),
         forbidden_windows: forbidden
       )
     )
-  end
-
-  defp break_rule_fields(nil), do: []
-
-  defp break_rule_fields(%{duration: duration} = rule)
-       when is_map_key(rule, :max_drive_between_breaks) or is_map_key(rule, :max_work_between_breaks) do
-    rule
-    |> Map.take([:max_drive_between_breaks, :max_work_between_breaks])
-    |> Enum.to_list()
-    |> Keyword.put(:break_duration, duration)
-  end
-
-  defp break_rule_fields(other) do
-    raise ArgumentError,
-          "invalid break_rule: #{inspect(other)}, expected %{duration: _} with " <>
-            ":max_drive_between_breaks and/or :max_work_between_breaks"
   end
 
   defp resolve_max_duration(opts) do

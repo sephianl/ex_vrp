@@ -122,9 +122,9 @@ defmodule ExVrp.Route do
   @doc """
   Returns the duration of this route.
 
-  Includes the breaks placed for a `:break_rule`, which are none of travel,
-  service or waiting: break time is `duration - travel_duration -
-  service_duration - wait_duration`.
+  Includes the breaks placed for the vehicle type's limits between breaks,
+  which are none of travel, service or waiting: break time is `duration -
+  travel_duration - service_duration - wait_duration`.
   """
   @spec duration(t()) :: non_neg_integer()
   def duration(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -170,7 +170,7 @@ defmodule ExVrp.Route do
   end
 
   @doc """
-  Returns the travel past the `:break_rule`'s `:max_drive_between_breaks`,
+  Returns the travel past the vehicle type's `:max_drive_between_breaks`,
   summed over the stretches between breaks.
 
   Also counted in `time_warp/1`.
@@ -181,7 +181,7 @@ defmodule ExVrp.Route do
   end
 
   @doc """
-  Returns the work (travel plus service) past the `:break_rule`'s
+  Returns the work (travel plus service) past the vehicle type's
   `:max_work_between_breaks`, summed over the stretches between breaks.
 
   Also counted in `time_warp/1`.
