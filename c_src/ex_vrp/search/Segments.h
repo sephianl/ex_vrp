@@ -49,10 +49,17 @@ public:
                + data.lockPenalty(vehicleType, client);
     }
 
-    DurationSegment duration([[maybe_unused]] size_t profile) const
+    DurationSegment duration([[maybe_unused]] size_t profile,
+                             [[maybe_unused]] size_t vehicleType) const
     {
         ProblemData::Client const &clientData = data.location(client);
         return {clientData};
+    }
+
+    DriveClock driveClock([[maybe_unused]] size_t profile,
+                          [[maybe_unused]] Duration limit) const
+    {
+        return {};
     }
 
     LoadSegment load(size_t dimension) const
@@ -105,12 +112,19 @@ public:
         return 0;
     }
 
-    DurationSegment duration([[maybe_unused]] size_t profile) const
+    DurationSegment duration([[maybe_unused]] size_t profile,
+                             [[maybe_unused]] size_t vehicleType) const
     {
         // Empty segment - depot service time is handled by
         // Proposal::duration().
         return DurationSegment(
             0, 0, 0, std::numeric_limits<Duration>::max(), 0);
+    }
+
+    DriveClock driveClock([[maybe_unused]] size_t profile,
+                          [[maybe_unused]] Duration limit) const
+    {
+        return {};
     }
 
     LoadSegment load([[maybe_unused]] size_t dimension) const { return {}; }
@@ -119,17 +133,17 @@ public:
 /**
  * Evaluation interface for a single break client, which might not currently
  * be in the solution. A break has no location, so the Proposal folds skip its
- * edges; it only adds its duration, in an unconstrained time window.
+ * edges; it only adds the break duration of the vehicle type whose route it
+ * is proposed for, in an unconstrained time window.
  */
 class BreakSegment
 {
     ProblemData const &data;
     size_t client;
-    Duration breakDuration;
 
 public:
-    BreakSegment(ProblemData const &data, size_t client, Duration breakDuration)
-        : data(data), client(client), breakDuration(breakDuration)
+    BreakSegment(ProblemData const &data, size_t client)
+        : data(data), client(client)
     {
         assert(data.isBreak(client));
     }
@@ -156,10 +170,19 @@ public:
         return data.penalty(profile, client);
     }
 
-    DurationSegment duration([[maybe_unused]] size_t profile) const
+    DurationSegment duration([[maybe_unused]] size_t profile,
+                             size_t vehicleType) const
     {
+        auto const breakDuration = data.vehicleType(vehicleType).breakDuration;
         return DurationSegment(
             breakDuration, 0, 0, std::numeric_limits<Duration>::max(), 0);
+    }
+
+    // No location, so the Proposal fold adds trailRun to the leg it sits on.
+    DriveClock driveClock([[maybe_unused]] size_t profile,
+                          [[maybe_unused]] Duration limit) const
+    {
+        return {.leadRun = 1, .trailRun = 1};
     }
 
     LoadSegment load([[maybe_unused]] size_t dimension) const { return {}; }

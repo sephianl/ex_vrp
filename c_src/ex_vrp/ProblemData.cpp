@@ -151,6 +151,13 @@ ProblemData::Client::Client(std::vector<Load> delivery,
             || releaseTime != 0))
         throw std::invalid_argument(
             "break clients must not have a time window or release time.");
+
+    // A break lasts its route's VehicleType::breakDuration. A service
+    // duration here would be silently ignored, so it is refused instead.
+    if (isBreak && serviceDuration != 0)
+        throw std::invalid_argument(
+            "break clients take their duration from the vehicle type's "
+            "break_duration, not a service duration.");
 }
 
 ProblemData::Client::Client(Client const &client)
@@ -406,7 +413,9 @@ ProblemData::VehicleType::VehicleType(
     std::vector<std::pair<Duration, Duration>> forbiddenWindows,
     Duration overtimeStart,
     Distance maxDistancePerTrip,
-    Duration maxDrive)
+    Duration maxDrive,
+    Duration maxDriveBetweenBreaks,
+    Duration breakDuration)
     : numAvailable(numAvailable),
       startDepot(startDepot),
       endDepot(endDepot),
@@ -428,6 +437,8 @@ ProblemData::VehicleType::VehicleType(
       overtimeStart(overtimeStart),
       maxDuration(maxDuration.value_or(shiftDuration)),
       maxDrive(maxDrive),
+      maxDriveBetweenBreaks(maxDriveBetweenBreaks),
+      breakDuration(breakDuration),
       forbiddenWindows(std::move(forbiddenWindows)),
       name(duplicate(name.data()))
 {
@@ -477,6 +488,20 @@ ProblemData::VehicleType::VehicleType(
     if (this->maxDrive < 0)
         throw std::invalid_argument("max_drive must be >= 0.");
 
+    if (maxDriveBetweenBreaks <= 0)
+        throw std::invalid_argument("max_drive_between_breaks must be > 0.");
+
+    if (breakDuration < 0)
+        throw std::invalid_argument("break_duration must be >= 0.");
+
+    // A limit without a break to reset it, or a break with no limit to reset,
+    // is a half-configured rule.
+    if ((maxDriveBetweenBreaks == std::numeric_limits<Duration>::max())
+        != (breakDuration == 0))
+        throw std::invalid_argument(
+            "max_drive_between_breaks and break_duration must be set "
+            "together.");
+
     if (unitOvertimeCost < 0)
         throw std::invalid_argument("unit_overtime_cost must be >= 0.");
 
@@ -517,6 +542,8 @@ ProblemData::VehicleType::VehicleType(VehicleType const &vehicleType)
       overtimeStart(vehicleType.overtimeStart),
       maxDuration(vehicleType.maxDuration),
       maxDrive(vehicleType.maxDrive),
+      maxDriveBetweenBreaks(vehicleType.maxDriveBetweenBreaks),
+      breakDuration(vehicleType.breakDuration),
       forbiddenWindows(vehicleType.forbiddenWindows),
       name(duplicate(vehicleType.name))
 {
@@ -544,6 +571,8 @@ ProblemData::VehicleType::VehicleType(VehicleType &&vehicleType)
       overtimeStart(vehicleType.overtimeStart),
       maxDuration(vehicleType.maxDuration),
       maxDrive(vehicleType.maxDrive),
+      maxDriveBetweenBreaks(vehicleType.maxDriveBetweenBreaks),
+      breakDuration(vehicleType.breakDuration),
       forbiddenWindows(std::move(vehicleType.forbiddenWindows)),
       name(vehicleType.name)  // we can steal
 {
@@ -581,6 +610,8 @@ bool ProblemData::VehicleType::operator==(VehicleType const &other) const
         && maxReloads == other.maxReloads
         && maxDuration == other.maxDuration
         && maxDrive == other.maxDrive
+        && maxDriveBetweenBreaks == other.maxDriveBetweenBreaks
+        && breakDuration == other.breakDuration
         && unitOvertimeCost == other.unitOvertimeCost
         && overtimeStart == other.overtimeStart
         && forbiddenWindows == other.forbiddenWindows

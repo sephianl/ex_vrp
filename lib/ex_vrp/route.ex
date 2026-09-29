@@ -164,6 +164,17 @@ defmodule ExVrp.Route do
     Native.solution_route_drive_excess(ref, idx)
   end
 
+  @doc """
+  Returns the travel past the vehicle type's `:break_rule` limit, summed over
+  the stretches between breaks.
+
+  Also counted in `time_warp/1`.
+  """
+  @spec clock_excess(t()) :: non_neg_integer()
+  def clock_excess(%__MODULE__{solution_ref: ref, route_idx: idx}) do
+    Native.solution_route_clock_excess(ref, idx)
+  end
+
   # ---------------------------------------------------------------------------
   # Costs
   # ---------------------------------------------------------------------------

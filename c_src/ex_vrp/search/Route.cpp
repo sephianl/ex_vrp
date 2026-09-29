@@ -203,6 +203,76 @@ void Route::swap(Node *first, Node *second)
 #endif
 }
 
+void Route::updateDriveClock()
+{
+    auto const limit = maxDriveBetweenBreaks();
+    if (limit == std::numeric_limits<Duration>::max())
+        return;  // nothing reads the structures without a break rule
+
+    auto const &durations = data.durationMatrix(profile());
+    auto const size = nodes.size();
+
+    cumDrive_.resize(size);
+    cumDrive_[0] = 0;
+    for (size_t idx = 1; idx != size; ++idx)
+        cumDrive_[idx]
+            = cumDrive_[idx - 1] + durations(locs_[idx - 1], locs_[idx]);
+
+    resetBounds_.assign(1, 0);
+    legBreaks_.assign(1, 0);
+    resetClose_.assign(1, 0);
+    resetStart_.assign(1, 0);
+
+    stretchOf_.resize(size);
+    stretchOf_[0] = 0;
+
+    size_t breaks = 0;
+    for (size_t idx = 1; idx != size; ++idx)
+    {
+        if (data.isBreak(visits[idx]))
+            breaks++;
+        else if (breaks > 0)  // then idx ends a leg carrying breaks
+        {
+            // Breaks alias to the node before them, so cumDrive_[idx - 1] is
+            // where the leg begins, and the leg's own drive is the last edge.
+            auto const drive = cumDrive_[idx] - cumDrive_[idx - 1];
+            auto const prepaid = static_cast<Duration>(breaks - 1) * limit;
+            auto const after = drive > prepaid ? drive - prepaid : 0;
+
+            resetBounds_.push_back(idx);
+            legBreaks_.push_back(breaks);
+            resetClose_.push_back(cumDrive_[idx - 1]);
+            resetStart_.push_back(cumDrive_[idx] - after);
+            breaks = 0;
+        }
+
+        stretchOf_[idx] = resetBounds_.size() - 1;
+    }
+
+    resetBounds_.push_back(size - 1);
+    legBreaks_.push_back(0);
+
+    // Stretch r, for 1 <= r < m, is closed on both sides by reset legs.
+    auto const numResets = this->numResets();
+    resetExcess_.assign(numResets + 1, 0);
+    for (size_t r = 2; r <= numResets; ++r)
+        resetExcess_[r]
+            = resetExcess_[r - 1]
+              + DriveClock::clip(resetClose_[r] - resetStart_[r - 1], limit);
+
+#ifndef NDEBUG
+    // The prefix answers must match a plain fold over the same nodes.
+    if (size < 20)
+        for (size_t idx = 0; idx != size; ++idx)
+        {
+            assert(SegmentBefore(*this, idx).driveClock(profile(), limit)
+                   == foldDriveClock(0, idx, profile(), limit));
+            assert(SegmentAfter(*this, idx).driveClock(profile(), limit)
+                   == foldDriveClock(idx, size - 1, profile(), limit));
+        }
+#endif
+}
+
 void Route::update()
 {
     visits.clear();
@@ -303,7 +373,14 @@ void Route::update()
     {
         auto const *node = nodes[idx];
 
-        if (!node->isReloadDepot())
+        if (data.isBreak(node->client()))
+            // A break lasts this vehicle type's break duration, in no window.
+            durAt[idx] = DurationSegment(vehicleType_.breakDuration,
+                                         0,
+                                         0,
+                                         std::numeric_limits<Duration>::max(),
+                                         0);
+        else if (!node->isReloadDepot())
         {
             ProblemData::Client const &client = data.location(node->client());
             durAt[idx] = {client};
@@ -361,6 +438,8 @@ void Route::update()
         auto const edgeDur = durations(from, to);
         durAfter[idx] = DurationSegment::merge(edgeDur, durAt[idx], after);
     }
+
+    updateDriveClock();
 
     // Load.
     for (size_t dim = 0; dim != data.numLoadDimensions(); ++dim)
@@ -422,16 +501,23 @@ void Route::update()
     timeWarp_ = durAfter[0].timeWarp(maxDuration());
     auto const driveExcess = durAfter[0].driveExcess(maxDrive());
 
+    auto const clockLimit = maxDriveBetweenBreaks();
+    auto const clockExcess = clockLimit == std::numeric_limits<Duration>::max()
+                                 ? 0
+                                 : SegmentBefore(*this, nodes.size() - 1)
+                                       .driveClock(profile(), clockLimit)
+                                       .overrun(clockLimit);
+
     // Save DurationSegment-only values before forbidden window corrections.
     // Proposal::duration() also uses DurationSegment without forbidden window
     // awareness, so delta evaluation must subtract these DS-only values (not
-    // the corrected ones) to keep the delta consistent. Drive excess is not a
-    // shift along the timeline, so the DS-only end time and overtime below
-    // are computed from timeWarpDSBase alone, and the excess is folded into
-    // timeWarpDS_ only afterwards, to match what Proposal::duration() returns.
+    // the corrected ones) to keep the delta consistent. Drive and clock excess
+    // are not shifts along the timeline, so the DS-only end time and overtime
+    // below are computed from timeWarpDSBase alone, and the excess is folded
+    // into timeWarpDS_ only afterwards, to match Proposal::duration().
     auto const durationDS = duration_;
     auto const timeWarpDSBase = timeWarp_;
-    timeWarpDS_ = timeWarpDSBase + driveExcess;
+    timeWarpDS_ = timeWarpDSBase + driveExcess + clockExcess;
 
     // Clock time at which the route ends. The DurationSegment view is the
     // right answer only while no forbidden window is in play; once one is, the
@@ -504,7 +590,8 @@ void Route::update()
                 auto const arrivalTime = now;
                 auto const wait
                     = client.twEarly > now ? client.twEarly - now : Duration(0);
-                now += wait + client.serviceDuration;
+                // durAt holds the service duration, or a break's duration.
+                now += wait + durAt[idx].duration();
 
                 // The vehicle is physically at this client from
                 // arrivalTime until now (after service).  Any overlap
@@ -549,7 +636,7 @@ void Route::update()
                     ProblemData::Client const &next
                         = data.location(nodes[idx + 1]->client());
                     auto const svcStart = std::max(arrive, next.twEarly);
-                    auto const svcEnd = svcStart + next.serviceDuration;
+                    auto const svcEnd = svcStart + durAt[idx + 1].duration();
 
                     for (auto const &[fStart, fEnd] :
                          vehicleType_.forbiddenWindows)
@@ -590,8 +677,9 @@ void Route::update()
         endTime = now;
     }
 
-    timeWarp_ += driveExcess;
+    timeWarp_ += driveExcess + clockExcess;
     driveExcess_ = driveExcess;
+    clockExcess_ = clockExcess;
 
     overtime_ = vehicleType_.overtime(endTime, duration_);
     durationCost_ = unitDurationCost() * static_cast<Cost>(duration_)

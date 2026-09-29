@@ -77,6 +77,7 @@ Trip::Trip(ProblemData const &data,
 
         ProblemData::Client const &clientData = data.location(client);
 
+        // Zero for a break (see Client): its duration is rest, not service.
         service_ += clientData.serviceDuration;
         release_ = std::max(release_, clientData.releaseTime);
         prizes_ += clientData.prize;

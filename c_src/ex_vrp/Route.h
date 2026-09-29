@@ -32,6 +32,9 @@ class Route
     // Creates the data returned by ``schedule()``.
     void makeSchedule(ProblemData const &data);
 
+    // Drive clock overrun of the whole route; zero without a break rule.
+    [[nodiscard]] Duration foldClockExcess(ProblemData const &data) const;
+
 public:
     /**
      * Forward iterator through the clients visited by this route.
@@ -120,8 +123,10 @@ private:
     Cost durationCost_ = 0;          // Total cost of route duration
     Duration timeWarp_ = 0;          // Total time warp on this route
     Duration driveExcess_ = 0;       // Travel past max_drive
+    Duration clockExcess_ = 0;       // Travel past max_drive_between_breaks
     Duration travel_ = 0;            // Total *travel* duration on this route
     Duration service_ = 0;           // Total *service* duration on this route
+    Duration breaks_ = 0;            // Total break duration on this route
     Duration startTime_ = 0;         // (earliest) start time of this route
     Duration slack_ = 0;             // Total time slack on this route
     Cost prizes_ = 0;                // Total value of prizes on this route
@@ -244,10 +249,18 @@ public:
     [[nodiscard]] Duration driveExcess() const;
 
     /**
+     * Travel duration past the vehicle type's ``max_drive_between_breaks``,
+     * summed over the stretches between breaks, which is also counted in
+     * :meth:`time_warp`.
+     */
+    [[nodiscard]] Duration clockExcess() const;
+
+    /**
      * The part of :meth:`~timeWarp` that is an actual shift along the
      * timeline, used to derive clock times such as :meth:`~endTime`.
      * Excludes penalty-only terms folded into :meth:`~timeWarp` that do not
-     * move when the route starts or ends (today, :meth:`~driveExcess`).
+     * move when the route starts or ends (today, :meth:`~driveExcess` and
+     * :meth:`~clockExcess`).
      */
     [[nodiscard]] Duration timelineTimeWarp() const;
 
@@ -257,7 +270,7 @@ public:
     [[nodiscard]] Duration travelDuration() const;
 
     /**
-     * Total waiting duration on this route.
+     * Total waiting duration on this route. Breaks are rest, not waiting.
      */
     [[nodiscard]] Duration waitDuration() const;
 

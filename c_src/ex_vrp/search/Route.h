@@ -2,6 +2,7 @@
 #define PYVRP_SEARCH_ROUTE_H
 
 #include "../Route.h"  // pyvrp::Route
+#include "DriveClock.h"
 #include "DurationSegment.h"
 #include "LoadSegment.h"
 #include "ProblemData.h"
@@ -42,23 +43,29 @@ struct TripDistance
 // Break clients have no location. A segment holding only breaks reports
 // hasLocation() == false, and its first() and last() must not be used in edge
 // lookups; any other segment's first() and last() are its first and last
-// non-break locations.
+// non-break locations. driveClock() is only called with a finite limit.
 template <typename T>
-concept Segment
-    = requires(T arg, size_t profile, size_t vehicleType, size_t dimension) {
-          { arg.route() };
-          { arg.hasLocation() } -> std::same_as<bool>;
-          { arg.first() } -> std::same_as<size_t>;
-          { arg.last() } -> std::same_as<size_t>;
-          { arg.size() } -> std::same_as<size_t>;
-          { arg.startsAtReloadDepot() } -> std::same_as<bool>;
-          { arg.endsAtReloadDepot() } -> std::same_as<bool>;
-          { arg.distance(profile) } -> std::convertible_to<Distance>;
-          { arg.tripDistance(profile) } -> std::convertible_to<TripDistance>;
-          { arg.penalty(profile, vehicleType) } -> std::convertible_to<Cost>;
-          { arg.duration(profile) } -> std::convertible_to<DurationSegment>;
-          { arg.load(dimension) } -> std::convertible_to<LoadSegment>;
-      };
+concept Segment = requires(T arg,
+                           size_t profile,
+                           size_t vehicleType,
+                           size_t dimension,
+                           Duration limit) {
+    { arg.route() };
+    { arg.hasLocation() } -> std::same_as<bool>;
+    { arg.first() } -> std::same_as<size_t>;
+    { arg.last() } -> std::same_as<size_t>;
+    { arg.size() } -> std::same_as<size_t>;
+    { arg.startsAtReloadDepot() } -> std::same_as<bool>;
+    { arg.endsAtReloadDepot() } -> std::same_as<bool>;
+    { arg.distance(profile) } -> std::convertible_to<Distance>;
+    { arg.tripDistance(profile) } -> std::convertible_to<TripDistance>;
+    { arg.penalty(profile, vehicleType) } -> std::convertible_to<Cost>;
+    {
+        arg.duration(profile, vehicleType)
+    } -> std::convertible_to<DurationSegment>;
+    { arg.driveClock(profile, limit) } -> std::convertible_to<DriveClock>;
+    { arg.load(dimension) } -> std::convertible_to<LoadSegment>;
+};
 
 namespace detail
 {
@@ -149,9 +156,16 @@ public:
 
         /**
          * Returns the (duration cost, time warp) attributes of the proposed
-         * route.
+         * route. The time warp includes driveClockOverrun().
          */
         std::pair<Cost, Duration> duration() const;
+
+        /**
+         * Returns the proposed route's driving in excess of
+         * ``max_drive_between_breaks``, summed over its stretches between
+         * breaks. Zero when the limit is unset.
+         */
+        Duration driveClockOverrun() const;
 
         /**
          * Returns the excess load of the proposed route.
@@ -291,7 +305,9 @@ private:
         inline Distance distance(size_t profile) const;
         inline TripDistance tripDistance(size_t profile) const;
         inline Cost penalty(size_t profile, size_t vehicleType) const;
-        inline DurationSegment duration(size_t profile) const;
+        inline DurationSegment duration(size_t profile,
+                                        size_t vehicleType) const;
+        inline DriveClock driveClock(size_t profile, Duration limit) const;
         inline LoadSegment const &load(size_t dimension) const;
     };
 
@@ -319,7 +335,9 @@ private:
         inline Distance distance(size_t profile) const;
         inline TripDistance tripDistance(size_t profile) const;
         inline Cost penalty(size_t profile, size_t vehicleType) const;
-        inline DurationSegment duration(size_t profile) const;
+        inline DurationSegment duration(size_t profile,
+                                        size_t vehicleType) const;
+        inline DriveClock driveClock(size_t profile, Duration limit) const;
         inline LoadSegment const &load(size_t dimension) const;
     };
 
@@ -349,7 +367,9 @@ private:
         inline Distance distance(size_t profile) const;
         inline TripDistance tripDistance(size_t profile) const;
         inline Cost penalty(size_t profile, size_t vehicleType) const;
-        inline DurationSegment duration(size_t profile) const;
+        inline DurationSegment duration(size_t profile,
+                                        size_t vehicleType) const;
+        inline DriveClock driveClock(size_t profile, Duration limit) const;
         inline LoadSegment load(size_t dimension) const;
     };
 
@@ -367,6 +387,7 @@ private:
     Cost durationCost_;
     Duration timeWarp_;
     Duration driveExcess_ = 0;  // Travel past max_drive, folded into timeWarp_
+    Duration clockExcess_ = 0;  // Travel past the break rule, likewise
     Cost reloadCost_;
 
     // DurationSegment-only values (before forbidden window corrections).
@@ -403,6 +424,44 @@ private:
     // tripExcess_[t] is the excess of trips [0, t). Lets a segment price the
     // whole trips it spans without walking them.
     std::vector<Distance> tripExcess_;
+
+    // Drive clock prefix structures, built only while the vehicle type has a
+    // break rule. A "reset leg" is a leg between two non-break nodes that
+    // carries breaks; stretch r runs from reset leg r (stretch 0 from the
+    // start depot) to the start of reset leg r + 1, or to the end depot.
+    // Entries 1..m describe the m reset legs; entry 0 is the start depot.
+    //
+    // - cumDrive_: travel duration of start -> node (incl.), over locs_.
+    // - resetBounds_: index of the non-break node each reset leg arrives at,
+    //   bracketed by 0 and nodes.size() - 1.
+    // - legBreaks_: number of breaks on each reset leg.
+    // - resetClose_: cumDrive_ where each reset leg begins, i.e. where the
+    //   stretch before it ends.
+    // - resetStart_: cumDrive_ from which the stretch after each reset leg
+    //   counts: the leg's end, less the drive left after its pre-paid breaks.
+    // - resetExcess_: resetExcess_[r] is the clipped excess of the closed
+    //   stretches [1, r).
+    // - stretchOf_: number of reset legs arriving at or before each node.
+    std::vector<Duration> cumDrive_;
+    std::vector<size_t> resetBounds_;
+    std::vector<size_t> legBreaks_;
+    std::vector<Duration> resetClose_;
+    std::vector<Duration> resetStart_;
+    std::vector<Duration> resetExcess_;
+    std::vector<size_t> stretchOf_;
+
+    // Folds the drive clock over nodes [start, end] from scratch, for another
+    // profile or limit, or for checking the prefix structures.
+    [[nodiscard]] inline DriveClock foldDriveClock(size_t start,
+                                                   size_t end,
+                                                   size_t profile,
+                                                   Duration limit) const;
+
+    // Number of reset legs, when the drive clock structures are built.
+    [[nodiscard]] inline size_t numResets() const;
+
+    // Builds the drive clock structures above; a no-op without a break rule.
+    void updateDriveClock();
 
     // Trip a node belongs to, as an index into tripBounds_. Node::trip() is
     // not that index for the end depot: clear() assigns it trip 1 on an empty
@@ -617,6 +676,12 @@ public:
     [[nodiscard]] inline Duration maxDrive() const;
 
     /**
+     * @return The maximum travel duration between two breaks that the vehicle
+     *         servicing this route supports.
+     */
+    [[nodiscard]] inline Duration maxDriveBetweenBreaks() const;
+
+    /**
      * @return The contracted end of shift past which work counts as overtime,
      *         or the maximum representable duration when unset.
      */
@@ -643,7 +708,8 @@ public:
      * @return The part of timeWarp() that is an actual shift along the
      *         timeline, for deriving clock times. Excludes penalty-only
      *         terms folded into timeWarp() that do not move when the route
-     *         starts or ends (today, drive excess past maxDrive()).
+     *         starts or ends (today, drive excess past maxDrive() and drive
+     *         clock excess past maxDriveBetweenBreaks()).
      */
     [[nodiscard]] inline Duration timelineTimeWarp() const;
 
@@ -901,10 +967,42 @@ Cost Route::SegmentAfter::penalty([[maybe_unused]] size_t profile,
 }
 
 DurationSegment
-Route::SegmentAfter::duration([[maybe_unused]] size_t profile) const
+Route::SegmentAfter::duration([[maybe_unused]] size_t profile,
+                              [[maybe_unused]] size_t vehicleType) const
 {
     assert(profile == route_.profile());
+    assert(vehicleType == route_.vehicleType());
     return route_.durAfter[start];
+}
+
+DriveClock
+Route::SegmentAfter::driveClock([[maybe_unused]] size_t profile,
+                                [[maybe_unused]] Duration limit) const
+{
+    assert(profile == route_.profile());
+    assert(limit == route_.maxDriveBetweenBreaks());
+
+    // Breaks from start up to the first non-break node sit on the leg into
+    // this segment. Reset legs arriving at or before that node are outside.
+    auto const firstReal = route_.nextReal_[start];
+    auto const numResets = route_.numResets();
+    auto const outside = route_.stretchOf_[firstReal];
+    auto const &cumDrive = route_.cumDrive_;
+
+    DriveClock clock = {.leadRun = firstReal - start};
+    if (outside == numResets)
+    {
+        clock.head = cumDrive.back() - cumDrive[firstReal];
+        clock.tail = clock.head;
+        return clock;
+    }
+
+    clock.head = route_.resetClose_[outside + 1] - cumDrive[firstReal];
+    clock.tail = cumDrive.back() - route_.resetStart_[numResets];
+    clock.resets = numResets - outside;
+    clock.excess
+        = route_.resetExcess_[numResets] - route_.resetExcess_[outside + 1];
+    return clock;
 }
 
 LoadSegment const &Route::SegmentAfter::load(size_t dimension) const
@@ -947,10 +1045,44 @@ Cost Route::SegmentBefore::penalty([[maybe_unused]] size_t profile,
 }
 
 DurationSegment
-Route::SegmentBefore::duration([[maybe_unused]] size_t profile) const
+Route::SegmentBefore::duration([[maybe_unused]] size_t profile,
+                               [[maybe_unused]] size_t vehicleType) const
 {
     assert(profile == route_.profile());
+    assert(vehicleType == route_.vehicleType());
     return route_.durBefore[end];
+}
+
+DriveClock
+Route::SegmentBefore::driveClock([[maybe_unused]] size_t profile,
+                                 [[maybe_unused]] Duration limit) const
+{
+    assert(profile == route_.profile());
+    assert(limit == route_.maxDriveBetweenBreaks());
+
+    // A break at end has cumDrive_ and stretchOf_ equal to the non-break node
+    // before it, so only trailRun differs: the breaks from that node up to
+    // end, which sit on reset leg `inside + 1`.
+    auto const inside = route_.stretchOf_[end];
+    auto const drive = route_.cumDrive_[end];
+
+    DriveClock clock = {.head = drive, .tail = drive, .resets = inside};
+
+    if (route_.data.isBreak(route_.visits[end]))
+    {
+        auto const arrival = route_.resetBounds_[inside + 1];
+        auto const legStart = arrival - route_.legBreaks_[inside + 1] - 1;
+        clock.trailRun = end - legStart;
+    }
+
+    if (inside > 0)
+    {
+        clock.head = route_.resetClose_[1];
+        clock.tail = drive - route_.resetStart_[inside];
+        clock.excess = route_.resetExcess_[inside];
+    }
+
+    return clock;
 }
 
 LoadSegment const &Route::SegmentBefore::load(size_t dimension) const
@@ -1090,11 +1222,28 @@ Cost Route::SegmentBetween::penalty(size_t profile, size_t vehicleType) const
     return route_.cumPenalty[end + 1] - route_.cumPenalty[start];
 }
 
-DurationSegment
-Route::SegmentBetween::duration([[maybe_unused]] size_t profile) const
+DurationSegment Route::SegmentBetween::duration(size_t profile,
+                                                size_t vehicleType) const
 {
+    // durAt holds this route's break duration. Evaluated for a vehicle type
+    // whose break lasts differently, the segment's breaks take that duration,
+    // as they would once moved there.
+    auto const breakDuration
+        = route_.data.vehicleType(vehicleType).breakDuration;
+    auto const swapBreaks = breakDuration != route_.vehicleType_.breakDuration;
+    DurationSegment const breakDS(
+        breakDuration, 0, 0, std::numeric_limits<Duration>::max(), 0);
+
+    auto const at = [&](size_t idx) -> DurationSegment const &
+    {
+        if (swapBreaks && route_.data.isBreak(route_.visits[idx]))
+            return breakDS;
+
+        return route_.durAt[idx];
+    };
+
     auto const &mat = route_.data.durationMatrix(profile);
-    auto durSegment = route_.durAt[start];
+    auto durSegment = at(start);
 
     // Edges up to the first non-break node are skipped, as in distance(): the
     // Proposal fold travels into the segment's first() before its leading
@@ -1112,11 +1261,18 @@ Route::SegmentBetween::duration([[maybe_unused]] size_t profile) const
             edge = mat(from, to);
         }
 
-        auto const &durAt = route_.durAt[step + 1];
-        durSegment = DurationSegment::merge(edge, durSegment, durAt);
+        durSegment = DurationSegment::merge(edge, durSegment, at(step + 1));
     }
 
     return durSegment;
+}
+
+DriveClock Route::SegmentBetween::driveClock(size_t profile,
+                                             Duration limit) const
+{
+    // Operator segments are a few nodes long, so folding beats prefix lookups
+    // that would only hold for this route's own profile and limit.
+    return route_.foldDriveClock(start, end, profile, limit);
 }
 
 LoadSegment Route::SegmentBetween::load(size_t dimension) const
@@ -1283,7 +1439,8 @@ bool Route::hasDurationCost() const
         || unitDurationCost() != 0
         || hasOvertimeCost
         || maxDuration() != unbounded
-        || maxDrive() != unbounded;
+        || maxDrive() != unbounded
+        || maxDriveBetweenBreaks() != unbounded;
     // clang-format on
 }
 
@@ -1297,6 +1454,44 @@ ProblemData::VehicleType const &Route::vehicleTypeData() const
 Duration Route::maxDuration() const { return vehicleType_.maxDuration; }
 
 Duration Route::maxDrive() const { return vehicleType_.maxDrive; }
+
+Duration Route::maxDriveBetweenBreaks() const
+{
+    return vehicleType_.maxDriveBetweenBreaks;
+}
+
+size_t Route::numResets() const
+{
+    assert(resetBounds_.size() >= 2);
+    return resetBounds_.size() - 2;
+}
+
+DriveClock Route::foldDriveClock(size_t start,
+                                 size_t end,
+                                 size_t profile,
+                                 Duration limit) const
+{
+    // Breaks before the first non-break node sit on the leg into the segment,
+    // and breaks after the last on the leg out of it: the fold only counts
+    // them, as leadRun and trailRun.
+    auto const firstReal = nextReal_[start];
+    if (firstReal > end)
+        return {.leadRun = end - start + 1, .trailRun = end - start + 1};
+
+    auto const &mat = data.durationMatrix(profile);
+
+    DriveClock clock = {.leadRun = firstReal - start};
+    for (size_t idx = firstReal + 1; idx <= end; ++idx)
+    {
+        if (data.isBreak(visits[idx]))
+            clock.trailRun++;
+        else
+            clock = DriveClock::merge(
+                clock, mat(locs_[idx - 1], visits[idx]), {}, limit);
+    }
+
+    return clock;
+}
 
 Duration Route::overtimeStart() const { return vehicleType_.overtimeStart; }
 
@@ -1321,7 +1516,7 @@ Duration Route::timeWarp() const
 Duration Route::timelineTimeWarp() const
 {
     assert(!dirty);
-    return timeWarp_ - driveExcess_;
+    return timeWarp_ - driveExcess_ - clockExcess_;
 }
 
 Cost Route::durationCostDS() const
@@ -1581,6 +1776,7 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
     auto const maxDuration = route()->maxDuration();
     auto const maxDrive = route()->maxDrive();
     auto const profile = route()->profile();
+    auto const vehicleType = route()->vehicleType();
     auto const &matrix = data.durationMatrix(profile);
 
     // Finalising is expensive with duration segments. However, finaliseFront is
@@ -1588,7 +1784,7 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
     // segments in reverse (right to left, rather than default left to right).
     auto const fn = [&](auto &&segment, auto &&...args)
     {
-        auto ds = segment.duration(profile);
+        auto ds = segment.duration(profile, vehicleType);
         auto first = segment.first();
 
         if (segment.startsAtReloadDepot())
@@ -1630,7 +1826,8 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
                 ds = ds.finaliseFront();
             }
 
-            ds = DurationSegment::merge(edgeDur, other.duration(profile), ds);
+            ds = DurationSegment::merge(
+                edgeDur, other.duration(profile, vehicleType), ds);
             if (hasLocation)
                 first = other.first();
 
@@ -1654,10 +1851,63 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
         auto const overtime = vehType.overtime(endTime, duration);
         auto const cost = unitDurationCost * static_cast<Cost>(duration)
                           + unitOvertimeCost * static_cast<Cost>(overtime);
-        return std::make_pair(cost, timeWarp + ds.driveExcess(maxDrive));
+        // Drive and clock excess are penalty-only, so they join the time
+        // warp only after endTime and overtime are derived above.
+        return std::make_pair(
+            cost, timeWarp + ds.driveExcess(maxDrive) + driveClockOverrun());
     };
 
     return std::apply(fn, detail::reverse(segments_));
+}
+
+template <Segment... Segments>
+Duration Route::Proposal<Segments...>::driveClockOverrun() const
+{
+    // Checked first, as in tripExcessDistance(): models without a break rule
+    // pay one load and compare.
+    auto const limit = route()->maxDriveBetweenBreaks();
+
+    if (limit == std::numeric_limits<Duration>::max())
+        return 0;
+
+    if (empty())
+        return 0;
+
+    auto const &data = route()->data;
+    auto const profile = route()->profile();
+    auto const &matrix = data.durationMatrix(profile);
+
+    auto const fn = [&](auto &&segment, auto &&...args)
+    {
+        assert(segment.hasLocation());  // starts at the start depot
+        auto clock = segment.driveClock(profile, limit);
+        auto last = segment.last();
+
+        auto const merge = [&](auto const &self, auto &&other, auto &&...args)
+        {
+            auto const next = other.driveClock(profile, limit);
+
+            // A segment of only breaks has no location: its breaks join the
+            // leg from `last` to the next located segment.
+            if (other.hasLocation())
+            {
+                assert(!data.isBreak(last) && !data.isBreak(other.first()));
+                auto const edge = matrix(last, other.first());
+                clock = DriveClock::merge(clock, edge, next, limit);
+                last = other.last();
+            }
+            else
+                clock.trailRun += next.trailRun;
+
+            if constexpr (sizeof...(args) != 0)
+                self(self, std::forward<decltype(args)>(args)...);
+        };
+
+        merge(merge, std::forward<decltype(args)>(args)...);
+        return clock.overrun(limit);
+    };
+
+    return std::apply(fn, segments_);
 }
 
 template <Segment... Segments>

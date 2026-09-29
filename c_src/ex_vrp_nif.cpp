@@ -29,6 +29,7 @@
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <variant>
 #include <vector>
 
 using namespace pyvrp;
@@ -677,6 +678,8 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     int64_t max_distance = std::numeric_limits<int64_t>::max();
     int64_t max_distance_per_trip = std::numeric_limits<int64_t>::max();
     int64_t max_drive = std::numeric_limits<int64_t>::max();
+    int64_t max_drive_between_breaks = std::numeric_limits<int64_t>::max();
+    int64_t break_duration = 0;
     int64_t unit_distance_cost = 1;
     int64_t unit_duration_cost = 0;
     int64_t profile = 0;
@@ -830,6 +833,26 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                 {
                     nif_get_int64(env, value, &max_drive);
                 }
+            }
+            else if (key_str == "max_drive_between_breaks")
+            {
+                char buf[32];
+                if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1))
+                {
+                    if (std::string(buf) == "infinity")
+                    {
+                        max_drive_between_breaks
+                            = std::numeric_limits<int64_t>::max();
+                    }
+                }
+                else
+                {
+                    nif_get_int64(env, value, &max_drive_between_breaks);
+                }
+            }
+            else if (key_str == "break_duration")
+            {
+                nif_get_int64(env, value, &break_duration);
             }
             else if (key_str == "unit_distance_cost")
             {
@@ -993,7 +1016,9 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
         std::move(forbidden_windows),
         Duration(overtime_start),
         Distance(max_distance_per_trip),
-        Duration(max_drive));
+        Duration(max_drive),
+        Duration(max_drive_between_breaks),
+        Duration(break_duration));
 }
 
 // Decode distance/duration matrix from nested list
@@ -1974,6 +1999,146 @@ int64_t solution_route_drive_excess(
 }
 
 FINE_NIF(solution_route_drive_excess, 0);
+
+/**
+ * Get drive clock excess (travel past max_drive_between_breaks) of a specific
+ * route in the solution.
+ */
+int64_t solution_route_clock_excess(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SolutionResource> solution_resource,
+    int64_t route_idx)
+{
+    auto &solution = solution_resource->solution;
+    auto const &routes = solution.routes();
+
+    if (route_idx < 0 || static_cast<size_t>(route_idx) >= routes.size())
+    {
+        return 0;
+    }
+
+    return static_cast<int64_t>(
+        routes[static_cast<size_t>(route_idx)].clockExcess());
+}
+
+FINE_NIF(solution_route_clock_excess, 0);
+
+// Test-only drive clock NIFs. A token is {:leg, drive}, a drive to the next
+// real node, or :break, a break on the leg after it; routes start and end at
+// a real node, so token lists start and end with a leg.
+namespace
+{
+using ClockToken = std::variant<std::tuple<fine::Atom, int64_t>, fine::Atom>;
+
+std::optional<Duration> legDrive(ClockToken const &token)
+{
+    if (auto const *leg = std::get_if<std::tuple<fine::Atom, int64_t>>(&token))
+        return Duration(std::get<1>(*leg));
+
+    return std::nullopt;
+}
+
+// Folds tokens [begin, end) onto `clock`, which ends at a real node.
+DriveClock foldTokens(std::vector<ClockToken> const &tokens,
+                      size_t begin,
+                      size_t end,
+                      Duration limit,
+                      DriveClock clock = {})
+{
+    for (size_t idx = begin; idx != end; ++idx)
+        if (auto const drive = legDrive(tokens[idx]))
+            clock = DriveClock::merge(clock, *drive, {}, limit);
+        else
+            clock.trailRun++;
+
+    return clock;
+}
+
+// Taken as a Term and decoded here, since fine cannot decode into a const
+// reference and cppcheck flags a by-value vector.
+std::vector<ClockToken> decodeTokens(ErlNifEnv *env, fine::Term term)
+{
+    return fine::decode<std::vector<ClockToken>>(env, term);
+}
+}  // namespace
+
+int64_t
+drive_clock_fold_nif(ErlNifEnv *env, fine::Term tokensTerm, int64_t limit)
+{
+    auto const tokens = decodeTokens(env, tokensTerm);
+    return static_cast<int64_t>(
+        foldTokens(tokens, 0, tokens.size(), limit).overrun(limit));
+}
+
+FINE_NIF(drive_clock_fold_nif, 0);
+
+// Folds tokens [0, split) and [split, end) separately, then merges the two
+// over the leg joining them, as SegmentBefore and SegmentAfter are merged.
+int64_t drive_clock_fold_split_nif(ErlNifEnv *env,
+                                   fine::Term tokensTerm,
+                                   int64_t split,
+                                   int64_t limit)
+{
+    auto const tokens = decodeTokens(env, tokensTerm);
+    auto const mid = std::min(static_cast<size_t>(std::max<int64_t>(split, 0)),
+                              tokens.size());
+    auto const first = foldTokens(tokens, 0, mid, limit);
+
+    // The second part's leading breaks sit on the joining leg, which is its
+    // first leg token; its fold starts at the real node that leg reaches.
+    for (auto joining = mid; joining != tokens.size(); ++joining)
+        if (auto const edge = legDrive(tokens[joining]))
+        {
+            DriveClock const lead = {.leadRun = joining - mid};
+            auto const second
+                = foldTokens(tokens, joining + 1, tokens.size(), limit, lead);
+
+            return static_cast<int64_t>(
+                DriveClock::merge(first, *edge, second, limit).overrun(limit));
+        }
+
+    // No leg after the split, so no second real node: nothing to merge.
+    return static_cast<int64_t>(first.overrun(limit));
+}
+
+FINE_NIF(drive_clock_fold_split_nif, 0);
+
+// The spec's rule, walked directly: a leg carrying k >= 1 breaks closes the
+// stretch before it, and the next stretch starts with the leg's drive less
+// (k - 1) * limit.
+int64_t
+drive_clock_brute_nif(ErlNifEnv *env, fine::Term tokensTerm, int64_t limit)
+{
+    auto const tokens = decodeTokens(env, tokensTerm);
+    int64_t overrun = 0;
+    int64_t stretch = 0;
+    int64_t breaks = 0;
+
+    for (auto const &token : tokens)
+    {
+        auto const drive = legDrive(token);
+        if (!drive)
+        {
+            breaks++;
+            continue;
+        }
+
+        auto const leg = static_cast<int64_t>(drive->get());
+        if (breaks == 0)
+        {
+            stretch += leg;
+            continue;
+        }
+
+        overrun += std::max<int64_t>(stretch - limit, 0);
+        stretch = std::max<int64_t>(leg - (breaks - 1) * limit, 0);
+        breaks = 0;
+    }
+
+    return overrun + std::max<int64_t>(stretch - limit, 0);
+}
+
+FINE_NIF(drive_clock_brute_nif, 0);
 
 /**
  * Check if a specific route has excess load.

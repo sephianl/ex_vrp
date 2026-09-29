@@ -188,7 +188,8 @@ public:
         char const *name;                   // Client name (for reference)
 
         // A break has no location: routes skip it in every edge lookup, so
-        // it only adds its duration. See search::BreakSegment.
+        // it only adds its route's VehicleType::breakDuration (its own
+        // service duration must be zero). See search::BreakSegment.
         bool const isBreak;
 
         Client(std::vector<Load> delivery = {},
@@ -560,6 +561,12 @@ public:
      *     Maximum total travel duration of the route, across trips. Service,
      *     waiting and reload time do not count. Excess counts as time warp.
      *     Unconstrained if not explicitly provided.
+     * max_drive_between_breaks
+     *     Maximum travel duration between two breaks (see Client::isBreak).
+     *     Excess counts as time warp. Unconstrained if not provided; set
+     *     together with ``break_duration``.
+     * break_duration
+     *     How long each break client on this vehicle type's routes lasts.
      * unit_distance_cost
      *     Cost per unit of distance travelled by vehicles of this type.
      * unit_duration_cost
@@ -613,6 +620,8 @@ public:
                                        // overtime is duration-based
         Duration const maxDuration;    // Hard maximum route duration
         Duration const maxDrive;       // Maximum travel duration
+        Duration const maxDriveBetweenBreaks;  // Maximum travel between breaks
+        Duration const breakDuration;          // Duration of each break
         std::vector<std::pair<Duration, Duration>> const
             forbiddenWindows;  // Forbidden time windows
         char const *name;      // Type name (for reference)
@@ -640,7 +649,10 @@ public:
             std::vector<std::pair<Duration, Duration>> forbiddenWindows = {},
             Duration overtimeStart = std::numeric_limits<Duration>::max(),
             Distance maxDistancePerTrip = std::numeric_limits<Distance>::max(),
-            Duration maxDrive = std::numeric_limits<Duration>::max());
+            Duration maxDrive = std::numeric_limits<Duration>::max(),
+            Duration maxDriveBetweenBreaks
+            = std::numeric_limits<Duration>::max(),
+            Duration breakDuration = 0);
 
         /**
          * Overtime incurred by a route of the given duration that ends at the
