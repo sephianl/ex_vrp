@@ -89,7 +89,9 @@ defmodule ExVrp.VehicleType do
   is no per-trip duration cap: a second trip spends the same budget as the
   first. For time actually worked:
 
-      ExVrp.Route.duration(route) - ExVrp.Route.wait_duration(route)
+      ExVrp.Route.travel_duration(route) + ExVrp.Route.service_duration(route)
+
+  Not `duration - wait_duration`: that also counts break time.
 
   ## Driving time
 
