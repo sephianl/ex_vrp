@@ -4,7 +4,9 @@ defmodule ExVrp.DriveClockTest do
   token list reads in route order: `{:leg, drive}` drives to the next real
   node, `{:stop, service}` is service at the node reached last (or the start
   node), and a `:break` sits on the leg after it. The drive clock ignores
-  service; the work clock counts it. The brute walk applies the spec's rule
+  service; the work clock counts it. Each fold answers `{overrun, missing}`:
+  the clipped time past the limit, and the breaks the stretches still lack,
+  ceil(stretch / limit) - 1 for each. The brute walk applies the spec's rule
   directly; the fold must agree with it however the route is cut.
   """
   use ExUnit.Case, async: true
@@ -16,7 +18,15 @@ defmodule ExVrp.DriveClockTest do
 
   @limit 270
 
-  defp fold(tokens, quantity \\ :drive), do: Native.drive_clock_fold_nif(tokens, quantity, @limit)
+  defp fold(tokens, quantity \\ :drive) do
+    {overrun, _missing} = Native.drive_clock_fold_nif(tokens, quantity, @limit)
+    overrun
+  end
+
+  defp missing(tokens, quantity \\ :drive) do
+    {_overrun, missing} = Native.drive_clock_fold_nif(tokens, quantity, @limit)
+    missing
+  end
 
   defp leg, do: map(integer(0..400), &{:leg, &1})
 
@@ -58,6 +68,15 @@ defmodule ExVrp.DriveClockTest do
     assert fold([{:leg, 200}, :break, {:leg, 100}]) == 0
     assert fold([{:leg, 200}, {:leg, 100}]) == 30
     assert fold([:break, {:leg, 300}]) == 30
+  end
+
+  test "missing breaks, per stretch" do
+    assert missing([{:leg, 270}]) == 0
+    assert missing([{:leg, 300}]) == 1
+    assert missing([{:leg, 600}]) == 2
+    assert missing([{:leg, 300}, :break, {:leg, 300}]) == 2
+    assert missing([{:leg, 0}, :break, :break, {:leg, 300}]) == 0
+    assert missing([{:leg, 200}, {:stop, 100}, {:leg, 50}], :work) == 1
   end
 
   test "work counts service, drive does not" do

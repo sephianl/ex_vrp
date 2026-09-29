@@ -1459,17 +1459,20 @@ defmodule ExVrp.Native do
   @typedoc "What the clock counts: travel only, or travel plus service."
   @type clock_quantity :: :drive | :work
 
-  @doc "Folds `DriveClock` over a token route and returns its overrun (test-only)."
-  @spec drive_clock_fold_nif([clock_token()], clock_quantity(), pos_integer()) :: non_neg_integer()
+  @typedoc "A clock's overrun past its limit, and the breaks its stretches still lack."
+  @type clock_answer :: {overrun :: non_neg_integer(), missing :: non_neg_integer()}
+
+  @doc "Folds `DriveClock` over a token route (test-only)."
+  @spec drive_clock_fold_nif([clock_token()], clock_quantity(), pos_integer()) :: clock_answer()
   def drive_clock_fold_nif(_tokens, _quantity, _limit), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Folds both sides of `split` separately, then merges them (test-only)."
   @spec drive_clock_fold_split_nif([clock_token()], non_neg_integer(), clock_quantity(), pos_integer()) ::
-          non_neg_integer()
+          clock_answer()
   def drive_clock_fold_split_nif(_tokens, _split, _quantity, _limit), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Walks a token route by the break rule directly (test-only)."
-  @spec drive_clock_brute_nif([clock_token()], clock_quantity(), pos_integer()) :: non_neg_integer()
+  @spec drive_clock_brute_nif([clock_token()], clock_quantity(), pos_integer()) :: clock_answer()
   def drive_clock_brute_nif(_tokens, _quantity, _limit), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Gets the time warp of a segment, optionally with max_duration constraint."

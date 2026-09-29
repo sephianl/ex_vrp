@@ -22,6 +22,10 @@ enum class ClockQuantity
  * TripDistance is folded over trips. Breaks belong to legs: a leg carrying
  * k >= 1 breaks resets the clock at its start and pre-pays (k - 1) * limit of
  * its own drive. A real node doing q of the quantity itself is {q, 0, q}.
+ *
+ * Alongside the clipped overrun it counts the breaks the stretches still
+ * lack, ceil(stretch / limit) - 1 each: what the search prices a stretch that
+ * no break covers yet as, before BreakRepair places real ones.
  */
 struct DriveClock
 {
@@ -31,12 +35,20 @@ struct DriveClock
     size_t resets = 0;    // internal legs carrying breaks
     size_t leadRun = 0;   // breaks before the first real node
     size_t trailRun = 0;  // breaks after the last real node
+    size_t need = 0;      // breaks lacking in stretches wholly inside
 
     bool operator==(DriveClock const &other) const = default;
 
     [[nodiscard]] static Duration clip(Duration drive, Duration limit)
     {
         return drive > limit ? drive - limit : 0;
+    }
+
+    [[nodiscard]] static size_t needOf(Duration drive, Duration limit)
+    {
+        return drive > limit
+                   ? static_cast<size_t>((drive.get() - 1) / limit.get())
+                   : 0;
     }
 
     // Only call with a finite limit: (onLeg - 1) * limit must not overflow.
@@ -57,9 +69,11 @@ struct DriveClock
             out.head = first.resets ? first.head : mid;
             out.tail = second.resets ? second.tail : mid;
             out.resets = first.resets + second.resets;
-            out.excess
-                = first.excess + second.excess
-                  + (first.resets && second.resets ? clip(mid, limit) : 0);
+            auto const closesMid = first.resets && second.resets;
+            out.excess = first.excess + second.excess
+                         + (closesMid ? clip(mid, limit) : 0);
+            out.need = first.need + second.need
+                       + (closesMid ? needOf(mid, limit) : 0);
             return out;
         }
 
@@ -72,6 +86,9 @@ struct DriveClock
         out.excess = first.excess + second.excess
                      + (first.resets ? clip(first.tail, limit) : 0)
                      + (second.resets ? clip(after, limit) : 0);
+        out.need = first.need + second.need
+                   + (first.resets ? needOf(first.tail, limit) : 0)
+                   + (second.resets ? needOf(after, limit) : 0);
         return out;
     }
 
@@ -79,6 +96,12 @@ struct DriveClock
     [[nodiscard]] Duration overrun(Duration limit) const
     {
         return excess + clip(head, limit) + (resets ? clip(tail, limit) : 0);
+    }
+
+    // Breaks a closed route still lacks, stretch by stretch like overrun().
+    [[nodiscard]] size_t missing(Duration limit) const
+    {
+        return need + needOf(head, limit) + (resets ? needOf(tail, limit) : 0);
     }
 };
 }  // namespace pyvrp

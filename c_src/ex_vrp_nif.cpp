@@ -2152,6 +2152,14 @@ DriveClock foldTokens(std::vector<ClockToken> const &tokens,
 
 bool isWork(fine::Atom const &quantity) { return quantity == "work"; }
 
+using ClockAnswer = std::tuple<int64_t, int64_t>;  // {overrun, missing}
+
+ClockAnswer answer(DriveClock const &clock, Duration limit)
+{
+    return {static_cast<int64_t>(clock.overrun(limit).get()),
+            static_cast<int64_t>(clock.missing(limit))};
+}
+
 // Taken as a Term and decoded here, since fine cannot decode into a const
 // reference and cppcheck flags a by-value vector.
 std::vector<ClockToken> decodeTokens(ErlNifEnv *env, fine::Term term)
@@ -2160,26 +2168,25 @@ std::vector<ClockToken> decodeTokens(ErlNifEnv *env, fine::Term term)
 }
 }  // namespace
 
-int64_t drive_clock_fold_nif(ErlNifEnv *env,
-                             fine::Term tokensTerm,
-                             fine::Atom quantity,
-                             int64_t limit)
+ClockAnswer drive_clock_fold_nif(ErlNifEnv *env,
+                                 fine::Term tokensTerm,
+                                 fine::Atom quantity,
+                                 int64_t limit)
 {
     auto const tokens = decodeTokens(env, tokensTerm);
     auto const work = isWork(quantity);
-    return static_cast<int64_t>(
-        foldTokens(tokens, 0, tokens.size(), work, limit).overrun(limit));
+    return answer(foldTokens(tokens, 0, tokens.size(), work, limit), limit);
 }
 
 FINE_NIF(drive_clock_fold_nif, 0);
 
 // Folds tokens [0, split) and [split, end) separately, then merges the two
 // over the leg joining them, as SegmentBefore and SegmentAfter are merged.
-int64_t drive_clock_fold_split_nif(ErlNifEnv *env,
-                                   fine::Term tokensTerm,
-                                   int64_t split,
-                                   fine::Atom quantity,
-                                   int64_t limit)
+ClockAnswer drive_clock_fold_split_nif(ErlNifEnv *env,
+                                       fine::Term tokensTerm,
+                                       int64_t split,
+                                       fine::Atom quantity,
+                                       int64_t limit)
 {
     auto const tokens = decodeTokens(env, tokensTerm);
     auto const work = isWork(quantity);
@@ -2199,8 +2206,8 @@ int64_t drive_clock_fold_split_nif(ErlNifEnv *env,
             auto const second = foldTokens(
                 tokens, joining + 1, tokens.size(), work, limit, lead);
 
-            return static_cast<int64_t>(
-                DriveClock::merge(first, *edge, second, limit).overrun(limit));
+            return answer(DriveClock::merge(first, *edge, second, limit),
+                          limit);
         }
         else if (auto const service = stopWork(tokens[joining], work))
             addWork(first, *service);
@@ -2208,7 +2215,7 @@ int64_t drive_clock_fold_split_nif(ErlNifEnv *env,
             leadRun++;
 
     // No leg after the split, so no second real node: nothing to merge.
-    return static_cast<int64_t>(first.overrun(limit));
+    return answer(first, limit);
 }
 
 FINE_NIF(drive_clock_fold_split_nif, 0);
@@ -2217,16 +2224,26 @@ FINE_NIF(drive_clock_fold_split_nif, 0);
 // stretch before it, and the next stretch starts with the leg's drive less
 // (k - 1) * limit. Work adds each stop's service to the open stretch; breaks
 // before the first leg sit on it and close the (carried-in) stretch there.
-int64_t drive_clock_brute_nif(ErlNifEnv *env,
-                              fine::Term tokensTerm,
-                              fine::Atom quantity,
-                              int64_t limit)
+ClockAnswer drive_clock_brute_nif(ErlNifEnv *env,
+                                  fine::Term tokensTerm,
+                                  fine::Atom quantity,
+                                  int64_t limit)
 {
     auto const tokens = decodeTokens(env, tokensTerm);
     auto const work = isWork(quantity);
     int64_t overrun = 0;
+    int64_t missing = 0;
     int64_t stretch = 0;
     int64_t breaks = 0;
+
+    // Breaks a stretch lacks: the smallest m with stretch <= (m + 1) * limit.
+    auto const lacking = [limit](int64_t drive)
+    {
+        int64_t m = 0;
+        while (drive > (m + 1) * limit)
+            m++;
+        return m;
+    };
 
     for (auto const &token : tokens)
     {
@@ -2251,11 +2268,13 @@ int64_t drive_clock_brute_nif(ErlNifEnv *env,
         }
 
         overrun += std::max<int64_t>(stretch - limit, 0);
+        missing += lacking(stretch);
         stretch = std::max<int64_t>(leg - (breaks - 1) * limit, 0);
         breaks = 0;
     }
 
-    return overrun + std::max<int64_t>(stretch - limit, 0);
+    return {overrun + std::max<int64_t>(stretch - limit, 0),
+            missing + lacking(stretch)};
 }
 
 FINE_NIF(drive_clock_brute_nif, 0);
