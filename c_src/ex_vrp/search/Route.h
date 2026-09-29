@@ -757,18 +757,6 @@ public:
     [[nodiscard]] inline Duration maxDrive() const;
 
     /**
-     * @return The maximum travel duration between two breaks that the vehicle
-     *         servicing this route supports.
-     */
-    [[nodiscard]] inline Duration maxDriveBetweenBreaks() const;
-
-    /**
-     * @return The maximum work (travel plus service) between two breaks that
-     *         the vehicle servicing this route supports.
-     */
-    [[nodiscard]] inline Duration maxWorkBetweenBreaks() const;
-
-    /**
      * @return The contracted end of shift past which work counts as overtime,
      *         or the maximum representable duration when unset.
      */
@@ -1557,16 +1545,6 @@ ProblemData::VehicleType const &Route::vehicleTypeData() const
 Duration Route::maxDuration() const { return vehicleType_.maxDuration; }
 
 Duration Route::maxDrive() const { return vehicleType_.maxDrive; }
-
-Duration Route::maxDriveBetweenBreaks() const
-{
-    return vehicleType_.maxDriveBetweenBreaks;
-}
-
-Duration Route::maxWorkBetweenBreaks() const
-{
-    return vehicleType_.maxWorkBetweenBreaks;
-}
 
 size_t Route::numResets() const
 {
