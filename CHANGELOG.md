@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **New `:break_rule` vehicle-type option makes the solver place rest breaks.** Opt-in, default
+  `nil`: models without it solve exactly as before. The rule is
+  `%{duration:, max_drive_between_breaks:, max_work_between_breaks:}` with at least one limit. The
+  drive clock counts travel; the work clock counts travel plus client and reload service, never
+  waiting. Every break resets both. The model adds a pool of break clients and local search places
+  them; they never appear in `visits`, schedules, `num_clients` or `unassigned`. A break placed
+  where the vehicle would wait anyway shortens that wait.
+- `:drive_carry_in` and `:work_carry_in` add driving and work done since the last break before the
+  route to its first stretch; `:work_after_end` adds work after the last stop to its last stretch.
+- A clock past its limit counts as time warp, so the route is infeasible, but, like
+  `drive_excess/1`, it never moves `end_time/1`. `ExVrp.Route.clock_excess/1` (drive) and
+  `ExVrp.Route.work_clock_excess/1` report it.
+
+### Changed
+
+- On a vehicle type with a `:break_rule`, `ExVrp.Route.duration/1` includes break time and
+  `wait_duration/1` does not. There is no accessor yet for break time or where breaks fall: a
+  caller recovers the total as `duration - travel_duration - service_duration - wait_duration`,
+  and in the schedule a break is only a gap.
+- `ExVrp.Solution.warm_start/1` leaves break clients out, and the next solve places breaks again.
+  Warm-starting with breaks in place is not supported.
+- `ExVrp.Client` has an internal `:is_break` field that only the model's break pool sets.
+
 ## 0.14.0
 
 ### Added
