@@ -27,7 +27,9 @@ defmodule ExVrp.BreakNodesTest do
     |> Model.add_client(tw_window(opts[:client_2_tw]))
     |> Model.add_client(required: false, service_duration: @break_duration, is_break: true)
     |> Model.add_client([])
-    |> Model.add_vehicle_type(num_available: 2, capacity: [0], unit_distance_cost: 1, unit_duration_cost: 1)
+    |> Model.add_vehicle_type(
+      [num_available: 2, capacity: [0], unit_distance_cost: 1, unit_duration_cost: 1] ++ Keyword.get(opts, :vehicle, [])
+    )
     |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {30, 0}, {1000, 0}, {0, 50}])
   end
 
@@ -86,18 +88,32 @@ defmodule ExVrp.BreakNodesTest do
 
   describe "proposals" do
     @opts [client_2_tw: {100, 10_000}]
+    @routes {[1, @break, 2], [4]}
 
     defp route_cost(route) do
       Native.search_route_distance_cost_nif(route) + Native.search_route_duration_cost_nif(route) +
-        Native.search_route_time_warp_nif(route)
+        Native.search_route_time_warp_nif(route) + Native.search_route_excess_distance_nif(route)
     end
 
-    defp assert_delta_matches_applied(create, evaluate, apply, u_idx, v_idx) do
-      data = problem_data(@opts)
-      {:ok, evaluator} = Native.create_cost_evaluator(load_penalties: [0.0], tw_penalty: 1.0, dist_penalty: 0.0)
+    defp operator(:exchange10),
+      do: {&Native.create_exchange10_nif/1, &Native.exchange10_evaluate_nif/4, &Native.exchange10_apply_nif/3}
 
-      route1 = Native.make_search_route_nif(data, [1, @break, 2], 0, 0)
-      route2 = Native.make_search_route_nif(data, [4], 1, 0)
+    defp operator(:exchange20),
+      do: {&Native.create_exchange20_nif/1, &Native.exchange20_evaluate_nif/4, &Native.exchange20_apply_nif/3}
+
+    defp operator(:exchange21),
+      do: {&Native.create_exchange21_nif/1, &Native.exchange21_evaluate_nif/4, &Native.exchange21_apply_nif/3}
+
+    defp operator(:swap_tails),
+      do: {&Native.create_swap_tails_nif/1, &Native.swap_tails_evaluate_nif/4, &Native.swap_tails_apply_nif/3}
+
+    defp assert_delta_matches_applied(name, {visits1, visits2}, u_idx, v_idx, opts) do
+      {create, evaluate, apply} = operator(name)
+      data = problem_data(opts)
+      {:ok, evaluator} = Native.create_cost_evaluator(load_penalties: [0.0], tw_penalty: 1.0, dist_penalty: 1.0)
+
+      route1 = Native.make_search_route_nif(data, visits1, 0, 0)
+      route2 = Native.make_search_route_nif(data, visits2, 1, 0)
       before = route_cost(route1) + route_cost(route2)
 
       op = create.(data)
@@ -114,56 +130,58 @@ defmodule ExVrp.BreakNodesTest do
     end
 
     test "Exchange10 leaving a break at the head of the rest of the route" do
-      delta =
-        assert_delta_matches_applied(
-          &Native.create_exchange10_nif/1,
-          &Native.exchange10_evaluate_nif/4,
-          &Native.exchange10_apply_nif/3,
-          1,
-          1
-        )
+      assert assert_delta_matches_applied(:exchange10, @routes, 1, 1, @opts) != 0
+    end
 
-      assert delta != 0
+    test "Exchange10 moving a lone break into another route" do
+      assert_delta_matches_applied(:exchange10, @routes, 2, 1, @opts)
+    end
+
+    test "Exchange10 moving a lone break into another route, under a per-trip distance cap" do
+      opts = [{:vehicle, [max_distance_per_trip: 40]} | @opts]
+
+      assert_delta_matches_applied(:exchange10, @routes, 2, 1, opts)
     end
 
     test "Exchange20 moving a segment that starts with a break" do
-      assert_delta_matches_applied(
-        &Native.create_exchange20_nif/1,
-        &Native.exchange20_evaluate_nif/4,
-        &Native.exchange20_apply_nif/3,
-        2,
-        1
-      )
+      assert_delta_matches_applied(:exchange20, @routes, 2, 1, @opts)
     end
 
     test "Exchange20 moving a segment that ends with a break" do
-      assert_delta_matches_applied(
-        &Native.create_exchange20_nif/1,
-        &Native.exchange20_evaluate_nif/4,
-        &Native.exchange20_apply_nif/3,
-        1,
-        0
-      )
+      assert_delta_matches_applied(:exchange20, @routes, 1, 0, @opts)
+    end
+
+    test "Exchange21 swapping a pair of clients for a lone break" do
+      assert assert_delta_matches_applied(:exchange21, {[1, 2], [4, @break]}, 1, 2, @opts) != 0
     end
 
     test "SwapTails moving a tail that starts with a break" do
-      assert_delta_matches_applied(
-        &Native.create_swap_tails_nif/1,
-        &Native.swap_tails_evaluate_nif/4,
-        &Native.swap_tails_apply_nif/3,
-        1,
-        1
-      )
+      assert_delta_matches_applied(:swap_tails, @routes, 1, 1, @opts)
     end
 
     test "SwapTails moving a tail after a break" do
-      assert_delta_matches_applied(
-        &Native.create_swap_tails_nif/1,
-        &Native.swap_tails_evaluate_nif/4,
-        &Native.swap_tails_apply_nif/3,
-        2,
-        0
-      )
+      assert_delta_matches_applied(:swap_tails, @routes, 2, 0, @opts)
+    end
+
+    test "Exchange10 leaving a break right before a reload depot, under a per-trip distance cap" do
+      opts = [vehicle: [reload_depots: [0], max_reloads: 1, max_distance_per_trip: 40]]
+
+      assert assert_delta_matches_applied(:exchange10, {[1, @break, 0, 2], [4]}, 1, 1, opts) != 0
+    end
+  end
+
+  test "a break client with a time window or release time is rejected" do
+    for window <- [[tw_early: 5], [tw_late: 100], [release_time: 5]] do
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_client([required: false, is_break: true] ++ window)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [0])
+        |> Model.set_euclidean_matrices([{0, 0}, {0, 0}])
+
+      assert_raise ArgumentError, ~r/break clients must not have a time window or release time/, fn ->
+        Model.to_problem_data(model)
+      end
     end
   end
 

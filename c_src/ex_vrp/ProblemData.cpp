@@ -142,6 +142,15 @@ ProblemData::Client::Client(std::vector<Load> delivery,
 
     if (prize < 0)
         throw std::invalid_argument("prize must be >= 0.");
+
+    // Routes place a break next to the drive it splits in either order (see
+    // search::Route::update()), which is only timing-neutral when the break
+    // is a pure delay: no window to wait for or miss, and no release time.
+    if (isBreak
+        && (twEarly != 0 || twLate != std::numeric_limits<Duration>::max()
+            || releaseTime != 0))
+        throw std::invalid_argument(
+            "break clients must not have a time window or release time.");
 }
 
 ProblemData::Client::Client(Client const &client)
