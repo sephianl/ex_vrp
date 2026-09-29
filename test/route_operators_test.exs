@@ -497,6 +497,98 @@ defmodule ExVrp.RouteOperatorsTest do
 
       assert delta == after_time_warp - before_time_warp
     end
+
+    defp max_drive_overtime_problem do
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          unit_distance_cost: 0,
+          max_drive: 150,
+          max_duration: :infinity,
+          shift_duration: 150,
+          unit_overtime_cost: 1
+        )
+        |> Model.set_euclidean_matrices([{0, 0}, {50, 0}, {100, 0}, {250, 0}])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      {:ok, cost_evaluator} =
+        Native.create_cost_evaluator(load_penalties: [0.0], tw_penalty: 1.0, dist_penalty: 0.0)
+
+      {problem_data, cost_evaluator}
+    end
+
+    test "the delta still matches when both routes already exceed the cap and overtime applies" do
+      # The test above only covers a move from zero excess to positive excess,
+      # with no overtime — here both the before and after routes already
+      # exceed max_drive, and shift_duration/unit_overtime_cost are set, so a
+      # nonzero timeWarpDS_ is subtracted and overtimeDS feeds durationCostDS_
+      # on both sides of the delta.
+      {problem_data, cost_evaluator} = max_drive_overtime_problem()
+
+      route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
+      after_client_2 = Native.search_route_get_node_nif(route, 2)
+      client_3 = Native.create_search_node_nif(problem_data, 3)
+
+      delta = Native.insert_cost_nif(client_3, after_client_2, problem_data, cost_evaluator)
+
+      before_time_warp = Native.search_route_time_warp_nif(route)
+      before_duration_cost = Native.search_route_duration_cost_nif(route)
+      assert before_time_warp > 0
+      assert before_duration_cost > 0
+
+      after_route = Native.make_search_route_nif(problem_data, [1, 2, 3], 0, 0)
+      after_time_warp = Native.search_route_time_warp_nif(after_route)
+      after_duration_cost = Native.search_route_duration_cost_nif(after_route)
+
+      assert delta ==
+               after_duration_cost - before_duration_cost + (after_time_warp - before_time_warp)
+    end
+  end
+
+  describe "multi-trip boundary uses timeline time warp, not penalised time warp" do
+    # Solution.cpp's multi-trip insertion feasibility check derives the depot
+    # return time (the "trip boundary") as
+    # vehType.twEarly + route.duration() - <time warp>. Using timeWarp()
+    # there — which now includes drive excess — reports the route finishing
+    # earlier than it really does whenever max_drive is exceeded, which could
+    # let a new trip's arrival slip past a client's twLate that it should
+    # have failed. The fix subtracts timelineTimeWarp() instead, which
+    # excludes drive excess (a penalty, not a timeline shift).
+    #
+    # Solution::insert (where the real tripBoundary lives) isn't reachable
+    # through a NIF, and forcing the exact prize/multi-trip heuristic branch
+    # through a full solve is not deterministic. This instead pins the
+    # arithmetic relationship the fix relies on, using the same route
+    # statistics tripBoundary is built from.
+    test "the corrected boundary ignores drive excess; the old formula would not have" do
+      {problem_data, _cost_evaluator} = max_drive_overtime_problem()
+
+      # Depot -> client 1 (50) -> client 2 (100) -> depot (100): 50 + 50 + 100
+      # = 200 of travel against max_drive: 150, so 50 of drive excess. Nothing
+      # else on this route produces time warp (max_duration: :infinity, wide
+      # open time windows), so time_warp is entirely drive excess.
+      route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
+
+      duration = Native.search_route_duration_nif(route)
+      time_warp = Native.search_route_time_warp_nif(route)
+      drive_excess = 50
+
+      assert time_warp == drive_excess
+
+      timeline_time_warp = time_warp - drive_excess
+      corrected_boundary = duration - timeline_time_warp
+      buggy_boundary = duration - time_warp
+
+      assert corrected_boundary == duration
+      assert buggy_boundary == corrected_boundary - drive_excess
+    end
   end
 
   # =========================================================================

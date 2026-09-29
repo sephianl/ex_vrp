@@ -551,6 +551,7 @@ void Route::update()
     }
 
     timeWarp_ += driveExcess;
+    driveExcess_ = driveExcess;
 
     overtime_ = vehicleType_.overtime(endTime, duration_);
     durationCost_ = unitDurationCost() * static_cast<Cost>(duration_)

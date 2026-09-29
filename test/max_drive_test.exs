@@ -37,11 +37,12 @@ defmodule ExVrp.MaxDriveTest do
   end
 
   test "waiting does not count as driving" do
-    [route] = Solution.routes(best(max_drive: 200))
+    solution = best(max_drive: 200)
+    [route] = Solution.routes(solution)
 
     assert Route.duration(route) > 200
     assert Route.drive_excess(route) == 0
-    assert Solution.feasible?(best(max_drive: 200))
+    assert Solution.feasible?(solution)
   end
 
   test "driving past the cap is reported and counted as time warp" do
@@ -52,6 +53,12 @@ defmodule ExVrp.MaxDriveTest do
     assert Route.drive_excess(route) == 20
     assert Route.time_warp(route) == 20
     refute Solution.feasible?(solution)
+
+    # Drive excess is a penalty, not a shift along the timeline: here it is
+    # the route's only time warp (time_warp == drive_excess), so end_time
+    # must land exactly on start_time + duration, unmoved by the 20 units of
+    # excess folded into time_warp.
+    assert Route.end_time(route) == Route.start_time(route) + Route.duration(route)
   end
 
   test "an unset cap changes nothing" do
@@ -78,11 +85,19 @@ defmodule ExVrp.MaxDriveTest do
   end
 
   test "forbidden windows still add the drive excess" do
-    solution = best(max_drive: 100, time_windows: [{0, 250}, {300, 20_000}])
+    forbidden_time_windows = [{0, 250}, {300, 20_000}]
+    solution = best(max_drive: 100, time_windows: forbidden_time_windows)
     [route] = Solution.routes(solution)
 
+    uncapped = best(max_drive: :infinity, time_windows: forbidden_time_windows)
+    [uncapped_route] = Solution.routes(uncapped)
+
     assert Route.drive_excess(route) == 20
-    assert Route.time_warp(route) >= 20
+    # Drive excess is folded into time_warp on top of whatever the forbidden
+    # window itself contributes, so subtracting it back out must land exactly
+    # on the time warp of the same schedule solved without the cap — the cap
+    # adds drive excess, nothing else.
+    assert Route.time_warp(route) - Route.drive_excess(route) == Route.time_warp(uncapped_route)
   end
 
   test "a negative cap is rejected" do

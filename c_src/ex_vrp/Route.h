@@ -244,6 +244,14 @@ public:
     [[nodiscard]] Duration driveExcess() const;
 
     /**
+     * The part of :meth:`~timeWarp` that is an actual shift along the
+     * timeline, used to derive clock times such as :meth:`~endTime`.
+     * Excludes penalty-only terms folded into :meth:`~timeWarp` that do not
+     * move when the route starts or ends (today, :meth:`~driveExcess`).
+     */
+    [[nodiscard]] Duration timelineTimeWarp() const;
+
+    /**
      * Total duration of travel on this route.
      */
     [[nodiscard]] Duration travelDuration() const;
@@ -272,7 +280,9 @@ public:
 
     /**
      * End time of the route. This is equivalent to
-     * ``start_time + duration - time_warp``.
+     * ``start_time + duration - timeline_time_warp``: :meth:`~time_warp`
+     * itself is not a timeline shift when it includes penalty-only terms such
+     * as drive excess.
      */
     [[nodiscard]] Duration endTime() const;
 

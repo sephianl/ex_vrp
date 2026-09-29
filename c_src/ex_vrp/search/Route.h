@@ -358,6 +358,7 @@ private:
     Duration overtime_ = 0;
     Cost durationCost_;
     Duration timeWarp_;
+    Duration driveExcess_ = 0;  // Travel past max_drive, folded into timeWarp_
     Cost reloadCost_;
 
     // DurationSegment-only values (before forbidden window corrections).
@@ -617,6 +618,14 @@ public:
      * @return Total time warp on this route.
      */
     [[nodiscard]] inline Duration timeWarp() const;
+
+    /**
+     * @return The part of timeWarp() that is an actual shift along the
+     *         timeline, for deriving clock times. Excludes penalty-only
+     *         terms folded into timeWarp() that do not move when the route
+     *         starts or ends (today, drive excess past maxDrive()).
+     */
+    [[nodiscard]] inline Duration timelineTimeWarp() const;
 
     /**
      * @return Duration cost computed from DurationSegment only (without
@@ -1245,6 +1254,12 @@ Duration Route::timeWarp() const
 {
     assert(!dirty);
     return timeWarp_;
+}
+
+Duration Route::timelineTimeWarp() const
+{
+    assert(!dirty);
+    return timeWarp_ - driveExcess_;
 }
 
 Cost Route::durationCostDS() const
