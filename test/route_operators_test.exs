@@ -524,6 +524,28 @@ defmodule ExVrp.RouteOperatorsTest do
       {problem_data, cost_evaluator}
     end
 
+    defp max_drive_forbidden_window_problem do
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          unit_distance_cost: 0,
+          max_drive: 150,
+          max_duration: :infinity,
+          time_windows: [{0, 30}, {130, 10_000}]
+        )
+        |> Model.set_euclidean_matrices([{0, 0}, {50, 0}, {100, 0}, {250, 0}])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      problem_data
+    end
+
     test "the delta still matches when both routes already exceed the cap and overtime applies" do
       # The test above only covers a move from zero excess to positive excess,
       # with no overtime — here both the before and after routes already
@@ -552,42 +574,49 @@ defmodule ExVrp.RouteOperatorsTest do
     end
   end
 
-  describe "multi-trip boundary uses timeline time warp, not penalised time warp" do
+  describe "search::Route.timelineTimeWarp() excludes drive excess" do
     # Solution.cpp's multi-trip insertion feasibility check derives the depot
-    # return time (the "trip boundary") as
-    # vehType.twEarly + route.duration() - <time warp>. Using timeWarp()
-    # there — which now includes drive excess — reports the route finishing
-    # earlier than it really does whenever max_drive is exceeded, which could
-    # let a new trip's arrival slip past a client's twLate that it should
-    # have failed. The fix subtracts timelineTimeWarp() instead, which
-    # excludes drive excess (a penalty, not a timeline shift).
+    # return time (the "trip boundary") from timelineTimeWarp() rather than
+    # timeWarp(), because drive excess is a penalty folded into timeWarp()
+    # that does not shift the timeline. These tests call the C++ accessor
+    # directly and check it against an independently known drive excess,
+    # rather than recomputing the subtraction in Elixir.
     #
-    # Solution::insert (where the real tripBoundary lives) isn't reachable
-    # through a NIF, and forcing the exact prize/multi-trip heuristic branch
-    # through a full solve is not deterministic. This instead pins the
-    # arithmetic relationship the fix relies on, using the same route
-    # statistics tripBoundary is built from.
-    test "the corrected boundary ignores drive excess; the old formula would not have" do
+    # Depot -> client 1 (50) -> client 2 (100) -> depot (100): 50 + 50 + 100
+    # = 200 of travel against max_drive: 150, so drive excess is 50 either
+    # way — it depends only on total travel and the cap, not on forbidden
+    # windows.
+    test "on a capped route with no forbidden windows, it equals time_warp - drive_excess" do
       {problem_data, _cost_evaluator} = max_drive_overtime_problem()
 
-      # Depot -> client 1 (50) -> client 2 (100) -> depot (100): 50 + 50 + 100
-      # = 200 of travel against max_drive: 150, so 50 of drive excess. Nothing
-      # else on this route produces time warp (max_duration: :infinity, wide
-      # open time windows), so time_warp is entirely drive excess.
+      # Nothing else on this route produces time warp (max_duration:
+      # :infinity, wide open time windows), so time_warp is entirely drive
+      # excess and timelineTimeWarp is 0.
       route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
 
-      duration = Native.search_route_duration_nif(route)
       time_warp = Native.search_route_time_warp_nif(route)
       drive_excess = 50
 
       assert time_warp == drive_excess
+      assert Native.search_route_timeline_time_warp_nif(route) == time_warp - drive_excess
+    end
 
-      timeline_time_warp = time_warp - drive_excess
-      corrected_boundary = duration - timeline_time_warp
-      buggy_boundary = duration - time_warp
+    test "on a capped route with forbidden windows, it equals time_warp - drive_excess" do
+      problem_data = max_drive_forbidden_window_problem()
 
-      assert corrected_boundary == duration
-      assert buggy_boundary == corrected_boundary - drive_excess
+      # The forbidden window [30, 130) is straddled by the arrival at client 1
+      # (at t=50, since it starts driving at t=0), which adds 80 of timeWarp
+      # (the delay of forcing that arrival to t=130) on top of the 50 of
+      # drive excess above.
+      route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
+
+      time_warp = Native.search_route_time_warp_nif(route)
+      drive_excess = 50
+
+      assert time_warp == 130
+
+      assert Native.search_route_timeline_time_warp_nif(route) == time_warp - drive_excess
+      assert Native.search_route_timeline_time_warp_nif(route) == 80
     end
   end
 

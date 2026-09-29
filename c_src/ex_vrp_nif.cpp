@@ -4331,6 +4331,17 @@ int64_t search_route_time_warp_nif(
 
 FINE_NIF(search_route_time_warp_nif, 0);
 
+// Get route time warp with drive excess (a penalty, not a timeline shift)
+// excluded
+int64_t search_route_timeline_time_warp_nif(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
+{
+    return static_cast<int64_t>(route_resource->route()->timelineTimeWarp());
+}
+
+FINE_NIF(search_route_timeline_time_warp_nif, 0);
+
 // Get route overtime
 int64_t
 search_route_overtime_nif([[maybe_unused]] ErlNifEnv *env,
