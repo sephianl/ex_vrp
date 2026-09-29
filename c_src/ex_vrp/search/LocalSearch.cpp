@@ -739,6 +739,9 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
 {
     ProblemData::Client const &uData = data.location(U->client());
 
+    if (uData.isBreak)  // no location, so neighbourhoods cannot place it
+        return;
+
     if (uData.required && !U->route())  // then we must insert U
     {
         if (solution_.insert(U, searchSpace_, costEvaluator, true))

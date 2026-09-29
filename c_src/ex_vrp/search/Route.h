@@ -39,10 +39,15 @@ struct TripDistance
 };
 
 // This defines the minimal interface required for a segment of visits.
+// Break clients have no location. A segment holding only breaks reports
+// hasLocation() == false, and its first() and last() must not be used in edge
+// lookups; any other segment's first() and last() are its first and last
+// non-break locations.
 template <typename T>
 concept Segment
     = requires(T arg, size_t profile, size_t vehicleType, size_t dimension) {
           { arg.route() };
+          { arg.hasLocation() } -> std::same_as<bool>;
           { arg.first() } -> std::same_as<size_t>;
           { arg.last() } -> std::same_as<size_t>;
           { arg.size() } -> std::same_as<size_t>;
@@ -274,7 +279,8 @@ private:
     public:
         inline Route const *route() const;
 
-        inline size_t first() const;  // client at start
+        inline bool hasLocation() const;
+        inline size_t first() const;  // first non-break client from start
         inline size_t last() const;   // end depot
         inline size_t size() const;
 
@@ -301,8 +307,9 @@ private:
     public:
         inline Route const *route() const;
 
+        inline bool hasLocation() const;
         inline size_t first() const;  // start depot
-        inline size_t last() const;   // client at end
+        inline size_t last() const;   // last non-break client up to end
         inline size_t size() const;
 
         inline bool startsAtReloadDepot() const;
@@ -330,8 +337,9 @@ private:
     public:
         inline Route const *route() const;
 
-        inline size_t first() const;  // client at start
-        inline size_t last() const;   // client at end
+        inline bool hasLocation() const;  // false if it holds only breaks
+        inline size_t first() const;      // first non-break client
+        inline size_t last() const;       // last non-break client
         inline size_t size() const;
 
         inline bool startsAtReloadDepot() const;
@@ -371,6 +379,18 @@ private:
 
     std::vector<Node *> nodes;   // Nodes in this route, including depots
     std::vector<size_t> visits;  // Locations in this route, incl. depots
+
+    // Location each node takes in edge lookups: its own, except that a break
+    // takes that of the nearest non-break node before it. Prefix structures
+    // (cumDist, durBefore) walk these, so a break's edges are matrix(i, i) = 0
+    // in and matrix(i, j) out.
+    std::vector<size_t> locs_;
+
+    // Index of the first non-break node at or after each index. Always found,
+    // since the end depot is never a break. Suffix structures (durAfter) and
+    // segments starting at a break measure from here, so they never reach
+    // back past their own start for a location.
+    std::vector<size_t> nextReal_;
 
     std::vector<Distance> cumDist;  // Dist of start -> node (incl.)
 
@@ -850,7 +870,7 @@ Route::SegmentBetween::SegmentBetween(Route const &route,
 Distance Route::SegmentAfter::distance([[maybe_unused]] size_t profile) const
 {
     assert(profile == route_.profile());
-    return {route_.cumDist.back() - route_.cumDist[start]};
+    return {route_.cumDist.back() - route_.cumDist[route_.nextReal_[start]]};
 }
 
 TripDistance
@@ -860,12 +880,12 @@ Route::SegmentAfter::tripDistance([[maybe_unused]] size_t profile) const
 
     auto const last = route_.numTrips() - 1;
     auto const trip = route_.tripOf(start);
+    auto const startDist = route_.cumDist[route_.nextReal_[start]];
 
     if (trip == last)  // then the segment stays inside a single trip
-        return {route_.cumDist.back() - route_.cumDist[start], 0, 0, false};
+        return {route_.cumDist.back() - startDist, 0, 0, false};
 
-    return {route_.cumDist[route_.tripBounds_[trip + 1]]
-                - route_.cumDist[start],
+    return {route_.cumDist[route_.tripBounds_[trip + 1]] - startDist,
             route_.tripExcess_[last] - route_.tripExcess_[trip + 1],
             route_.cumDist.back() - route_.cumDist[route_.tripBounds_[last]],
             true};
@@ -940,8 +960,9 @@ LoadSegment const &Route::SegmentBefore::load(size_t dimension) const
 
 Route const *Route::SegmentBefore::route() const { return &route_; }
 
+bool Route::SegmentBefore::hasLocation() const { return true; }
 size_t Route::SegmentBefore::first() const { return route_.visits.front(); }
-size_t Route::SegmentBefore::last() const { return route_.visits[end]; }
+size_t Route::SegmentBefore::last() const { return route_.locs_[end]; }
 size_t Route::SegmentBefore::size() const { return end + 1; }
 
 bool Route::SegmentBefore::startsAtReloadDepot() const { return false; }
@@ -952,7 +973,11 @@ bool Route::SegmentBefore::endsAtReloadDepot() const
 
 Route const *Route::SegmentAfter::route() const { return &route_; }
 
-size_t Route::SegmentAfter::first() const { return route_.visits[start]; }
+bool Route::SegmentAfter::hasLocation() const { return true; }
+size_t Route::SegmentAfter::first() const
+{
+    return route_.visits[route_.nextReal_[start]];
+}
 size_t Route::SegmentAfter::last() const { return route_.visits.back(); }
 size_t Route::SegmentAfter::size() const { return route_.size() - start; }
 
@@ -964,8 +989,25 @@ bool Route::SegmentAfter::endsAtReloadDepot() const { return false; }
 
 Route const *Route::SegmentBetween::route() const { return &route_; }
 
-size_t Route::SegmentBetween::first() const { return route_.visits[start]; }
-size_t Route::SegmentBetween::last() const { return route_.visits[end]; }
+bool Route::SegmentBetween::hasLocation() const
+{
+    return route_.nextReal_[start] <= end;
+}
+
+size_t Route::SegmentBetween::first() const
+{
+    assert(hasLocation());
+    return route_.visits[route_.nextReal_[start]];
+}
+
+size_t Route::SegmentBetween::last() const
+{
+    // With a non-break node in the segment, the nearest one at or before end
+    // lies inside it, so the backward alias does not escape the segment.
+    assert(hasLocation());
+    return route_.locs_[end];
+}
+
 size_t Route::SegmentBetween::size() const { return end - start + 1; }
 
 bool Route::SegmentBetween::startsAtReloadDepot() const
@@ -979,22 +1021,30 @@ bool Route::SegmentBetween::endsAtReloadDepot() const
 
 Distance Route::SegmentBetween::distance(size_t profile) const
 {
+    if (!hasLocation())
+        return 0;
+
+    // Leading breaks are skipped: the edge into them belongs to whatever
+    // precedes the segment, and is added by the Proposal fold.
+    auto const firstReal = route_.nextReal_[start];
+
     if (profile != route_.profile())  // then we have to compute the distance
     {                                 // segment from scratch.
         auto const &mat = route_.data.distanceMatrix(profile);
         Distance distance = 0;
 
-        for (size_t step = start; step != end; ++step)
+        for (size_t step = firstReal; step != end; ++step)
         {
-            auto const from = route_.visits[step];
-            auto const to = route_.visits[step + 1];
+            auto const from = route_.locs_[step];
+            auto const to = route_.locs_[step + 1];
+            assert(!route_.data.isBreak(from) && !route_.data.isBreak(to));
             distance += mat(from, to);
         }
 
         return distance;
     }
 
-    auto const startDist = route_.cumDist[start];
+    auto const startDist = route_.cumDist[firstReal];
     auto const endDist = route_.cumDist[end];
 
     assert(startDist <= endDist);
@@ -1046,12 +1096,24 @@ Route::SegmentBetween::duration([[maybe_unused]] size_t profile) const
     auto const &mat = route_.data.durationMatrix(profile);
     auto durSegment = route_.durAt[start];
 
+    // Edges up to the first non-break node are skipped, as in distance(): the
+    // Proposal fold travels into the segment's first() before its leading
+    // breaks. That order is timing-neutral, since a break has no window.
+    auto const firstReal = route_.nextReal_[start];
+
     for (size_t step = start; step != end; ++step)
     {
-        auto const from = route_.visits[step];
-        auto const to = route_.visits[step + 1];
+        Duration edge = 0;
+        if (step >= firstReal)
+        {
+            auto const from = route_.locs_[step];
+            auto const to = route_.locs_[step + 1];
+            assert(!route_.data.isBreak(from) && !route_.data.isBreak(to));
+            edge = mat(from, to);
+        }
+
         auto const &durAt = route_.durAt[step + 1];
-        durSegment = DurationSegment::merge(mat(from, to), durSegment, durAt);
+        durSegment = DurationSegment::merge(edge, durSegment, durAt);
     }
 
     return durSegment;
@@ -1368,8 +1430,15 @@ std::pair<Cost, Distance> Route::Proposal<Segments...>::distance() const
 
         auto const merge = [&](auto const &self, auto &&other, auto &&...args)
         {
-            distance += matrix(last, other.first()) + other.distance(profile);
-            last = other.last();
+            // A segment of only breaks has no distance and no location, so
+            // the edge runs from `last` straight to the next located segment.
+            if (other.hasLocation())
+            {
+                assert(!data.isBreak(last) && !data.isBreak(other.first()));
+                distance
+                    += matrix(last, other.first()) + other.distance(profile);
+                last = other.last();
+            }
 
             if constexpr (sizeof...(args) != 0)
                 self(self, std::forward<decltype(args)>(args)...);
@@ -1449,14 +1518,19 @@ Distance Route::Proposal<Segments...>::tripExcessDistance() const
             // ends there, not the opening leg of the next one, so it is added
             // before the boundary closes. This matches update(), where trip t
             // measures cumDist[bounds[t + 1]] - cumDist[bounds[t]] and so
-            // carries its own arrival edge.
-            extend(matrix(last, other.first()));
+            // carries its own arrival edge. A segment of only breaks adds
+            // nothing and cannot hold a boundary, so `last` carries through.
+            if (other.hasLocation())
+            {
+                assert(!data.isBreak(last) && !data.isBreak(other.first()));
+                extend(matrix(last, other.first()));
 
-            if (other.startsAtReloadDepot())
-                close();
+                if (other.startsAtReloadDepot())
+                    close();
 
-            append(other.tripDistance(profile));
-            last = other.last();
+                append(other.tripDistance(profile));
+                last = other.last();
+            }
 
             if constexpr (sizeof...(args) != 0)
             {
@@ -1522,7 +1596,13 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
 
         auto const merge = [&](auto const &self, auto &&other, auto &&...args)
         {
-            auto edgeDur = matrix(other.last(), first);
+            // A segment of only breaks has no edge and cannot end at a reload
+            // depot, so it merges in directly and `first` carries through to
+            // the next located segment on the left.
+            auto const hasLocation = other.hasLocation();
+            assert(!hasLocation
+                   || (!data.isBreak(other.last()) && !data.isBreak(first)));
+            Duration edgeDur = hasLocation ? matrix(other.last(), first) : 0;
 
             if (other.endsAtReloadDepot())
             {
@@ -1551,7 +1631,8 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
             }
 
             ds = DurationSegment::merge(edgeDur, other.duration(profile), ds);
-            first = other.first();
+            if (hasLocation)
+                first = other.first();
 
             if constexpr (sizeof...(args) != 0)
             {

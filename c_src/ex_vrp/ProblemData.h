@@ -187,6 +187,10 @@ public:
         std::optional<size_t> const group;  // Optional client group membership
         char const *name;                   // Client name (for reference)
 
+        // A break has no location: routes skip it in every edge lookup, so
+        // it only adds its duration. See search::BreakSegment.
+        bool const isBreak;
+
         Client(std::vector<Load> delivery = {},
                std::vector<Load> pickup = {},
                Duration serviceDuration = 0,
@@ -196,7 +200,8 @@ public:
                Cost prize = 0,
                bool required = true,
                std::optional<size_t> group = std::nullopt,
-               std::string name = "");
+               std::string name = "",
+               bool isBreak = false);
 
         bool operator==(Client const &other) const;
 
@@ -737,6 +742,10 @@ private:
     size_t const numLoadDimensions_;
     bool const hasTimeWindows_;
 
+    // Client::isBreak per location, packed: search::Route::update() asks for
+    // every node, and the Client structs are too wide to scan for one flag.
+    std::vector<bool> const isBreak_;
+
 public:
     bool operator==(ProblemData const &other) const = default;
 
@@ -895,6 +904,11 @@ public:
     [[nodiscard]] inline bool isAllowed(size_t profile, size_t location) const;
 
     /**
+     * Whether the given location is a break client. Depots never are.
+     */
+    [[nodiscard]] inline bool isBreak(size_t location) const;
+
+    /**
      * Whether any location is forbidden on any profile. When false,
      * :meth:`~is_allowed` is true everywhere and reachability filtering can be
      * skipped wholesale.
@@ -1022,6 +1036,12 @@ bool ProblemData::isAllowed(size_t profile, size_t location) const
     assert(profile < allowed_.size());
     assert(location < allowed_[profile].size());
     return allowed_[profile][location];
+}
+
+bool ProblemData::isBreak(size_t location) const
+{
+    assert(location < isBreak_.size());
+    return isBreak_[location];
 }
 
 bool ProblemData::hasForbiddenLocations() const { return hasForbidden_; }

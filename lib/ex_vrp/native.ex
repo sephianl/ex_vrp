@@ -64,6 +64,7 @@ defmodule ExVrp.Native do
     problem_data_duration_matrix_nif: 2,
     problem_data_vehicle_types_nif: 1,
     problem_data_groups_nif: 1,
+    build_neighbours_nif: 1,
     # LocalSearch (stateless)
     local_search_nif: 4,
     local_search_search_only_nif: 4,
@@ -530,6 +531,12 @@ defmodule ExVrp.Native do
   """
   @spec problem_data_groups_nif(reference()) :: [{[integer()], boolean()}]
   def problem_data_groups_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  The neighbourhood local search uses, one list of nearby clients per location.
+  """
+  @spec build_neighbours_nif(reference()) :: [[non_neg_integer()]]
+  def build_neighbours_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
   # LocalSearch

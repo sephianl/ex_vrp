@@ -209,13 +209,31 @@ void Route::update()
     for (auto const *node : nodes)
         visits.emplace_back(node->client());
 
+    // Break aliasing. The start and end depots are never breaks, so locs_[0]
+    // and nextReal_.back() are their own indices and both walks stay inside.
+    locs_.resize(nodes.size());
+    locs_[0] = visits[0];
+    for (size_t idx = 1; idx != nodes.size(); ++idx)
+        locs_[idx] = data.isBreak(visits[idx]) ? locs_[idx - 1] : visits[idx];
+
+    nextReal_.resize(nodes.size());
+    nextReal_.back() = nodes.size() - 1;
+    for (size_t idx = nodes.size() - 1; idx != 0; --idx)
+        nextReal_[idx - 1]
+            = data.isBreak(visits[idx - 1]) ? nextReal_[idx] : idx - 1;
+
     // Distance.
     auto const &distMat = data.distanceMatrix(profile());
 
     cumDist.resize(nodes.size());
     cumDist[0] = 0;
     for (size_t idx = 1; idx != nodes.size(); ++idx)
-        cumDist[idx] = cumDist[idx - 1] + distMat(visits[idx - 1], visits[idx]);
+    {
+        auto const from = locs_[idx - 1];
+        auto const to = locs_[idx];
+        assert(!data.isBreak(from) && !data.isBreak(to));
+        cumDist[idx] = cumDist[idx - 1] + distMat(from, to);
+    }
 
     // Trip boundaries, and each trip's excess over the per-trip distance cap.
     // A reload depot both ends one trip and starts the next, so it appears
@@ -313,9 +331,20 @@ void Route::update()
                                 ? durBefore[prev].finaliseBack()
                                 : durBefore[prev];
 
-        auto const edgeDur = durations(visits[prev], visits[idx]);
+        auto const from = locs_[prev];
+        auto const to = locs_[idx];
+        assert(!data.isBreak(from) && !data.isBreak(to));
+        auto const edgeDur = durations(from, to);
         durBefore[idx] = DurationSegment::merge(edgeDur, before, durAt[idx]);
     }
+
+    // A suffix must not look back past its own start for a location, so here
+    // a break takes the location of the nearest non-break node *after* it:
+    // its outgoing edge is zero, and the node before it drives on to that
+    // location. That moves the drive to before the break rather than after,
+    // which is timing-neutral since a break has no time window, and matches
+    // how Proposal::duration() travels into a segment's first() before any
+    // leading breaks.
 
     durAfter.resize(nodes.size());
     durAfter[nodes.size() - 1] = durAt[nodes.size() - 1];
@@ -326,7 +355,10 @@ void Route::update()
                                ? durAfter[next].finaliseFront()
                                : durAfter[next];
 
-        auto const edgeDur = durations(visits[idx], visits[next]);
+        auto const from = visits[nextReal_[idx]];
+        auto const to = visits[nextReal_[next]];
+        assert(!data.isBreak(from) && !data.isBreak(to));
+        auto const edgeDur = durations(from, to);
         durAfter[idx] = DurationSegment::merge(edgeDur, durAt[idx], after);
     }
 
@@ -426,7 +458,12 @@ void Route::update()
         for (size_t idx = 0; idx != nodes.size(); ++idx)
         {
             if (idx > 0)
-                now += durations(visits[idx - 1], visits[idx]);
+            {
+                auto const from = locs_[idx - 1];
+                auto const to = locs_[idx];
+                assert(!data.isBreak(from) && !data.isBreak(to));
+                now += durations(from, to);
+            }
 
             // Check forbidden window at every node (client, reload depot,
             // end depot) — not just clients.
@@ -504,7 +541,10 @@ void Route::update()
                 if (idx + 1 < nodes.size() && !nodes[idx + 1]->isDepot()
                     && !nodes[idx + 1]->isReloadDepot())
                 {
-                    auto const travel = durations(visits[idx], visits[idx + 1]);
+                    auto const from = locs_[idx];
+                    auto const to = locs_[idx + 1];
+                    assert(!data.isBreak(from) && !data.isBreak(to));
+                    auto const travel = durations(from, to);
                     auto const arrive = now + travel;
                     ProblemData::Client const &next
                         = data.location(nodes[idx + 1]->client());

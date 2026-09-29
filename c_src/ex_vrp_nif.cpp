@@ -454,6 +454,7 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
     int64_t release_time = 0;
     int64_t prize = 0;
     bool required = true;
+    bool is_break = false;
     std::optional<size_t> group = std::nullopt;
 
     ERL_NIF_TERM key, value;
@@ -544,6 +545,14 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                     required = (std::string(buf) == "true");
                 }
             }
+            else if (key_str == "is_break")
+            {
+                char buf[32];
+                if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1))
+                {
+                    is_break = (std::string(buf) == "true");
+                }
+            }
             else if (key_str == "group")
             {
                 // Check for nil
@@ -585,8 +594,8 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                                Cost(prize),
                                required,
                                group,
-                               std::string("")  // name
-    );
+                               std::string(""),  // name
+                               is_break);
 }
 
 // Decode a single depot from Elixir map
@@ -3347,12 +3356,18 @@ build_neighbours(ProblemData const &data,
 
     // Step 9: For each client, find k nearest by proximity
     size_t k = std::min(numNeighbours, numClients - 1);
+    // Breaks have no location, so they neither have nor are neighbours. They
+    // are skipped here rather than priced at infinity in step 8, since k can
+    // exceed the number of finite candidates.
     for (size_t i = numDepots; i < numLocs; ++i)
     {
+        if (data.isBreak(i))
+            continue;
+
         std::vector<std::pair<double, size_t>> proximities;
         for (size_t j = numDepots; j < numLocs; ++j)
         {
-            if (i != j)
+            if (i != j && !data.isBreak(j))
             {
                 proximities.emplace_back(edgeCosts[i][j], j);
             }
@@ -3376,6 +3391,22 @@ build_neighbours(ProblemData const &data,
 
     return neighbours;
 }
+
+/**
+ * The neighbourhood the solver builds, with its default parameters.
+ */
+std::vector<std::vector<int64_t>>
+build_neighbours_nif([[maybe_unused]] ErlNifEnv *env,
+                     fine::ResourcePtr<ProblemDataResource> problem_resource)
+{
+    std::vector<std::vector<int64_t>> result;
+    for (auto const &list : build_neighbours(*problem_resource->data))
+        result.emplace_back(list.begin(), list.end());
+
+    return result;
+}
+
+FINE_NIF(build_neighbours_nif, 0);
 
 /**
  * Perform local search on a solution.

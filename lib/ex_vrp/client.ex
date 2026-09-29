@@ -16,7 +16,8 @@ defmodule ExVrp.Client do
           prize: non_neg_integer(),
           required: boolean(),
           group: non_neg_integer() | nil,
-          name: String.t()
+          name: String.t(),
+          is_break: boolean()
         }
 
   defstruct delivery: [0],
@@ -28,7 +29,8 @@ defmodule ExVrp.Client do
             prize: 0,
             required: true,
             group: nil,
-            name: ""
+            name: "",
+            is_break: false
 
   @doc """
   Creates a new client.

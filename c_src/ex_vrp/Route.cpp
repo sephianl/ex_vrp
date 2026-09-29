@@ -228,8 +228,12 @@ void Route::makeSchedule(ProblemData const &data)
         // forbidden windows, not idle at a client location).
         if (tripIdx > 0 && !vehData.forbiddenWindows.empty() && !trip.empty())
         {
+            // A leading break takes the depot's location, as in the loop
+            // below and in search::Route's forbidden-window walk.
             auto const firstClient = *trip.begin();
-            auto const travel = durations(trip.startDepot(), firstClient);
+            auto const firstLoc
+                = data.isBreak(firstClient) ? trip.startDepot() : firstClient;
+            auto const travel = durations(trip.startDepot(), firstLoc);
             auto const arrive = now + travel;
             ProblemData::Client const &cd = data.location(firstClient);
             auto const svcStart = std::max(arrive, cd.twEarly);
@@ -255,18 +259,21 @@ void Route::makeSchedule(ProblemData const &data)
                                wait + forbiddenWait,
                                tw);
 
-        size_t prevClient = trip.startDepot();
+        // A break takes the location of the nearest non-break node before it.
+        size_t prevLoc = trip.startDepot();
         for (auto const client : trip)
         {
-            now += durations(prevClient, client);
+            auto const loc = data.isBreak(client) ? prevLoc : client;
+            assert(!data.isBreak(prevLoc) && !data.isBreak(loc));
+            now += durations(prevLoc, loc);
 
             ProblemData::Client const &clientData = data.location(client);
             handle(clientData, client, tripIdx, clientData.serviceDuration);
 
-            prevClient = client;
+            prevLoc = loc;
         }
 
-        now += durations(prevClient, trip.endDepot());
+        now += durations(prevLoc, trip.endDepot());
     }
 
     ProblemData::Depot const &end = data.location(endDepot_);
@@ -362,18 +369,24 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         ProblemData::Depot const &end = data.location(trip->endDepot());
         ds = DurationSegment::merge(0, {end}, ds);
 
-        size_t nextClient = trip->endDepot();
+        // Walking backwards, a break takes the location of the nearest
+        // non-break node after it, as in search::Route's durAfter: its
+        // outgoing edge is zero and the node before it drives on. Timing is
+        // the same as driving after the break, since a break has no window.
+        size_t nextLoc = trip->endDepot();
         for (auto it = trip->rbegin(); it != trip->rend(); ++it)
         {
             auto const client = *it;
-            auto const edgeDuration = durations(client, nextClient);
+            auto const loc = data.isBreak(client) ? nextLoc : client;
+            assert(!data.isBreak(loc) && !data.isBreak(nextLoc));
+            auto const edgeDuration = durations(loc, nextLoc);
             ProblemData::Client const &clientData = data.location(client);
 
             ds = DurationSegment::merge(edgeDuration, {clientData}, ds);
-            nextClient = client;
+            nextLoc = loc;
         }
 
-        auto const edgeDuration = durations(trip->startDepot(), nextClient);
+        auto const edgeDuration = durations(trip->startDepot(), nextLoc);
         ProblemData::Depot const &start = data.location(trip->startDepot());
         // Service time and reload cost are only applied at reload depots (not
         // the first trip). In reverse iteration, trip + 1 == rend means this is

@@ -25,6 +25,8 @@ public:
     using Neighbours = std::vector<std::vector<size_t>>;
 
 private:
+    size_t numDepots_;
+
     // Neighborhood restrictions: list of nearby clients for each client (size
     // numLocations, but nothing is stored for the depots!).
     Neighbours neighbours_;
@@ -32,7 +34,8 @@ private:
     // Tracks clients that can likely be improved by local search operators.
     DynamicBitset promising_;
 
-    // Client order used for node-based search.
+    // Client order used for node-based search. Breaks are left out: they have
+    // no location, so no neighbourhood can place them.
     std::vector<size_t> clientOrder_;
 
     // Route order used for route-based search.

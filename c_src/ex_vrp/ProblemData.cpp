@@ -82,6 +82,16 @@ normaliseAllowed(std::vector<pyvrp::DynamicBitset> allowed,
 
     return std::vector<pyvrp::DynamicBitset>(numProfiles, all);
 }
+
+std::vector<bool> breakFlags(size_t numDepots,
+                             std::vector<ProblemData::Client> const &clients)
+{
+    std::vector<bool> flags(numDepots, false);
+    for (auto const &client : clients)
+        flags.push_back(client.isBreak);
+
+    return flags;
+}
 }  // namespace
 
 ProblemData::Client::Client(std::vector<Load> delivery,
@@ -93,7 +103,8 @@ ProblemData::Client::Client(std::vector<Load> delivery,
                             Cost prize,
                             bool required,
                             std::optional<size_t> group,
-                            std::string name)
+                            std::string name,
+                            bool isBreak)
     : serviceDuration(serviceDuration),
       twEarly(twEarly),
       twLate(twLate),
@@ -103,7 +114,8 @@ ProblemData::Client::Client(std::vector<Load> delivery,
       prize(prize),
       required(required),
       group(group),
-      name(duplicate(name.data()))
+      name(duplicate(name.data())),
+      isBreak(isBreak)
 {
     assert(delivery.size() == pickup.size());
 
@@ -142,7 +154,8 @@ ProblemData::Client::Client(Client const &client)
       prize(client.prize),
       required(client.required),
       group(client.group),
-      name(duplicate(client.name))
+      name(duplicate(client.name)),
+      isBreak(client.isBreak)
 {
 }
 
@@ -156,7 +169,8 @@ ProblemData::Client::Client(Client &&client)
       prize(client.prize),
       required(client.required),
       group(client.group),
-      name(client.name)  // we can steal
+      name(client.name),  // we can steal
+      isBreak(client.isBreak)
 {
     client.name = nullptr;  // stolen
 }
@@ -175,7 +189,8 @@ bool ProblemData::Client::operator==(Client const &other) const
         && prize == other.prize
         && required == other.required
         && group == other.group
-        && std::strcmp(name, other.name) == 0;
+        && std::strcmp(name, other.name) == 0
+        && isBreak == other.isBreak;
     // clang-format on
 }
 
@@ -895,7 +910,8 @@ ProblemData::ProblemData(std::vector<Client> clients,
           || std::any_of(depots_.begin(), depots_.end(), hasTimeWindow<Depot>)
           || std::any_of(vehicleTypes_.begin(),
                          vehicleTypes_.end(),
-                         hasTimeWindow<VehicleType>))
+                         hasTimeWindow<VehicleType>)),
+      isBreak_(breakFlags(depots_.size(), clients_))
 {
     validate();
 }
