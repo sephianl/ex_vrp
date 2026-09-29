@@ -301,8 +301,21 @@ So a working day made of two short shifts separated by a long gap breaches an el
 driver's real hours would clear — and conversely, an elapsed cap generous enough to allow that day
 also permits a route that genuinely works the full span.
 
-**There is no "no more than N hours worked per day" constraint.** If that is what you need, the
-solver cannot enforce it; measure it after the fact and reject or re-plan yourself:
+**If the limit is on driving, use `:max_drive`.** It caps the route's total travel duration across
+all trips; waiting, service and reload time do not count, so the gap above costs nothing:
+
+```elixir
+# driven 300, elapsed 900
+max_drive: 500      # => feasible
+```
+
+Driving past the cap is priced as time warp, so the route is infeasible, and
+`ExVrp.Route.drive_excess/1` says by how much. The excess is a penalty, not a delay — it does not
+move `ExVrp.Route.end_time/1`.
+
+**There is no "no more than N hours worked per day" constraint.** `:max_drive` leaves service time
+out, so it is not one. If worked time is what you need to cap, the solver cannot enforce it; measure
+it after the fact and reject or re-plan yourself:
 
 ```elixir
 worked = ExVrp.Route.duration(route) - ExVrp.Route.wait_duration(route)

@@ -451,6 +451,136 @@ defmodule ExVrp.RouteOperatorsTest do
     end
   end
 
+  describe "max_drive: an evaluated move prices the same as the route it produces" do
+    defp max_drive_problem do
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          unit_distance_cost: 0,
+          max_drive: 100
+        )
+        |> Model.set_euclidean_matrices([{0, 0}, {20, 0}, {40, 0}, {90, 0}])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      {:ok, cost_evaluator} =
+        Native.create_cost_evaluator(load_penalties: [0.0], tw_penalty: 1.0, dist_penalty: 0.0)
+
+      {problem_data, cost_evaluator}
+    end
+
+    test "an insert that first crosses the cap" do
+      {problem_data, cost_evaluator} = max_drive_problem()
+
+      route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
+      after_client_2 = Native.search_route_get_node_nif(route, 2)
+      client_3 = Native.create_search_node_nif(problem_data, 3)
+
+      delta = Native.insert_cost_nif(client_3, after_client_2, problem_data, cost_evaluator)
+
+      before_time_warp = Native.search_route_time_warp_nif(route)
+
+      after_route = Native.make_search_route_nif(problem_data, [1, 2, 3], 0, 0)
+      after_time_warp = Native.search_route_time_warp_nif(after_route)
+
+      assert delta == after_time_warp - before_time_warp
+    end
+
+    defp max_drive_overtime_problem do
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          unit_distance_cost: 0,
+          max_drive: 150,
+          max_duration: :infinity,
+          shift_duration: 150,
+          unit_overtime_cost: 1
+        )
+        |> Model.set_euclidean_matrices([{0, 0}, {50, 0}, {100, 0}, {250, 0}])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      {:ok, cost_evaluator} =
+        Native.create_cost_evaluator(load_penalties: [0.0], tw_penalty: 1.0, dist_penalty: 0.0)
+
+      {problem_data, cost_evaluator}
+    end
+
+    defp max_drive_forbidden_window_problem do
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_client(delivery: [0])
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [100],
+          unit_distance_cost: 0,
+          max_drive: 150,
+          max_duration: :infinity,
+          time_windows: [{0, 30}, {130, 10_000}]
+        )
+        |> Model.set_euclidean_matrices([{0, 0}, {50, 0}, {100, 0}, {250, 0}])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+
+      problem_data
+    end
+
+    test "an insert on a route already past the cap, with overtime priced on both sides" do
+      {problem_data, cost_evaluator} = max_drive_overtime_problem()
+
+      route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
+      after_client_2 = Native.search_route_get_node_nif(route, 2)
+      client_3 = Native.create_search_node_nif(problem_data, 3)
+
+      delta = Native.insert_cost_nif(client_3, after_client_2, problem_data, cost_evaluator)
+
+      before_time_warp = Native.search_route_time_warp_nif(route)
+      before_duration_cost = Native.search_route_duration_cost_nif(route)
+      assert before_time_warp > 0
+      assert before_duration_cost > 0
+
+      after_route = Native.make_search_route_nif(problem_data, [1, 2, 3], 0, 0)
+      after_time_warp = Native.search_route_time_warp_nif(after_route)
+      after_duration_cost = Native.search_route_duration_cost_nif(after_route)
+
+      assert delta ==
+               after_duration_cost - before_duration_cost + (after_time_warp - before_time_warp)
+    end
+  end
+
+  describe "search::Route timeline time warp leaves out the 50 driven past a 150 cap on 0 -> 50 -> 100 -> 0" do
+    test "so it is zero when drive excess is the only time warp" do
+      {problem_data, _cost_evaluator} = max_drive_overtime_problem()
+      route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
+
+      assert Native.search_route_time_warp_nif(route) == 50
+      assert Native.search_route_timeline_time_warp_nif(route) == 0
+    end
+
+    test "so it keeps the 80 of a forbidden window from 30 to 130 that the arrival at 50 falls in" do
+      problem_data = max_drive_forbidden_window_problem()
+      route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
+
+      assert Native.search_route_time_warp_nif(route) == 80 + 50
+      assert Native.search_route_timeline_time_warp_nif(route) == 80
+    end
+  end
+
   # =========================================================================
   # Helper Functions
   # =========================================================================

@@ -83,6 +83,7 @@ defmodule ExVrp.Native do
     solution_route_time_warp: 2,
     solution_route_excess_distance: 2,
     solution_route_overtime: 2,
+    solution_route_drive_excess: 2,
     solution_route_has_excess_load: 2,
     solution_route_has_time_warp: 2,
     solution_route_has_excess_distance: 2,
@@ -123,6 +124,7 @@ defmodule ExVrp.Native do
     search_route_distance_nif: 1,
     search_route_duration_nif: 1,
     search_route_time_warp_nif: 1,
+    search_route_timeline_time_warp_nif: 1,
     search_route_overtime_nif: 1,
     search_route_excess_distance_nif: 1,
     search_route_load_nif: 1,
@@ -237,6 +239,8 @@ defmodule ExVrp.Native do
     create_duration_segment_nif: 8,
     duration_segment_merge_nif: 3,
     duration_segment_duration_nif: 1,
+    duration_segment_drive_nif: 1,
+    duration_segment_drive_excess_nif: 2,
     duration_segment_time_warp_nif: 2,
     duration_segment_start_early_nif: 1,
     duration_segment_start_late_nif: 1,
@@ -787,6 +791,12 @@ defmodule ExVrp.Native do
   def solution_route_overtime(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
+  Gets drive excess (travel past `:max_drive`) of a specific route.
+  """
+  @spec solution_route_drive_excess(reference(), non_neg_integer()) :: non_neg_integer()
+  def solution_route_drive_excess(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
   Checks if a specific route has excess load.
   """
   @spec solution_route_has_excess_load(reference(), non_neg_integer()) :: boolean()
@@ -981,6 +991,9 @@ defmodule ExVrp.Native do
 
   @doc "Gets the route time warp."
   def search_route_time_warp_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc "Gets the route time warp with drive excess (a penalty, not a timeline shift) excluded."
+  def search_route_timeline_time_warp_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Gets the route overtime."
   def search_route_overtime_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
@@ -1395,6 +1408,14 @@ defmodule ExVrp.Native do
   @doc "Gets the duration of a segment."
   @spec duration_segment_duration_nif(reference()) :: integer()
   def duration_segment_duration_nif(_seg), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc "Gets the drive time of a segment."
+  @spec duration_segment_drive_nif(reference()) :: integer()
+  def duration_segment_drive_nif(_seg), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc "Gets the drive time of a segment past a cap."
+  @spec duration_segment_drive_excess_nif(reference(), integer()) :: integer()
+  def duration_segment_drive_excess_nif(_seg, _max_drive), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Gets the time warp of a segment, optionally with max_duration constraint."
   @spec duration_segment_time_warp_nif(reference(), integer()) :: integer()

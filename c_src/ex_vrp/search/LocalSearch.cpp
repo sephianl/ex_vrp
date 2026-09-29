@@ -1036,7 +1036,7 @@ void LocalSearch::repairForbiddenWindowRoutes(
     // overlaps the forbidden window to a new trip.  One-time, non-iterative.
     for (auto &route : solution_.routes)
     {
-        if (route.empty() || route.timeWarp() == 0)
+        if (route.empty() || route.timelineTimeWarp() == 0)
             continue;
 
         auto const &vehType = data.vehicleType(route.vehicleType());

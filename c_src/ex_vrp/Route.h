@@ -119,6 +119,7 @@ private:
     Duration overtime_ = 0;          // Total overtime of this route
     Cost durationCost_ = 0;          // Total cost of route duration
     Duration timeWarp_ = 0;          // Total time warp on this route
+    Duration driveExcess_ = 0;       // Travel past max_drive
     Duration travel_ = 0;            // Total *travel* duration on this route
     Duration service_ = 0;           // Total *service* duration on this route
     Duration startTime_ = 0;         // (earliest) start time of this route
@@ -237,6 +238,20 @@ public:
     [[nodiscard]] Duration timeWarp() const;
 
     /**
+     * Travel duration past the vehicle type's ``max_drive``, which is also
+     * counted in :meth:`time_warp`.
+     */
+    [[nodiscard]] Duration driveExcess() const;
+
+    /**
+     * The part of :meth:`~timeWarp` that is an actual shift along the
+     * timeline, used to derive clock times such as :meth:`~endTime`.
+     * Excludes penalty-only terms folded into :meth:`~timeWarp` that do not
+     * move when the route starts or ends (today, :meth:`~driveExcess`).
+     */
+    [[nodiscard]] Duration timelineTimeWarp() const;
+
+    /**
      * Total duration of travel on this route.
      */
     [[nodiscard]] Duration travelDuration() const;
@@ -265,7 +280,9 @@ public:
 
     /**
      * End time of the route. This is equivalent to
-     * ``start_time + duration - time_warp``.
+     * ``start_time + duration - timeline_time_warp``: :meth:`~time_warp`
+     * itself is not a timeline shift when it includes penalty-only terms such
+     * as drive excess.
      */
     [[nodiscard]] Duration endTime() const;
 

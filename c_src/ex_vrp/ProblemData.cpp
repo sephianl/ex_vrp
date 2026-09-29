@@ -381,7 +381,8 @@ ProblemData::VehicleType::VehicleType(
     std::string name,
     std::vector<std::pair<Duration, Duration>> forbiddenWindows,
     Duration overtimeStart,
-    Distance maxDistancePerTrip)
+    Distance maxDistancePerTrip,
+    Duration maxDrive)
     : numAvailable(numAvailable),
       startDepot(startDepot),
       endDepot(endDepot),
@@ -402,6 +403,7 @@ ProblemData::VehicleType::VehicleType(
       unitOvertimeCost(unitOvertimeCost),
       overtimeStart(overtimeStart),
       maxDuration(maxDuration.value_or(shiftDuration)),
+      maxDrive(maxDrive),
       forbiddenWindows(std::move(forbiddenWindows)),
       name(duplicate(name.data()))
 {
@@ -448,6 +450,9 @@ ProblemData::VehicleType::VehicleType(
     if (this->maxDuration < 0)
         throw std::invalid_argument("max_duration must be >= 0.");
 
+    if (this->maxDrive < 0)
+        throw std::invalid_argument("max_drive must be >= 0.");
+
     if (unitOvertimeCost < 0)
         throw std::invalid_argument("unit_overtime_cost must be >= 0.");
 
@@ -487,6 +492,7 @@ ProblemData::VehicleType::VehicleType(VehicleType const &vehicleType)
       unitOvertimeCost(vehicleType.unitOvertimeCost),
       overtimeStart(vehicleType.overtimeStart),
       maxDuration(vehicleType.maxDuration),
+      maxDrive(vehicleType.maxDrive),
       forbiddenWindows(vehicleType.forbiddenWindows),
       name(duplicate(vehicleType.name))
 {
@@ -513,6 +519,7 @@ ProblemData::VehicleType::VehicleType(VehicleType &&vehicleType)
       unitOvertimeCost(vehicleType.unitOvertimeCost),
       overtimeStart(vehicleType.overtimeStart),
       maxDuration(vehicleType.maxDuration),
+      maxDrive(vehicleType.maxDrive),
       forbiddenWindows(std::move(vehicleType.forbiddenWindows)),
       name(vehicleType.name)  // we can steal
 {
@@ -549,6 +556,7 @@ bool ProblemData::VehicleType::operator==(VehicleType const &other) const
         && reloadDepots == other.reloadDepots
         && maxReloads == other.maxReloads
         && maxDuration == other.maxDuration
+        && maxDrive == other.maxDrive
         && unitOvertimeCost == other.unitOvertimeCost
         && overtimeStart == other.overtimeStart
         && forbiddenWindows == other.forbiddenWindows

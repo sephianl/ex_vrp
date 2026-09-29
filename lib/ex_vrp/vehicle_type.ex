@@ -32,6 +32,7 @@ defmodule ExVrp.VehicleType do
   | ------------------------ | --------------- | -------------------------------------- |
   | `:max_distance`          | the whole route | distance, summed over every trip       |
   | `:max_distance_per_trip` | one trip        | distance, reset at every reload        |
+  | `:max_drive`             | the whole route | travel only, no service or waiting     |
   | `:shift_duration`        | the whole route | elapsed time, idle included            |
   | `:max_duration`          | the whole route | elapsed time, idle included (hard cap) |
   | `:overtime_start`        | the whole route | clock time past the contracted end     |
@@ -71,12 +72,51 @@ defmodule ExVrp.VehicleType do
   `:shift_duration`; raise it to allow overtime. `:overtime_start` marks a
   clock time after which work counts as overtime.
 
-  All three measure *elapsed* time from route start to route end, so waiting
+  Setting only `:shift_duration` therefore makes it the hard cap too, and
+  overtime can never occur:
+
+      iex> ExVrp.VehicleType.new(num_available: 1, capacity: [10], shift_duration: 480).max_duration
+      480
+      iex> ExVrp.VehicleType.new(num_available: 1, capacity: [10], shift_duration: 480, max_duration: 540).max_duration
+      540
+
+  The second allows up to 60 of overtime, each unit priced at
+  `:unit_overtime_cost`; past 540 the route is infeasible.
+
+  These three measure *elapsed* time from route start to route end, so waiting
   for a customer's window to open counts against them like driving does. There
   is no per-trip duration cap: a second trip spends the same budget as the
   first. For time actually worked:
 
       ExVrp.Route.duration(route) - ExVrp.Route.wait_duration(route)
+
+  ## Driving time
+
+  `:max_drive` caps how long the vehicle is actually moving: the travel time of
+  every edge on the route, from the duration matrix, summed over all trips.
+  Service, waiting for a window to open and reload time do not count. That is
+  what a legal driving-time limit measures, and what the elapsed-time caps
+  above cannot express. A route that drives 300 but waits 600 in between has
+  an elapsed duration of 900:
+
+  | Cap                 | Measures | Verdict    |
+  | ------------------- | -------- | ---------- |
+  | `max_duration: 500` | 900      | infeasible |
+  | `max_drive: 500`    | 300      | feasible   |
+
+  It does not reset at reloads, and there is no per-trip variant: a second
+  trip drives on the same budget as the first. Two trips of 80 each breach
+  `max_drive: 120`, though neither does on its own.
+
+  A route that drives past the cap is infeasible. The excess is added to its
+  time warp, so the search avoids it like a late arrival: it moves clients to
+  another vehicle, or leaves optional ones unplanned. Unlike a late arrival it
+  is not a delay — `ExVrp.Route.end_time/1`, overtime and trip boundaries are
+  computed as if the cap were not there. Read it back per route or in total;
+  both are part of `time_warp/1`:
+
+      ExVrp.Route.drive_excess(route)
+      ExVrp.Solution.drive_excess(solution)
 
   ## Time windows
 
@@ -101,6 +141,7 @@ defmodule ExVrp.VehicleType do
           shift_duration: non_neg_integer() | :infinity,
           max_distance: non_neg_integer() | :infinity,
           max_distance_per_trip: non_neg_integer() | :infinity,
+          max_drive: non_neg_integer() | :infinity,
           unit_distance_cost: non_neg_integer(),
           unit_duration_cost: non_neg_integer(),
           profile: non_neg_integer(),
@@ -127,6 +168,7 @@ defmodule ExVrp.VehicleType do
     shift_duration: :infinity,
     max_distance: :infinity,
     max_distance_per_trip: :infinity,
+    max_drive: :infinity,
     unit_distance_cost: 1,
     unit_duration_cost: 0,
     profile: 0,
@@ -174,6 +216,11 @@ defmodule ExVrp.VehicleType do
     reload depot (default: `:infinity`). Models a vehicle that refuels or
     recharges each time it reloads, so every trip starts with a full tank.
     Independent of `:max_distance` — set either, both, or neither
+  - `:max_drive` - Maximum **travel** duration of the whole route, across trips
+    (default: `:infinity`). Service, waiting and reload time do not count, so
+    this is the quantity a legal driving-time limit measures. Excess counts as
+    time warp and is reported by `ExVrp.Route.drive_excess/1` — see "Driving
+    time" above
   - `:unit_distance_cost` - Cost per unit distance (default: `1`)
   - `:unit_duration_cost` - Cost per unit time (default: `0`)
   - `:profile` - Index of distance/duration matrix to use (default: `0`)

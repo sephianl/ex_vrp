@@ -279,6 +279,8 @@ defmodule ExVrp.Solution do
 
   @doc """
   Returns the total time warp of the solution (sum across all routes).
+
+  Includes `drive_excess/1`.
   """
   @spec time_warp(t()) :: non_neg_integer()
   def time_warp(%__MODULE__{} = sol) do
@@ -320,6 +322,15 @@ defmodule ExVrp.Solution do
   @spec overtime(t()) :: non_neg_integer()
   def overtime(%__MODULE__{} = sol) do
     sum_over_routes(sol, &route_overtime/2)
+  end
+
+  @doc """
+  Returns the total travel past `:max_drive` of the solution (sum across all
+  routes). Also counted in `time_warp/1`.
+  """
+  @spec drive_excess(t()) :: non_neg_integer()
+  def drive_excess(%__MODULE__{} = sol) do
+    sum_over_routes(sol, &route_drive_excess/2)
   end
 
   @doc """
@@ -493,6 +504,14 @@ defmodule ExVrp.Solution do
   @spec route_overtime(t(), non_neg_integer()) :: non_neg_integer()
   def route_overtime(%__MODULE__{solution_ref: solution_ref}, route_idx) do
     Native.solution_route_overtime(solution_ref, route_idx)
+  end
+
+  @doc """
+  Returns the travel past `:max_drive` of a specific route.
+  """
+  @spec route_drive_excess(t(), non_neg_integer()) :: non_neg_integer()
+  def route_drive_excess(%__MODULE__{solution_ref: solution_ref}, route_idx) do
+    Native.solution_route_drive_excess(solution_ref, route_idx)
   end
 
   @doc """

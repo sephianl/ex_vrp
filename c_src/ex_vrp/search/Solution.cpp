@@ -398,9 +398,11 @@ bool Solution::insert(Route::Node *U,
         auto const &vt = data_.vehicleType(UAfter->route()->vehicleType());
         if (!vt.forbiddenWindows.empty())
         {
-            // Estimate route end time: twEarly + duration (before time warp)
+            // Estimate route end time: twEarly + duration (before time warp).
+            // timelineTimeWarp() excludes penalty-only terms (drive excess)
+            // that do not shift the clock, unlike timeWarp() itself.
             auto const routeEnd = vt.twEarly + UAfter->route()->duration()
-                                  - UAfter->route()->timeWarp();
+                                  - UAfter->route()->timelineTimeWarp();
             ProblemData::Client const &cl = data_.location(U->client());
 
             for (auto const &[fStart, fEnd] : vt.forbiddenWindows)
@@ -437,6 +439,7 @@ bool Solution::insert(Route::Node *U,
 
             // Skip routes that already have time warp, unless the time
             // warp is from forbidden windows (a new trip would fix it).
+            // Drive excess also skips: a new trip only adds driving.
             if (route.timeWarp() > 0 && vehType.forbiddenWindows.empty())
                 continue;
 
@@ -460,8 +463,10 @@ bool Solution::insert(Route::Node *U,
             // accounting for any forbidden window delay at the trip boundary.
             Duration currentDuration = route.duration();
             Duration maxDuration = vehType.maxDuration;
+            // timelineTimeWarp() excludes penalty-only terms (drive excess)
+            // that do not shift the clock, unlike timeWarp() itself.
             Duration tripBoundary
-                = vehType.twEarly + currentDuration - route.timeWarp();
+                = vehType.twEarly + currentDuration - route.timelineTimeWarp();
             Duration adjustedBoundary
                 = advancePastForbidden(tripBoundary, vehType.forbiddenWindows);
             Duration forbiddenDelay = adjustedBoundary - tripBoundary;

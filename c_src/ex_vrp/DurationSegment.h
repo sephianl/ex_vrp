@@ -20,6 +20,7 @@ namespace pyvrp
  *     cum_duration: int = 0,
  *     cum_time_warp: int = 0,
  *     prev_end_late: int = np.iinfo(np.int64).max,
+ *     drive: int = 0,
  * )
  *
  * Creates a duration segment.
@@ -46,6 +47,8 @@ namespace pyvrp
  *     Cumulative time warp of other trips in segment.
  * prev_end_late
  *     Latest end time of the previous trip, if any. Default unconstrained.
+ * drive
+ *     Travel duration already driven (default 0).
  */
 class DurationSegment
 {
@@ -59,6 +62,7 @@ class DurationSegment
     Duration cumTimeWarp_ = 0;  // cumulative, excl. current trip
     Duration prevEndLate_
         = std::numeric_limits<Duration>::max();  // of prev trip
+    Duration drive_ = 0;  // travel over every merged edge, across trips
 
 public:
     [[nodiscard]] static inline DurationSegment
@@ -88,6 +92,17 @@ public:
      * The total duration of the whole segment.
      */
     [[nodiscard]] inline Duration duration() const;
+
+    /**
+     * Total travel duration over every edge merged into this segment, across
+     * trips. Service, waiting and release-time idling are not driving.
+     */
+    [[nodiscard]] inline Duration drive() const;
+
+    /**
+     * Driving past the given cap, or zero.
+     */
+    [[nodiscard]] inline Duration driveExcess(Duration maxDrive) const;
 
     /**
      * Returns the time warp on this whole segment. Additionally, any time warp
@@ -170,7 +185,8 @@ public:
                            Duration cumDuration = 0,
                            Duration cumTimeWarp = 0,
                            Duration prevEndLate
-                           = std::numeric_limits<Duration>::max());
+                           = std::numeric_limits<Duration>::max(),
+                           Duration drive = 0);
 
     // Move or copy construct from the other duration segment.
     inline DurationSegment(DurationSegment const &) = default;
@@ -217,7 +233,9 @@ DurationSegment::merge([[maybe_unused]] Duration const edgeDuration,
             std::max(first.releaseTime_, second.releaseTime_),
             first.cumDuration_ + second.cumDuration_,
             first.cumTimeWarp_ + second.cumTimeWarp_,
-            first.prevEndLate_};  // field is evaluated left-to-right
+            first.prevEndLate_,
+            first.drive_ + second.drive_
+                + edgeDuration};  // field is evaluated left-to-right
 }
 
 DurationSegment DurationSegment::finaliseBack() const
@@ -241,15 +259,23 @@ DurationSegment DurationSegment::finaliseBack() const
             finalised.endEarly(),
             cumDuration_ + finalised.duration(),
             cumTimeWarp_ + finalised.timeWarp(),
-            finalised.endLate()};
+            finalised.endLate(),
+            finalised.drive()};
 }
 
 DurationSegment DurationSegment::finaliseFront() const
 {
     // We finalise at the start of this segment. This is pretty easy, via a
     // merge with our release times, if they are binding.
-    DurationSegment const curr
-        = {duration_, timeWarp_, startEarly_, startLate_, 0};
+    DurationSegment const curr = {duration_,
+                                  timeWarp_,
+                                  startEarly_,
+                                  startLate_,
+                                  0,
+                                  0,
+                                  0,
+                                  std::numeric_limits<Duration>::max(),
+                                  drive_};
     DurationSegment const release = {0, 0, startEarly(), startLate(), 0};
 
     return merge(0, release, curr);
@@ -272,6 +298,13 @@ Duration DurationSegment::timeWarp(Duration maxDuration) const
            // Max duration constraint applies only to net route duration,
            // subtracting existing time warp. Use ternary to avoid underflow.
            + (netDuration > maxDuration ? netDuration - maxDuration : 0);
+}
+
+Duration DurationSegment::drive() const { return drive_; }
+
+Duration DurationSegment::driveExcess(Duration maxDrive) const
+{
+    return drive_ > maxDrive ? drive_ - maxDrive : 0;
 }
 
 Duration DurationSegment::startEarly() const
@@ -312,7 +345,8 @@ DurationSegment::DurationSegment(Duration duration,
                                  Duration releaseTime,
                                  Duration cumDuration,
                                  Duration cumTimeWarp,
-                                 Duration prevEndLate)
+                                 Duration prevEndLate,
+                                 Duration drive)
     : duration_(duration),
       timeWarp_(timeWarp),
       startEarly_(startEarly),
@@ -320,7 +354,8 @@ DurationSegment::DurationSegment(Duration duration,
       releaseTime_(releaseTime),
       cumDuration_(cumDuration),
       cumTimeWarp_(cumTimeWarp),
-      prevEndLate_(prevEndLate)
+      prevEndLate_(prevEndLate),
+      drive_(drive)
 {
 }
 }  // namespace pyvrp

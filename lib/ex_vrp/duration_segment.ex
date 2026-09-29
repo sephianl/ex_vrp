@@ -37,6 +37,9 @@ defmodule ExVrp.DurationSegment do
   - `cum_duration` - Cumulative duration of other trips (default 0)
   - `cum_time_warp` - Cumulative time warp of other trips (default 0)
   - `prev_end_late` - Latest end time of previous trip (default INT_MAX)
+
+  A new segment has not driven: travel accumulates only through the edges
+  passed to `merge/3`.
   """
   @spec new(integer(), integer(), integer(), integer(), integer(), integer(), integer(), integer()) :: t()
   def new(
@@ -86,6 +89,20 @@ defmodule ExVrp.DurationSegment do
   def duration(segment) do
     Native.duration_segment_duration_nif(segment)
   end
+
+  @doc """
+  Returns the travel duration over every edge merged into this segment.
+
+  Service, waiting and idling before a release time are not driving.
+  """
+  @spec drive(t()) :: integer()
+  def drive(segment), do: Native.duration_segment_drive_nif(segment)
+
+  @doc """
+  Returns the driving past `max_drive`, or zero.
+  """
+  @spec drive_excess(t(), integer()) :: integer()
+  def drive_excess(segment, max_drive), do: Native.duration_segment_drive_excess_nif(segment, max_drive)
 
   @doc """
   Returns the time warp on this whole segment.

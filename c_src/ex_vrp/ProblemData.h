@@ -551,6 +551,10 @@ public:
      * max_distance_per_trip
      *     Maximum travel distance of any single trip, reset at every reload
      *     depot. This is a very large number when it is unconstrained.
+     * max_drive
+     *     Maximum total travel duration of the route, across trips. Service,
+     *     waiting and reload time do not count. Excess counts as time warp.
+     *     Unconstrained if not explicitly provided.
      * unit_distance_cost
      *     Cost per unit of distance travelled by vehicles of this type.
      * unit_duration_cost
@@ -603,6 +607,7 @@ public:
         Duration const overtimeStart;  // Contracted end of shift; max() when
                                        // overtime is duration-based
         Duration const maxDuration;    // Hard maximum route duration
+        Duration const maxDrive;       // Maximum travel duration
         std::vector<std::pair<Duration, Duration>> const
             forbiddenWindows;  // Forbidden time windows
         char const *name;      // Type name (for reference)
@@ -629,7 +634,8 @@ public:
             std::string name = "",
             std::vector<std::pair<Duration, Duration>> forbiddenWindows = {},
             Duration overtimeStart = std::numeric_limits<Duration>::max(),
-            Distance maxDistancePerTrip = std::numeric_limits<Distance>::max());
+            Distance maxDistancePerTrip = std::numeric_limits<Distance>::max(),
+            Duration maxDrive = std::numeric_limits<Duration>::max());
 
         /**
          * Overtime incurred by a route of the given duration that ends at the

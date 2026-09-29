@@ -667,6 +667,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     int64_t overtime_start = std::numeric_limits<int64_t>::max();
     int64_t max_distance = std::numeric_limits<int64_t>::max();
     int64_t max_distance_per_trip = std::numeric_limits<int64_t>::max();
+    int64_t max_drive = std::numeric_limits<int64_t>::max();
     int64_t unit_distance_cost = 1;
     int64_t unit_duration_cost = 0;
     int64_t profile = 0;
@@ -804,6 +805,21 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                 else
                 {
                     nif_get_int64(env, value, &max_distance_per_trip);
+                }
+            }
+            else if (key_str == "max_drive")
+            {
+                char buf[32];
+                if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1))
+                {
+                    if (std::string(buf) == "infinity")
+                    {
+                        max_drive = std::numeric_limits<int64_t>::max();
+                    }
+                }
+                else
+                {
+                    nif_get_int64(env, value, &max_drive);
                 }
             }
             else if (key_str == "unit_distance_cost")
@@ -967,7 +983,8 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
         std::move(name),
         std::move(forbidden_windows),
         Duration(overtime_start),
-        Distance(max_distance_per_trip));
+        Distance(max_distance_per_trip),
+        Duration(max_drive));
 }
 
 // Decode distance/duration matrix from nested list
@@ -1925,6 +1942,29 @@ solution_route_overtime([[maybe_unused]] ErlNifEnv *env,
 }
 
 FINE_NIF(solution_route_overtime, 0);
+
+/**
+ * Get drive excess (travel past max_drive) of a specific route in the
+ * solution.
+ */
+int64_t solution_route_drive_excess(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SolutionResource> solution_resource,
+    int64_t route_idx)
+{
+    auto &solution = solution_resource->solution;
+    auto const &routes = solution.routes();
+
+    if (route_idx < 0 || static_cast<size_t>(route_idx) >= routes.size())
+    {
+        return 0;
+    }
+
+    return static_cast<int64_t>(
+        routes[static_cast<size_t>(route_idx)].driveExcess());
+}
+
+FINE_NIF(solution_route_drive_excess, 0);
 
 /**
  * Check if a specific route has excess load.
@@ -4291,6 +4331,17 @@ int64_t search_route_time_warp_nif(
 
 FINE_NIF(search_route_time_warp_nif, 0);
 
+// Get route time warp with drive excess (a penalty, not a timeline shift)
+// excluded
+int64_t search_route_timeline_time_warp_nif(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
+{
+    return static_cast<int64_t>(route_resource->route()->timelineTimeWarp());
+}
+
+FINE_NIF(search_route_timeline_time_warp_nif, 0);
+
 // Get route overtime
 int64_t
 search_route_overtime_nif([[maybe_unused]] ErlNifEnv *env,
@@ -5853,6 +5904,27 @@ duration_segment_duration_nif([[maybe_unused]] ErlNifEnv *env,
 }
 
 FINE_NIF(duration_segment_duration_nif, 0);
+
+// Get the drive time
+int64_t
+duration_segment_drive_nif([[maybe_unused]] ErlNifEnv *env,
+                           fine::ResourcePtr<DurationSegmentResource> seg)
+{
+    return static_cast<int64_t>(seg->segment.drive());
+}
+
+FINE_NIF(duration_segment_drive_nif, 0);
+
+// Get the drive time past a cap
+int64_t duration_segment_drive_excess_nif(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<DurationSegmentResource> seg,
+    int64_t max_drive)
+{
+    return static_cast<int64_t>(seg->segment.driveExcess(Duration{max_drive}));
+}
+
+FINE_NIF(duration_segment_drive_excess_nif, 0);
 
 // Get the time warp (optionally with max_duration constraint)
 int64_t

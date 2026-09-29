@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.14.0
+
+### Added
+
+- **New `:max_drive` vehicle-type option caps a route's driving time.** Opt-in, default
+  `:infinity`: models that don't set it solve exactly as before, and no existing option changes
+  meaning. It counts only travel, summed over all trips; service, waiting and reload time don't
+  count, so it can model a legal driving-time limit where the elapsed-time caps
+  (`:shift_duration`, `:max_duration`) can't. Driving past it adds to the route's time warp, so the
+  route is infeasible, and `ExVrp.Route.drive_excess/1` and `ExVrp.Solution.drive_excess/1` report
+  how much. That excess never moves `end_time/1`, overtime or trip boundaries.
+- `ExVrp.DurationSegment.drive/1` and `drive_excess/2`: the travel merged into a segment, and the
+  part of it past a cap.
+
 ## 0.13.0
 
 ### Added
