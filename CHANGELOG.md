@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.0
+
+### Added
+
+- **`:max_drive` on vehicle types caps travel duration** (service and waiting excluded); excess
+  counts as time warp and is reported by `Route.drive_excess/1`. `DurationSegment.drive/1`,
+  `drive_excess/2`.
+
 ## 0.13.0
 
 ### Added
