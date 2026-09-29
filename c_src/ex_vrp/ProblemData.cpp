@@ -415,7 +415,11 @@ ProblemData::VehicleType::VehicleType(
     Distance maxDistancePerTrip,
     Duration maxDrive,
     Duration maxDriveBetweenBreaks,
-    Duration breakDuration)
+    Duration breakDuration,
+    Duration maxWorkBetweenBreaks,
+    Duration driveCarryIn,
+    Duration workCarryIn,
+    Duration workAfterEnd)
     : numAvailable(numAvailable),
       startDepot(startDepot),
       endDepot(endDepot),
@@ -439,6 +443,10 @@ ProblemData::VehicleType::VehicleType(
       maxDrive(maxDrive),
       maxDriveBetweenBreaks(maxDriveBetweenBreaks),
       breakDuration(breakDuration),
+      maxWorkBetweenBreaks(maxWorkBetweenBreaks),
+      driveCarryIn(driveCarryIn),
+      workCarryIn(workCarryIn),
+      workAfterEnd(workAfterEnd),
       forbiddenWindows(std::move(forbiddenWindows)),
       name(duplicate(name.data()))
 {
@@ -491,16 +499,22 @@ ProblemData::VehicleType::VehicleType(
     if (maxDriveBetweenBreaks <= 0)
         throw std::invalid_argument("max_drive_between_breaks must be > 0.");
 
+    if (maxWorkBetweenBreaks <= 0)
+        throw std::invalid_argument("max_work_between_breaks must be > 0.");
+
     if (breakDuration < 0)
         throw std::invalid_argument("break_duration must be >= 0.");
 
     // A limit without a break to reset it, or a break with no limit to reset,
     // is a half-configured rule.
-    if ((maxDriveBetweenBreaks == std::numeric_limits<Duration>::max())
-        != (breakDuration == 0))
+    if (hasBreakRule() != (breakDuration != 0))
         throw std::invalid_argument(
-            "max_drive_between_breaks and break_duration must be set "
-            "together.");
+            "break_duration must be set exactly when a break limit is "
+            "(max_drive_between_breaks or max_work_between_breaks).");
+
+    if (driveCarryIn < 0 || workCarryIn < 0 || workAfterEnd < 0)
+        throw std::invalid_argument(
+            "drive_carry_in, work_carry_in and work_after_end must be >= 0.");
 
     if (unitOvertimeCost < 0)
         throw std::invalid_argument("unit_overtime_cost must be >= 0.");
@@ -544,6 +558,10 @@ ProblemData::VehicleType::VehicleType(VehicleType const &vehicleType)
       maxDrive(vehicleType.maxDrive),
       maxDriveBetweenBreaks(vehicleType.maxDriveBetweenBreaks),
       breakDuration(vehicleType.breakDuration),
+      maxWorkBetweenBreaks(vehicleType.maxWorkBetweenBreaks),
+      driveCarryIn(vehicleType.driveCarryIn),
+      workCarryIn(vehicleType.workCarryIn),
+      workAfterEnd(vehicleType.workAfterEnd),
       forbiddenWindows(vehicleType.forbiddenWindows),
       name(duplicate(vehicleType.name))
 {
@@ -573,6 +591,10 @@ ProblemData::VehicleType::VehicleType(VehicleType &&vehicleType)
       maxDrive(vehicleType.maxDrive),
       maxDriveBetweenBreaks(vehicleType.maxDriveBetweenBreaks),
       breakDuration(vehicleType.breakDuration),
+      maxWorkBetweenBreaks(vehicleType.maxWorkBetweenBreaks),
+      driveCarryIn(vehicleType.driveCarryIn),
+      workCarryIn(vehicleType.workCarryIn),
+      workAfterEnd(vehicleType.workAfterEnd),
       forbiddenWindows(std::move(vehicleType.forbiddenWindows)),
       name(vehicleType.name)  // we can steal
 {
@@ -612,6 +634,10 @@ bool ProblemData::VehicleType::operator==(VehicleType const &other) const
         && maxDrive == other.maxDrive
         && maxDriveBetweenBreaks == other.maxDriveBetweenBreaks
         && breakDuration == other.breakDuration
+        && maxWorkBetweenBreaks == other.maxWorkBetweenBreaks
+        && driveCarryIn == other.driveCarryIn
+        && workCarryIn == other.workCarryIn
+        && workAfterEnd == other.workAfterEnd
         && unitOvertimeCost == other.unitOvertimeCost
         && overtimeStart == other.overtimeStart
         && forbiddenWindows == other.forbiddenWindows

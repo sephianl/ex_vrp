@@ -8,6 +8,7 @@
 #include <fstream>
 #include <numeric>
 
+using pyvrp::ClockQuantity;
 using pyvrp::Coordinate;
 using pyvrp::Cost;
 using pyvrp::Distance;
@@ -436,8 +437,9 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
                     + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
 
     driveExcess_ = ds.driveExcess(vehData.maxDrive);
-    clockExcess_ = foldClockExcess(data);
-    timeWarp_ += driveExcess_ + clockExcess_;
+    clockExcess_ = foldClockExcess<ClockQuantity::Drive>(data);
+    workClockExcess_ = foldClockExcess<ClockQuantity::Work>(data);
+    timeWarp_ += driveExcess_ + clockExcess_ + workClockExcess_;
 
     makeSchedule(data);
 
@@ -458,45 +460,58 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
             timeWarp_ += visit.timeWarp;
         if (duration_ > vehData.maxDuration)
             timeWarp_ += duration_ - vehData.maxDuration;
-        timeWarp_ += driveExcess_ + clockExcess_;
+        timeWarp_ += driveExcess_ + clockExcess_ + workClockExcess_;
     }
 }
 
+template <ClockQuantity Quantity>
 Duration Route::foldClockExcess(ProblemData const &data) const
 {
     auto const &vehData = data.vehicleType(vehicleType_);
-    auto const limit = vehData.maxDriveBetweenBreaks;
-    if (limit == std::numeric_limits<Duration>::max())
+    auto const limit = vehData.breakLimit(Quantity);
+    if (limit == std::numeric_limits<Duration>::max() || empty())
         return 0;
 
+    auto constexpr work = Quantity == ClockQuantity::Work;
+
     // The clock runs across reload depots, which are work, not rest. Breaks
-    // count onto the leg they sit on, as in search::Route's fold.
+    // count onto the leg they sit on, as in search::Route's fold. The carries
+    // are the start and end depots' own quantity, as in search::Route.
     auto const &durations = data.durationMatrix(vehData.profile);
-    DriveClock clock;
+    auto const carryIn = work ? vehData.workCarryIn : vehData.driveCarryIn;
+    DriveClock clock = {.head = carryIn, .tail = carryIn};
     size_t last = startDepot_;
 
-    auto const visit = [&](size_t location)
+    auto const visit = [&](size_t location, Duration own)
     {
         if (data.isBreak(location))
             clock.trailRun++;
         else
         {
+            DriveClock const node = {.head = own, .tail = own};
             clock = DriveClock::merge(
-                clock, durations(last, location), {}, limit);
+                clock, durations(last, location), node, limit);
             last = location;
         }
     };
 
     for (size_t tripIdx = 0; tripIdx != trips_.size(); ++tripIdx)
     {
-        if (tripIdx > 0)
-            visit(trips_[tripIdx].startDepot());
+        if (tripIdx > 0)  // a reload depot, whose service is work
+        {
+            auto const depot = trips_[tripIdx].startDepot();
+            ProblemData::Depot const &depotData = data.location(depot);
+            visit(depot, work ? depotData.serviceDuration : 0);
+        }
 
         for (auto const client : trips_[tripIdx])
-            visit(client);
+        {
+            ProblemData::Client const &clientData = data.location(client);
+            visit(client, work ? clientData.serviceDuration : 0);
+        }
     }
 
-    visit(endDepot_);
+    visit(endDepot_, work ? vehData.workAfterEnd : 0);
     return clock.overrun(limit);
 }
 
@@ -569,9 +584,11 @@ Duration Route::driveExcess() const { return driveExcess_; }
 
 Duration Route::clockExcess() const { return clockExcess_; }
 
+Duration Route::workClockExcess() const { return workClockExcess_; }
+
 Duration Route::timelineTimeWarp() const
 {
-    return timeWarp_ - driveExcess_ - clockExcess_;
+    return timeWarp_ - driveExcess_ - clockExcess_ - workClockExcess_;
 }
 
 Duration Route::waitDuration() const

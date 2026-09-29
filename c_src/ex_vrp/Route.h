@@ -32,7 +32,8 @@ class Route
     // Creates the data returned by ``schedule()``.
     void makeSchedule(ProblemData const &data);
 
-    // Drive clock overrun of the whole route; zero without a break rule.
+    // Drive or work clock overrun of the whole route; zero without its limit.
+    template <ClockQuantity Quantity>
     [[nodiscard]] Duration foldClockExcess(ProblemData const &data) const;
 
 public:
@@ -124,6 +125,7 @@ private:
     Duration timeWarp_ = 0;          // Total time warp on this route
     Duration driveExcess_ = 0;       // Travel past max_drive
     Duration clockExcess_ = 0;       // Travel past max_drive_between_breaks
+    Duration workClockExcess_ = 0;   // Work past max_work_between_breaks
     Duration travel_ = 0;            // Total *travel* duration on this route
     Duration service_ = 0;           // Total *service* duration on this route
     Duration breaks_ = 0;            // Total break duration on this route
@@ -256,11 +258,18 @@ public:
     [[nodiscard]] Duration clockExcess() const;
 
     /**
+     * Work (travel plus service) past the vehicle type's
+     * ``max_work_between_breaks``, summed over the stretches between breaks,
+     * which is also counted in :meth:`time_warp`.
+     */
+    [[nodiscard]] Duration workClockExcess() const;
+
+    /**
      * The part of :meth:`~timeWarp` that is an actual shift along the
      * timeline, used to derive clock times such as :meth:`~endTime`.
      * Excludes penalty-only terms folded into :meth:`~timeWarp` that do not
-     * move when the route starts or ends (today, :meth:`~driveExcess` and
-     * :meth:`~clockExcess`).
+     * move when the route starts or ends (today, :meth:`~driveExcess`,
+     * :meth:`~clockExcess` and :meth:`~workClockExcess`).
      */
     [[nodiscard]] Duration timelineTimeWarp() const;
 

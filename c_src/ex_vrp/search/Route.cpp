@@ -5,6 +5,7 @@
 #include <ostream>
 #include <utility>
 
+using pyvrp::ClockQuantity;
 using pyvrp::search::Route;
 
 Route::Node::Node(size_t loc) : loc_(loc), idx_(0), trip_(0), route_(nullptr) {}
@@ -203,25 +204,15 @@ void Route::swap(Node *first, Node *second)
 #endif
 }
 
-void Route::updateDriveClock()
+void Route::updateClocks()
 {
-    auto const limit = maxDriveBetweenBreaks();
-    if (limit == std::numeric_limits<Duration>::max())
+    if (!vehicleType_.hasBreakRule())
         return;  // nothing reads the structures without a break rule
 
-    auto const &durations = data.durationMatrix(profile());
     auto const size = nodes.size();
-
-    cumDrive_.resize(size);
-    cumDrive_[0] = 0;
-    for (size_t idx = 1; idx != size; ++idx)
-        cumDrive_[idx]
-            = cumDrive_[idx - 1] + durations(locs_[idx - 1], locs_[idx]);
 
     resetBounds_.assign(1, 0);
     legBreaks_.assign(1, 0);
-    resetClose_.assign(1, 0);
-    resetStart_.assign(1, 0);
 
     stretchOf_.resize(size);
     stretchOf_[0] = 0;
@@ -233,16 +224,8 @@ void Route::updateDriveClock()
             breaks++;
         else if (breaks > 0)  // then idx ends a leg carrying breaks
         {
-            // Breaks alias to the node before them, so cumDrive_[idx - 1] is
-            // where the leg begins, and the leg's own drive is the last edge.
-            auto const drive = cumDrive_[idx] - cumDrive_[idx - 1];
-            auto const prepaid = static_cast<Duration>(breaks - 1) * limit;
-            auto const after = drive > prepaid ? drive - prepaid : 0;
-
             resetBounds_.push_back(idx);
             legBreaks_.push_back(breaks);
-            resetClose_.push_back(cumDrive_[idx - 1]);
-            resetStart_.push_back(cumDrive_[idx] - after);
             breaks = 0;
         }
 
@@ -252,23 +235,63 @@ void Route::updateDriveClock()
     resetBounds_.push_back(size - 1);
     legBreaks_.push_back(0);
 
-    // Stretch r, for 1 <= r < m, is closed on both sides by reset legs.
+    updateClock<ClockQuantity::Drive>();
+    updateClock<ClockQuantity::Work>();
+}
+
+template <ClockQuantity Quantity> void Route::updateClock()
+{
+    auto const limit = breakLimit<Quantity>();
+    if (limit == std::numeric_limits<Duration>::max())
+        return;  // nothing reads this clock's structures without a limit
+
+    auto const &durations = data.durationMatrix(profile());
+    auto const size = nodes.size();
+    auto &[cum, close, start, excess] = clocks_[static_cast<size_t>(Quantity)];
+
+    // Each node's own quantity is part of cum, so the carry-in sits in cum[0]
+    // and every SegmentBefore sees it; the work after the end sits in
+    // cum.back(), where every SegmentAfter sees it.
+    cum.resize(size);
+    cum[0] = clockAt<Quantity>(0);
+    for (size_t idx = 1; idx != size; ++idx)
+        cum[idx] = cum[idx - 1] + durations(locs_[idx - 1], locs_[idx])
+                   + clockAt<Quantity>(idx);
+
+    close.assign(1, 0);
+    start.assign(1, 0);
+
     auto const numResets = this->numResets();
-    resetExcess_.assign(numResets + 1, 0);
+    for (size_t r = 1; r <= numResets; ++r)
+    {
+        // Breaks alias to the node before them, so cum[idx - 1] is where the
+        // leg begins, and the leg's own drive is the last edge.
+        auto const idx = resetBounds_[r];
+        auto const own = clockAt<Quantity>(idx);
+        auto const drive = cum[idx] - cum[idx - 1] - own;
+        auto const prepaid = static_cast<Duration>(legBreaks_[r] - 1) * limit;
+        auto const after = drive > prepaid ? drive - prepaid : 0;
+
+        close.push_back(cum[idx - 1]);
+        start.push_back(cum[idx] - own - after);
+    }
+
+    // Stretch r, for 1 <= r < m, is closed on both sides by reset legs.
+    excess.assign(numResets + 1, 0);
     for (size_t r = 2; r <= numResets; ++r)
-        resetExcess_[r]
-            = resetExcess_[r - 1]
-              + DriveClock::clip(resetClose_[r] - resetStart_[r - 1], limit);
+        excess[r]
+            = excess[r - 1] + DriveClock::clip(close[r] - start[r - 1], limit);
 
 #ifndef NDEBUG
     // The prefix answers must match a plain fold over the same nodes.
     if (size < 20)
         for (size_t idx = 0; idx != size; ++idx)
         {
-            assert(SegmentBefore(*this, idx).driveClock(profile(), limit)
-                   == foldDriveClock(0, idx, profile(), limit));
-            assert(SegmentAfter(*this, idx).driveClock(profile(), limit)
-                   == foldDriveClock(idx, size - 1, profile(), limit));
+            assert(
+                clockOf<Quantity>(SegmentBefore(*this, idx), profile(), limit)
+                == foldClock<Quantity>(0, idx, profile(), limit));
+            assert(clockOf<Quantity>(SegmentAfter(*this, idx), profile(), limit)
+                   == foldClock<Quantity>(idx, size - 1, profile(), limit));
         }
 #endif
 }
@@ -439,7 +462,7 @@ void Route::update()
         durAfter[idx] = DurationSegment::merge(edgeDur, durAt[idx], after);
     }
 
-    updateDriveClock();
+    updateClocks();
 
     // Load.
     for (size_t dim = 0; dim != data.numLoadDimensions(); ++dim)
@@ -501,12 +524,8 @@ void Route::update()
     timeWarp_ = durAfter[0].timeWarp(maxDuration());
     auto const driveExcess = durAfter[0].driveExcess(maxDrive());
 
-    auto const clockLimit = maxDriveBetweenBreaks();
-    auto const clockExcess = clockLimit == std::numeric_limits<Duration>::max()
-                                 ? 0
-                                 : SegmentBefore(*this, nodes.size() - 1)
-                                       .driveClock(profile(), clockLimit)
-                                       .overrun(clockLimit);
+    auto const clockExcess = clockOverrun<ClockQuantity::Drive>()
+                             + clockOverrun<ClockQuantity::Work>();
 
     // Save DurationSegment-only values before forbidden window corrections.
     // Proposal::duration() also uses DurationSegment without forbidden window

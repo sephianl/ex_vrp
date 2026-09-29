@@ -1,6 +1,7 @@
 #ifndef PYVRP_PROBLEMDATA_H
 #define PYVRP_PROBLEMDATA_H
 
+#include "DriveClock.h"
 #include "DynamicBitset.h"
 #include "Matrix.h"
 #include "Measure.h"
@@ -563,10 +564,18 @@ public:
      *     Unconstrained if not explicitly provided.
      * max_drive_between_breaks
      *     Maximum travel duration between two breaks (see Client::isBreak).
-     *     Excess counts as time warp. Unconstrained if not provided; set
-     *     together with ``break_duration``.
+     *     Excess counts as time warp. Unconstrained if not provided.
      * break_duration
-     *     How long each break client on this vehicle type's routes lasts.
+     *     How long each break client on this vehicle type's routes lasts. Set
+     *     exactly when either ``…_between_breaks`` limit is.
+     * max_work_between_breaks
+     *     Maximum work (travel plus client and reload-depot service) between
+     *     two breaks, reset at the same breaks. Excess counts as time warp.
+     * drive_carry_in, work_carry_in
+     *     Driving and work since the last break before the route starts; they
+     *     join the route's first stretch.
+     * work_after_end
+     *     Work after the route ends, joining its last stretch.
      * unit_distance_cost
      *     Cost per unit of distance travelled by vehicles of this type.
      * unit_duration_cost
@@ -622,6 +631,10 @@ public:
         Duration const maxDrive;       // Maximum travel duration
         Duration const maxDriveBetweenBreaks;  // Maximum travel between breaks
         Duration const breakDuration;          // Duration of each break
+        Duration const maxWorkBetweenBreaks;   // Maximum work between breaks
+        Duration const driveCarryIn;  // Driving since the last break, at start
+        Duration const workCarryIn;   // Work since the last break, at start
+        Duration const workAfterEnd;  // Work after the route ends
         std::vector<std::pair<Duration, Duration>> const
             forbiddenWindows;  // Forbidden time windows
         char const *name;      // Type name (for reference)
@@ -652,7 +665,27 @@ public:
             Duration maxDrive = std::numeric_limits<Duration>::max(),
             Duration maxDriveBetweenBreaks
             = std::numeric_limits<Duration>::max(),
-            Duration breakDuration = 0);
+            Duration breakDuration = 0,
+            Duration maxWorkBetweenBreaks
+            = std::numeric_limits<Duration>::max(),
+            Duration driveCarryIn = 0,
+            Duration workCarryIn = 0,
+            Duration workAfterEnd = 0);
+
+        // The limit of the clock over the given quantity; max() when unset.
+        [[nodiscard]] Duration breakLimit(ClockQuantity quantity) const
+        {
+            return quantity == ClockQuantity::Drive ? maxDriveBetweenBreaks
+                                                    : maxWorkBetweenBreaks;
+        }
+
+        // Whether either clock is limited, so routes may need breaks.
+        [[nodiscard]] bool hasBreakRule() const
+        {
+            return maxDriveBetweenBreaks != std::numeric_limits<Duration>::max()
+                   || maxWorkBetweenBreaks
+                          != std::numeric_limits<Duration>::max();
+        }
 
         /**
          * Overtime incurred by a route of the given duration that ends at the

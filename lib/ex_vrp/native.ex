@@ -86,6 +86,7 @@ defmodule ExVrp.Native do
     solution_route_overtime: 2,
     solution_route_drive_excess: 2,
     solution_route_clock_excess: 2,
+    solution_route_work_clock_excess: 2,
     solution_route_has_excess_load: 2,
     solution_route_has_time_warp: 2,
     solution_route_has_excess_distance: 2,
@@ -245,9 +246,9 @@ defmodule ExVrp.Native do
     duration_segment_drive_excess_nif: 2,
     duration_segment_time_warp_nif: 2,
     # DriveClock (test-only)
-    drive_clock_fold_nif: 2,
-    drive_clock_fold_split_nif: 3,
-    drive_clock_brute_nif: 2,
+    drive_clock_fold_nif: 3,
+    drive_clock_fold_split_nif: 4,
+    drive_clock_brute_nif: 3,
     duration_segment_start_early_nif: 1,
     duration_segment_start_late_nif: 1,
     duration_segment_end_early_nif: 1,
@@ -814,6 +815,13 @@ defmodule ExVrp.Native do
   """
   @spec solution_route_clock_excess(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_clock_excess(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Gets working-time clock excess (work past `:max_work_between_breaks`) of a
+  specific route.
+  """
+  @spec solution_route_work_clock_excess(reference(), non_neg_integer()) :: non_neg_integer()
+  def solution_route_work_clock_excess(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Checks if a specific route has excess load.
@@ -1436,20 +1444,24 @@ defmodule ExVrp.Native do
   @spec duration_segment_drive_excess_nif(reference(), integer()) :: integer()
   def duration_segment_drive_excess_nif(_seg, _max_drive), do: :erlang.nif_error(:nif_not_loaded)
 
-  @typedoc "A drive to the next real node, or a break on the leg after it."
-  @type clock_token :: {:leg, non_neg_integer()} | :break
+  @typedoc "A drive to the next real node, service at the last one, or a break on the leg after it."
+  @type clock_token :: {:leg, non_neg_integer()} | {:stop, non_neg_integer()} | :break
+
+  @typedoc "What the clock counts: travel only, or travel plus service."
+  @type clock_quantity :: :drive | :work
 
   @doc "Folds `DriveClock` over a token route and returns its overrun (test-only)."
-  @spec drive_clock_fold_nif([clock_token()], pos_integer()) :: non_neg_integer()
-  def drive_clock_fold_nif(_tokens, _limit), do: :erlang.nif_error(:nif_not_loaded)
+  @spec drive_clock_fold_nif([clock_token()], clock_quantity(), pos_integer()) :: non_neg_integer()
+  def drive_clock_fold_nif(_tokens, _quantity, _limit), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Folds both sides of `split` separately, then merges them (test-only)."
-  @spec drive_clock_fold_split_nif([clock_token()], non_neg_integer(), pos_integer()) :: non_neg_integer()
-  def drive_clock_fold_split_nif(_tokens, _split, _limit), do: :erlang.nif_error(:nif_not_loaded)
+  @spec drive_clock_fold_split_nif([clock_token()], non_neg_integer(), clock_quantity(), pos_integer()) ::
+          non_neg_integer()
+  def drive_clock_fold_split_nif(_tokens, _split, _quantity, _limit), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Walks a token route by the break rule directly (test-only)."
-  @spec drive_clock_brute_nif([clock_token()], pos_integer()) :: non_neg_integer()
-  def drive_clock_brute_nif(_tokens, _limit), do: :erlang.nif_error(:nif_not_loaded)
+  @spec drive_clock_brute_nif([clock_token()], clock_quantity(), pos_integer()) :: non_neg_integer()
+  def drive_clock_brute_nif(_tokens, _quantity, _limit), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Gets the time warp of a segment, optionally with max_duration constraint."
   @spec duration_segment_time_warp_nif(reference(), integer()) :: integer()

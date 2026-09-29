@@ -33,8 +33,8 @@ defmodule ExVrp.VehicleType do
   | `:max_distance`          | the whole route | distance, summed over every trip       |
   | `:max_distance_per_trip` | one trip        | distance, reset at every reload        |
   | `:max_drive`             | the whole route | travel only, no service or waiting     |
-  | `:break_rule`            | between breaks  | travel only, reset at every break      |
-  | `:shift_duration`       | the whole route | elapsed time, idle included            |
+  | `:break_rule`            | between breaks  | travel / work, reset at every break    |
+  | `:shift_duration`        | the whole route | elapsed time, idle included            |
   | `:max_duration`          | the whole route | elapsed time, idle included (hard cap) |
   | `:overtime_start`        | the whole route | clock time past the contracted end     |
   | `:max_reloads`           | the whole route | number of reloads, so trips - 1        |
@@ -145,6 +145,10 @@ defmodule ExVrp.VehicleType do
           max_drive: non_neg_integer() | :infinity,
           max_drive_between_breaks: pos_integer() | :infinity,
           break_duration: non_neg_integer(),
+          max_work_between_breaks: pos_integer() | :infinity,
+          drive_carry_in: non_neg_integer(),
+          work_carry_in: non_neg_integer(),
+          work_after_end: non_neg_integer(),
           unit_distance_cost: non_neg_integer(),
           unit_duration_cost: non_neg_integer(),
           profile: non_neg_integer(),
@@ -174,6 +178,10 @@ defmodule ExVrp.VehicleType do
     max_drive: :infinity,
     max_drive_between_breaks: :infinity,
     break_duration: 0,
+    max_work_between_breaks: :infinity,
+    drive_carry_in: 0,
+    work_carry_in: 0,
+    work_after_end: 0,
     unit_distance_cost: 1,
     unit_duration_cost: 0,
     profile: 0,
@@ -226,12 +234,19 @@ defmodule ExVrp.VehicleType do
     this is the quantity a legal driving-time limit measures. Excess counts as
     time warp and is reported by `ExVrp.Route.drive_excess/1` — see "Driving
     time" above
-  - `:break_rule` - `%{max_drive_between_breaks: pos_integer(), duration: pos_integer()}`
-    or `nil` (default: `nil`). Travel between two break clients (see
-    `ExVrp.Client`) may not exceed `:max_drive_between_breaks`, and each break
-    on this type's routes lasts `:duration`. Excess counts as time warp and is
-    reported by `ExVrp.Route.clock_excess/1`. Sets the struct fields
-    `:max_drive_between_breaks` and `:break_duration`
+  - `:break_rule` - a map with `:duration` and at least one of
+    `:max_drive_between_breaks` and `:max_work_between_breaks`, or `nil`
+    (default: `nil`). Travel between two break clients (see `ExVrp.Client`)
+    may not exceed `:max_drive_between_breaks`, work (travel plus client and
+    reload service, not waiting) may not exceed `:max_work_between_breaks`,
+    and each break on this type's routes lasts `:duration`. Excess counts as
+    time warp and is reported by `ExVrp.Route.clock_excess/1` and
+    `ExVrp.Route.work_clock_excess/1`. Sets the struct fields of those names,
+    with `:duration` as `:break_duration`
+  - `:drive_carry_in` / `:work_carry_in` - Driving / work since the last break
+    before the route starts, added to its first stretch (default: `0`)
+  - `:work_after_end` - Work after the route ends (the last unload), added to
+    its last stretch (default: `0`)
   - `:unit_distance_cost` - Cost per unit distance (default: `1`)
   - `:unit_duration_cost` - Cost per unit time (default: `0`)
   - `:profile` - Index of distance/duration matrix to use (default: `0`)
@@ -313,12 +328,18 @@ defmodule ExVrp.VehicleType do
 
   defp break_rule_fields(nil), do: []
 
-  defp break_rule_fields(%{max_drive_between_breaks: max_drive, duration: duration}),
-    do: [max_drive_between_breaks: max_drive, break_duration: duration]
+  defp break_rule_fields(%{duration: duration} = rule)
+       when is_map_key(rule, :max_drive_between_breaks) or is_map_key(rule, :max_work_between_breaks) do
+    rule
+    |> Map.take([:max_drive_between_breaks, :max_work_between_breaks])
+    |> Enum.to_list()
+    |> Keyword.put(:break_duration, duration)
+  end
 
   defp break_rule_fields(other) do
     raise ArgumentError,
-          "invalid break_rule: #{inspect(other)}, expected %{max_drive_between_breaks: _, duration: _}"
+          "invalid break_rule: #{inspect(other)}, expected %{duration: _} with " <>
+            ":max_drive_between_breaks and/or :max_work_between_breaks"
   end
 
   defp resolve_max_duration(opts) do

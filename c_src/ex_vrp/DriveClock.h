@@ -8,9 +8,20 @@
 namespace pyvrp
 {
 /**
- * Driving since the last break, folded over a segment the way TripDistance is
- * folded over trips. Breaks belong to legs: a leg carrying k >= 1 breaks resets
- * the clock at its start and pre-pays (k - 1) * limit of its own drive.
+ * What a clock counts. Drive: edge travel only. Work: edge travel plus each
+ * node's service (client service, reload-depot service). Waiting is neither.
+ */
+enum class ClockQuantity
+{
+    Drive,
+    Work
+};
+
+/**
+ * Driving (or work) since the last break, folded over a segment the way
+ * TripDistance is folded over trips. Breaks belong to legs: a leg carrying
+ * k >= 1 breaks resets the clock at its start and pre-pays (k - 1) * limit of
+ * its own drive. A real node doing q of the quantity itself is {q, 0, q}.
  */
 struct DriveClock
 {

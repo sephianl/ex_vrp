@@ -62,6 +62,14 @@ public:
         return {};
     }
 
+    DriveClock workClock([[maybe_unused]] size_t profile,
+                         [[maybe_unused]] Duration limit) const
+    {
+        ProblemData::Client const &clientData = data.location(client);
+        return {.head = clientData.serviceDuration,
+                .tail = clientData.serviceDuration};
+    }
+
     LoadSegment load(size_t dimension) const
     {
         return {data.location(client), dimension};
@@ -75,10 +83,13 @@ public:
 class ReloadDepotSegment
 {
     size_t depot_;
+    Duration service_;  // reload service, which is work
 
 public:
-    ReloadDepotSegment([[maybe_unused]] ProblemData const &data, size_t depot)
-        : depot_(depot)
+    ReloadDepotSegment(ProblemData const &data, size_t depot)
+        : depot_(depot),
+          service_(static_cast<ProblemData::Depot const &>(data.location(depot))
+                       .serviceDuration)
     {
         assert(depot < data.numDepots());  // must be an actual depot
     }
@@ -125,6 +136,12 @@ public:
                           [[maybe_unused]] Duration limit) const
     {
         return {};
+    }
+
+    DriveClock workClock([[maybe_unused]] size_t profile,
+                         [[maybe_unused]] Duration limit) const
+    {
+        return {.head = service_, .tail = service_};
     }
 
     LoadSegment load([[maybe_unused]] size_t dimension) const { return {}; }
@@ -183,6 +200,12 @@ public:
                           [[maybe_unused]] Duration limit) const
     {
         return {.leadRun = 1, .trailRun = 1};
+    }
+
+    // A break is rest, so it resets the work clock exactly as the drive clock.
+    DriveClock workClock(size_t profile, Duration limit) const
+    {
+        return driveClock(profile, limit);
     }
 
     LoadSegment load([[maybe_unused]] size_t dimension) const { return {}; }

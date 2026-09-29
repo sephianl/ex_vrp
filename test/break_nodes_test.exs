@@ -29,12 +29,14 @@ defmodule ExVrp.BreakNodesTest do
         Keyword.get(opts, :vehicle, [])
       )
 
+    service = [service_duration: Keyword.get(opts, :service, 0)]
+
     Model.new()
     |> Model.add_depot([])
-    |> Model.add_client(tw_window(opts[:client_1_tw]))
-    |> Model.add_client(tw_window(opts[:client_2_tw]))
+    |> Model.add_client(tw_window(opts[:client_1_tw]) ++ service)
+    |> Model.add_client(tw_window(opts[:client_2_tw]) ++ service)
     |> Model.add_client(required: false, is_break: true)
-    |> Model.add_client([])
+    |> Model.add_client(service)
     |> Model.add_vehicle_type(vehicle)
     |> Model.add_vehicle_type(Keyword.merge(vehicle, Keyword.get(opts, :second_vehicle, [])))
     |> Model.set_euclidean_matrices(Keyword.get(opts, :points, @points))
@@ -303,8 +305,142 @@ defmodule ExVrp.BreakNodesTest do
     end
   end
 
+  describe "working-time clock and carries" do
+    # A square with 2 h sides: stops 1..4 at its corners, stop 4 back on the
+    # depot, so the route [1, 2, 3, 4] drives four 2 h legs (8 h) and a 0 s
+    # leg home, with 1 h of service at each stop (4 h). Client 5 is the break.
+    @hour 3_600
+    @square [{0, 0}, {7_200, 0}, {7_200, 7_200}, {0, 7_200}, {0, 0}, {100_000, 0}]
+    @work_break 5
+
+    defp square_stats(visits, vehicle) do
+      {:ok, data} =
+        Model.new()
+        |> Model.add_depot([])
+        |> then(fn model -> Enum.reduce(1..4, model, fn _i, m -> Model.add_client(m, service_duration: @hour) end) end)
+        |> Model.add_client(required: false, is_break: true)
+        |> Model.add_vehicle_type([num_available: 1, capacity: [0]] ++ vehicle)
+        |> Model.set_euclidean_matrices(@square)
+        |> Model.to_problem_data()
+
+      {:ok, ref} = Native.create_solution_from_routes(data, [visits])
+      route = %Solution{solution_ref: ref, routes: [visits]} |> Solution.routes() |> hd()
+      search_route = Native.make_search_route_nif(data, visits, 0, 0)
+
+      %{
+        work: Route.work_clock_excess(route),
+        drive: Route.clock_excess(route),
+        time_warp: Route.time_warp(route),
+        timeline: Route.end_time(route) - Route.start_time(route) - Route.duration(route),
+        search_time_warp: Native.search_route_time_warp_nif(search_route),
+        search_timeline: Native.search_route_timeline_time_warp_nif(search_route)
+      }
+    end
+
+    @work_rule [break_rule: %{max_work_between_breaks: 21_600, duration: 2_700}]
+
+    test "work past six hours without a break overruns; a break after the second stop clears it" do
+      # No break: one stretch of 4 x (2 h + 1 h) = 12 h, 6 h over.
+      plain = square_stats([1, 2, 3, 4], @work_rule)
+      assert plain.work == 21_600
+      assert plain.drive == 0
+      assert plain.time_warp == 21_600
+      assert plain.search_time_warp == 21_600
+      assert plain.timeline == 0
+      assert plain.search_timeline == 0
+
+      # A break on leg 2 -> 3: stretches of 2 x 3 h = 6 h each, both at the limit.
+      assert square_stats([1, 2, @work_break, 3, 4], @work_rule).work == 0
+    end
+
+    test "work carried in overruns one stop earlier" do
+      # 1 h carried in makes the first stretch 1 h + 6 h = 7 h: the break after
+      # the second stop no longer suffices, 1 h over.
+      stats = square_stats([1, 2, @work_break, 3, 4], [work_carry_in: @hour] ++ @work_rule)
+
+      assert stats.work == @hour
+      assert stats.search_time_warp == @hour
+    end
+
+    test "work after the end of the route joins its last stretch" do
+      # The last stretch is 6 h, exactly the limit; 30 min of unloading after
+      # the end makes it 30 min over.
+      stats = square_stats([1, 2, @work_break, 3, 4], [work_after_end: 1_800] ++ @work_rule)
+
+      assert stats.work == 1_800
+      assert stats.search_time_warp == 1_800
+    end
+
+    test "driving carried in joins the first stretch of the drive clock" do
+      # 4 h of driving carried in leaves 30 min to the 4.5 h limit. Stop 1 at
+      # 900 s from the depot is a 30 min round trip: 0 over. Stop 2 at 1 800 s
+      # is a 1 h round trip: 3 600 - 1 800 = 1 800 over.
+      points = [{0, 0}, {900, 0}, {1_800, 0}, {0, 0}, {0, 0}, {100_000, 0}]
+      rule = [break_rule: %{max_drive_between_breaks: 16_200, duration: 2_700}, drive_carry_in: 14_400]
+
+      {:ok, data} =
+        Model.new()
+        |> Model.add_depot([])
+        |> then(fn model -> Enum.reduce(1..4, model, fn _i, m -> Model.add_client(m, []) end) end)
+        |> Model.add_client(required: false, is_break: true)
+        |> Model.add_vehicle_type([num_available: 1, capacity: [0]] ++ rule)
+        |> Model.set_euclidean_matrices(points)
+        |> Model.to_problem_data()
+
+      excess = fn visits ->
+        {:ok, ref} = Native.create_solution_from_routes(data, [visits])
+        search_route = Native.make_search_route_nif(data, visits, 0, 0)
+        route = %Solution{solution_ref: ref, routes: [visits]} |> Solution.routes() |> hd()
+        {Route.clock_excess(route), Native.search_route_time_warp_nif(search_route)}
+      end
+
+      assert excess.([1]) == {0, 0}
+      assert excess.([2]) == {1_800, 1_800}
+      # A break on the way out resets the clock before any of the 1 h: 0 over.
+      assert excess.([@work_break, 2]) == {0, 0}
+    end
+
+    test "every proposal case agrees with its applied change under both clocks and carries" do
+      # [1, 2] drives 300 and serves 2 x 20: work 30 carried in + 340 + 20
+      # after the end = 390, over the 300 work limit, so the work clock is live.
+      rule = %{max_drive_between_breaks: 270, max_work_between_breaks: 300, duration: @break_duration}
+
+      opts =
+        [
+          service: 20,
+          vehicle: [break_rule: rule, work_carry_in: 30, work_after_end: 20, drive_carry_in: 10],
+          second_vehicle: [work_carry_in: 0, work_after_end: 50, drive_carry_in: 40]
+        ] ++ @long
+
+      cases = [
+        {:exchange10, {[1, @break, 2], [4]}, 1, 1},
+        {:exchange10, {[1, @break, 2], [4]}, 2, 1},
+        {:exchange10, {[4, @break], [1, 2]}, 2, 0},
+        {:exchange10, {[4, @break], [1, 2]}, 2, 1},
+        {:exchange10, {[4], [1, 2]}, 1, 0},
+        {:exchange20, {[1, @break, 2], [4]}, 2, 1},
+        {:exchange20, {[1, @break, 2], [4]}, 1, 0},
+        {:exchange21, {[1, 2], [4, @break]}, 1, 2},
+        {:swap_tails, {[1, @break, 2], [4]}, 1, 1},
+        {:swap_tails, {[1, @break, 2], [4]}, 2, 0},
+        {:swap_tails, {[1, 2], [4, @break]}, 1, 1},
+        {:swap_tails, {[@break, 1, 2], [4]}, 0, 0}
+      ]
+
+      for {name, routes, u, v} <- cases do
+        assert_delta_matches_applied(name, routes, u, v, opts)
+      end
+    end
+
+    test "a work-only rule needs a break duration" do
+      assert_raise ArgumentError, ~r/break_duration must be set exactly when a break limit is/, fn ->
+        square_stats([1], break_rule: %{max_work_between_breaks: 21_600, duration: 0})
+      end
+    end
+  end
+
   test "break_rule fields must be set together" do
-    assert_raise ArgumentError, ~r/max_drive_between_breaks and break_duration must be set together/, fn ->
+    assert_raise ArgumentError, ~r/break_duration must be set exactly when a break limit is/, fn ->
       Model.new()
       |> Model.add_depot([])
       |> Model.add_vehicle_type(
