@@ -138,8 +138,9 @@ defmodule ExVrp.Route do
   @doc """
   Returns the time warp of this route.
 
-  Includes `drive_excess/1`, which is a penalty rather than a delay: it
-  makes the route infeasible without moving `end_time/1`.
+  Includes `drive_excess/1`, `clock_excess/1` and `work_clock_excess/1`,
+  which are penalties rather than delays: they make the route infeasible
+  without moving `end_time/1`.
   """
   @spec time_warp(t()) :: non_neg_integer()
   def time_warp(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -222,7 +223,8 @@ defmodule ExVrp.Route do
   Returns the end time of this route.
 
   Time warp that shifts the timeline (arriving after a time window closes)
-  pulls the end time back; `drive_excess/1` does not.
+  pulls the end time back; `drive_excess/1`, `clock_excess/1` and
+  `work_clock_excess/1` do not.
   """
   @spec end_time(t()) :: non_neg_integer()
   def end_time(%__MODULE__{solution_ref: ref, route_idx: idx}) do

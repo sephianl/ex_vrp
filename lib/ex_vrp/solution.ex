@@ -284,7 +284,8 @@ defmodule ExVrp.Solution do
   @doc """
   Returns the total time warp of the solution (sum across all routes).
 
-  Includes `drive_excess/1`.
+  Includes `drive_excess/1` and each route's `ExVrp.Route.clock_excess/1`
+  and `ExVrp.Route.work_clock_excess/1`.
   """
   @spec time_warp(t()) :: non_neg_integer()
   def time_warp(%__MODULE__{} = sol) do
