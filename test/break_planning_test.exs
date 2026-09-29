@@ -4,9 +4,9 @@ defmodule ExVrp.BreakPlanningTest do
   rule, and local search places them: `BreakRepair` inserts a break where a
   stretch first overruns and removes breaks that cost nothing to lose.
 
-  Every vehicle type here leaves `unit_duration_cost` at 0 and sets no time
-  windows, so a break costs nothing but its duration, and nothing waits:
-  `duration - travel_duration` is exactly the break time on the route.
+  Unless a test says otherwise, a vehicle type leaves `unit_duration_cost` at
+  0, so a break that fixes nothing costs nothing to remove and is removed.
+  Break time is what `duration` holds beyond travel, service and waiting.
   """
   use ExUnit.Case, async: true
 
@@ -38,7 +38,23 @@ defmodule ExVrp.BreakPlanningTest do
     result.best
   end
 
-  defp break_time(route), do: Route.duration(route) - Route.travel_duration(route)
+  defp break_time(route) do
+    Route.duration(route) - Route.travel_duration(route) - Route.service_duration(route) - Route.wait_duration(route)
+  end
+
+  # Depot 0 and one client at 150: out and back drives 300.
+  defp one_client_model(client_opts, vehicle_opts) do
+    Model.new()
+    |> Model.add_depot([])
+    |> Model.add_client(Keyword.merge([delivery: [1]], client_opts))
+    |> Model.add_vehicle_type(Keyword.merge([num_available: 1, capacity: [10]], vehicle_opts))
+    |> Model.set_euclidean_matrices([{0, 0}, {150, 0}])
+  end
+
+  defp client_start(solution, client) do
+    [visit] = solution |> Solution.route_schedule(0) |> Enum.filter(&(&1.location == client))
+    visit.start_service - Route.start_time(hd(Solution.routes(solution)))
+  end
 
   # Out and back is 900 of drive, three times one 270 limit: at least three breaks.
   test "the solver inserts the breaks the clock needs and the plan is feasible" do
@@ -132,6 +148,121 @@ defmodule ExVrp.BreakPlanningTest do
     assert Solution.feasible?(solution)
     assert Route.clock_excess(route) == 0
     assert break_time(route) == 6 * 45
+  end
+
+  # Work is 150 + 200 service + 150 = 500 against a 400 limit, while driving
+  # is only 300. The one break that works goes after the service: before the
+  # client, the stretch after it would still hold 500.
+  test "the work clock alone makes the solver insert a break" do
+    solution =
+      [service_duration: 200] |> one_client_model(break_rule: %{max_work_between_breaks: 400, duration: 45}) |> best()
+
+    [route] = Solution.routes(solution)
+
+    assert Solution.feasible?(solution)
+    assert Route.work_clock_excess(route) == 0
+    assert break_time(route) == 45
+    assert client_start(solution, 1) == 150
+
+    drive_only =
+      [service_duration: 200] |> one_client_model(break_rule: %{max_drive_between_breaks: 400, duration: 45}) |> best()
+
+    assert drive_only |> Solution.routes() |> hd() |> break_time() == 0
+  end
+
+  # Without a carry, 150 + 150 overruns 270 on the way back: one break there.
+  # A carry of 150 overruns on the way out, so a break comes before the client,
+  # and the whole 300 after it needs a second one.
+  for {carry, limit} <- [drive_carry_in: :max_drive_between_breaks, work_carry_in: :max_work_between_breaks] do
+    test "#{carry} brings the first break a leg earlier" do
+      rule = %{unquote(limit) => 270, duration: 45}
+
+      fresh = [] |> one_client_model(break_rule: rule) |> best()
+      assert fresh |> Solution.routes() |> hd() |> break_time() == 45
+      assert client_start(fresh, 1) == 150
+
+      carried = [] |> one_client_model([{unquote(carry), 150}, break_rule: rule]) |> best()
+      [route] = Solution.routes(carried)
+
+      assert Solution.feasible?(carried)
+      assert Route.clock_excess(route) + Route.work_clock_excess(route) == 0
+      assert break_time(route) == 90
+      assert client_start(carried, 1) == 195
+    end
+  end
+
+  # 300 of work fits a 350 limit; 100 more after the last stop does not.
+  test "work_after_end counts against the last stretch" do
+    rule = %{max_work_between_breaks: 350, duration: 45}
+
+    assert [] |> one_client_model(break_rule: rule) |> best() |> Solution.routes() |> hd() |> break_time() == 0
+
+    solution = [] |> one_client_model(break_rule: rule, work_after_end: 100) |> best()
+    [route] = Solution.routes(solution)
+
+    assert Solution.feasible?(solution)
+    assert Route.work_clock_excess(route) == 0
+    assert break_time(route) == 45
+  end
+
+  # 0 -> 1 -> 2 -> 0 drives 100 + 100 + 150 = 350. Client 1 closes at 100, so
+  # the route starts at 0, and client 2 opens at 400, so it waits there. A
+  # break on the last leg would add 45; one on 1 -> 2 leaves 100 + 150 after
+  # it, fits, and comes out of the wait.
+  test "a break on an earlier leg absorbs waiting" do
+    matrix = [[0, 100, 150], [100, 0, 100], [150, 100, 0]]
+
+    model = fn vehicle_opts ->
+      Model.new()
+      |> Model.add_depot([])
+      |> Model.add_client(delivery: [1], tw_late: 100)
+      |> Model.add_client(delivery: [1], tw_early: 400)
+      |> Model.add_vehicle_type(Keyword.merge([num_available: 1, capacity: [10], unit_duration_cost: 1], vehicle_opts))
+      |> Model.set_distance_matrices([matrix])
+      |> Model.set_duration_matrices([matrix])
+    end
+
+    [plain] = [] |> model.() |> best() |> Solution.routes()
+    solution = [break_rule: @rule] |> model.() |> best()
+    [route] = Solution.routes(solution)
+
+    assert Solution.feasible?(solution)
+    assert Route.clock_excess(route) == 0
+    assert break_time(route) == 45
+    assert Route.duration(plain) == 550
+    assert Route.duration(route) == 550
+    assert Route.wait_duration(route) == Route.wait_duration(plain) - 45
+  end
+
+  # Capacity 1 and two unit deliveries: two trips, 400 of drive across them.
+  test "a two-trip route gets the breaks it needs" do
+    solution =
+      Model.new()
+      |> Model.add_depot([])
+      |> Model.add_client(delivery: [1])
+      |> Model.add_client(delivery: [1])
+      |> Model.add_vehicle_type(num_available: 1, capacity: [1], reload_depots: [0], break_rule: @rule)
+      |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {-100, 0}])
+      |> best()
+
+    [route] = Solution.routes(solution)
+
+    assert Solution.feasible?(solution)
+    assert Solution.num_clients(solution) == 2
+    assert Route.num_trips(route) == 2
+    assert Route.clock_excess(route) == 0
+    assert break_time(route) >= 45
+  end
+
+  # The route runs past 500, so it meets the vehicle's 500-600 gap.
+  test "breaks and a forbidden window go together" do
+    solution = [break_rule: @rule, time_windows: [{0, 500}, {600, 100_000}]] |> model() |> best()
+    [route] = Solution.routes(solution)
+
+    assert Solution.feasible?(solution)
+    assert Solution.num_clients(solution) == 3
+    assert Route.clock_excess(route) == 0
+    assert break_time(route) >= 3 * 45
   end
 
   test "a warm start leaves the breaks out" do
