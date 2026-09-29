@@ -526,11 +526,6 @@ private:
         return vehicleType_.breakLimit(Quantity);
     }
 
-    // The quantity node idx does itself: service for work (none on a break),
-    // plus the carries at the start and end depots.
-    template <ClockQuantity Quantity>
-    [[nodiscard]] inline Duration clockAt(size_t idx) const;
-
     // Folds the clock over nodes [start, end] from scratch, for another
     // profile or limit, or for checking the prefix structures.
     template <ClockQuantity Quantity>
@@ -804,6 +799,25 @@ public:
      *         drive and work clock overruns).
      */
     [[nodiscard]] inline Duration timelineTimeWarp() const;
+
+    /**
+     * @return The drive and work clock overrun on this route, summed. Part of
+     *         timeWarp().
+     */
+    [[nodiscard]] inline Duration clockExcess() const;
+
+    /**
+     * @return The location node ``idx`` takes in edge lookups: its own, or,
+     *         for a break, that of the nearest non-break node before it.
+     */
+    [[nodiscard]] inline size_t location(size_t idx) const;
+
+    /**
+     * @return The quantity node ``idx`` does itself: service for work (none
+     *         on a break), plus the carries at the start and end depots.
+     */
+    template <ClockQuantity Quantity>
+    [[nodiscard]] inline Duration clockAt(size_t idx) const;
 
     /**
      * @return Duration cost computed from DurationSegment only (without
@@ -1647,6 +1661,19 @@ Duration Route::timelineTimeWarp() const
 {
     assert(!dirty);
     return timeWarp_ - driveExcess_ - clockExcess_;
+}
+
+Duration Route::clockExcess() const
+{
+    assert(!dirty);
+    return clockExcess_;
+}
+
+size_t Route::location(size_t idx) const
+{
+    assert(!dirty);
+    assert(idx < locs_.size());
+    return locs_[idx];
 }
 
 Cost Route::durationCostDS() const

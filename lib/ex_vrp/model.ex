@@ -1038,10 +1038,63 @@ defmodule ExVrp.Model do
   def to_problem_data(%__MODULE__{} = model) do
     case validate(model) do
       :ok ->
-        ExVrp.Native.create_problem_data(model)
+        model
+        |> append_break_pool()
+        |> ExVrp.Native.create_problem_data()
 
       {:error, _reason} = error ->
         error
     end
   end
+
+  @max_breaks_per_vehicle 8
+
+  # Break clients go after every user client, so user indices are unchanged.
+  # The pool is shared: breaks are interchangeable, and each takes its
+  # duration from the route it is on. Nothing reads their matrix rows, so
+  # zeros do; forbidden sets and vehicle locks are sparse and need nothing.
+  defp append_break_pool(model) do
+    case Enum.sum_by(model.vehicle_types, &(&1.num_available * breaks_per_vehicle(&1))) do
+      0 -> model
+      pool_size -> add_breaks(model, pool_size)
+    end
+  end
+
+  defp add_breaks(model, pool_size) do
+    zeros = List.duplicate(0, length(hd(model.vehicle_types).capacity))
+    break = Client.new(delivery: zeros, pickup: zeros, required: false, is_break: true)
+
+    %{
+      model
+      | clients: model.clients ++ List.duplicate(break, pool_size),
+        distance_matrices: Enum.map(model.distance_matrices, &pad_matrix(&1, pool_size)),
+        duration_matrices: Enum.map(model.duration_matrices, &pad_matrix(&1, pool_size)),
+        penalties: Enum.map(model.penalties, &(&1 ++ List.duplicate(0, pool_size)))
+    }
+  end
+
+  defp pad_matrix(matrix, pool_size) do
+    padding = List.duplicate(0, pool_size)
+    zero_row = List.duplicate(0, length(matrix) + pool_size)
+
+    Enum.map(matrix, &(&1 ++ padding)) ++ List.duplicate(zero_row, pool_size)
+  end
+
+  # ceil(max_drive / limit) for the drive clock and ceil(shift / limit) for
+  # the work clock, whichever needs more; an unset horizon takes the cap.
+  defp breaks_per_vehicle(vehicle_type) do
+    [
+      {vehicle_type.max_drive_between_breaks, drive_horizon(vehicle_type)},
+      {vehicle_type.max_work_between_breaks, vehicle_type.shift_duration}
+    ]
+    |> Enum.reject(fn {limit, _horizon} -> limit == :infinity end)
+    |> Enum.map(fn {limit, horizon} -> breaks_within(horizon, limit) end)
+    |> Enum.max(fn -> 0 end)
+  end
+
+  defp drive_horizon(%{max_drive: :infinity, shift_duration: shift}), do: shift
+  defp drive_horizon(%{max_drive: max_drive}), do: max_drive
+
+  defp breaks_within(:infinity, _limit), do: @max_breaks_per_vehicle
+  defp breaks_within(horizon, limit), do: min(div(horizon + limit - 1, limit), @max_breaks_per_vehicle)
 end

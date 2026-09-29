@@ -52,6 +52,7 @@ defmodule ExVrp.Native do
     # ProblemData queries
     problem_data_num_load_dims: 1,
     problem_data_num_clients: 1,
+    problem_data_break_clients: 1,
     problem_data_num_depots: 1,
     problem_data_num_locations: 1,
     problem_data_num_vehicle_types: 1,
@@ -317,6 +318,8 @@ defmodule ExVrp.Native do
   shape is not the one a `{:trips, ...}` warm start takes back: each trip's key is `start_depot`,
   not `reload_depot`, and the first trip's `start_depot` is the vehicle type's actual start depot
   rather than `nil`. `ExVrp.Solution.warm_start/1` does that conversion.
+
+  Unlike every other listing, this keeps break clients, so a rebuild from it keeps the breaks.
   """
   @spec solution_trips(reference()) :: [[%{start_depot: non_neg_integer(), clients: [non_neg_integer()]}]]
   def solution_trips(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
@@ -460,6 +463,12 @@ defmodule ExVrp.Native do
   """
   @spec problem_data_num_clients(reference()) :: non_neg_integer()
   def problem_data_num_clients(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  The location indices of the break clients `ExVrp.Model` adds, in order.
+  """
+  @spec problem_data_break_clients(reference()) :: [non_neg_integer()]
+  def problem_data_break_clients(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Gets the number of depots from ProblemData.

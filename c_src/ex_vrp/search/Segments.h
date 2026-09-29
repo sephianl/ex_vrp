@@ -148,21 +148,24 @@ public:
 };
 
 /**
- * Evaluation interface for a single break client, which might not currently
- * be in the solution. A break has no location, so the Proposal folds skip its
- * edges; it only adds the break duration of the vehicle type whose route it
- * is proposed for, in an unconstrained time window.
+ * Evaluation interface for a break client, which might not currently be in
+ * the solution, or for a run of ``count`` interchangeable ones taken together
+ * (all priced as ``client``). A break has no location, so the Proposal folds
+ * skip its edges; it only adds the break duration of the vehicle type whose
+ * route it is proposed for, in an unconstrained time window.
  */
 class BreakSegment
 {
     ProblemData const &data;
     size_t client;
+    size_t count;
 
 public:
-    BreakSegment(ProblemData const &data, size_t client)
-        : data(data), client(client)
+    BreakSegment(ProblemData const &data, size_t client, size_t count = 1)
+        : data(data), client(client), count(count)
     {
         assert(data.isBreak(client));
+        assert(count >= 1);
     }
 
     Route const *route() const { return nullptr; }
@@ -170,7 +173,7 @@ public:
     bool hasLocation() const { return false; }
     size_t first() const { return client; }
     size_t last() const { return client; }
-    size_t size() const { return 1; }
+    size_t size() const { return count; }
 
     bool startsAtReloadDepot() const { return false; }
     bool endsAtReloadDepot() const { return false; }
@@ -184,22 +187,27 @@ public:
 
     Cost penalty(size_t profile, [[maybe_unused]] size_t vehicleType) const
     {
-        return data.penalty(profile, client);
+        return static_cast<Cost>(count) * data.penalty(profile, client);
     }
 
+    // Unconstrained windows merge by adding durations, so a run is a single
+    // segment of count break durations.
     DurationSegment duration([[maybe_unused]] size_t profile,
                              size_t vehicleType) const
     {
         auto const breakDuration = data.vehicleType(vehicleType).breakDuration;
-        return DurationSegment(
-            breakDuration, 0, 0, std::numeric_limits<Duration>::max(), 0);
+        return DurationSegment(static_cast<Duration>(count) * breakDuration,
+                               0,
+                               0,
+                               std::numeric_limits<Duration>::max(),
+                               0);
     }
 
     // No location, so the Proposal fold adds trailRun to the leg it sits on.
     DriveClock driveClock([[maybe_unused]] size_t profile,
                           [[maybe_unused]] Duration limit) const
     {
-        return {.leadRun = 1, .trailRun = 1};
+        return {.leadRun = count, .trailRun = count};
     }
 
     // A break is rest, so it resets the work clock exactly as the drive clock.

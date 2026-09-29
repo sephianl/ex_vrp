@@ -1667,7 +1667,14 @@ int64_t
 solution_num_clients([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<SolutionResource> solution_resource)
 {
-    return static_cast<int64_t>(solution_resource->solution.numClients());
+    // Break clients are the solver's own, so callers never count them.
+    auto const &data = *solution_resource->problemData;
+    int64_t count = 0;
+    for (auto const &route : solution_resource->solution.routes())
+        for (auto const visit : route.visits())
+            count += !data.isBreak(visit);
+
+    return count;
 }
 
 FINE_NIF(solution_num_clients, 0);
@@ -1680,6 +1687,7 @@ solution_routes([[maybe_unused]] ErlNifEnv *env,
                 fine::ResourcePtr<SolutionResource> solution_resource)
 {
     auto &solution = solution_resource->solution;
+    auto const &data = *solution_resource->problemData;
 
     auto const &routes = solution.routes();
     std::vector<ERL_NIF_TERM> route_terms;
@@ -1692,9 +1700,10 @@ solution_routes([[maybe_unused]] ErlNifEnv *env,
         for (auto const &visit : route.visits())
         {
             // visits() returns client indices (already 0-based, relative to
-            // clients)
-            client_terms.push_back(
-                enif_make_int64(env, static_cast<int64_t>(visit)));
+            // clients). Breaks are the solver's own and never shown.
+            if (!data.isBreak(visit))
+                client_terms.push_back(
+                    enif_make_int64(env, static_cast<int64_t>(visit)));
         }
 
         route_terms.push_back(enif_make_list_from_array(
@@ -1711,7 +1720,9 @@ FINE_NIF(solution_routes, 0);
  * Get routes from solution as, per route, its trips: a list of
  * %{start_depot: depot, clients: [client, ...]} maps. The inverse of the
  * {:trips, ...} warm-start form, where only the first trip starts at the
- * vehicle type's start depot and every later one at a reload depot.
+ * vehicle type's start depot and every later one at a reload depot. Unlike
+ * the other listings this keeps break clients, so a rebuild from it keeps the
+ * route's breaks.
  */
 fine::Term solution_trips([[maybe_unused]] ErlNifEnv *env,
                           fine::ResourcePtr<SolutionResource> solution_resource)
@@ -1768,16 +1779,18 @@ solution_unassigned([[maybe_unused]] ErlNifEnv *env,
 {
     auto &solution = solution_resource->solution;
     auto const &neighbours = solution.neighbours();
-    auto const numDepots = solution_resource->problemData->numDepots();
+    auto const &data = *solution_resource->problemData;
+    auto const numDepots = data.numDepots();
 
     std::vector<ERL_NIF_TERM> unassigned;
 
     // neighbours vector is indexed by location (depots first, then clients)
     // A None/nullopt entry means the location is unassigned
-    // We only care about unassigned clients (indices >= numDepots)
+    // We only care about unassigned clients (indices >= numDepots), and not
+    // about breaks: those are the solver's own, and a spare one is no loss.
     for (size_t i = numDepots; i < neighbours.size(); ++i)
     {
-        if (!neighbours[i].has_value())
+        if (!neighbours[i].has_value() && !data.isBreak(i))
         {
             unassigned.push_back(enif_make_int64(env, static_cast<int64_t>(i)));
         }
@@ -2633,13 +2646,15 @@ solution_route_visits([[maybe_unused]] ErlNifEnv *env,
         return fine::Term(enif_make_list(env, 0));
     }
 
+    auto const &data = *solution_resource->problemData;
     auto const &visits = routes[static_cast<size_t>(route_idx)].visits();
     std::vector<ERL_NIF_TERM> terms;
     terms.reserve(visits.size());
 
     for (auto client : visits)
     {
-        terms.push_back(enif_make_int64(env, static_cast<int64_t>(client)));
+        if (!data.isBreak(client))  // the solver's own, never shown
+            terms.push_back(enif_make_int64(env, static_cast<int64_t>(client)));
     }
 
     return fine::Term(
@@ -2666,12 +2681,16 @@ solution_route_schedule([[maybe_unused]] ErlNifEnv *env,
         return fine::Term(enif_make_list(env, 0));
     }
 
+    auto const &data = *solution_resource->problemData;
     auto const &schedule = routes[static_cast<size_t>(route_idx)].schedule();
     std::vector<ERL_NIF_TERM> terms;
     terms.reserve(schedule.size());
 
     for (auto const &visit : schedule)
     {
+        if (data.isBreak(visit.location))  // the solver's own, never shown
+            continue;
+
         // Create a tuple: {location, trip, start_service, end_service,
         // wait_duration, time_warp}
         ERL_NIF_TERM tuple = enif_make_tuple6(
@@ -3239,6 +3258,26 @@ int64_t problem_data_num_clients(
 }
 
 FINE_NIF(problem_data_num_clients, 0);
+
+/**
+ * The break clients' location indices, in order.
+ */
+std::vector<int64_t> problem_data_break_clients(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<ProblemDataResource> problem_resource)
+{
+    auto const &data = *problem_resource->data;
+
+    std::vector<int64_t> breaks;
+    for (size_t client = data.numDepots(); client != data.numLocations();
+         ++client)
+        if (data.isBreak(client))
+            breaks.push_back(static_cast<int64_t>(client));
+
+    return breaks;
+}
+
+FINE_NIF(problem_data_break_clients, 0);
 
 /**
  * Get the number of depots from ProblemData.

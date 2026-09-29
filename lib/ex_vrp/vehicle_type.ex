@@ -236,7 +236,8 @@ defmodule ExVrp.VehicleType do
     time" above
   - `:break_rule` - a map with `:duration` and at least one of
     `:max_drive_between_breaks` and `:max_work_between_breaks`, or `nil`
-    (default: `nil`). Travel between two break clients (see `ExVrp.Client`)
+    (default: `nil`). The model adds break clients for it and the solver
+    places them; callers never see them. Travel between two breaks
     may not exceed `:max_drive_between_breaks`, work (travel plus client and
     reload service, not waiting) may not exceed `:max_work_between_breaks`,
     and each break on this type's routes lasts `:duration`. Excess counts as
