@@ -439,6 +439,7 @@ bool Solution::insert(Route::Node *U,
 
             // Skip routes that already have time warp, unless the time
             // warp is from forbidden windows (a new trip would fix it).
+            // Drive excess also skips: a new trip only adds driving.
             if (route.timeWarp() > 0 && vehType.forbiddenWindows.empty())
                 continue;
 

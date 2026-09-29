@@ -4,9 +4,16 @@
 
 ### Added
 
-- **`:max_drive` on vehicle types caps travel duration** (service and waiting excluded); excess
-  counts as time warp and is reported by `Route.drive_excess/1`. `DurationSegment.drive/1`,
-  `drive_excess/2`.
+- **`:max_drive` caps how long a vehicle drives.** A vehicle-type option bounding a route's total
+  travel duration across all trips. Service, waiting and reload time don't count, so unlike
+  `:max_duration` a long wait at a dock doesn't use it up — this is the quantity a legal
+  driving-time limit measures. Driving past the cap is priced as time warp, with no new penalty
+  weight, so such a route is infeasible. `ExVrp.Route.drive_excess/1` and
+  `ExVrp.Solution.drive_excess/1` report how much of `time_warp/1` it accounts for. The excess is a
+  penalty, not a delay: `end_time/1`, overtime and trip boundaries are unaffected. Defaults to
+  `:infinity`; models that don't set it solve as before.
+- `ExVrp.DurationSegment.drive/1` and `drive_excess/2`: the travel merged into a segment, and the
+  part of it past a cap.
 
 ## 0.13.0
 

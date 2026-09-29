@@ -451,13 +451,7 @@ defmodule ExVrp.RouteOperatorsTest do
     end
   end
 
-  describe "max_drive delta consistency" do
-    # Proposal::duration() (the delta path insert_cost_nif exercises) computes
-    # endTime and overtime from ds.timeWarp(maxDuration) alone, and only adds
-    # the drive excess to the returned time-warp component afterwards.
-    # Route::update() must fold max_drive's excess into timeWarp_ the same
-    # way, or local search would price a move differently from what applying
-    # it actually produces, and the two would fight over the route forever.
+  describe "max_drive: an evaluated move prices the same as the route it produces" do
     defp max_drive_problem do
       model =
         Model.new()
@@ -481,7 +475,7 @@ defmodule ExVrp.RouteOperatorsTest do
       {problem_data, cost_evaluator}
     end
 
-    test "an evaluated insert's time-warp delta matches the rebuilt route" do
+    test "an insert that first crosses the cap" do
       {problem_data, cost_evaluator} = max_drive_problem()
 
       route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
@@ -546,12 +540,7 @@ defmodule ExVrp.RouteOperatorsTest do
       problem_data
     end
 
-    test "the delta still matches when both routes already exceed the cap and overtime applies" do
-      # The test above only covers a move from zero excess to positive excess,
-      # with no overtime — here both the before and after routes already
-      # exceed max_drive, and shift_duration/unit_overtime_cost are set, so a
-      # nonzero timeWarpDS_ is subtracted and overtimeDS feeds durationCostDS_
-      # on both sides of the delta.
+    test "an insert on a route already past the cap, with overtime priced on both sides" do
       {problem_data, cost_evaluator} = max_drive_overtime_problem()
 
       route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
@@ -574,48 +563,20 @@ defmodule ExVrp.RouteOperatorsTest do
     end
   end
 
-  describe "search::Route.timelineTimeWarp() excludes drive excess" do
-    # Solution.cpp's multi-trip insertion feasibility check derives the depot
-    # return time (the "trip boundary") from timelineTimeWarp() rather than
-    # timeWarp(), because drive excess is a penalty folded into timeWarp()
-    # that does not shift the timeline. These tests call the C++ accessor
-    # directly and check it against an independently known drive excess,
-    # rather than recomputing the subtraction in Elixir.
-    #
-    # Depot -> client 1 (50) -> client 2 (100) -> depot (100): 50 + 50 + 100
-    # = 200 of travel against max_drive: 150, so drive excess is 50 either
-    # way — it depends only on total travel and the cap, not on forbidden
-    # windows.
-    test "on a capped route with no forbidden windows, it equals time_warp - drive_excess" do
+  describe "search::Route timeline time warp leaves out the 50 driven past a 150 cap on 0 -> 50 -> 100 -> 0" do
+    test "so it is zero when drive excess is the only time warp" do
       {problem_data, _cost_evaluator} = max_drive_overtime_problem()
-
-      # Nothing else on this route produces time warp (max_duration:
-      # :infinity, wide open time windows), so time_warp is entirely drive
-      # excess and timelineTimeWarp is 0.
       route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
 
-      time_warp = Native.search_route_time_warp_nif(route)
-      drive_excess = 50
-
-      assert time_warp == drive_excess
-      assert Native.search_route_timeline_time_warp_nif(route) == time_warp - drive_excess
+      assert Native.search_route_time_warp_nif(route) == 50
+      assert Native.search_route_timeline_time_warp_nif(route) == 0
     end
 
-    test "on a capped route with forbidden windows, it equals time_warp - drive_excess" do
+    test "so it keeps the 80 of a forbidden window from 30 to 130 that the arrival at 50 falls in" do
       problem_data = max_drive_forbidden_window_problem()
-
-      # The forbidden window [30, 130) is straddled by the arrival at client 1
-      # (at t=50, since it starts driving at t=0), which adds 80 of timeWarp
-      # (the delay of forcing that arrival to t=130) on top of the 50 of
-      # drive excess above.
       route = Native.make_search_route_nif(problem_data, [1, 2], 0, 0)
 
-      time_warp = Native.search_route_time_warp_nif(route)
-      drive_excess = 50
-
-      assert time_warp == 130
-
-      assert Native.search_route_timeline_time_warp_nif(route) == time_warp - drive_excess
+      assert Native.search_route_time_warp_nif(route) == 80 + 50
       assert Native.search_route_timeline_time_warp_nif(route) == 80
     end
   end

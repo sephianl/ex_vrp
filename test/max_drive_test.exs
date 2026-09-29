@@ -5,6 +5,13 @@ defmodule ExVrp.MaxDriveTest do
   `:max_duration` caps elapsed time, so a driver who waits two hours at a dock
   has spent two hours of it. `:max_drive` counts only the edges driven, which is
   what a legal driving-time limit measures.
+
+  The shared model puts the depot at 0 and two clients at 30 and 60 on a line,
+  with one vehicle, so the only route is 0 -> 30 -> 60 -> 0: 120 of driving.
+  Client 1 closes at 40, pinning the departure before 10; client 2 opens at
+  500, so the route waits ~440 there and a later departure cannot hide it.
+  Every cap sits between the drive (120) and the elapsed duration (~560), so
+  which clock bites is forced.
   """
   use ExUnit.Case, async: true
 
@@ -16,12 +23,6 @@ defmodule ExVrp.MaxDriveTest do
 
   @moduletag :nif_required
 
-  # Depot at 0 and two clients at 30 and 60 on a line, one vehicle, so the only
-  # route is 0 -> 30 -> 60 -> 0: 120 of driving. Client 1 closes at 40, which
-  # pins the departure to before 10; client 2 opens at 500, so the route must
-  # wait ~440 there — a later departure cannot hide it. Every cap below sits
-  # between the drive (120) and the elapsed duration (~560), so which clock
-  # bites is forced.
   defp model(vehicle_opts) do
     Model.new()
     |> Model.add_depot([])
@@ -36,6 +37,20 @@ defmodule ExVrp.MaxDriveTest do
     result.best
   end
 
+  defp two_trip_route(max_drive) do
+    {:ok, result} =
+      Model.new()
+      |> Model.add_depot([])
+      |> Model.add_client(delivery: [1])
+      |> Model.add_client(delivery: [1])
+      |> Model.add_vehicle_type(num_available: 1, capacity: [1], reload_depots: [0], max_drive: max_drive)
+      |> Model.set_euclidean_matrices([{0, 0}, {40, 0}, {-40, 0}])
+      |> Solver.solve(stop: StoppingCriteria.max_iterations(200))
+
+    [route] = Solution.routes(result.best)
+    route
+  end
+
   test "waiting does not count as driving" do
     solution = best(max_drive: 200)
     [route] = Solution.routes(solution)
@@ -45,19 +60,15 @@ defmodule ExVrp.MaxDriveTest do
     assert Solution.feasible?(solution)
   end
 
-  test "driving past the cap is reported and counted as time warp" do
+  test "driving past the cap is reported and counted as time warp, without moving the end time" do
     solution = best(max_drive: 100)
     [route] = Solution.routes(solution)
 
     assert Route.travel_duration(route) == 120
     assert Route.drive_excess(route) == 20
     assert Route.time_warp(route) == 20
+    assert Solution.drive_excess(solution) == 20
     refute Solution.feasible?(solution)
-
-    # Drive excess is a penalty, not a shift along the timeline: here it is
-    # the route's only time warp (time_warp == drive_excess), so end_time
-    # must land exactly on start_time + duration, unmoved by the 20 units of
-    # excess folded into time_warp.
     assert Route.end_time(route) == Route.start_time(route) + Route.duration(route)
   end
 
@@ -84,20 +95,25 @@ defmodule ExVrp.MaxDriveTest do
     assert length(Solution.routes(result.best)) == 2
   end
 
-  test "forbidden windows still add the drive excess" do
+  test "the cap counts driving summed over trips, though each 80-unit trip is under it" do
+    over = two_trip_route(120)
+
+    assert Route.num_trips(over) == 2
+    assert Route.travel_duration(over) == 160
+    assert Route.drive_excess(over) == 40
+    assert Route.time_warp(over) == 40
+    assert Route.end_time(over) == Route.start_time(over) + Route.duration(over)
+
+    assert Route.drive_excess(two_trip_route(160)) == 0
+  end
+
+  test "forbidden windows add their own time warp and the cap adds exactly the drive excess" do
     forbidden_time_windows = [{0, 250}, {300, 20_000}]
-    solution = best(max_drive: 100, time_windows: forbidden_time_windows)
-    [route] = Solution.routes(solution)
+    [capped] = Solution.routes(best(max_drive: 100, time_windows: forbidden_time_windows))
+    [uncapped] = Solution.routes(best(max_drive: :infinity, time_windows: forbidden_time_windows))
 
-    uncapped = best(max_drive: :infinity, time_windows: forbidden_time_windows)
-    [uncapped_route] = Solution.routes(uncapped)
-
-    assert Route.drive_excess(route) == 20
-    # Drive excess is folded into time_warp on top of whatever the forbidden
-    # window itself contributes, so subtracting it back out must land exactly
-    # on the time warp of the same schedule solved without the cap — the cap
-    # adds drive excess, nothing else.
-    assert Route.time_warp(route) - Route.drive_excess(route) == Route.time_warp(uncapped_route)
+    assert Route.drive_excess(capped) == 20
+    assert Route.time_warp(capped) - Route.drive_excess(capped) == Route.time_warp(uncapped)
   end
 
   test "a negative cap is rejected" do

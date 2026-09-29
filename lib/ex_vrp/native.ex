@@ -236,7 +236,7 @@ defmodule ExVrp.Native do
     dynamic_bitset_not_nif: 1,
     dynamic_bitset_eq_nif: 2,
     # DurationSegment
-    create_duration_segment_nif: 9,
+    create_duration_segment_nif: 8,
     duration_segment_merge_nif: 3,
     duration_segment_duration_nif: 1,
     duration_segment_drive_nif: 1,
@@ -1388,7 +1388,6 @@ defmodule ExVrp.Native do
           integer(),
           integer(),
           integer(),
-          integer(),
           integer()
         ) :: reference()
   def create_duration_segment_nif(
@@ -1399,8 +1398,7 @@ defmodule ExVrp.Native do
         _release_time,
         _cum_duration,
         _cum_time_warp,
-        _prev_end_late,
-        _drive
+        _prev_end_late
       ), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Merges two segments with an edge duration."

@@ -5866,8 +5866,7 @@ create_duration_segment_nif([[maybe_unused]] ErlNifEnv *env,
                             int64_t release_time,
                             int64_t cum_duration,
                             int64_t cum_time_warp,
-                            int64_t prev_end_late,
-                            int64_t drive)
+                            int64_t prev_end_late)
 {
     DurationSegment seg{Duration{duration},
                         Duration{time_warp},
@@ -5876,8 +5875,7 @@ create_duration_segment_nif([[maybe_unused]] ErlNifEnv *env,
                         Duration{release_time},
                         Duration{cum_duration},
                         Duration{cum_time_warp},
-                        Duration{prev_end_late},
-                        Duration{drive}};
+                        Duration{prev_end_late}};
     return fine::make_resource<DurationSegmentResource>(seg);
 }
 
