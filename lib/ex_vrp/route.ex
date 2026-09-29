@@ -121,6 +121,10 @@ defmodule ExVrp.Route do
 
   @doc """
   Returns the duration of this route.
+
+  Includes the breaks placed for a `:break_rule`, which are none of travel,
+  service or waiting: break time is `duration - travel_duration -
+  service_duration - wait_duration`.
   """
   @spec duration(t()) :: non_neg_integer()
   def duration(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -257,6 +261,9 @@ defmodule ExVrp.Route do
 
   @doc """
   Returns the wait duration of this route.
+
+  Excludes break time: a break taken where the vehicle would wait replaces
+  that wait.
   """
   @spec wait_duration(t()) :: non_neg_integer()
   def wait_duration(%__MODULE__{solution_ref: ref, route_idx: idx}) do
