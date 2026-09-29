@@ -440,7 +440,7 @@ private:
     Cost durationCost_;
     Duration timeWarp_;
     Duration driveExcess_ = 0;  // Travel past max_drive, folded into timeWarp_
-    Duration clockExcess_ = 0;  // Drive + work clock overrun, likewise
+    Duration totalClockExcess_ = 0;  // Drive + work clock overrun, likewise
     Cost reloadCost_;
 
     // DurationSegment-only values (before forbidden window corrections).
@@ -802,9 +802,10 @@ public:
 
     /**
      * @return The drive and work clock overrun on this route, summed. Part of
-     *         timeWarp().
+     *         timeWarp(). pyvrp::Route keeps the two apart, as clockExcess()
+     *         (drive) and workClockExcess().
      */
-    [[nodiscard]] inline Duration clockExcess() const;
+    [[nodiscard]] inline Duration totalClockExcess() const;
 
     /**
      * @return The location node ``idx`` takes in edge lookups: its own, or,
@@ -1660,13 +1661,13 @@ Duration Route::timeWarp() const
 Duration Route::timelineTimeWarp() const
 {
     assert(!dirty);
-    return timeWarp_ - driveExcess_ - clockExcess_;
+    return timeWarp_ - driveExcess_ - totalClockExcess_;
 }
 
-Duration Route::clockExcess() const
+Duration Route::totalClockExcess() const
 {
     assert(!dirty);
-    return clockExcess_;
+    return totalClockExcess_;
 }
 
 size_t Route::location(size_t idx) const

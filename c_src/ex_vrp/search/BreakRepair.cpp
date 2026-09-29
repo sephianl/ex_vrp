@@ -185,7 +185,7 @@ bool BreakRepair::apply(Route &route,
 
     // Each insert takes a break from the finite pool, so this terminates.
     if (route.vehicleTypeData().hasBreakRule())
-        while (route.clockExcess() > 0
+        while (route.totalClockExcess() > 0
                && insertBreak(route, solution, costEvaluator))
             changed = true;
 
