@@ -72,12 +72,32 @@ defmodule ExVrp.VehicleType do
   `:shift_duration`; raise it to allow overtime. `:overtime_start` marks a
   clock time after which work counts as overtime.
 
-  All three measure *elapsed* time from route start to route end, so waiting
+  Setting only `:shift_duration` therefore makes it the hard cap too, and
+  overtime can never occur:
+
+      iex> ExVrp.VehicleType.new(num_available: 1, capacity: [10], shift_duration: 480).max_duration
+      480
+      iex> ExVrp.VehicleType.new(num_available: 1, capacity: [10], shift_duration: 480, max_duration: 540).max_duration
+      540
+
+  The second allows up to 60 of overtime, each unit priced at
+  `:unit_overtime_cost`; past 540 the route is infeasible.
+
+  These three measure *elapsed* time from route start to route end, so waiting
   for a customer's window to open counts against them like driving does. There
   is no per-trip duration cap: a second trip spends the same budget as the
   first. For time actually worked:
 
       ExVrp.Route.duration(route) - ExVrp.Route.wait_duration(route)
+
+  `:max_drive` is the one duration cap that ignores waiting: it counts travel
+  only, summed over every trip. A route that drives 300 but waits 600 in
+  between has an elapsed duration of 900:
+
+  | Cap                 | Measures | Verdict    |
+  | ------------------- | -------- | ---------- |
+  | `max_duration: 500` | 900      | infeasible |
+  | `max_drive: 500`    | 300      | feasible   |
 
   ## Time windows
 
