@@ -1667,14 +1667,7 @@ int64_t
 solution_num_clients([[maybe_unused]] ErlNifEnv *env,
                      fine::ResourcePtr<SolutionResource> solution_resource)
 {
-    // Break clients are the solver's own, so callers never count them.
-    auto const &data = *solution_resource->problemData;
-    int64_t count = 0;
-    for (auto const &route : solution_resource->solution.routes())
-        for (auto const visit : route.visits())
-            count += !data.isBreak(visit);
-
-    return count;
+    return static_cast<int64_t>(solution_resource->solution.numClients());
 }
 
 FINE_NIF(solution_num_clients, 0);

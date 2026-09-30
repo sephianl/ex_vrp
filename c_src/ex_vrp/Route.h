@@ -129,6 +129,7 @@ private:
     Duration travel_ = 0;            // Total *travel* duration on this route
     Duration service_ = 0;           // Total *service* duration on this route
     Duration breaks_ = 0;            // Total break duration on this route
+    size_t numBreaks_ = 0;           // Break clients on this route
     Duration startTime_ = 0;         // (earliest) start time of this route
     Duration slack_ = 0;             // Total time slack on this route
     Cost prizes_ = 0;                // Total value of prizes on this route
@@ -145,9 +146,15 @@ public:
     [[nodiscard]] bool empty() const;
 
     /**
-     * Returns the number of clients visited by this route.
+     * Returns the number of clients visited by this route, breaks included.
      */
     [[nodiscard]] size_t size() const;
+
+    /**
+     * Returns the number of clients visited by this route, less its breaks:
+     * those are the solver's own.
+     */
+    [[nodiscard]] size_t numClients() const;
 
     /**
      * Returns the number of trips in this route.

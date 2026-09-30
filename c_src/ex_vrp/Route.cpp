@@ -323,7 +323,10 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         for (auto const client : trip)
         {
             if (data.isBreak(client))
+            {
                 breaks_ += vehData.breakDuration;
+                numBreaks_++;
+            }
 
             penaltyCost_ += penalties[client];
 
@@ -525,6 +528,8 @@ size_t Route::size() const
                            [](size_t count, auto const &trip)
                            { return count + trip.size(); });
 }
+
+size_t Route::numClients() const { return size() - numBreaks_; }
 
 size_t Route::numTrips() const { return trips_.size(); }
 

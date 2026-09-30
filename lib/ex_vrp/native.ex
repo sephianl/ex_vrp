@@ -460,7 +460,8 @@ defmodule ExVrp.Native do
   def problem_data_num_load_dims(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
-  Gets the number of clients from ProblemData.
+  Gets the number of clients from ProblemData, the model's pool of break clients included
+  (see `problem_data_break_clients/1`). A solution's `num_clients` leaves breaks out.
   """
   @spec problem_data_num_clients(reference()) :: non_neg_integer()
   def problem_data_num_clients(_problem_data), do: :erlang.nif_error(:nif_not_loaded)

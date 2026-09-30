@@ -52,8 +52,9 @@ defmodule ExVrp.Client do
   - `:name` - Client name for identification (default: `""`)
   - `:is_break` - Internal (default: `false`). `ExVrp.Model` sets it on the
     break clients it adds for a vehicle type's limits between breaks. Don't
-    set it yourself: such a client vanishes from `visits`, `unassigned` and
-    `num_clients`, and costs nothing on a vehicle type without those limits
+    set it yourself: such a client vanishes from a solution's `visits`,
+    `unassigned` and `num_clients` (though `Native.problem_data_num_clients/1`
+    counts the pool), and costs nothing on a vehicle type without those limits
 
   ## Examples
 
