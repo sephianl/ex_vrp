@@ -351,9 +351,18 @@ Work before the route counts too: `:drive_carry_in` and `:work_carry_in` add dri
 since the last break (an earlier route that day) to the first stretch, and `:work_after_end` adds
 work after the last stop (unloading) to the last one.
 
-Break time is inside `ExVrp.Route.duration/1` but not `wait_duration/1`, and nothing yet says where
-the breaks fall: in the schedule a break is only a gap. `ExVrp.Solution.warm_start/1` leaves
-breaks out; the next solve places them again.
+Break time is inside `ExVrp.Route.duration/1` but not `wait_duration/1`. The schedule leaves
+breaks out; `ExVrp.Route.breaks/1` says where each falls (`visits_before`, counted in `visits`)
+and when (`start_service`, `end_service`).
+
+To keep breaks across a replan, put a `:break` in `:initial_routes` where each was taken:
+`[[4, 7, :break, 2]]`. Each marker gets a break of its own from the model's pool, and the solve
+keeps it there unless moving or dropping it pays. `ExVrp.Solution.warm_start/1` writes the markers
+for you. A marker on a vehicle type without limits between breaks, or more markers than the pool
+holds, is an invalid warm start.
+
+`Native.problem_data_num_clients/1` counts the pool of break clients; a solution's `num_clients`
+never does.
 
 ## Warm-starting with `:initial_routes`
 

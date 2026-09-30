@@ -68,6 +68,10 @@ defmodule ExVrp.BreakPlanningTest do
     |> Model.set_euclidean_matrices([{0, 0}, {100, 0}, {101, 0}, {102, 0}, {103, 0}])
   end
 
+  defp break_positions(solution) do
+    Enum.map(Solution.routes(solution), fn route -> Enum.map(Route.breaks(route), & &1.visits_before) end)
+  end
+
   defp client_start(solution, client) do
     [visit] = solution |> Solution.route_schedule(0) |> Enum.filter(&(&1.location == client))
     visit.start_service - Route.start_time(hd(Solution.routes(solution)))
@@ -345,11 +349,47 @@ defmodule ExVrp.BreakPlanningTest do
     assert break_time(route) >= 3 * 45
   end
 
-  test "a warm start leaves the breaks out" do
+  test "a warm start marks each break where it fell" do
     solution = @rule |> model() |> best()
+    [route] = Solution.routes(solution)
 
     assert {:ok, [visits]} = Solution.warm_start(solution)
-    assert Enum.sort(visits) == [1, 2, 3]
+    assert visits |> Enum.reject(&(&1 == :break)) |> Enum.sort() == [1, 2, 3]
+
+    marked = visits |> Enum.with_index() |> Enum.filter(&(elem(&1, 0) == :break))
+
+    assert Enum.with_index(marked, fn {:break, at}, nth -> at - nth end) ==
+             Enum.map(Route.breaks(route), & &1.visits_before)
+  end
+
+  # Legs of 150, 150, 150 and 450 against a 270 limit: a break before each of the
+  # three later legs, and a second before the 450 one.
+  test "a :break in initial_routes is a break taken there" do
+    {:ok, result} =
+      @rule
+      |> model()
+      |> Solver.solve(
+        stop: StoppingCriteria.max_iterations(0),
+        initial_routes: [[1, :break, 2, :break, 3, :break, :break]]
+      )
+
+    [route] = Solution.routes(result.best)
+
+    assert Solution.feasible?(result.best)
+    assert Enum.map(Route.breaks(route), & &1.visits_before) == [1, 2, 3, 3]
+  end
+
+  test "a solve from its own warm start keeps its breaks where they are" do
+    model = model(@rule)
+
+    for seed <- 1..5 do
+      solution = best(model, seed: seed)
+      {:ok, initial_routes} = Solution.warm_start(solution)
+      resumed = best(model, seed: seed + 100, initial_routes: initial_routes)
+
+      assert break_positions(resumed) == break_positions(solution)
+      assert Enum.map(Solution.routes(resumed), & &1.visits) == Enum.map(Solution.routes(solution), & &1.visits)
+    end
   end
 
   # Breaks are optional clients, but a random start never takes one: only

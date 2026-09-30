@@ -17,10 +17,13 @@ defmodule ExVrp.Native do
   @typedoc """
   One vehicle's warm-start visits: a flat client list (a single trip), or its trips, where the
   first trip's `reload_depot` is `nil` and each later trip names the reload depot it starts from.
+  A `:break` among the clients is a break taken there.
   """
   @type warm_start_visits ::
-          [non_neg_integer()]
-          | {:trips, [%{reload_depot: non_neg_integer() | nil, clients: [non_neg_integer()]}]}
+          [warm_start_client()]
+          | {:trips, [%{reload_depot: non_neg_integer() | nil, clients: [warm_start_client()]}]}
+
+  @type warm_start_client :: non_neg_integer() | :break
 
   # NIF stubs call :erlang.nif_error/1 which Dialyzer infers as no_return().
   # The @nifs attribute generates nif_start primops in Core Erlang, but Dialyzer's

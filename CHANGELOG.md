@@ -20,16 +20,22 @@
 - A clock left past its limit in a solution counts as time warp, so the route is infeasible, but,
   like `drive_excess/1`, it never moves `end_time/1`. `ExVrp.Route.clock_excess/1` (drive) and
   `ExVrp.Route.work_clock_excess/1` report it.
+- `ExVrp.Route.breaks/1` says where each break falls (`visits_before`, counted in `visits`) and
+  when (`start_service`, `end_service`); `schedule/1` leaves breaks out.
+- `:initial_routes` takes a `:break` among a vehicle type's clients as a break taken there. Each
+  marker gets a break of its own from the pool, and the solve keeps it there unless moving or
+  dropping it pays. `ExVrp.Solution.warm_start/1` writes a marker for every break. A marker on a
+  vehicle type without limits between breaks, or more markers than the pool holds, is an invalid
+  warm start.
 
 ### Changed
 
 - On a vehicle type with limits between breaks, `ExVrp.Route.duration/1` includes break time and
-  `wait_duration/1` does not. There is no accessor yet for break time or where breaks fall: a
-  caller recovers the total as `duration - travel_duration - service_duration - wait_duration`,
-  and in the schedule a break is only a gap.
-- `ExVrp.Solution.warm_start/1` leaves break clients out, and the next solve places breaks again.
-  Warm-starting with breaks in place is not supported.
+  `wait_duration/1` does not.
 - `ExVrp.Client` has an internal `:is_break` field that only the model's break pool sets.
+  `Native.problem_data_num_clients/1` counts that pool; a solution's `num_clients` never does.
+- `Model.validate/1` rejects a `:max_drive_between_breaks` or `:max_work_between_breaks` that is
+  not positive, and a break client can no longer be required.
 
 ## 0.14.0
 

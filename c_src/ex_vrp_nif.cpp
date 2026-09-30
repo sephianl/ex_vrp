@@ -3286,6 +3286,20 @@ create_solution_from_routes_with_types_nif(
                 decode_warm_start_clients(env, *problem_data, tuple_elems[1]),
                 vehicle_type);
         }
+
+        // Only a vehicle type with limits between breaks takes a break: on
+        // any other it lengthens the route and resets nothing.
+        if (!problem_data->vehicleType(vehicle_type).hasBreakRule())
+            for (auto const &trip : routes.back().trips())
+                for (auto const client : trip)
+                    if (problem_data->isBreak(client))
+                    {
+                        std::ostringstream msg;
+                        msg << "vehicle_type " << vehicle_type
+                            << " has no limit between breaks, so it cannot "
+                               "take a break";
+                        throw std::invalid_argument(msg.str());
+                    }
     }
 
     Solution solution(*problem_data, std::move(routes));

@@ -92,12 +92,18 @@ defmodule ExVrp.Solver do
     warm-starts vehicle type 0 with clients 1, 2, a reload at depot 0, then
     clients 3, 4. `ExVrp.Solution.warm_start/1` turns a solution back into this form.
 
+    On a vehicle type with limits between breaks, a `:break` among the clients
+    is a break taken there, e.g. `[[1, 2, :break, 3]]`. Each marker gets a break
+    of its own from the model's pool, and the solve keeps it there unless moving
+    or dropping it pays; breaks the route still lacks are added as usual.
+
     Capacity-overloaded and time-window-violating starts are passed through to
     the solver — these are valid infeasible starting points that the solver can
     repair via penalties. Structurally invalid inputs (duplicate clients,
     out-of-range vehicle types or client IDs, too many routes for
     `num_available`, a reload depot not in the vehicle type's `reload_depots`,
-    more trips than its `max_reloads + 1`) are logged as warnings and the
+    more trips than its `max_reloads + 1`, a `:break` on a vehicle type without
+    limits between breaks, more `:break` markers than the pool holds) are logged as warnings and the
     solver falls back to a cold (empty) start rather than crashing.
 
   ## Returns
@@ -423,7 +429,9 @@ defmodule ExVrp.Solver do
   end
 
   defp solution_from_typed_routes(problem_data, typed_routes) do
-    Native.create_solution_from_routes_with_types(problem_data, typed_routes)
+    with {:ok, placed} <- WarmStart.place_breaks(typed_routes, Native.problem_data_break_clients(problem_data)) do
+      Native.create_solution_from_routes_with_types(problem_data, placed)
+    end
   rescue
     e in [ArgumentError, RuntimeError] -> {:error, Exception.message(e)}
   end
