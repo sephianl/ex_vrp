@@ -528,6 +528,37 @@ defmodule ExVrp.BreakNodesTest do
 
       assert validate_vehicle(rule ++ [drive_carry_in: 270, work_carry_in: 300]) == :ok
     end
+
+    test "a limit that is not positive is rejected before the pool is sized" do
+      for limit <- [[max_drive_between_breaks: 0], [max_work_between_breaks: -5]] do
+        assert {:error, [message]} = validate_vehicle([break_duration: 45] ++ limit)
+        assert message =~ "must be positive or :infinity"
+      end
+    end
+  end
+
+  test "a break client cannot be required" do
+    model =
+      Model.new()
+      |> Model.add_depot([])
+      |> Model.add_client(required: true, is_break: true)
+      |> Model.add_vehicle_type(num_available: 1, capacity: [0])
+      |> Model.set_euclidean_matrices([{0, 0}, {0, 0}])
+
+    assert_raise ArgumentError, ~r/break clients must not be required/, fn ->
+      Model.to_problem_data(model)
+    end
+  end
+
+  test "limits between breaks without a pool of break clients are rejected" do
+    model =
+      Model.new()
+      |> Model.add_depot([])
+      |> Model.add_client(delivery: [1])
+      |> Model.add_vehicle_type(num_available: 1, capacity: [1], max_drive_between_breaks: 270, break_duration: 45)
+      |> Model.set_euclidean_matrices([{0, 0}, {100, 0}])
+
+    assert_raise ArgumentError, ~r/no break clients/, fn -> Native.create_problem_data(model) end
   end
 
   test "a break client with a service duration is rejected" do

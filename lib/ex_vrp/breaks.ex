@@ -20,13 +20,14 @@ defmodule ExVrp.Breaks do
   @max_breaks_per_vehicle 12
 
   @doc """
-  Adds an error for each vehicle type whose break fields cannot work: a break
-  duration without a limit or a limit without one, or a carry that alone
-  overruns its limit, which no break can fix.
+  Adds an error for each vehicle type whose break fields cannot work: a limit
+  that is not positive, a break duration without a limit or a limit without
+  one, or a carry that alone overruns its limit, which no break can fix.
   """
   @spec validate([String.t()], Model.t()) :: [String.t()]
   def validate(errors, %Model{vehicle_types: vehicle_types}) do
     errors
+    |> add_invalid(vehicle_types, &non_positive_limit?/1, non_positive_limit_message())
     |> add_invalid(vehicle_types, &mismatched_duration?/1, mismatched_duration_message())
     |> add_invalid(vehicle_types, &carry_overruns?/1, carry_overruns_message())
   end
@@ -59,6 +60,18 @@ defmodule ExVrp.Breaks do
     "Vehicle type drive_carry_in, work_carry_in or work_after_end exceeds its limit between breaks"
   end
 
+  defp non_positive_limit_message do
+    "Vehicle type max_drive_between_breaks and max_work_between_breaks must be positive or :infinity"
+  end
+
+  defp non_positive_limit?(%VehicleType{} = vehicle_type) do
+    not positive_or_infinity?(vehicle_type.max_drive_between_breaks) or
+      not positive_or_infinity?(vehicle_type.max_work_between_breaks)
+  end
+
+  defp positive_or_infinity?(:infinity), do: true
+  defp positive_or_infinity?(limit), do: is_integer(limit) and limit > 0
+
   defp mismatched_duration?(%VehicleType{break_duration: duration} = vehicle_type) do
     has_limit?(vehicle_type) != duration > 0
   end
@@ -72,8 +85,8 @@ defmodule ExVrp.Breaks do
       exceeds?(vehicle_type.work_after_end, vehicle_type.max_work_between_breaks)
   end
 
-  defp exceeds?(_carry, :infinity), do: false
-  defp exceeds?(carry, limit), do: carry > limit
+  defp exceeds?(carry, limit) when is_integer(limit) and limit > 0, do: carry > limit
+  defp exceeds?(_carry, _infinite_or_rejected_limit), do: false
 
   defp append_breaks(0, model), do: model
 

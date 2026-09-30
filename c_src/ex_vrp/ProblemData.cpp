@@ -158,6 +158,11 @@ ProblemData::Client::Client(std::vector<Load> delivery,
         throw std::invalid_argument(
             "break clients take their duration from the vehicle type's "
             "break_duration, not a service duration.");
+
+    // A pool holds spares no route takes, and a required one left over would
+    // count as missing forever.
+    if (isBreak && required)
+        throw std::invalid_argument("break clients must not be required.");
 }
 
 ProblemData::Client::Client(Client const &client)
@@ -846,6 +851,16 @@ void ProblemData::validate() const
             if (depot >= numDepots())
                 throw std::out_of_range("Vehicle has invalid reload depot.");
     }
+
+    // Without break clients no route can take a break, and a route under a
+    // break rule would be priced for breaks it can never get.
+    auto const hasRule
+        = [](auto const &vehType) { return vehType.hasBreakRule(); };
+    auto const isBreak = [](auto const &client) { return client.isBreak; };
+    if (std::any_of(vehicleTypes_.begin(), vehicleTypes_.end(), hasRule)
+        && std::none_of(clients_.begin(), clients_.end(), isBreak))
+        throw std::invalid_argument("A vehicle type has limits between breaks, "
+                                    "but there are no break clients.");
 
     // Matrix checks.
     if (dists_.empty() || durs_.empty())
