@@ -16,7 +16,8 @@ defmodule ExVrp.Client do
           prize: non_neg_integer(),
           required: boolean(),
           group: non_neg_integer() | nil,
-          name: String.t()
+          name: String.t(),
+          is_break: boolean()
         }
 
   defstruct delivery: [0],
@@ -28,7 +29,8 @@ defmodule ExVrp.Client do
             prize: 0,
             required: true,
             group: nil,
-            name: ""
+            name: "",
+            is_break: false
 
   @doc """
   Creates a new client.
@@ -48,6 +50,11 @@ defmodule ExVrp.Client do
   - `:required` - Whether client must be visited (default: `true`)
   - `:group` - Client group index for mutual exclusivity (default: `nil`)
   - `:name` - Client name for identification (default: `""`)
+  - `:is_break` - Internal (default: `false`). `ExVrp.Model` sets it on the
+    break clients it adds for a vehicle type's limits between breaks. Don't
+    set it yourself: such a client vanishes from a solution's `visits`,
+    `unassigned` and `num_clients` (though `Native.problem_data_num_clients/1`
+    counts the pool), and costs nothing on a vehicle type without those limits
 
   ## Examples
 

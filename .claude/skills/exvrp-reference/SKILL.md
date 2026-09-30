@@ -59,21 +59,22 @@ reproduce that cancel.
 
 ## Constraint Mechanisms
 
-| Need                         | Mechanism                                                             | Enforced as                     |
-| ---------------------------- | --------------------------------------------------------------------- | ------------------------------- |
-| Capacity, multi-dim          | `capacity`, `delivery`/`pickup`                                       | penalty (load)                  |
-| Time windows, shifts         | client/vehicle `tw_*`, `shift_duration`, overtime fields              | penalty (time warp)             |
-| Time worked cap              | `max_working_duration` — travel + service, not waiting                | penalty                         |
-| Distance caps                | `max_distance`, `max_distance_per_trip` (resets at each reload)       | penalty                         |
-| Driver breaks                | `forbidden_windows` on VehicleType (vehicle idle in window)           | local patch, see its tests      |
-| Multi-trip                   | `reload_depots`, `max_reloads`, depot `reload_cost`                   | structure + cost                |
-| Optional clients             | `prize > 0`, `required: false`                                        | objective                       |
-| At most / exactly one of     | ClientGroup (`required`, `mutually_exclusive`)                        | structure                       |
-| Same vehicle                 | SameVehicleGroup                                                      | feasibility (`isGroupFeas_`)    |
-| Soft zone cost               | `Model.set_penalties/2` per (profile, location)                       | objective (penalty channel)     |
-| Hard zone ban                | `Model.set_forbidden/2` per profile                                   | pruned in search                |
-| Keep client on its vehicle   | `Model.set_vehicle_locks/2` per location → vehicle type               | objective (penalty channel)     |
-| Fewer vehicles               | `MinimiseFleet.minimise/3` — single vehicle type, no optional clients | outer binary search             |
+| Need                       | Mechanism                                                                | Enforced as                                            |
+| -------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------ |
+| Capacity, multi-dim        | `capacity`, `delivery`/`pickup`                                          | penalty (load)                                         |
+| Time windows, shifts       | client/vehicle `tw_*`, `shift_duration`, overtime fields                 | penalty (time warp)                                    |
+| Time worked cap            | `max_working_duration` — travel + service, not waiting                   | penalty                                                |
+| Distance caps              | `max_distance`, `max_distance_per_trip` (resets at each reload)          | penalty                                                |
+| Driver breaks              | `forbidden_windows` on VehicleType (vehicle idle in window)              | local patch, see its tests                             |
+| Breaks between limits      | `max_drive/work_between_breaks` + `break_duration`, pooled break clients | search: virtual breaks; `BreakRepair` places real ones |
+| Multi-trip                 | `reload_depots`, `max_reloads`, depot `reload_cost`                      | structure + cost                                       |
+| Optional clients           | `prize > 0`, `required: false`                                           | objective                                              |
+| At most / exactly one of   | ClientGroup (`required`, `mutually_exclusive`)                           | structure                                              |
+| Same vehicle               | SameVehicleGroup                                                         | feasibility (`isGroupFeas_`)                           |
+| Soft zone cost             | `Model.set_penalties/2` per (profile, location)                          | objective (penalty channel)                            |
+| Hard zone ban              | `Model.set_forbidden/2` per profile                                      | pruned in search                                       |
+| Keep client on its vehicle | `Model.set_vehicle_locks/2` per location → vehicle type                  | objective (penalty channel)                            |
+| Fewer vehicles             | `MinimiseFleet.minimise/3` — single vehicle type, no optional clients    | outer binary search                                    |
 
 Locations carry **no coordinates**: distance matrices (one per profile) are mandatory;
 `Model.set_euclidean_matrices/2` derives them explicitly in location order (depots first).
@@ -95,6 +96,25 @@ big enough prize outbids it. Node-additive, so every move prices it through the 
   `num_available: 1`). `SegmentAfter`/`SegmentBefore` stay within their own route.
 - Vehicle locks replaced the 0.12.2 trick of holding a dock with a whole-route same-vehicle group
   (and its perturbation guard, removed in 0.13.0).
+
+### Breaks between limits
+
+`ExVrp.Breaks` appends a shared pool of break clients (no location, zero matrix rows) after the
+user's clients. Breaks are route nodes but never neighbours, so no operator places one. Two prices
+of the same route coexist, and mixing them up is the trap:
+
+- **Search price** (`search::Route`, `Proposal::duration()`): a stretch no break covers is charged
+  as the breaks it lacks (`DriveClock::missing`, max over both clocks) appended before the end
+  depot, through the shared `Route::summarise()`. Clock overrun is **not** time warp here. `k`
+  depends on the proposal, so it is never cached in `durAt/durBefore/durAfter`.
+- **True price** (`pyvrp::Route`, what the ILS sees): overrun is time warp. `BreakRepair`
+  materialises virtual breaks whenever that lowers true overrun, _whatever the delta_, and
+  releases a break only if true overrun does not grow — change either rule and it oscillates or
+  strips needed breaks. `LocalSearch` repairs breaks after every round and before every `unload()`.
+- Breaks are not clients: `numClients()`/`empty()` and `Proposal::empty()` skip them, so operator
+  fixed-cost terms must count clients, not ask whether the next node is a depot (SwapTails,
+  Exchange). Delta exactness is covered by `break_nodes_test.exs` and SANITIZE's
+  `costAfter == costBefore + deltaCost`.
 
 ### Forbidden locations (`set_forbidden/2`)
 
@@ -143,16 +163,16 @@ Two traps:
 
 ### What we changed vs inherited
 
-| Thing                        | ex_vrp          | PyVRP @ fork   | PyVRP today      | Notes                                                                                                                         |
-| ---------------------------- | --------------- | -------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Driver                       | Elixir          | Python         | Python           | Faithful; upstream's `cpp/` never had an ILS driver either                                                                    |
-| `num_neighbours`             | **60**          | 50             | 50               | Our bump (`neighbourhood_params.ex`)                                                                                          |
-| `weight_time_warp`           | 1.0             | 1.0            | removed          | Inherited                                                                                                                     |
-| `weight_wait_time`           | 0.2             | 0.2            | 0.2              | Faithful                                                                                                                      |
-| SwapStar                     | **removed**     | off by default | operator removed | Ours: 21 instances × 4 seeds, no gain beyond noise, throughput −13% (−33–90% on large)                                        |
-| Restart `max_no_improvement` | **800**         | 150_000        | 150_000          | Ours (`c169cd0`): upstream's assumes millions of iterations; 153-order instance: 3–6 restarts/start, +29% iterations          |
-| `exhaustive_on_best`         | on              | post-fork #988 | present          | Ported; short-budget A/B slightly negative — validate at prod budgets                                                         |
-| LAHC history                 | 500             | 300            | 300              | Minor                                                                                                                         |
+| Thing                        | ex_vrp      | PyVRP @ fork   | PyVRP today      | Notes                                                                                                                |
+| ---------------------------- | ----------- | -------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Driver                       | Elixir      | Python         | Python           | Faithful; upstream's `cpp/` never had an ILS driver either                                                           |
+| `num_neighbours`             | **60**      | 50             | 50               | Our bump (`neighbourhood_params.ex`)                                                                                 |
+| `weight_time_warp`           | 1.0         | 1.0            | removed          | Inherited                                                                                                            |
+| `weight_wait_time`           | 0.2         | 0.2            | 0.2              | Faithful                                                                                                             |
+| SwapStar                     | **removed** | off by default | operator removed | Ours: 21 instances × 4 seeds, no gain beyond noise, throughput −13% (−33–90% on large)                               |
+| Restart `max_no_improvement` | **800**     | 150_000        | 150_000          | Ours (`c169cd0`): upstream's assumes millions of iterations; 153-order instance: 3–6 restarts/start, +29% iterations |
+| `exhaustive_on_best`         | on          | post-fork #988 | present          | Ported; short-budget A/B slightly negative — validate at prod budgets                                                |
+| LAHC history                 | 500         | 300            | 300              | Minor                                                                                                                |
 
 Local feature patches in the vendored core (not upstream lag): same-vehicle groups, forbidden
 windows, reload/multi-trip pricing, depot-service removal, penalty channel, forbidden locations,
@@ -170,17 +190,17 @@ search-only (initial solution).
 
 Most test files are named for what they cover. The non-obvious ones:
 
-| File                                                           | Covers                                                        |
-| -------------------------------------------------------------- | ------------------------------------------------------------- |
-| `warm_start_repair_test.exs`                                   | Infeasible warm-start trim                                    |
-| `multi_trip_test.exs`                                          | Reloads, plus `{:trips, ...}` warm starts                     |
-| `multi_trip_pricing_test.exs`                                  | New-trip pricing in `improveWithMultiTrip`                    |
-| `same_vehicle_group_pricing_test.exs`                          | What a split group costs the search                           |
-| `penalty_channel_test.exs`, `vehicle_lock_test.exs`            | Channel terms: validation, solution cost, move deltas         |
-| `is_allowed_test.exs`                                          | Forbidden-location pruning and operator gating                |
-| `oscillation_prevention_test.exs`                              | Prize-collecting insert/remove oscillation                    |
-| `primitives_test.exs`, `pyvrp_api_test.exs`                    | Exact parity with PyVRP's own tests/API                       |
-| `production_benchmark_test.exs`                                | Real-planning corpus (tagged; excluded by default)            |
+| File                                                | Covers                                                |
+| --------------------------------------------------- | ----------------------------------------------------- |
+| `warm_start_repair_test.exs`                        | Infeasible warm-start trim                            |
+| `multi_trip_test.exs`                               | Reloads, plus `{:trips, ...}` warm starts             |
+| `multi_trip_pricing_test.exs`                       | New-trip pricing in `improveWithMultiTrip`            |
+| `same_vehicle_group_pricing_test.exs`               | What a split group costs the search                   |
+| `penalty_channel_test.exs`, `vehicle_lock_test.exs` | Channel terms: validation, solution cost, move deltas |
+| `is_allowed_test.exs`                               | Forbidden-location pruning and operator gating        |
+| `oscillation_prevention_test.exs`                   | Prize-collecting insert/remove oscillation            |
+| `primitives_test.exs`, `pyvrp_api_test.exs`         | Exact parity with PyVRP's own tests/API               |
+| `production_benchmark_test.exs`                     | Real-planning corpus (tagged; excluded by default)    |
 
 Benchmark caveats:
 

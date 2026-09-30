@@ -314,13 +314,55 @@ Driving past the cap is priced as time warp, so the route is infeasible, and
 move `ExVrp.Route.end_time/1`.
 
 **There is no "no more than N hours worked per day" constraint.** `:max_drive` leaves service time
-out, so it is not one. If worked time is what you need to cap, the solver cannot enforce it; measure
-it after the fact and reject or re-plan yourself:
+out, and `:max_work_between_breaks` (next section) caps work between two breaks, not over the day.
+If worked time per day is what you need to cap, the solver cannot enforce it; measure it after the
+fact and reject or re-plan yourself:
 
 ```elixir
-worked = ExVrp.Route.duration(route) - ExVrp.Route.wait_duration(route)
-# equivalently: ExVrp.Route.travel_duration(route) + ExVrp.Route.service_duration(route)
+worked = ExVrp.Route.travel_duration(route) + ExVrp.Route.service_duration(route)
+# not duration - wait_duration: that also counts break time
 ```
+
+## Breaks between limits
+
+A vehicle type with a limit between breaks gets breaks placed by the solver:
+
+```elixir
+Model.add_vehicle_type(model,
+  break_duration: 1_800,
+  max_drive_between_breaks: 14_400,
+  max_work_between_breaks: 18_000
+)
+```
+
+Set `:break_duration` together with at least one limit; `Model.validate/1` rejects either alone.
+The drive clock counts travel; the work clock counts travel plus client and reload service. Every
+break resets both; waiting resets neither. The model adds a pool of break clients and the search
+places them, so they never appear in `visits`, schedules, `num_clients` or `unassigned`. A break
+that falls where the vehicle would wait anyway shortens the wait instead of lengthening the route.
+
+The search weighs a longer route that needs a break like any other longer route: the break costs
+its duration (against shift, overtime and `:unit_duration_cost`), not a feasibility penalty, so
+one route with a break can beat two routes without. A clock left past its limit in a returned
+solution is time warp, reported by `ExVrp.Route.clock_excess/1` (drive) and
+`ExVrp.Route.work_clock_excess/1`. Like `drive_excess/1`, neither moves `end_time/1`.
+
+Work before the route counts too: `:drive_carry_in` and `:work_carry_in` add driving and work done
+since the last break (an earlier route that day) to the first stretch, and `:work_after_end` adds
+work after the last stop (unloading) to the last one.
+
+Break time is inside `ExVrp.Route.duration/1` but not `wait_duration/1`. The schedule leaves
+breaks out; `ExVrp.Route.breaks/1` says where each falls (`visits_before`, counted in `visits`)
+and when (`start_service`, `end_service`).
+
+To keep breaks across a replan, put a `:break` in `:initial_routes` where each was taken:
+`[[4, 7, :break, 2]]`. Each marker gets a break of its own from the model's pool, and the solve
+keeps it there unless moving or dropping it pays. `ExVrp.Solution.warm_start/1` writes the markers
+for you. A marker on a vehicle type without limits between breaks, or more markers than the pool
+holds, is an invalid warm start.
+
+`Native.problem_data_num_clients/1` counts the pool of break clients; a solution's `num_clients`
+never does.
 
 ## Warm-starting with `:initial_routes`
 

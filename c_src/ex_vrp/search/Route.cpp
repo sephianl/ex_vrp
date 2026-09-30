@@ -5,6 +5,7 @@
 #include <ostream>
 #include <utility>
 
+using pyvrp::ClockQuantity;
 using pyvrp::search::Route;
 
 Route::Node::Node(size_t loc) : loc_(loc), idx_(0), trip_(0), route_(nullptr) {}
@@ -98,6 +99,7 @@ void Route::clear()
 
     nodes.clear();
     depots_.clear();
+    numBreaks_ = 0;
 
     depots_.emplace_back(vehicleType_.startDepot);
     depots_.emplace_back(vehicleType_.endDepot);
@@ -136,6 +138,7 @@ void Route::insert(size_t idx, Node *node)
 
     nodes.insert(nodes.begin() + idx, node);
     node->assign(this, idx, nodes[idx - 1]->trip());
+    numBreaks_ += data.isBreak(node->client());
 
     for (size_t after = idx; after != nodes.size(); ++after)
     {
@@ -152,6 +155,7 @@ void Route::remove(size_t idx)
     assert(0 < idx && idx < nodes.size() - 1);  // is not start or end depot
     assert(nodes[idx]->route() == this);        // must be in this route
     auto const isDepot = nodes[idx]->isReloadDepot();
+    numBreaks_ -= data.isBreak(nodes[idx]->client());
 
     if (isDepot)
     {
@@ -183,6 +187,18 @@ void Route::swap(Node *first, Node *second)
 {
     assert(!first->isDepot() && !second->isDepot());
 
+    // Each route loses one node and gains the other.
+    auto const recount = [](Node const *leaving, Node const *arriving)
+    {
+        if (auto *route = leaving->route_)
+            route->numBreaks_ = route->numBreaks_
+                                - route->data.isBreak(leaving->client())
+                                + route->data.isBreak(arriving->client());
+    };
+
+    recount(first, second);
+    recount(second, first);
+
     // TODO specialise std::swap for Node
     if (first->route_)
         first->route_->nodes[first->idx_] = second;
@@ -203,11 +219,150 @@ void Route::swap(Node *first, Node *second)
 #endif
 }
 
+void Route::updateClocks()
+{
+    if (!vehicleType_.hasBreakRule())
+        return;  // nothing reads the structures without a break rule
+
+    auto const size = nodes.size();
+
+    resetBounds_.assign(1, 0);
+    legBreaks_.assign(1, 0);
+
+    stretchOf_.resize(size);
+    stretchOf_[0] = 0;
+
+    size_t breaks = 0;
+    for (size_t idx = 1; idx != size; ++idx)
+    {
+        if (data.isBreak(visits[idx]))
+            breaks++;
+        else if (breaks > 0)  // then idx ends a leg carrying breaks
+        {
+            resetBounds_.push_back(idx);
+            legBreaks_.push_back(breaks);
+            breaks = 0;
+        }
+
+        stretchOf_[idx] = resetBounds_.size() - 1;
+    }
+
+    resetBounds_.push_back(size - 1);
+    legBreaks_.push_back(0);
+
+    updateClock<ClockQuantity::Drive>();
+    updateClock<ClockQuantity::Work>();
+}
+
+template <ClockQuantity Quantity> void Route::updateClock()
+{
+    auto const limit = breakLimit<Quantity>();
+    if (limit == std::numeric_limits<Duration>::max())
+        return;  // nothing reads this clock's structures without a limit
+
+    auto const &durations = data.durationMatrix(profile());
+    auto const size = nodes.size();
+    auto &[cum, close, start, excess, need]
+        = clocks_[static_cast<size_t>(Quantity)];
+
+    // Each node's own quantity is part of cum, so the carry-in sits in cum[0]
+    // and every SegmentBefore sees it; the work after the end sits in
+    // cum.back(), where every SegmentAfter sees it.
+    cum.resize(size);
+    cum[0] = clockAt<Quantity>(0);
+    for (size_t idx = 1; idx != size; ++idx)
+        cum[idx] = cum[idx - 1] + durations(locs_[idx - 1], locs_[idx])
+                   + clockAt<Quantity>(idx);
+
+    close.assign(1, 0);
+    start.assign(1, 0);
+
+    auto const numResets = this->numResets();
+    for (size_t r = 1; r <= numResets; ++r)
+    {
+        // Breaks alias to the node before them, so cum[idx - 1] is where the
+        // leg begins, and the leg's own drive is the last edge.
+        auto const idx = resetBounds_[r];
+        auto const own = clockAt<Quantity>(idx);
+        auto const drive = cum[idx] - cum[idx - 1] - own;
+        auto const prepaid = static_cast<Duration>(legBreaks_[r] - 1) * limit;
+        auto const after = drive > prepaid ? drive - prepaid : 0;
+
+        close.push_back(cum[idx - 1]);
+        start.push_back(cum[idx] - own - after);
+    }
+
+    // Stretch r, for 1 <= r < m, is closed on both sides by reset legs.
+    excess.assign(numResets + 1, 0);
+    need.assign(numResets + 1, 0);
+    for (size_t r = 2; r <= numResets; ++r)
+    {
+        auto const stretch = close[r] - start[r - 1];
+        excess[r] = excess[r - 1] + DriveClock::clip(stretch, limit);
+        need[r] = need[r - 1] + DriveClock::needOf(stretch, limit);
+    }
+
+#ifndef NDEBUG
+    // The prefix answers must match a plain fold over the same nodes.
+    if (size < 20)
+        for (size_t idx = 0; idx != size; ++idx)
+        {
+            assert(
+                clockOf<Quantity>(SegmentBefore(*this, idx), profile(), limit)
+                == foldClock<Quantity>(0, idx, profile(), limit));
+            assert(clockOf<Quantity>(SegmentAfter(*this, idx), profile(), limit)
+                   == foldClock<Quantity>(idx, size - 1, profile(), limit));
+        }
+#endif
+}
+
+Route::DurationSummary Route::summariseWithBreaks(DurationSegment ds,
+                                                  Duration maxDuration,
+                                                  Duration extra,
+                                                  Duration latestEnd)
+{
+    assert(extra > 0);
+
+    auto const baseEnd
+        = ds.startEarly() + ds.duration() - ds.timeWarp(maxDuration);
+
+    DurationSegment const breaks(
+        extra, 0, 0, std::numeric_limits<Duration>::max(), 0);
+    ds = DurationSegment::merge(0, ds, breaks);
+    auto const late
+        = baseEnd + extra > latestEnd ? baseEnd + extra - latestEnd : 0;
+
+    auto const duration = ds.duration();
+    auto const timeWarp = ds.timeWarp(maxDuration) + late;
+    return {duration, timeWarp, ds.startEarly() + duration - timeWarp};
+}
+
 void Route::update()
 {
     visits.clear();
     for (auto const *node : nodes)
         visits.emplace_back(node->client());
+
+    // Break aliasing. The start and end depots are never breaks, so locs_[0]
+    // and nextReal_.back() are their own indices and both walks stay inside.
+    locs_.resize(nodes.size());
+    locs_[0] = visits[0];
+    for (size_t idx = 1; idx != nodes.size(); ++idx)
+        locs_[idx] = data.isBreak(visits[idx]) ? locs_[idx - 1] : visits[idx];
+
+    nextReal_.resize(nodes.size());
+    nextReal_.back() = nodes.size() - 1;
+    for (size_t idx = nodes.size() - 1; idx != 0; --idx)
+        nextReal_[idx - 1]
+            = data.isBreak(visits[idx - 1]) ? nextReal_[idx] : idx - 1;
+
+    cumBreaks_.resize(nodes.size() + 1);
+    cumBreaks_[0] = 0;
+    for (size_t idx = 0; idx != nodes.size(); ++idx)
+        cumBreaks_[idx + 1] = cumBreaks_[idx] + data.isBreak(visits[idx]);
+
+    assert(cumBreaks_.back() == numBreaks_);
+    hasBreaks_ = numBreaks_ > 0;
 
     // Distance.
     auto const &distMat = data.distanceMatrix(profile());
@@ -215,7 +370,12 @@ void Route::update()
     cumDist.resize(nodes.size());
     cumDist[0] = 0;
     for (size_t idx = 1; idx != nodes.size(); ++idx)
-        cumDist[idx] = cumDist[idx - 1] + distMat(visits[idx - 1], visits[idx]);
+    {
+        auto const from = locs_[idx - 1];
+        auto const to = locs_[idx];
+        assert(!data.isBreak(from) && !data.isBreak(to));
+        cumDist[idx] = cumDist[idx - 1] + distMat(from, to);
+    }
 
     // Trip boundaries, and each trip's excess over the per-trip distance cap.
     // A reload depot both ends one trip and starts the next, so it appears
@@ -285,7 +445,14 @@ void Route::update()
     {
         auto const *node = nodes[idx];
 
-        if (!node->isReloadDepot())
+        if (data.isBreak(node->client()))
+            // A break lasts this vehicle type's break duration, in no window.
+            durAt[idx] = DurationSegment(vehicleType_.breakDuration,
+                                         0,
+                                         0,
+                                         std::numeric_limits<Duration>::max(),
+                                         0);
+        else if (!node->isReloadDepot())
         {
             ProblemData::Client const &client = data.location(node->client());
             durAt[idx] = {client};
@@ -313,9 +480,20 @@ void Route::update()
                                 ? durBefore[prev].finaliseBack()
                                 : durBefore[prev];
 
-        auto const edgeDur = durations(visits[prev], visits[idx]);
+        auto const from = locs_[prev];
+        auto const to = locs_[idx];
+        assert(!data.isBreak(from) && !data.isBreak(to));
+        auto const edgeDur = durations(from, to);
         durBefore[idx] = DurationSegment::merge(edgeDur, before, durAt[idx]);
     }
+
+    // A suffix must not look back past its own start for a location, so here
+    // a break takes the location of the nearest non-break node *after* it:
+    // its outgoing edge is zero, and the node before it drives on to that
+    // location. That moves the drive to before the break rather than after,
+    // which is timing-neutral since a break has no time window, and matches
+    // how Proposal::duration() travels into a segment's first() before any
+    // leading breaks.
 
     durAfter.resize(nodes.size());
     durAfter[nodes.size() - 1] = durAt[nodes.size() - 1];
@@ -326,9 +504,14 @@ void Route::update()
                                ? durAfter[next].finaliseFront()
                                : durAfter[next];
 
-        auto const edgeDur = durations(visits[idx], visits[next]);
+        auto const from = visits[nextReal_[idx]];
+        auto const to = visits[nextReal_[next]];
+        assert(!data.isBreak(from) && !data.isBreak(to));
+        auto const edgeDur = durations(from, to);
         durAfter[idx] = DurationSegment::merge(edgeDur, durAt[idx], after);
     }
+
+    updateClocks();
 
     // Load.
     for (size_t dim = 0; dim != data.numLoadDimensions(); ++dim)
@@ -386,8 +569,23 @@ void Route::update()
     distanceCost_ = unitDistanceCost() * static_cast<Cost>(distance_);
     penaltyCost_ = cumPenalty.back();
 
-    duration_ = durAfter[0].duration();
-    timeWarp_ = durAfter[0].timeWarp(maxDuration());
+    // Clock overrun is priced as the breaks that would fix it, as in
+    // Proposal::duration(); the true overrun is kept for BreakRepair.
+    auto const driveClock = wholeClock<ClockQuantity::Drive>();
+    auto const workClock = wholeClock<ClockQuantity::Work>();
+    totalClockExcess_ = driveClock.overrun(breakLimit<ClockQuantity::Drive>())
+                        + workClock.overrun(breakLimit<ClockQuantity::Work>());
+    virtualBreaks_ = vehicleType_.hasBreakRule()
+                         ? missingBreaks(driveClock, workClock, vehicleType_)
+                         : 0;
+
+    auto const extra
+        = static_cast<Duration>(virtualBreaks_) * vehicleType_.breakDuration;
+    auto const summary = summarise(
+        durAfter[0], maxDuration(), extra, durAt.back().startLate());
+
+    duration_ = summary.duration;
+    timeWarp_ = summary.timeWarp;
     auto const driveExcess = durAfter[0].driveExcess(maxDrive());
 
     // Save DurationSegment-only values before forbidden window corrections.
@@ -395,19 +593,17 @@ void Route::update()
     // awareness, so delta evaluation must subtract these DS-only values (not
     // the corrected ones) to keep the delta consistent. Drive excess is not a
     // shift along the timeline, so the DS-only end time and overtime below
-    // are computed from timeWarpDSBase alone, and the excess is folded into
-    // timeWarpDS_ only afterwards, to match what Proposal::duration() returns.
+    // come from the summary alone, and the excess is folded into timeWarpDS_
+    // only afterwards, to match Proposal::duration().
     auto const durationDS = duration_;
-    auto const timeWarpDSBase = timeWarp_;
-    timeWarpDS_ = timeWarpDSBase + driveExcess;
+    timeWarpDS_ = timeWarp_ + driveExcess;
 
     // Clock time at which the route ends. The DurationSegment view is the
     // right answer only while no forbidden window is in play; once one is, the
     // walk below tracks the real end time, and timeWarp_ picks up violation
     // penalties that are not shifts along the timeline and so must not be
     // subtracted from it.
-    auto const startTime = durAfter[0].startEarly();
-    auto endTime = startTime + duration_ - timeWarp_;
+    auto endTime = summary.endTime;
 
     // Account for forbidden time windows: the vehicle must be idle at the
     // depot during these periods, so no travel, service, or reloading may
@@ -426,7 +622,15 @@ void Route::update()
         for (size_t idx = 0; idx != nodes.size(); ++idx)
         {
             if (idx > 0)
-                now += durations(visits[idx - 1], visits[idx]);
+            {
+                auto const from = locs_[idx - 1];
+                auto const to = locs_[idx];
+                assert(!data.isBreak(from) && !data.isBreak(to));
+                now += durations(from, to);
+            }
+
+            if (idx == nodes.size() - 1)  // missing breaks, as in summarise()
+                now += extra;
 
             // Check forbidden window at every node (client, reload depot,
             // end depot) — not just clients.
@@ -467,7 +671,8 @@ void Route::update()
                 auto const arrivalTime = now;
                 auto const wait
                     = client.twEarly > now ? client.twEarly - now : Duration(0);
-                now += wait + client.serviceDuration;
+                // durAt holds the service duration, or a break's duration.
+                now += wait + durAt[idx].duration();
 
                 // The vehicle is physically at this client from
                 // arrivalTime until now (after service).  Any overlap
@@ -504,12 +709,15 @@ void Route::update()
                 if (idx + 1 < nodes.size() && !nodes[idx + 1]->isDepot()
                     && !nodes[idx + 1]->isReloadDepot())
                 {
-                    auto const travel = durations(visits[idx], visits[idx + 1]);
+                    auto const from = locs_[idx];
+                    auto const to = locs_[idx + 1];
+                    assert(!data.isBreak(from) && !data.isBreak(to));
+                    auto const travel = durations(from, to);
                     auto const arrive = now + travel;
                     ProblemData::Client const &next
                         = data.location(nodes[idx + 1]->client());
                     auto const svcStart = std::max(arrive, next.twEarly);
-                    auto const svcEnd = svcStart + next.serviceDuration;
+                    auto const svcEnd = svcStart + durAt[idx + 1].duration();
 
                     for (auto const &[fStart, fEnd] :
                          vehicleType_.forbiddenWindows)
@@ -557,8 +765,7 @@ void Route::update()
     durationCost_ = unitDurationCost() * static_cast<Cost>(duration_)
                     + unitOvertimeCost() * static_cast<Cost>(overtime_);
 
-    auto const overtimeDS = vehicleType_.overtime(
-        startTime + durationDS - timeWarpDSBase, durationDS);
+    auto const overtimeDS = vehicleType_.overtime(summary.endTime, durationDS);
     durationCostDS_ = unitDurationCost() * static_cast<Cost>(durationDS)
                       + unitOvertimeCost() * static_cast<Cost>(overtimeDS);
 
@@ -604,7 +811,7 @@ bool Route::operator==(pyvrp::Route const &other) const
                               && timeWarp_ == other.timeWarp()
                               && vehicleType() == other.vehicleType()
                               && numTrips() == other.numTrips()
-                              && numClients() == other.size();
+                              && size() - numDepots() == other.size();
     // clang-format on
 
     if (!simpleChecks)

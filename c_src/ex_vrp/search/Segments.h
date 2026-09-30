@@ -23,13 +23,16 @@ public:
         : data(data), client(client)
     {
         assert(client >= data.numDepots());  // must be an actual client
+        assert(!data.isBreak(client));       // breaks use BreakSegment
     }
 
     Route const *route() const { return nullptr; }
 
+    bool hasLocation() const { return true; }
     size_t first() const { return client; }
     size_t last() const { return client; }
     size_t size() const { return 1; }
+    size_t numBreaks() const { return 0; }
 
     bool startsAtReloadDepot() const { return false; }
     bool endsAtReloadDepot() const { return false; }
@@ -47,10 +50,25 @@ public:
                + data.lockPenalty(vehicleType, client);
     }
 
-    DurationSegment duration([[maybe_unused]] size_t profile) const
+    DurationSegment duration([[maybe_unused]] size_t profile,
+                             [[maybe_unused]] size_t vehicleType) const
     {
         ProblemData::Client const &clientData = data.location(client);
         return {clientData};
+    }
+
+    DriveClock driveClock([[maybe_unused]] size_t profile,
+                          [[maybe_unused]] Duration limit) const
+    {
+        return {};
+    }
+
+    DriveClock workClock([[maybe_unused]] size_t profile,
+                         [[maybe_unused]] Duration limit) const
+    {
+        ProblemData::Client const &clientData = data.location(client);
+        return {.head = clientData.serviceDuration,
+                .tail = clientData.serviceDuration};
     }
 
     LoadSegment load(size_t dimension) const
@@ -66,19 +84,24 @@ public:
 class ReloadDepotSegment
 {
     size_t depot_;
+    Duration service_;  // reload service, which is work
 
 public:
-    ReloadDepotSegment([[maybe_unused]] ProblemData const &data, size_t depot)
-        : depot_(depot)
+    ReloadDepotSegment(ProblemData const &data, size_t depot)
+        : depot_(depot),
+          service_(static_cast<ProblemData::Depot const &>(data.location(depot))
+                       .serviceDuration)
     {
         assert(depot < data.numDepots());  // must be an actual depot
     }
 
     Route const *route() const { return nullptr; }
 
+    bool hasLocation() const { return true; }
     size_t first() const { return depot_; }
     size_t last() const { return depot_; }
     size_t size() const { return 1; }
+    size_t numBreaks() const { return 0; }
 
     bool startsAtReloadDepot() const { return true; }
     bool endsAtReloadDepot() const { return true; }
@@ -102,7 +125,8 @@ public:
         return 0;
     }
 
-    DurationSegment duration([[maybe_unused]] size_t profile) const
+    DurationSegment duration([[maybe_unused]] size_t profile,
+                             [[maybe_unused]] size_t vehicleType) const
     {
         // Empty segment - depot service time is handled by
         // Proposal::duration().
@@ -110,8 +134,97 @@ public:
             0, 0, 0, std::numeric_limits<Duration>::max(), 0);
     }
 
+    DriveClock driveClock([[maybe_unused]] size_t profile,
+                          [[maybe_unused]] Duration limit) const
+    {
+        return {};
+    }
+
+    DriveClock workClock([[maybe_unused]] size_t profile,
+                         [[maybe_unused]] Duration limit) const
+    {
+        return {.head = service_, .tail = service_};
+    }
+
     LoadSegment load([[maybe_unused]] size_t dimension) const { return {}; }
 };
+
+/**
+ * Evaluation interface for a break client, which might not currently be in
+ * the solution, or for a run of ``count`` interchangeable ones taken together
+ * (all priced as ``client``). A break has no location, so the Proposal folds
+ * skip its edges; it only adds the break duration of the vehicle type whose
+ * route it is proposed for, in an unconstrained time window.
+ */
+class BreakSegment
+{
+    ProblemData const &data;
+    size_t client;
+    size_t count;
+
+public:
+    BreakSegment(ProblemData const &data, size_t client, size_t count = 1)
+        : data(data), client(client), count(count)
+    {
+        assert(data.isBreak(client));
+        assert(count >= 1);
+    }
+
+    Route const *route() const { return nullptr; }
+
+    bool hasLocation() const { return false; }
+    size_t first() const { return client; }
+    size_t last() const { return client; }
+    size_t size() const { return count; }
+    size_t numBreaks() const { return count; }
+
+    bool startsAtReloadDepot() const { return false; }
+    bool endsAtReloadDepot() const { return false; }
+
+    Distance distance([[maybe_unused]] size_t profile) const { return 0; }
+
+    TripDistance tripDistance([[maybe_unused]] size_t profile) const
+    {
+        return {};
+    }
+
+    Cost penalty(size_t profile, [[maybe_unused]] size_t vehicleType) const
+    {
+        return static_cast<Cost>(count) * data.penalty(profile, client);
+    }
+
+    // Unconstrained windows merge by adding durations, so a run is a single
+    // segment of count break durations.
+    DurationSegment duration([[maybe_unused]] size_t profile,
+                             size_t vehicleType) const
+    {
+        auto const breakDuration = data.vehicleType(vehicleType).breakDuration;
+        return DurationSegment(static_cast<Duration>(count) * breakDuration,
+                               0,
+                               0,
+                               std::numeric_limits<Duration>::max(),
+                               0);
+    }
+
+    // No location, so the Proposal fold adds trailRun to the leg it sits on.
+    DriveClock driveClock([[maybe_unused]] size_t profile,
+                          [[maybe_unused]] Duration limit) const
+    {
+        return {.leadRun = count, .trailRun = count};
+    }
+
+    // A break is rest, so it resets the work clock exactly as the drive clock.
+    DriveClock workClock(size_t profile, Duration limit) const
+    {
+        return driveClock(profile, limit);
+    }
+
+    LoadSegment load([[maybe_unused]] size_t dimension) const { return {}; }
+};
+
+static_assert(Segment<ClientSegment>);
+static_assert(Segment<ReloadDepotSegment>);
+static_assert(Segment<BreakSegment>);
 }  // namespace pyvrp::search
 
 #endif  // PYVRP_SEARCH_SEGMENTS_H

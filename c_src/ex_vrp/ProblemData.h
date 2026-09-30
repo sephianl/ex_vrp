@@ -1,6 +1,7 @@
 #ifndef PYVRP_PROBLEMDATA_H
 #define PYVRP_PROBLEMDATA_H
 
+#include "DriveClock.h"
 #include "DynamicBitset.h"
 #include "Matrix.h"
 #include "Measure.h"
@@ -187,6 +188,11 @@ public:
         std::optional<size_t> const group;  // Optional client group membership
         char const *name;                   // Client name (for reference)
 
+        // A break has no location: routes skip it in every edge lookup, so
+        // it only adds its route's VehicleType::breakDuration (its own
+        // service duration must be zero). See search::BreakSegment.
+        bool const isBreak;
+
         Client(std::vector<Load> delivery = {},
                std::vector<Load> pickup = {},
                Duration serviceDuration = 0,
@@ -196,7 +202,8 @@ public:
                Cost prize = 0,
                bool required = true,
                std::optional<size_t> group = std::nullopt,
-               std::string name = "");
+               std::string name = "",
+               bool isBreak = false);
 
         bool operator==(Client const &other) const;
 
@@ -555,6 +562,20 @@ public:
      *     Maximum total travel duration of the route, across trips. Service,
      *     waiting and reload time do not count. Excess counts as time warp.
      *     Unconstrained if not explicitly provided.
+     * max_drive_between_breaks
+     *     Maximum travel duration between two breaks (see Client::isBreak).
+     *     Excess counts as time warp. Unconstrained if not provided.
+     * break_duration
+     *     How long each break client on this vehicle type's routes lasts. Set
+     *     exactly when either ``…_between_breaks`` limit is.
+     * max_work_between_breaks
+     *     Maximum work (travel plus client and reload-depot service) between
+     *     two breaks, reset at the same breaks. Excess counts as time warp.
+     * drive_carry_in, work_carry_in
+     *     Driving and work since the last break before the route starts; they
+     *     join the route's first stretch.
+     * work_after_end
+     *     Work after the route ends, joining its last stretch.
      * unit_distance_cost
      *     Cost per unit of distance travelled by vehicles of this type.
      * unit_duration_cost
@@ -608,6 +629,12 @@ public:
                                        // overtime is duration-based
         Duration const maxDuration;    // Hard maximum route duration
         Duration const maxDrive;       // Maximum travel duration
+        Duration const maxDriveBetweenBreaks;  // Maximum travel between breaks
+        Duration const breakDuration;          // Duration of each break
+        Duration const maxWorkBetweenBreaks;   // Maximum work between breaks
+        Duration const driveCarryIn;  // Driving since the last break, at start
+        Duration const workCarryIn;   // Work since the last break, at start
+        Duration const workAfterEnd;  // Work after the route ends
         std::vector<std::pair<Duration, Duration>> const
             forbiddenWindows;  // Forbidden time windows
         char const *name;      // Type name (for reference)
@@ -635,7 +662,30 @@ public:
             std::vector<std::pair<Duration, Duration>> forbiddenWindows = {},
             Duration overtimeStart = std::numeric_limits<Duration>::max(),
             Distance maxDistancePerTrip = std::numeric_limits<Distance>::max(),
-            Duration maxDrive = std::numeric_limits<Duration>::max());
+            Duration maxDrive = std::numeric_limits<Duration>::max(),
+            Duration maxDriveBetweenBreaks
+            = std::numeric_limits<Duration>::max(),
+            Duration breakDuration = 0,
+            Duration maxWorkBetweenBreaks
+            = std::numeric_limits<Duration>::max(),
+            Duration driveCarryIn = 0,
+            Duration workCarryIn = 0,
+            Duration workAfterEnd = 0);
+
+        // The limit of the clock over the given quantity; max() when unset.
+        [[nodiscard]] Duration breakLimit(ClockQuantity quantity) const
+        {
+            return quantity == ClockQuantity::Drive ? maxDriveBetweenBreaks
+                                                    : maxWorkBetweenBreaks;
+        }
+
+        // Whether either clock is limited, so routes may need breaks.
+        [[nodiscard]] bool hasBreakRule() const
+        {
+            return maxDriveBetweenBreaks != std::numeric_limits<Duration>::max()
+                   || maxWorkBetweenBreaks
+                          != std::numeric_limits<Duration>::max();
+        }
 
         /**
          * Overtime incurred by a route of the given duration that ends at the
@@ -736,6 +786,10 @@ private:
     size_t const numVehicles_;
     size_t const numLoadDimensions_;
     bool const hasTimeWindows_;
+
+    // Client::isBreak per location, packed: search::Route::update() asks for
+    // every node, and the Client structs are too wide to scan for one flag.
+    std::vector<bool> const isBreak_;
 
 public:
     bool operator==(ProblemData const &other) const = default;
@@ -895,6 +949,11 @@ public:
     [[nodiscard]] inline bool isAllowed(size_t profile, size_t location) const;
 
     /**
+     * Whether the given location is a break client. Depots never are.
+     */
+    [[nodiscard]] inline bool isBreak(size_t location) const;
+
+    /**
      * Whether any location is forbidden on any profile. When false,
      * :meth:`~is_allowed` is true everywhere and reachability filtering can be
      * skipped wholesale.
@@ -1022,6 +1081,12 @@ bool ProblemData::isAllowed(size_t profile, size_t location) const
     assert(profile < allowed_.size());
     assert(location < allowed_[profile].size());
     return allowed_[profile][location];
+}
+
+bool ProblemData::isBreak(size_t location) const
+{
+    assert(location < isBreak_.size());
+    return isBreak_[location];
 }
 
 bool ProblemData::hasForbiddenLocations() const { return hasForbidden_; }

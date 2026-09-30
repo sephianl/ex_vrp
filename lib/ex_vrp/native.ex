@@ -17,10 +17,13 @@ defmodule ExVrp.Native do
   @typedoc """
   One vehicle's warm-start visits: a flat client list (a single trip), or its trips, where the
   first trip's `reload_depot` is `nil` and each later trip names the reload depot it starts from.
+  A `:break` among the clients is a break taken there.
   """
   @type warm_start_visits ::
-          [non_neg_integer()]
-          | {:trips, [%{reload_depot: non_neg_integer() | nil, clients: [non_neg_integer()]}]}
+          [warm_start_client()]
+          | {:trips, [%{reload_depot: non_neg_integer() | nil, clients: [warm_start_client()]}]}
+
+  @type warm_start_client :: non_neg_integer() | :break
 
   # NIF stubs call :erlang.nif_error/1 which Dialyzer infers as no_return().
   # The @nifs attribute generates nif_start primops in Core Erlang, but Dialyzer's
@@ -52,6 +55,7 @@ defmodule ExVrp.Native do
     # ProblemData queries
     problem_data_num_load_dims: 1,
     problem_data_num_clients: 1,
+    problem_data_break_clients: 1,
     problem_data_num_depots: 1,
     problem_data_num_locations: 1,
     problem_data_num_vehicle_types: 1,
@@ -64,6 +68,7 @@ defmodule ExVrp.Native do
     problem_data_duration_matrix_nif: 2,
     problem_data_vehicle_types_nif: 1,
     problem_data_groups_nif: 1,
+    build_neighbours_nif: 1,
     # LocalSearch (stateless)
     local_search_nif: 4,
     local_search_search_only_nif: 4,
@@ -84,6 +89,8 @@ defmodule ExVrp.Native do
     solution_route_excess_distance: 2,
     solution_route_overtime: 2,
     solution_route_drive_excess: 2,
+    solution_route_clock_excess: 2,
+    solution_route_work_clock_excess: 2,
     solution_route_has_excess_load: 2,
     solution_route_has_time_warp: 2,
     solution_route_has_excess_distance: 2,
@@ -103,6 +110,7 @@ defmodule ExVrp.Native do
     solution_route_prizes: 2,
     solution_route_visits: 2,
     solution_route_schedule: 2,
+    solution_route_breaks: 2,
     solution_fixed_vehicle_cost: 1,
     solution_penalty_cost: 1,
     solution_lock_cost: 1,
@@ -125,6 +133,7 @@ defmodule ExVrp.Native do
     search_route_duration_nif: 1,
     search_route_time_warp_nif: 1,
     search_route_timeline_time_warp_nif: 1,
+    search_route_virtual_breaks_nif: 1,
     search_route_overtime_nif: 1,
     search_route_excess_distance_nif: 1,
     search_route_load_nif: 1,
@@ -242,6 +251,10 @@ defmodule ExVrp.Native do
     duration_segment_drive_nif: 1,
     duration_segment_drive_excess_nif: 2,
     duration_segment_time_warp_nif: 2,
+    # DriveClock (test-only)
+    drive_clock_fold_nif: 3,
+    drive_clock_fold_split_nif: 4,
+    drive_clock_brute_nif: 3,
     duration_segment_start_early_nif: 1,
     duration_segment_start_late_nif: 1,
     duration_segment_end_early_nif: 1,
@@ -310,6 +323,8 @@ defmodule ExVrp.Native do
   shape is not the one a `{:trips, ...}` warm start takes back: each trip's key is `start_depot`,
   not `reload_depot`, and the first trip's `start_depot` is the vehicle type's actual start depot
   rather than `nil`. `ExVrp.Solution.warm_start/1` does that conversion.
+
+  Unlike every other listing, this keeps break clients, so a rebuild from it keeps the breaks.
   """
   @spec solution_trips(reference()) :: [[%{start_depot: non_neg_integer(), clients: [non_neg_integer()]}]]
   def solution_trips(_solution_ref), do: :erlang.nif_error(:nif_not_loaded)
@@ -449,10 +464,17 @@ defmodule ExVrp.Native do
   def problem_data_num_load_dims(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
-  Gets the number of clients from ProblemData.
+  Gets the number of clients from ProblemData, the model's pool of break clients included
+  (see `problem_data_break_clients/1`). A solution's `num_clients` leaves breaks out.
   """
   @spec problem_data_num_clients(reference()) :: non_neg_integer()
   def problem_data_num_clients(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  The location indices of the break clients `ExVrp.Model` adds, in order.
+  """
+  @spec problem_data_break_clients(reference()) :: [non_neg_integer()]
+  def problem_data_break_clients(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Gets the number of depots from ProblemData.
@@ -530,6 +552,12 @@ defmodule ExVrp.Native do
   """
   @spec problem_data_groups_nif(reference()) :: [{[integer()], boolean()}]
   def problem_data_groups_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  The neighbourhood local search uses, one list of nearby clients per location.
+  """
+  @spec build_neighbours_nif(reference()) :: [[non_neg_integer()]]
+  def build_neighbours_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
   # LocalSearch
@@ -797,6 +825,20 @@ defmodule ExVrp.Native do
   def solution_route_drive_excess(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
+  Gets drive clock excess (travel past `:max_drive_between_breaks`) of a
+  specific route.
+  """
+  @spec solution_route_clock_excess(reference(), non_neg_integer()) :: non_neg_integer()
+  def solution_route_clock_excess(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Gets working-time clock excess (work past `:max_work_between_breaks`) of a
+  specific route.
+  """
+  @spec solution_route_work_clock_excess(reference(), non_neg_integer()) :: non_neg_integer()
+  def solution_route_work_clock_excess(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
   Checks if a specific route has excess load.
   """
   @spec solution_route_has_excess_load(reference(), non_neg_integer()) :: boolean()
@@ -917,6 +959,15 @@ defmodule ExVrp.Native do
   def solution_route_schedule(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
+  Returns the breaks of a route, which its schedule leaves out.
+
+  Each tuple contains: {visits_before, trip, start_service, end_service}
+  """
+  @spec solution_route_breaks(reference(), non_neg_integer()) ::
+          [{non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}]
+  def solution_route_breaks(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
   Returns the total fixed vehicle cost of the solution.
   """
   @spec solution_fixed_vehicle_cost(reference()) :: non_neg_integer()
@@ -994,6 +1045,9 @@ defmodule ExVrp.Native do
 
   @doc "Gets the route time warp with drive excess (a penalty, not a timeline shift) excluded."
   def search_route_timeline_time_warp_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc "Gets the breaks the route still lacks, which the search prices as their duration (test-only)."
+  def search_route_virtual_breaks_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Gets the route overtime."
   def search_route_overtime_nif(_route), do: :erlang.nif_error(:nif_not_loaded)
@@ -1416,6 +1470,28 @@ defmodule ExVrp.Native do
   @doc "Gets the drive time of a segment past a cap."
   @spec duration_segment_drive_excess_nif(reference(), integer()) :: integer()
   def duration_segment_drive_excess_nif(_seg, _max_drive), do: :erlang.nif_error(:nif_not_loaded)
+
+  @typedoc "A drive to the next real node, service at the last one, or a break on the leg after it."
+  @type clock_token :: {:leg, non_neg_integer()} | {:stop, non_neg_integer()} | :break
+
+  @typedoc "What the clock counts: travel only, or travel plus service."
+  @type clock_quantity :: :drive | :work
+
+  @typedoc "A clock's overrun past its limit, and the breaks its stretches still lack."
+  @type clock_answer :: {overrun :: non_neg_integer(), missing :: non_neg_integer()}
+
+  @doc "Folds `DriveClock` over a token route (test-only)."
+  @spec drive_clock_fold_nif([clock_token()], clock_quantity(), pos_integer()) :: clock_answer()
+  def drive_clock_fold_nif(_tokens, _quantity, _limit), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc "Folds both sides of `split` separately, then merges them (test-only)."
+  @spec drive_clock_fold_split_nif([clock_token()], non_neg_integer(), clock_quantity(), pos_integer()) ::
+          clock_answer()
+  def drive_clock_fold_split_nif(_tokens, _split, _quantity, _limit), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc "Walks a token route by the break rule directly (test-only)."
+  @spec drive_clock_brute_nif([clock_token()], clock_quantity(), pos_integer()) :: clock_answer()
+  def drive_clock_brute_nif(_tokens, _quantity, _limit), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Gets the time warp of a segment, optionally with max_duration constraint."
   @spec duration_segment_time_warp_nif(reference(), integer()) :: integer()

@@ -228,6 +228,51 @@ defmodule ExVrp.WarmStartRepairTest do
     end
 
     @doc """
+    That trim again on a vehicle type with limits between breaks, the seed carrying a break in
+    each trip. Positions count the breaks, and a break is never the visit given up, so the trim
+    still lands on four clients and the plan it hands over has every break it needs.
+    """
+    @tag :nif_required
+    test "drops visits from a seed with breaks, never a break" do
+      Logger.configure(level: :info)
+      on_exit(fn -> Logger.configure(level: :warning) end)
+
+      model =
+        1..5
+        |> Enum.reduce(Model.add_depot(Model.new(), []), fn _client, acc ->
+          Model.add_client(acc, delivery: [1], required: false, prize: 10_000_000)
+        end)
+        |> Model.add_vehicle_type(
+          num_available: 1,
+          capacity: [2],
+          reload_depots: [0],
+          max_reloads: 1,
+          max_drive_between_breaks: 25,
+          break_duration: 5
+        )
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {20, 0}, {30, 0}, {0, 10}, {0, 20}])
+
+      seed = [
+        {:trips, [%{reload_depot: nil, clients: [1, :break, 2, 3]}, %{reload_depot: 0, clients: [4, :break, 5]}]}
+      ]
+
+      log =
+        capture_log(fn ->
+          {:ok, result} = ExVrp.solve(model, initial_routes: seed, max_iterations: 0, num_starts: 1, seed: 1)
+          [route] = Solution.routes(result.best)
+
+          assert Solution.feasible?(result.best)
+          assert Solution.num_clients(result.best) == 4
+          assert ExVrp.Route.num_trips(route) == 2
+          assert ExVrp.Route.clock_excess(route) == 0
+          assert ExVrp.Route.breaks(route) != []
+        end)
+
+      assert log =~ "Warm start is infeasible"
+      assert log =~ "Warm start repair dropped 1 visit(s)"
+    end
+
+    @doc """
     The other half of that bargain. Feasibility also demands every required client be visited, so
     where the clients are required there is no removal that gets closer to it — dropping one trades
     the time warp for a missing client and leaves the seed no more usable than before. Trimming has
@@ -302,6 +347,46 @@ defmodule ExVrp.WarmStartRepairTest do
       assert log =~ ":initial_routes is invalid, falling back to empty start"
       assert log =~ "One descent from empty does not always reach feasibility"
       refute log =~ "Warm start"
+    end
+  end
+
+  describe "an invalid :break in a warm start" do
+    @rule [max_drive_between_breaks: 270, break_duration: 45]
+
+    # Depot 0 and clients at 150, 300 and 450 on a line: the route needs breaks.
+    defp break_model(vehicle_types) do
+      Enum.reduce(
+        vehicle_types,
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_client(delivery: [1])
+        |> Model.set_euclidean_matrices([{0, 0}, {150, 0}, {300, 0}, {450, 0}]),
+        &Model.add_vehicle_type(&2, Keyword.merge([num_available: 1, capacity: [10]], &1))
+      )
+    end
+
+    defp solve_logged(model, initial_routes) do
+      capture_log(fn ->
+        {:ok, result} = ExVrp.solve(model, initial_routes: initial_routes, max_iterations: 50, num_starts: 1, seed: 1)
+
+        assert Solution.feasible?(result.best)
+      end)
+    end
+
+    @tag :nif_required
+    test "more markers than the pool holds fall back to a cold start" do
+      log = solve_logged(break_model([@rule]), [[1, 2, 3 | List.duplicate(:break, 40)]])
+
+      assert log =~ "40 :break markers, but the model's pool holds"
+    end
+
+    @tag :nif_required
+    test "a marker on a vehicle type without limits between breaks falls back to a cold start" do
+      log = solve_logged(break_model([@rule, []]), [[], [1, :break, 2, 3]])
+
+      assert log =~ "vehicle_type 1 has no limit between breaks"
     end
   end
 

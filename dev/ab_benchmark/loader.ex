@@ -7,17 +7,30 @@ defmodule ExVrp.ABBenchmark.Loader do
   ETF deserialization runs without `[:safe]` on purpose: these are trusted,
   repo-local production model snapshots that legitimately carry atoms not yet
   loaded in a fresh VM, which `[:safe]` would reject.
+
+  A `:production_breaks` entry is its production snapshot with the same limits
+  between breaks on every vehicle type. The snapshots' durations are seconds.
   """
 
   alias ExVrp.ABBenchmark.Corpus
   alias ExVrp.Read
+
+  @break_limits [break_duration: 1_800, max_drive_between_breaks: 14_400, max_work_between_breaks: 18_000]
 
   @spec load(Corpus.Entry.t()) :: ExVrp.Model.t()
   def load(%Corpus.Entry{kind: :vrplib, path: path, round_func: rf}) do
     Read.read(path, round_func: rf)
   end
 
-  def load(%Corpus.Entry{kind: :etf, path: path}) do
+  def load(%Corpus.Entry{kind: :etf, variant: :production_breaks, path: path}) do
+    path
+    |> load_etf()
+    |> Map.update!(:vehicle_types, fn vehicle_types -> Enum.map(vehicle_types, &struct!(&1, @break_limits)) end)
+  end
+
+  def load(%Corpus.Entry{kind: :etf, path: path}), do: load_etf(path)
+
+  defp load_etf(path) do
     path
     |> File.read!()
     |> Base.decode64!()

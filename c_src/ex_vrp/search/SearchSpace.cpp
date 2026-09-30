@@ -8,14 +8,18 @@ using pyvrp::search::Route;
 using pyvrp::search::SearchSpace;
 
 SearchSpace::SearchSpace(ProblemData const &data, Neighbours neighbours)
-    : neighbours_(data.numLocations()),
+    : numDepots_(data.numDepots()),
+      neighbours_(data.numLocations()),
       promising_(data.numLocations()),
-      clientOrder_(data.numClients()),
       routeOrder_(data.numVehicles())
 {
     setNeighbours(neighbours);
 
-    std::iota(clientOrder_.begin(), clientOrder_.end(), data.numDepots());
+    clientOrder_.reserve(data.numClients());
+    for (size_t client = numDepots_; client != data.numLocations(); ++client)
+        if (!data.isBreak(client))
+            clientOrder_.push_back(client);
+
     std::iota(routeOrder_.begin(), routeOrder_.end(), 0);
 
     size_t offset = 0;
@@ -31,14 +35,13 @@ void SearchSpace::setNeighbours(Neighbours neighbours)
     if (neighbours.size() != neighbours_.size())
         throw std::runtime_error("Neighbourhood dimensions do not match.");
 
-    size_t numDepots = neighbours_.size() - clientOrder_.size();
-    for (size_t client = numDepots; client != neighbours.size(); ++client)
+    for (size_t client = numDepots_; client != neighbours.size(); ++client)
     {
         auto const beginPos = neighbours[client].begin();
         auto const endPos = neighbours[client].end();
 
         auto const pred
-            = [&](auto item) { return item == client || item < numDepots; };
+            = [&](auto item) { return item == client || item < numDepots_; };
 
         if (std::any_of(beginPos, endPos, pred))
         {

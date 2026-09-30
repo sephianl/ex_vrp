@@ -29,6 +29,7 @@
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <variant>
 #include <vector>
 
 using namespace pyvrp;
@@ -454,6 +455,7 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
     int64_t release_time = 0;
     int64_t prize = 0;
     bool required = true;
+    bool is_break = false;
     std::optional<size_t> group = std::nullopt;
 
     ERL_NIF_TERM key, value;
@@ -544,6 +546,14 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                     required = (std::string(buf) == "true");
                 }
             }
+            else if (key_str == "is_break")
+            {
+                char buf[32];
+                if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1))
+                {
+                    is_break = (std::string(buf) == "true");
+                }
+            }
             else if (key_str == "group")
             {
                 // Check for nil
@@ -585,8 +595,8 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                                Cost(prize),
                                required,
                                group,
-                               std::string("")  // name
-    );
+                               std::string(""),  // name
+                               is_break);
 }
 
 // Decode a single depot from Elixir map
@@ -668,6 +678,12 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     int64_t max_distance = std::numeric_limits<int64_t>::max();
     int64_t max_distance_per_trip = std::numeric_limits<int64_t>::max();
     int64_t max_drive = std::numeric_limits<int64_t>::max();
+    int64_t max_drive_between_breaks = std::numeric_limits<int64_t>::max();
+    int64_t break_duration = 0;
+    int64_t max_work_between_breaks = std::numeric_limits<int64_t>::max();
+    int64_t drive_carry_in = 0;
+    int64_t work_carry_in = 0;
+    int64_t work_after_end = 0;
     int64_t unit_distance_cost = 1;
     int64_t unit_duration_cost = 0;
     int64_t profile = 0;
@@ -821,6 +837,54 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                 {
                     nif_get_int64(env, value, &max_drive);
                 }
+            }
+            else if (key_str == "max_drive_between_breaks")
+            {
+                char buf[32];
+                if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1))
+                {
+                    if (std::string(buf) == "infinity")
+                    {
+                        max_drive_between_breaks
+                            = std::numeric_limits<int64_t>::max();
+                    }
+                }
+                else
+                {
+                    nif_get_int64(env, value, &max_drive_between_breaks);
+                }
+            }
+            else if (key_str == "max_work_between_breaks")
+            {
+                char buf[32];
+                if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1))
+                {
+                    if (std::string(buf) == "infinity")
+                    {
+                        max_work_between_breaks
+                            = std::numeric_limits<int64_t>::max();
+                    }
+                }
+                else
+                {
+                    nif_get_int64(env, value, &max_work_between_breaks);
+                }
+            }
+            else if (key_str == "drive_carry_in")
+            {
+                nif_get_int64(env, value, &drive_carry_in);
+            }
+            else if (key_str == "work_carry_in")
+            {
+                nif_get_int64(env, value, &work_carry_in);
+            }
+            else if (key_str == "work_after_end")
+            {
+                nif_get_int64(env, value, &work_after_end);
+            }
+            else if (key_str == "break_duration")
+            {
+                nif_get_int64(env, value, &break_duration);
             }
             else if (key_str == "unit_distance_cost")
             {
@@ -984,7 +1048,13 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
         std::move(forbidden_windows),
         Duration(overtime_start),
         Distance(max_distance_per_trip),
-        Duration(max_drive));
+        Duration(max_drive),
+        Duration(max_drive_between_breaks),
+        Duration(break_duration),
+        Duration(max_work_between_breaks),
+        Duration(drive_carry_in),
+        Duration(work_carry_in),
+        Duration(work_after_end));
 }
 
 // Decode distance/duration matrix from nested list
@@ -1610,6 +1680,7 @@ solution_routes([[maybe_unused]] ErlNifEnv *env,
                 fine::ResourcePtr<SolutionResource> solution_resource)
 {
     auto &solution = solution_resource->solution;
+    auto const &data = *solution_resource->problemData;
 
     auto const &routes = solution.routes();
     std::vector<ERL_NIF_TERM> route_terms;
@@ -1622,9 +1693,10 @@ solution_routes([[maybe_unused]] ErlNifEnv *env,
         for (auto const &visit : route.visits())
         {
             // visits() returns client indices (already 0-based, relative to
-            // clients)
-            client_terms.push_back(
-                enif_make_int64(env, static_cast<int64_t>(visit)));
+            // clients). Breaks are the solver's own and never shown.
+            if (!data.isBreak(visit))
+                client_terms.push_back(
+                    enif_make_int64(env, static_cast<int64_t>(visit)));
         }
 
         route_terms.push_back(enif_make_list_from_array(
@@ -1641,7 +1713,9 @@ FINE_NIF(solution_routes, 0);
  * Get routes from solution as, per route, its trips: a list of
  * %{start_depot: depot, clients: [client, ...]} maps. The inverse of the
  * {:trips, ...} warm-start form, where only the first trip starts at the
- * vehicle type's start depot and every later one at a reload depot.
+ * vehicle type's start depot and every later one at a reload depot. Unlike
+ * the other listings this keeps break clients, so a rebuild from it keeps the
+ * route's breaks.
  */
 fine::Term solution_trips([[maybe_unused]] ErlNifEnv *env,
                           fine::ResourcePtr<SolutionResource> solution_resource)
@@ -1698,16 +1772,18 @@ solution_unassigned([[maybe_unused]] ErlNifEnv *env,
 {
     auto &solution = solution_resource->solution;
     auto const &neighbours = solution.neighbours();
-    auto const numDepots = solution_resource->problemData->numDepots();
+    auto const &data = *solution_resource->problemData;
+    auto const numDepots = data.numDepots();
 
     std::vector<ERL_NIF_TERM> unassigned;
 
     // neighbours vector is indexed by location (depots first, then clients)
     // A None/nullopt entry means the location is unassigned
-    // We only care about unassigned clients (indices >= numDepots)
+    // We only care about unassigned clients (indices >= numDepots), and not
+    // about breaks: those are the solver's own, and a spare one is no loss.
     for (size_t i = numDepots; i < neighbours.size(); ++i)
     {
-        if (!neighbours[i].has_value())
+        if (!neighbours[i].has_value() && !data.isBreak(i))
         {
             unassigned.push_back(enif_make_int64(env, static_cast<int64_t>(i)));
         }
@@ -1965,6 +2041,236 @@ int64_t solution_route_drive_excess(
 }
 
 FINE_NIF(solution_route_drive_excess, 0);
+
+/**
+ * Get drive clock excess (travel past max_drive_between_breaks) of a specific
+ * route in the solution.
+ */
+int64_t solution_route_clock_excess(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SolutionResource> solution_resource,
+    int64_t route_idx)
+{
+    auto &solution = solution_resource->solution;
+    auto const &routes = solution.routes();
+
+    if (route_idx < 0 || static_cast<size_t>(route_idx) >= routes.size())
+    {
+        return 0;
+    }
+
+    return static_cast<int64_t>(
+        routes[static_cast<size_t>(route_idx)].clockExcess());
+}
+
+FINE_NIF(solution_route_clock_excess, 0);
+
+/**
+ * Get working-time clock excess (work past max_work_between_breaks) of a
+ * specific route in the solution.
+ */
+int64_t solution_route_work_clock_excess(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SolutionResource> solution_resource,
+    int64_t route_idx)
+{
+    auto &solution = solution_resource->solution;
+    auto const &routes = solution.routes();
+
+    if (route_idx < 0 || static_cast<size_t>(route_idx) >= routes.size())
+    {
+        return 0;
+    }
+
+    return static_cast<int64_t>(
+        routes[static_cast<size_t>(route_idx)].workClockExcess());
+}
+
+FINE_NIF(solution_route_work_clock_excess, 0);
+
+// Test-only drive clock NIFs. A token is {:leg, drive}, a drive to the next
+// real node; {:stop, service}, service at the real node reached last (or the
+// start node); or :break, a break on the leg after it. Routes start and end
+// at a real node. The quantity is :drive, which ignores service, or :work.
+namespace
+{
+using ClockToken = std::variant<std::tuple<fine::Atom, int64_t>, fine::Atom>;
+
+std::optional<Duration> legDrive(ClockToken const &token)
+{
+    if (auto const *leg = std::get_if<std::tuple<fine::Atom, int64_t>>(&token))
+        if (std::get<0>(*leg) == "leg")
+            return Duration(std::get<1>(*leg));
+
+    return std::nullopt;
+}
+
+// Service of a stop token, counted only by the work clock; nullopt otherwise.
+std::optional<Duration> stopWork(ClockToken const &token, bool work)
+{
+    if (auto const *stop = std::get_if<std::tuple<fine::Atom, int64_t>>(&token))
+        if (std::get<0>(*stop) == "stop")
+            return Duration(work ? std::get<1>(*stop) : 0);
+
+    return std::nullopt;
+}
+
+// Adds a real node's own work to a clock ending at that node. Breaks already
+// counted in trailRun sit on the next leg, so the work still precedes them.
+void addWork(DriveClock &clock, Duration work)
+{
+    clock.tail += work;
+    if (clock.resets == 0)
+        clock.head += work;
+}
+
+// Folds tokens [begin, end) onto `clock`, which ends at a real node.
+DriveClock foldTokens(std::vector<ClockToken> const &tokens,
+                      size_t begin,
+                      size_t end,
+                      bool work,
+                      Duration limit,
+                      DriveClock clock = {})
+{
+    for (size_t idx = begin; idx != end; ++idx)
+        if (auto const drive = legDrive(tokens[idx]))
+            clock = DriveClock::merge(clock, *drive, {}, limit);
+        else if (auto const service = stopWork(tokens[idx], work))
+            addWork(clock, *service);
+        else
+            clock.trailRun++;
+
+    return clock;
+}
+
+bool isWork(fine::Atom const &quantity) { return quantity == "work"; }
+
+using ClockAnswer = std::tuple<int64_t, int64_t>;  // {overrun, missing}
+
+ClockAnswer answer(DriveClock const &clock, Duration limit)
+{
+    return {static_cast<int64_t>(clock.overrun(limit).get()),
+            static_cast<int64_t>(clock.missing(limit))};
+}
+
+// Taken as a Term and decoded here, since fine cannot decode into a const
+// reference and cppcheck flags a by-value vector.
+std::vector<ClockToken> decodeTokens(ErlNifEnv *env, fine::Term term)
+{
+    return fine::decode<std::vector<ClockToken>>(env, term);
+}
+}  // namespace
+
+ClockAnswer drive_clock_fold_nif(ErlNifEnv *env,
+                                 fine::Term tokensTerm,
+                                 fine::Atom quantity,
+                                 int64_t limit)
+{
+    auto const tokens = decodeTokens(env, tokensTerm);
+    auto const work = isWork(quantity);
+    return answer(foldTokens(tokens, 0, tokens.size(), work, limit), limit);
+}
+
+FINE_NIF(drive_clock_fold_nif, 0);
+
+// Folds tokens [0, split) and [split, end) separately, then merges the two
+// over the leg joining them, as SegmentBefore and SegmentAfter are merged.
+ClockAnswer drive_clock_fold_split_nif(ErlNifEnv *env,
+                                       fine::Term tokensTerm,
+                                       int64_t split,
+                                       fine::Atom quantity,
+                                       int64_t limit)
+{
+    auto const tokens = decodeTokens(env, tokensTerm);
+    auto const work = isWork(quantity);
+    auto const mid = std::min(static_cast<size_t>(std::max<int64_t>(split, 0)),
+                              tokens.size());
+    auto first = foldTokens(tokens, 0, mid, work, limit);
+
+    // Segments split between real nodes, never inside one: stops before the
+    // joining leg belong to the first part's last node. The second part's
+    // leading breaks sit on the joining leg, which is its first leg token; its
+    // fold starts at the real node that leg reaches.
+    size_t leadRun = 0;
+    for (auto joining = mid; joining != tokens.size(); ++joining)
+        if (auto const edge = legDrive(tokens[joining]))
+        {
+            DriveClock const lead = {.leadRun = leadRun};
+            auto const second = foldTokens(
+                tokens, joining + 1, tokens.size(), work, limit, lead);
+
+            return answer(DriveClock::merge(first, *edge, second, limit),
+                          limit);
+        }
+        else if (auto const service = stopWork(tokens[joining], work))
+            addWork(first, *service);
+        else
+            leadRun++;
+
+    // No leg after the split, so no second real node: nothing to merge.
+    return answer(first, limit);
+}
+
+FINE_NIF(drive_clock_fold_split_nif, 0);
+
+// The spec's rule, walked directly: a leg carrying k >= 1 breaks closes the
+// stretch before it, and the next stretch starts with the leg's drive less
+// (k - 1) * limit. Work adds each stop's service to the open stretch; breaks
+// before the first leg sit on it and close the (carried-in) stretch there.
+ClockAnswer drive_clock_brute_nif(ErlNifEnv *env,
+                                  fine::Term tokensTerm,
+                                  fine::Atom quantity,
+                                  int64_t limit)
+{
+    auto const tokens = decodeTokens(env, tokensTerm);
+    auto const work = isWork(quantity);
+    int64_t overrun = 0;
+    int64_t missing = 0;
+    int64_t stretch = 0;
+    int64_t breaks = 0;
+
+    // Breaks a stretch lacks: the smallest m with stretch <= (m + 1) * limit.
+    auto const lacking = [limit](int64_t drive)
+    {
+        int64_t m = 0;
+        while (drive > (m + 1) * limit)
+            m++;
+        return m;
+    };
+
+    for (auto const &token : tokens)
+    {
+        if (auto const service = stopWork(token, work))
+        {
+            stretch += static_cast<int64_t>(service->get());
+            continue;
+        }
+
+        auto const drive = legDrive(token);
+        if (!drive)
+        {
+            breaks++;
+            continue;
+        }
+
+        auto const leg = static_cast<int64_t>(drive->get());
+        if (breaks == 0)
+        {
+            stretch += leg;
+            continue;
+        }
+
+        overrun += std::max<int64_t>(stretch - limit, 0);
+        missing += lacking(stretch);
+        stretch = std::max<int64_t>(leg - (breaks - 1) * limit, 0);
+        breaks = 0;
+    }
+
+    return {overrun + std::max<int64_t>(stretch - limit, 0),
+            missing + lacking(stretch)};
+}
+
+FINE_NIF(drive_clock_brute_nif, 0);
 
 /**
  * Check if a specific route has excess load.
@@ -2352,13 +2658,15 @@ solution_route_visits([[maybe_unused]] ErlNifEnv *env,
         return fine::Term(enif_make_list(env, 0));
     }
 
+    auto const &data = *solution_resource->problemData;
     auto const &visits = routes[static_cast<size_t>(route_idx)].visits();
     std::vector<ERL_NIF_TERM> terms;
     terms.reserve(visits.size());
 
     for (auto client : visits)
     {
-        terms.push_back(enif_make_int64(env, static_cast<int64_t>(client)));
+        if (!data.isBreak(client))  // the solver's own, never shown
+            terms.push_back(enif_make_int64(env, static_cast<int64_t>(client)));
     }
 
     return fine::Term(
@@ -2385,12 +2693,16 @@ solution_route_schedule([[maybe_unused]] ErlNifEnv *env,
         return fine::Term(enif_make_list(env, 0));
     }
 
+    auto const &data = *solution_resource->problemData;
     auto const &schedule = routes[static_cast<size_t>(route_idx)].schedule();
     std::vector<ERL_NIF_TERM> terms;
     terms.reserve(schedule.size());
 
     for (auto const &visit : schedule)
     {
+        if (data.isBreak(visit.location))  // the solver's own, never shown
+            continue;
+
         // Create a tuple: {location, trip, start_service, end_service,
         // wait_duration, time_warp}
         ERL_NIF_TERM tuple = enif_make_tuple6(
@@ -2409,6 +2721,55 @@ solution_route_schedule([[maybe_unused]] ErlNifEnv *env,
 }
 
 FINE_NIF(solution_route_schedule, 0);
+
+/**
+ * Get the breaks on a route, which its schedule leaves out.
+ * Returns a list of tuples: {visits_before, trip, start_service, end_service},
+ * where visits_before counts the route's visits before the break.
+ */
+fine::Term
+solution_route_breaks([[maybe_unused]] ErlNifEnv *env,
+                      fine::ResourcePtr<SolutionResource> solution_resource,
+                      int64_t route_idx)
+{
+    auto &solution = solution_resource->solution;
+    auto const &routes = solution.routes();
+
+    if (route_idx < 0 || static_cast<size_t>(route_idx) >= routes.size())
+    {
+        return fine::Term(enif_make_list(env, 0));
+    }
+
+    auto const &data = *solution_resource->problemData;
+    auto const &schedule = routes[static_cast<size_t>(route_idx)].schedule();
+    std::vector<ERL_NIF_TERM> terms;
+    size_t visitsBefore = 0;
+
+    for (auto const &visit : schedule)
+    {
+        if (visit.location < data.numDepots())  // start, reload or end depot
+            continue;
+
+        if (!data.isBreak(visit.location))
+        {
+            visitsBefore++;
+            continue;
+        }
+
+        ERL_NIF_TERM tuple = enif_make_tuple4(
+            env,
+            enif_make_int64(env, static_cast<int64_t>(visitsBefore)),
+            enif_make_int64(env, static_cast<int64_t>(visit.trip)),
+            enif_make_int64(env, static_cast<int64_t>(visit.startService)),
+            enif_make_int64(env, static_cast<int64_t>(visit.endService)));
+        terms.push_back(tuple);
+    }
+
+    return fine::Term(
+        enif_make_list_from_array(env, terms.data(), terms.size()));
+}
+
+FINE_NIF(solution_route_breaks, 0);
 
 /**
  * Get the total fixed vehicle cost of the solution.
@@ -2925,6 +3286,20 @@ create_solution_from_routes_with_types_nif(
                 decode_warm_start_clients(env, *problem_data, tuple_elems[1]),
                 vehicle_type);
         }
+
+        // Only a vehicle type with limits between breaks takes a break: on
+        // any other it lengthens the route and resets nothing.
+        if (!problem_data->vehicleType(vehicle_type).hasBreakRule())
+            for (auto const &trip : routes.back().trips())
+                for (auto const client : trip)
+                    if (problem_data->isBreak(client))
+                    {
+                        std::ostringstream msg;
+                        msg << "vehicle_type " << vehicle_type
+                            << " has no limit between breaks, so it cannot "
+                               "take a break";
+                        throw std::invalid_argument(msg.str());
+                    }
     }
 
     Solution solution(*problem_data, std::move(routes));
@@ -2958,6 +3333,26 @@ int64_t problem_data_num_clients(
 }
 
 FINE_NIF(problem_data_num_clients, 0);
+
+/**
+ * The break clients' location indices, in order.
+ */
+std::vector<int64_t> problem_data_break_clients(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<ProblemDataResource> problem_resource)
+{
+    auto const &data = *problem_resource->data;
+
+    std::vector<int64_t> breaks;
+    for (size_t client = data.numDepots(); client != data.numLocations();
+         ++client)
+        if (data.isBreak(client))
+            breaks.push_back(static_cast<int64_t>(client));
+
+    return breaks;
+}
+
+FINE_NIF(problem_data_break_clients, 0);
 
 /**
  * Get the number of depots from ProblemData.
@@ -3347,12 +3742,18 @@ build_neighbours(ProblemData const &data,
 
     // Step 9: For each client, find k nearest by proximity
     size_t k = std::min(numNeighbours, numClients - 1);
+    // Breaks have no location, so they neither have nor are neighbours. They
+    // are skipped here rather than priced at infinity in step 8, since k can
+    // exceed the number of finite candidates.
     for (size_t i = numDepots; i < numLocs; ++i)
     {
+        if (data.isBreak(i))
+            continue;
+
         std::vector<std::pair<double, size_t>> proximities;
         for (size_t j = numDepots; j < numLocs; ++j)
         {
-            if (i != j)
+            if (i != j && !data.isBreak(j))
             {
                 proximities.emplace_back(edgeCosts[i][j], j);
             }
@@ -3376,6 +3777,22 @@ build_neighbours(ProblemData const &data,
 
     return neighbours;
 }
+
+/**
+ * The neighbourhood the solver builds, with its default parameters.
+ */
+std::vector<std::vector<int64_t>>
+build_neighbours_nif([[maybe_unused]] ErlNifEnv *env,
+                     fine::ResourcePtr<ProblemDataResource> problem_resource)
+{
+    std::vector<std::vector<int64_t>> result;
+    for (auto const &list : build_neighbours(*problem_resource->data))
+        result.emplace_back(list.begin(), list.end());
+
+    return result;
+}
+
+FINE_NIF(build_neighbours_nif, 0);
 
 /**
  * Perform local search on a solution.
@@ -4341,6 +4758,16 @@ int64_t search_route_timeline_time_warp_nif(
 }
 
 FINE_NIF(search_route_timeline_time_warp_nif, 0);
+
+// Get the breaks the route still lacks, as priced in its duration
+int64_t search_route_virtual_breaks_nif(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SearchRouteResource> route_resource)
+{
+    return static_cast<int64_t>(route_resource->route()->virtualBreaks());
+}
+
+FINE_NIF(search_route_virtual_breaks_nif, 0);
 
 // Get route overtime
 int64_t

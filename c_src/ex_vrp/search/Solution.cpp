@@ -140,6 +140,10 @@ bool Solution::insert(Route::Node *U,
 {
     assert(size_t(std::distance(nodes.data(), U)) < nodes.size());
 
+    // Every estimate below reads U's own location, which a break lacks.
+    // Breaks are placed by BreakRepair.
+    assert(!data_.isBreak(U->client()));
+
     Route *requiredRoute = nullptr;
     char const *requiredVehicleName = nullptr;
 

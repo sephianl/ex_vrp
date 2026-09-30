@@ -84,6 +84,7 @@ PYVRP_CORE_SRC = \
 
 # PyVRP search sources
 PYVRP_SEARCH_SRC = \
+	c_src/ex_vrp/search/BreakRepair.cpp \
 	c_src/ex_vrp/search/LocalSearch.cpp \
 	c_src/ex_vrp/search/PerturbationManager.cpp \
 	c_src/ex_vrp/search/RelocateWithDepot.cpp \

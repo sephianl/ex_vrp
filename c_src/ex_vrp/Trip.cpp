@@ -2,6 +2,7 @@
 #include "LoadSegment.h"
 
 #include <algorithm>
+#include <cassert>
 #include <fstream>
 
 using pyvrp::Coordinate;
@@ -64,23 +65,28 @@ Trip::Trip(ProblemData const &data,
     auto const &distances = data.distanceMatrix(vehData.profile);
     auto const &durations = data.durationMatrix(vehData.profile);
 
-    for (size_t prevClient = startDepot_; auto const client : visits_)
+    // A break takes the location of the nearest non-break node before it, so
+    // its edges are matrix(prev, prev) = 0 in and matrix(prev, next) out.
+    size_t prevLoc = startDepot_;
+    for (auto const client : visits_)
     {
-        distance_ += distances(prevClient, client);
-        travel_ += durations(prevClient, client);
+        auto const loc = data.isBreak(client) ? prevLoc : client;
+        assert(!data.isBreak(prevLoc) && !data.isBreak(loc));
+        distance_ += distances(prevLoc, loc);
+        travel_ += durations(prevLoc, loc);
 
         ProblemData::Client const &clientData = data.location(client);
 
+        // Zero for a break (see Client): its duration is rest, not service.
         service_ += clientData.serviceDuration;
         release_ = std::max(release_, clientData.releaseTime);
         prizes_ += clientData.prize;
 
-        prevClient = client;
+        prevLoc = loc;
     }
 
-    auto const last = empty() ? startDepot_ : visits_.back();
-    distance_ += distances(last, endDepot_);
-    travel_ += durations(last, endDepot_);
+    distance_ += distances(prevLoc, endDepot_);
+    travel_ += durations(prevLoc, endDepot_);
 
     for (size_t dim = 0; dim != data.numLoadDimensions(); ++dim)
     {
