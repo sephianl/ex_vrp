@@ -107,6 +107,7 @@ defmodule ExVrp.Native do
     solution_route_prizes: 2,
     solution_route_visits: 2,
     solution_route_schedule: 2,
+    solution_route_breaks: 2,
     solution_fixed_vehicle_cost: 1,
     solution_penalty_cost: 1,
     solution_lock_cost: 1,
@@ -953,6 +954,15 @@ defmodule ExVrp.Native do
              non_neg_integer()}
           ]
   def solution_route_schedule(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Returns the breaks of a route, which its schedule leaves out.
+
+  Each tuple contains: {visits_before, trip, start_service, end_service}
+  """
+  @spec solution_route_breaks(reference(), non_neg_integer()) ::
+          [{non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}]
+  def solution_route_breaks(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Returns the total fixed vehicle cost of the solution.

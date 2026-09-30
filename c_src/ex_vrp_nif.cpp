@@ -2723,6 +2723,55 @@ solution_route_schedule([[maybe_unused]] ErlNifEnv *env,
 FINE_NIF(solution_route_schedule, 0);
 
 /**
+ * Get the breaks on a route, which its schedule leaves out.
+ * Returns a list of tuples: {visits_before, trip, start_service, end_service},
+ * where visits_before counts the route's visits before the break.
+ */
+fine::Term
+solution_route_breaks([[maybe_unused]] ErlNifEnv *env,
+                      fine::ResourcePtr<SolutionResource> solution_resource,
+                      int64_t route_idx)
+{
+    auto &solution = solution_resource->solution;
+    auto const &routes = solution.routes();
+
+    if (route_idx < 0 || static_cast<size_t>(route_idx) >= routes.size())
+    {
+        return fine::Term(enif_make_list(env, 0));
+    }
+
+    auto const &data = *solution_resource->problemData;
+    auto const &schedule = routes[static_cast<size_t>(route_idx)].schedule();
+    std::vector<ERL_NIF_TERM> terms;
+    size_t visitsBefore = 0;
+
+    for (auto const &visit : schedule)
+    {
+        if (visit.location < data.numDepots())  // start, reload or end depot
+            continue;
+
+        if (!data.isBreak(visit.location))
+        {
+            visitsBefore++;
+            continue;
+        }
+
+        ERL_NIF_TERM tuple = enif_make_tuple4(
+            env,
+            enif_make_int64(env, static_cast<int64_t>(visitsBefore)),
+            enif_make_int64(env, static_cast<int64_t>(visit.trip)),
+            enif_make_int64(env, static_cast<int64_t>(visit.startService)),
+            enif_make_int64(env, static_cast<int64_t>(visit.endService)));
+        terms.push_back(tuple);
+    }
+
+    return fine::Term(
+        enif_make_list_from_array(env, terms.data(), terms.size()));
+}
+
+FINE_NIF(solution_route_breaks, 0);
+
+/**
  * Get the total fixed vehicle cost of the solution.
  */
 int64_t solution_fixed_vehicle_cost(

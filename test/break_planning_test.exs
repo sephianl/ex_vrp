@@ -279,6 +279,32 @@ defmodule ExVrp.BreakPlanningTest do
     assert Route.wait_duration(route) == Route.wait_duration(plain) - 45
   end
 
+  test "breaks/1 says where each break falls and when" do
+    solution = @rule |> model() |> best()
+    [route] = Solution.routes(solution)
+    breaks = Route.breaks(route)
+
+    services =
+      for {location, _trip, start, stop, _wait, _warp} <- Route.schedule(route), location != 0, do: {start, stop}
+
+    assert length(breaks) * 45 == break_time(route)
+    assert Enum.sort_by(breaks, & &1.start_service) == breaks
+
+    for %{visits_before: before, trip: trip, start_service: start, end_service: stop} <- breaks do
+      assert stop - start == 45
+      assert trip == 0
+      assert before in 0..3
+      assert before == 0 or start >= services |> Enum.at(before - 1) |> elem(1)
+      assert before == 3 or stop <= services |> Enum.at(before) |> elem(0)
+    end
+  end
+
+  test "breaks/1 is empty without a limit between breaks" do
+    [route] = [] |> model() |> best() |> Solution.routes()
+
+    assert Route.breaks(route) == []
+  end
+
   # Capacity 1 and two unit deliveries: two trips, 400 of drive across them.
   test "a two-trip route gets the breaks it needs" do
     solution =
@@ -297,6 +323,15 @@ defmodule ExVrp.BreakPlanningTest do
     assert Route.num_trips(route) == 2
     assert Route.clock_excess(route) == 0
     assert break_time(route) >= 45
+
+    trip_of_visit =
+      for {location, trip, _start, _stop, _wait, _warp} <- Route.schedule(route), location != 0, do: trip
+
+    for %{visits_before: before, trip: trip} <- Route.breaks(route) do
+      assert trip in 0..1
+      assert before == 0 or trip >= Enum.at(trip_of_visit, before - 1)
+      assert before == 2 or trip <= Enum.at(trip_of_visit, before)
+    end
   end
 
   # The route runs past 500, so it meets the vehicle's 500-600 gap.

@@ -336,6 +336,30 @@ defmodule ExVrp.Route do
     Native.solution_route_schedule(ref, idx)
   end
 
+  @doc """
+  Returns the breaks the solver placed on this route, which `schedule/1` leaves out.
+
+  `visits_before` counts this route's `visits/1` before the break, so `0` is a break before the
+  first visit and `length(visits)` one after the last. Breaks taken back to back are separate
+  entries with the same `visits_before`. A break takes no location: it is taken where the vehicle
+  is, between `start_service` and `end_service`.
+  """
+  @spec breaks(t()) :: [
+          %{
+            visits_before: non_neg_integer(),
+            trip: non_neg_integer(),
+            start_service: non_neg_integer(),
+            end_service: non_neg_integer()
+          }
+        ]
+  def breaks(%__MODULE__{solution_ref: ref, route_idx: idx}) do
+    ref
+    |> Native.solution_route_breaks(idx)
+    |> Enum.map(fn {visits_before, trip, start_service, end_service} ->
+      %{visits_before: visits_before, trip: trip, start_service: start_service, end_service: end_service}
+    end)
+  end
+
   # ---------------------------------------------------------------------------
   # Convenience (doesn't require solution_ref)
   # ---------------------------------------------------------------------------
