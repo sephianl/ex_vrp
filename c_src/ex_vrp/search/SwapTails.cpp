@@ -19,8 +19,8 @@ size_t clientsAfter(pyvrp::search::Route::Node *node)
 {
     auto const *route = node->route();
     auto const last = route->size() - 2;
-    if (node->idx() == last)
-        return 0;
+    if (node->idx() == last || route->numBreaks() == 0)
+        return last - node->idx();
 
     return last - node->idx()
            - route->between(node->idx() + 1, last).numBreaks();
@@ -65,10 +65,27 @@ pyvrp::Cost SwapTails::evaluate(Route::Node *U,
     Cost deltaCost = 0;
 
     // We incur fixed cost if a route is currently empty but gains clients,
-    // and lose it if a route loses its last client. Breaks in the tails are
-    // not clients, so this counts clients rather than asking for depots.
-    deltaCost += fixedCostDelta(U, clientsAfter(V));
-    deltaCost += fixedCostDelta(V, clientsAfter(U));
+    // and lose it if a route loses its last client. Without breaks on either
+    // route every node is a client, so the depots around U and V tell.
+    if (uRoute->numBreaks() == 0 && vRoute->numBreaks() == 0)
+    {
+        if (uRoute->empty() && !n(V)->isEndDepot())
+            deltaCost += uRoute->fixedVehicleCost();
+
+        if (vRoute->empty() && !n(U)->isEndDepot())
+            deltaCost += vRoute->fixedVehicleCost();
+
+        if (!uRoute->empty() && U->isStartDepot() && n(V)->isEndDepot())
+            deltaCost -= uRoute->fixedVehicleCost();
+
+        if (!vRoute->empty() && V->isStartDepot() && n(U)->isEndDepot())
+            deltaCost -= vRoute->fixedVehicleCost();
+    }
+    else  // breaks in the tails are not clients, so count clients instead
+    {
+        deltaCost += fixedCostDelta(U, clientsAfter(V));
+        deltaCost += fixedCostDelta(V, clientsAfter(U));
+    }
 
     if (!n(U)->isEndDepot() && !n(V)->isEndDepot())
     {

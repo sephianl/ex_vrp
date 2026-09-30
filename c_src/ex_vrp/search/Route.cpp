@@ -316,6 +316,27 @@ template <ClockQuantity Quantity> void Route::updateClock()
 #endif
 }
 
+Route::DurationSummary Route::summariseWithBreaks(DurationSegment ds,
+                                                  Duration maxDuration,
+                                                  Duration extra,
+                                                  Duration latestEnd)
+{
+    assert(extra > 0);
+
+    auto const baseEnd
+        = ds.startEarly() + ds.duration() - ds.timeWarp(maxDuration);
+
+    DurationSegment const breaks(
+        extra, 0, 0, std::numeric_limits<Duration>::max(), 0);
+    ds = DurationSegment::merge(0, ds, breaks);
+    auto const late
+        = baseEnd + extra > latestEnd ? baseEnd + extra - latestEnd : 0;
+
+    auto const duration = ds.duration();
+    auto const timeWarp = ds.timeWarp(maxDuration) + late;
+    return {duration, timeWarp, ds.startEarly() + duration - timeWarp};
+}
+
 void Route::update()
 {
     visits.clear();
@@ -341,6 +362,7 @@ void Route::update()
         cumBreaks_[idx + 1] = cumBreaks_[idx] + data.isBreak(visits[idx]);
 
     assert(cumBreaks_.back() == numBreaks_);
+    hasBreaks_ = numBreaks_ > 0;
 
     // Distance.
     auto const &distMat = data.distanceMatrix(profile());

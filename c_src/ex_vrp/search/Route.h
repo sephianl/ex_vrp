@@ -129,6 +129,9 @@ public:
     {
         std::tuple<Segments...> segments_;
 
+        // Every cost method asks, so the fold over segments_ runs once.
+        bool empty_;
+
         /**
          * Returns the number of depots and clients in the proposed route.
          */
@@ -137,7 +140,7 @@ public:
         /**
          * Returns whether the proposed route is empty.
          */
-        bool empty() const;
+        bool empty() const { return empty_; }
 
         // The proposed route's clock over the given quantity; empty without
         // a limit or clients.
@@ -473,6 +476,10 @@ private:
     // one entry more than there are nodes. Segments count theirs from it.
     std::vector<size_t> cumBreaks_;
 
+    // Whether the last update() saw a break node. Without one, locs_ is
+    // visits and nextReal_ the identity, so the segments skip both lookups.
+    bool hasBreaks_ = false;
+
     std::vector<Node *> nodes;   // Nodes in this route, including depots
     std::vector<size_t> visits;  // Locations in this route, incl. depots
 
@@ -487,6 +494,18 @@ private:
     // segments starting at a break measure from here, so they never reach
     // back past their own start for a location.
     std::vector<size_t> nextReal_;
+
+    // nextReal_ and locs_ at idx, without the lookup on a route whose last
+    // update() saw no break, where they are the identity and visits.
+    [[nodiscard]] size_t realAt(size_t idx) const
+    {
+        return hasBreaks_ ? nextReal_[idx] : idx;
+    }
+
+    [[nodiscard]] size_t locAt(size_t idx) const
+    {
+        return hasBreaks_ ? locs_[idx] : visits[idx];
+    }
 
     std::vector<Distance> cumDist;  // Dist of start -> node (incl.)
 
@@ -580,10 +599,26 @@ private:
     // late past `latestEnd`. It pushes no client, so it cannot see waiting it
     // might fill or windows it might break; BreakRepair's real breaks can.
     // Shared by update() and Proposal::duration(), so deltas stay exact.
-    [[nodiscard]] static inline DurationSummary summarise(DurationSegment ds,
-                                                          Duration maxDuration,
-                                                          Duration extra,
-                                                          Duration latestEnd);
+    // Every evaluation of a model without a break rule passes no extra, so
+    // that case stays small enough to inline and the rest is out of line.
+    [[nodiscard]] static DurationSummary summarise(DurationSegment const &ds,
+                                                   Duration maxDuration,
+                                                   Duration extra,
+                                                   Duration latestEnd)
+    {
+        if (extra > 0)
+            return summariseWithBreaks(ds, maxDuration, extra, latestEnd);
+
+        auto const duration = ds.duration();
+        auto const timeWarp = ds.timeWarp(maxDuration);
+        return {duration, timeWarp, ds.startEarly() + duration - timeWarp};
+    }
+
+    [[nodiscard]] static DurationSummary
+    summariseWithBreaks(DurationSegment ds,
+                        Duration maxDuration,
+                        Duration extra,
+                        Duration latestEnd);
 
     // Number of reset legs, when the clock structures are built.
     [[nodiscard]] inline size_t numResets() const;
@@ -1094,7 +1129,7 @@ Route::SegmentBetween::SegmentBetween(Route const &route,
 Distance Route::SegmentAfter::distance([[maybe_unused]] size_t profile) const
 {
     assert(profile == route_.profile());
-    return {route_.cumDist.back() - route_.cumDist[route_.nextReal_[start]]};
+    return {route_.cumDist.back() - route_.cumDist[route_.realAt(start)]};
 }
 
 TripDistance
@@ -1104,7 +1139,7 @@ Route::SegmentAfter::tripDistance([[maybe_unused]] size_t profile) const
 
     auto const last = route_.numTrips() - 1;
     auto const trip = route_.tripOf(start);
-    auto const startDist = route_.cumDist[route_.nextReal_[start]];
+    auto const startDist = route_.cumDist[route_.realAt(start)];
 
     if (trip == last)  // then the segment stays inside a single trip
         return {route_.cumDist.back() - startDist, 0, 0, false};
@@ -1258,12 +1293,12 @@ Route const *Route::SegmentBefore::route() const { return &route_; }
 
 bool Route::SegmentBefore::hasLocation() const { return true; }
 size_t Route::SegmentBefore::first() const { return route_.visits.front(); }
-size_t Route::SegmentBefore::last() const { return route_.locs_[end]; }
+size_t Route::SegmentBefore::last() const { return route_.locAt(end); }
 size_t Route::SegmentBefore::size() const { return end + 1; }
 
 size_t Route::SegmentBefore::numBreaks() const
 {
-    return route_.cumBreaks_[end + 1];
+    return route_.hasBreaks_ ? route_.cumBreaks_[end + 1] : 0;
 }
 
 bool Route::SegmentBefore::startsAtReloadDepot() const { return false; }
@@ -1277,14 +1312,16 @@ Route const *Route::SegmentAfter::route() const { return &route_; }
 bool Route::SegmentAfter::hasLocation() const { return true; }
 size_t Route::SegmentAfter::first() const
 {
-    return route_.visits[route_.nextReal_[start]];
+    return route_.visits[route_.realAt(start)];
 }
 size_t Route::SegmentAfter::last() const { return route_.visits.back(); }
 size_t Route::SegmentAfter::size() const { return route_.size() - start; }
 
 size_t Route::SegmentAfter::numBreaks() const
 {
-    return route_.cumBreaks_.back() - route_.cumBreaks_[start];
+    return route_.hasBreaks_
+               ? route_.cumBreaks_.back() - route_.cumBreaks_[start]
+               : 0;
 }
 
 bool Route::SegmentAfter::startsAtReloadDepot() const
@@ -1297,13 +1334,13 @@ Route const *Route::SegmentBetween::route() const { return &route_; }
 
 bool Route::SegmentBetween::hasLocation() const
 {
-    return route_.nextReal_[start] <= end;
+    return route_.realAt(start) <= end;
 }
 
 size_t Route::SegmentBetween::first() const
 {
     assert(hasLocation());
-    return route_.visits[route_.nextReal_[start]];
+    return route_.visits[route_.realAt(start)];
 }
 
 size_t Route::SegmentBetween::last() const
@@ -1311,14 +1348,16 @@ size_t Route::SegmentBetween::last() const
     // With a non-break node in the segment, the nearest one at or before end
     // lies inside it, so the backward alias does not escape the segment.
     assert(hasLocation());
-    return route_.locs_[end];
+    return route_.locAt(end);
 }
 
 size_t Route::SegmentBetween::size() const { return end - start + 1; }
 
 size_t Route::SegmentBetween::numBreaks() const
 {
-    return route_.cumBreaks_[end + 1] - route_.cumBreaks_[start];
+    return route_.hasBreaks_
+               ? route_.cumBreaks_[end + 1] - route_.cumBreaks_[start]
+               : 0;
 }
 
 bool Route::SegmentBetween::startsAtReloadDepot() const
@@ -1337,7 +1376,7 @@ Distance Route::SegmentBetween::distance(size_t profile) const
 
     // Leading breaks are skipped: the edge into them belongs to whatever
     // precedes the segment, and is added by the Proposal fold.
-    auto const firstReal = route_.nextReal_[start];
+    auto const firstReal = route_.realAt(start);
 
     if (profile != route_.profile())  // then we have to compute the distance
     {                                 // segment from scratch.
@@ -1346,8 +1385,8 @@ Distance Route::SegmentBetween::distance(size_t profile) const
 
         for (size_t step = firstReal; step != end; ++step)
         {
-            auto const from = route_.locs_[step];
-            auto const to = route_.locs_[step + 1];
+            auto const from = route_.locAt(step);
+            auto const to = route_.locAt(step + 1);
             assert(!route_.data.isBreak(from) && !route_.data.isBreak(to));
             distance += mat(from, to);
         }
@@ -1404,6 +1443,20 @@ Cost Route::SegmentBetween::penalty(size_t profile, size_t vehicleType) const
 DurationSegment Route::SegmentBetween::duration(size_t profile,
                                                 size_t vehicleType) const
 {
+    auto const &mat = route_.data.durationMatrix(profile);
+
+    if (!route_.hasBreaks_)  // then no break to swap or skip past
+    {
+        auto durSegment = route_.durAt[start];
+        for (size_t step = start; step != end; ++step)
+            durSegment = DurationSegment::merge(
+                mat(route_.visits[step], route_.visits[step + 1]),
+                durSegment,
+                route_.durAt[step + 1]);
+
+        return durSegment;
+    }
+
     // durAt holds this route's break duration. Evaluated for a vehicle type
     // whose break lasts differently, the segment's breaks take that duration,
     // as they would once moved there.
@@ -1421,7 +1474,6 @@ DurationSegment Route::SegmentBetween::duration(size_t profile,
         return route_.durAt[idx];
     };
 
-    auto const &mat = route_.data.durationMatrix(profile);
     auto durSegment = at(start);
 
     // Edges up to the first non-break node are skipped, as in distance(): the
@@ -1704,28 +1756,6 @@ size_t Route::missingBreaks(DriveClock const &drive,
                     work.missing(vehicleType.breakLimit(ClockQuantity::Work)));
 }
 
-Route::DurationSummary Route::summarise(DurationSegment ds,
-                                        Duration maxDuration,
-                                        Duration extra,
-                                        Duration latestEnd)
-{
-    auto const baseEnd
-        = ds.startEarly() + ds.duration() - ds.timeWarp(maxDuration);
-
-    Duration late = 0;
-    if (extra > 0)
-    {
-        DurationSegment const breaks(
-            extra, 0, 0, std::numeric_limits<Duration>::max(), 0);
-        ds = DurationSegment::merge(0, ds, breaks);
-        late = baseEnd + extra > latestEnd ? baseEnd + extra - latestEnd : 0;
-    }
-
-    auto const duration = ds.duration();
-    auto const timeWarp = ds.timeWarp(maxDuration) + late;
-    return {duration, timeWarp, ds.startEarly() + duration - timeWarp};
-}
-
 Duration Route::overtimeStart() const { return vehicleType_.overtimeStart; }
 
 Distance Route::maxDistance() const { return vehicleType_.maxDistance; }
@@ -1834,6 +1864,12 @@ Route::Proposal<Segments...>::Proposal(Segments &&...segments)
 {
     static_assert(sizeof...(Segments) > 0, "Proposal cannot be empty.");
 
+    // Empty if the proposal holds only the start and end depot, and breaks:
+    // those are placed for clients, so without clients they go too.
+    auto const numBreaks = std::apply(
+        [](auto &&...args) { return (args.numBreaks() + ...); }, segments_);
+    empty_ = size() - numBreaks == 2;
+
     [[maybe_unused]] auto &&first = std::get<0>(segments_);
     [[maybe_unused]] auto &&last = std::get<sizeof...(Segments) - 1>(segments_);
     assert(first.route() == last.route());  // must start and end at same route
@@ -1847,15 +1883,6 @@ template <Segment... Segments> size_t Route::Proposal<Segments...>::size() const
 {
     return std::apply([](auto &&...args) { return (args.size() + ...); },
                       segments_);
-}
-
-template <Segment... Segments> bool Route::Proposal<Segments...>::empty() const
-{
-    // Empty if the proposal holds only the start and end depot, and breaks:
-    // those are placed for clients, so without clients they go too.
-    auto const numBreaks = std::apply(
-        [](auto &&...args) { return (args.numBreaks() + ...); }, segments_);
-    return size() - numBreaks == 2;
 }
 
 template <Segment... Segments>
