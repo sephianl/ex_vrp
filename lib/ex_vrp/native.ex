@@ -518,10 +518,10 @@ defmodule ExVrp.Native do
 
   @doc """
   Gets all client data for neighbourhood computation.
-  Returns list of {tw_early, tw_late, service_duration, prize} tuples.
+  Returns list of {tw_early, tw_late, service_duration, prize, is_break} tuples.
   """
   @spec problem_data_clients_nif(reference()) ::
-          [{integer(), integer(), integer(), integer()}]
+          [{integer(), integer(), integer(), integer(), boolean()}]
   def problem_data_clients_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """

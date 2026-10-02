@@ -3428,15 +3428,15 @@ FINE_NIF(problem_data_num_profiles_nif, 0);
 
 /**
  * Get all client data needed for neighbourhood computation.
- * Returns: [{tw_early, tw_late, service_duration, prize}, ...]
+ * Returns: [{tw_early, tw_late, service_duration, prize, is_break}, ...]
  */
-std::vector<std::tuple<int64_t, int64_t, int64_t, int64_t>>
+std::vector<std::tuple<int64_t, int64_t, int64_t, int64_t, bool>>
 problem_data_clients_nif(
     [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
     auto const &clients = problem_resource->data->clients();
-    std::vector<std::tuple<int64_t, int64_t, int64_t, int64_t>> result;
+    std::vector<std::tuple<int64_t, int64_t, int64_t, int64_t, bool>> result;
     result.reserve(clients.size());
 
     for (auto const &client : clients)
@@ -3444,7 +3444,8 @@ problem_data_clients_nif(
         result.emplace_back(static_cast<int64_t>(client.twEarly),
                             static_cast<int64_t>(client.twLate),
                             static_cast<int64_t>(client.serviceDuration),
-                            static_cast<int64_t>(client.prize));
+                            static_cast<int64_t>(client.prize),
+                            client.isBreak);
     }
 
     return result;

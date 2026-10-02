@@ -25,7 +25,9 @@ defmodule ExVrp.Neighbourhood do
   Computes neighbours for each location.
 
   Returns list of lists: neighbours[location] = [neighbour_indices...]
-  Depots get empty lists.
+  Depots and break clients get empty lists, and neither is anyone's neighbour:
+  a break has no location, so its zero matrix rows would make it every
+  client's nearest one.
 
   ## Parameters
 
@@ -45,10 +47,12 @@ defmodule ExVrp.Neighbourhood do
     # Get problem dimensions
     num_locs = Native.problem_data_num_locations(problem_data)
     num_depots = Native.problem_data_num_depots(problem_data)
-    num_clients = Native.problem_data_num_clients(problem_data)
+    clients = Native.problem_data_clients_nif(problem_data)
+    breaks = break_locations(clients, num_depots)
+    num_clients = length(clients) - MapSet.size(breaks)
 
     # Compute proximity matrix using Nx tensors
-    proximity = compute_proximity(problem_data, params, num_locs, num_depots)
+    proximity = compute_proximity(problem_data, clients, params, num_locs, num_depots)
 
     # Optionally symmetrize proximity: proximity = min(proximity, proximity.T)
     proximity =
@@ -70,7 +74,7 @@ defmodule ExVrp.Neighbourhood do
     # Extract top-k neighbours per client
     k = min(params.num_neighbours, num_clients - 1)
 
-    neighbours = extract_top_k(proximity, num_depots, num_locs, k)
+    neighbours = extract_top_k(proximity, num_depots, num_locs, k, breaks)
 
     # Optionally symmetrize neighbourhood structure
     if params.symmetric_neighbours do
@@ -84,10 +88,13 @@ defmodule ExVrp.Neighbourhood do
   # Private Functions
   # ---------------------------------------------------------------------------
 
-  defp compute_proximity(problem_data, params, num_locs, num_depots) do
-    # Get client data
-    clients = Native.problem_data_clients_nif(problem_data)
+  defp break_locations(clients, num_depots) do
+    for {{_tw_early, _tw_late, _svc, _prz, true = _is_break}, location} <- Enum.with_index(clients, num_depots),
+        into: MapSet.new(),
+        do: location
+  end
 
+  defp compute_proximity(problem_data, clients, params, num_locs, num_depots) do
     # Build vectors for time windows, service, prizes
     # PyVRP: early, late, service, prize are vectors of size num_locations
     # with depots having 0 values and clients having their actual values
@@ -143,10 +150,10 @@ defmodule ExVrp.Neighbourhood do
     prize = Nx.broadcast(0.0, {num_locs})
 
     # Build lists for client values
-    client_early = Enum.map(clients, fn {tw_early, _tw_late, _svc, _prz} -> tw_early end)
-    client_late = Enum.map(clients, fn {_tw_early, tw_late, _svc, _prz} -> tw_late end)
-    client_service = Enum.map(clients, fn {_tw_early, _tw_late, svc, _prz} -> svc end)
-    client_prize = Enum.map(clients, fn {_tw_early, _tw_late, _svc, prz} -> prz end)
+    client_early = Enum.map(clients, fn {tw_early, _tw_late, _svc, _prz, _is_break} -> tw_early end)
+    client_late = Enum.map(clients, fn {_tw_early, tw_late, _svc, _prz, _is_break} -> tw_late end)
+    client_service = Enum.map(clients, fn {_tw_early, _tw_late, svc, _prz, _is_break} -> svc end)
+    client_prize = Enum.map(clients, fn {_tw_early, _tw_late, _svc, prz, _is_break} -> prz end)
 
     # Create client tensors
     client_early_t = Nx.tensor(client_early, type: :f64)
@@ -282,20 +289,17 @@ defmodule ExVrp.Neighbourhood do
     end
   end
 
-  defp extract_top_k(_proximity, num_depots, _num_locs, k) when k <= 0 do
+  defp extract_top_k(_proximity, num_depots, _num_locs, k, _breaks) when k <= 0 do
     for _depot <- 0..(num_depots - 1), do: []
   end
 
-  defp extract_top_k(proximity, num_depots, num_locs, k) do
+  defp extract_top_k(proximity, num_depots, num_locs, k, breaks) do
     depot_neighbours = for _depot <- 0..(num_depots - 1), do: []
 
     client_neighbours =
       if num_depots < num_locs do
         for i <- num_depots..(num_locs - 1) do
-          proximity
-          |> extract_row_candidates(i, num_locs, num_depots)
-          |> k_smallest(k)
-          |> extract_indices()
+          nearest_clients(proximity, i, num_locs, num_depots, k, breaks, MapSet.member?(breaks, i))
         end
       else
         []
@@ -304,12 +308,21 @@ defmodule ExVrp.Neighbourhood do
     depot_neighbours ++ client_neighbours
   end
 
-  defp extract_row_candidates(proximity, row_idx, num_locs, num_depots) do
+  defp nearest_clients(_proximity, _row_idx, _num_locs, _num_depots, _k, _breaks, true = _row_is_break), do: []
+
+  defp nearest_clients(proximity, row_idx, num_locs, num_depots, k, breaks, false = _row_is_break) do
+    proximity
+    |> extract_row_candidates(row_idx, num_locs, num_depots, breaks)
+    |> k_smallest(k)
+    |> extract_indices()
+  end
+
+  defp extract_row_candidates(proximity, row_idx, num_locs, num_depots, breaks) do
     proximity
     |> Nx.slice([row_idx, 0], [1, num_locs])
     |> Nx.to_flat_list()
     |> Enum.with_index()
-    |> Enum.filter(fn {_prox, j} -> j >= num_depots and j != row_idx end)
+    |> Enum.filter(fn {_prox, j} -> j >= num_depots and j != row_idx and not MapSet.member?(breaks, j) end)
   end
 
   # Returns the k elements with smallest first-tuple values, sorted ascending.

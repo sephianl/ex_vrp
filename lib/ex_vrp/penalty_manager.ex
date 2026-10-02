@@ -101,7 +101,7 @@ defmodule ExVrp.PenaltyManager do
     # Assuming typical time warp is ~1 hour (3600s), we need:
     # tw_penalty > avg_prize / 3600
     clients = Native.problem_data_clients_nif(problem_data)
-    prizes = Enum.map(clients, fn {_tw_early, _tw_late, _svc, prize} -> prize end)
+    prizes = Enum.map(clients, fn {_tw_early, _tw_late, _svc, prize, _is_break} -> prize end)
     max_prize = if Enum.empty?(prizes), do: 0, else: Enum.max(prizes)
 
     init_tw =

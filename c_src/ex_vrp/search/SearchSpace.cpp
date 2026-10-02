@@ -8,7 +8,8 @@ using pyvrp::search::Route;
 using pyvrp::search::SearchSpace;
 
 SearchSpace::SearchSpace(ProblemData const &data, Neighbours neighbours)
-    : numDepots_(data.numDepots()),
+    : data_(data),
+      numDepots_(data.numDepots()),
       neighbours_(data.numLocations()),
       promising_(data.numLocations()),
       routeOrder_(data.numVehicles())
@@ -40,14 +41,14 @@ void SearchSpace::setNeighbours(Neighbours neighbours)
         auto const beginPos = neighbours[client].begin();
         auto const endPos = neighbours[client].end();
 
-        auto const pred
-            = [&](auto item) { return item == client || item < numDepots_; };
+        auto const pred = [&](auto item)
+        { return item == client || item < numDepots_ || data_.isBreak(item); };
 
         if (std::any_of(beginPos, endPos, pred))
         {
             throw std::runtime_error("Neighbourhood of client "
                                      + std::to_string(client)
-                                     + " contains itself or a depot.");
+                                     + " contains itself, a depot or a break.");
         }
     }
 

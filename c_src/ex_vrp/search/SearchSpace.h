@@ -25,6 +25,7 @@ public:
     using Neighbours = std::vector<std::vector<size_t>>;
 
 private:
+    ProblemData const &data_;
     size_t numDepots_;
 
     // Neighborhood restrictions: list of nearby clients for each client (size
@@ -51,7 +52,8 @@ public:
     /**
      * Set the neighbourhood structure of this search space. For each client,
      * the neighbourhood structure is a vector of nearby clients. Depots have
-     * no nearby clients.
+     * no nearby clients, and neither depots nor breaks are anyone's: a break
+     * has no location, so every client would test it as its nearest one.
      */
     void setNeighbours(Neighbours neighbours);
 
