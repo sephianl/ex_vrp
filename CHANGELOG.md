@@ -36,6 +36,13 @@
   `Native.problem_data_num_clients/1` counts that pool; a solution's `num_clients` never does.
 - `Model.validate/1` rejects a `:max_drive_between_breaks` or `:max_work_between_breaks` that is
   not positive, and a break client can no longer be required.
+- Models without breaks search as fast as in 0.14.0 on the GCC 13 release build (within about 2%
+  per iteration); the break work no longer evicts the search's small helpers from inlining. Models
+  with breaks run 13–20% fewer instructions per iteration, and a local search no longer repeats
+  rounds in which its search and break repair return each other to the same solution.
+- `ExVrp.Neighbourhood.compute_neighbours/2` leaves break clients out: their zero matrix rows made
+  them every client's nearest neighbours, crowding out real ones. `Native.problem_data_clients_nif/1`
+  returns each client's `is_break` as a fifth element.
 
 ## 0.14.0
 

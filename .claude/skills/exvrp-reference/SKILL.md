@@ -111,6 +111,13 @@ of the same route coexist, and mixing them up is the trap:
   materialises virtual breaks whenever that lowers true overrun, _whatever the delta_, and
   releases a break only if true overrun does not grow — change either rule and it oscillates or
   strips needed breaks. `LocalSearch` repairs breaks after every round and before every `unload()`.
+  The in-loop repair pays for itself (moving it after the loop lost 0.6–4% at equal time: the
+  search needs real breaks in place to see where a break costs nothing), but search and repair can
+  return each other to the same solution, so a round that moved breaks only earns another round
+  if it lowered `LocalSearch::penalisedCost()`.
+- Their zero matrix rows make a break every client's "nearest" location, so anything that ranks
+  locations must skip them: the C++ `build_neighbours`, `ExVrp.Neighbourhood`, and
+  `SearchSpace::setNeighbours`, which rejects a neighbourhood that lists one.
 - Breaks are not clients: `numClients()`/`empty()` and `Proposal::empty()` skip them, so operator
   fixed-cost terms must count clients, not ask whether the next node is a depot (SwapTails,
   Exchange). Delta exactness is covered by `break_nodes_test.exs` and SANITIZE's
