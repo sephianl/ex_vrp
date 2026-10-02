@@ -992,7 +992,9 @@ ProblemData::ProblemData(std::vector<Client> clients,
           || std::any_of(vehicleTypes_.begin(),
                          vehicleTypes_.end(),
                          hasTimeWindow<VehicleType>)),
-      isBreak_(breakFlags(depots_.size(), clients_))
+      isBreak_(breakFlags(depots_.size(), clients_)),
+      hasBreaks_(std::find(isBreak_.begin(), isBreak_.end(), true)
+                 != isBreak_.end())
 {
     validate();
 }

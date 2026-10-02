@@ -28,16 +28,20 @@ public:
 
     Route const *route() const { return nullptr; }
 
-    bool hasLocation() const { return true; }
-    size_t first() const { return client; }
-    size_t last() const { return client; }
+    template <bool WithBreaks = true> bool hasLocation() const { return true; }
+    template <bool WithBreaks = true> size_t first() const { return client; }
+    template <bool WithBreaks = true> size_t last() const { return client; }
     size_t size() const { return 1; }
     size_t numBreaks() const { return 0; }
 
     bool startsAtReloadDepot() const { return false; }
     bool endsAtReloadDepot() const { return false; }
 
-    Distance distance([[maybe_unused]] size_t profile) const { return 0; }
+    template <bool WithBreaks = true>
+    Distance distance([[maybe_unused]] size_t profile) const
+    {
+        return 0;
+    }
 
     TripDistance tripDistance([[maybe_unused]] size_t profile) const
     {
@@ -50,6 +54,7 @@ public:
                + data.lockPenalty(vehicleType, client);
     }
 
+    template <bool WithBreaks = true>
     DurationSegment duration([[maybe_unused]] size_t profile,
                              [[maybe_unused]] size_t vehicleType) const
     {
@@ -97,16 +102,20 @@ public:
 
     Route const *route() const { return nullptr; }
 
-    bool hasLocation() const { return true; }
-    size_t first() const { return depot_; }
-    size_t last() const { return depot_; }
+    template <bool WithBreaks = true> bool hasLocation() const { return true; }
+    template <bool WithBreaks = true> size_t first() const { return depot_; }
+    template <bool WithBreaks = true> size_t last() const { return depot_; }
     size_t size() const { return 1; }
     size_t numBreaks() const { return 0; }
 
     bool startsAtReloadDepot() const { return true; }
     bool endsAtReloadDepot() const { return true; }
 
-    Distance distance([[maybe_unused]] size_t profile) const { return 0; }
+    template <bool WithBreaks = true>
+    Distance distance([[maybe_unused]] size_t profile) const
+    {
+        return 0;
+    }
 
     // A lone depot carries no distance of its own. It splits the trip around
     // it, which the fold reads off startsAtReloadDepot()/endsAtReloadDepot()
@@ -125,6 +134,7 @@ public:
         return 0;
     }
 
+    template <bool WithBreaks = true>
     DurationSegment duration([[maybe_unused]] size_t profile,
                              [[maybe_unused]] size_t vehicleType) const
     {
@@ -172,16 +182,20 @@ public:
 
     Route const *route() const { return nullptr; }
 
-    bool hasLocation() const { return false; }
-    size_t first() const { return client; }
-    size_t last() const { return client; }
+    template <bool WithBreaks = true> bool hasLocation() const { return false; }
+    template <bool WithBreaks = true> size_t first() const { return client; }
+    template <bool WithBreaks = true> size_t last() const { return client; }
     size_t size() const { return count; }
     size_t numBreaks() const { return count; }
 
     bool startsAtReloadDepot() const { return false; }
     bool endsAtReloadDepot() const { return false; }
 
-    Distance distance([[maybe_unused]] size_t profile) const { return 0; }
+    template <bool WithBreaks = true>
+    Distance distance([[maybe_unused]] size_t profile) const
+    {
+        return 0;
+    }
 
     TripDistance tripDistance([[maybe_unused]] size_t profile) const
     {
@@ -195,6 +209,7 @@ public:
 
     // Unconstrained windows merge by adding durations, so a run is a single
     // segment of count break durations.
+    template <bool WithBreaks = true>
     DurationSegment duration([[maybe_unused]] size_t profile,
                              size_t vehicleType) const
     {

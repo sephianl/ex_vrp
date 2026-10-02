@@ -791,6 +791,10 @@ private:
     // every node, and the Client structs are too wide to scan for one flag.
     std::vector<bool> const isBreak_;
 
+    // Whether isBreak_ holds any break. Every move evaluation asks, through
+    // search::Route::Proposal, so problems without breaks skip counting them.
+    bool const hasBreaks_;
+
 public:
     bool operator==(ProblemData const &other) const = default;
 
@@ -954,6 +958,11 @@ public:
     [[nodiscard]] inline bool isBreak(size_t location) const;
 
     /**
+     * Whether any location is a break client.
+     */
+    [[nodiscard]] inline bool hasBreaks() const;
+
+    /**
      * Whether any location is forbidden on any profile. When false,
      * :meth:`~is_allowed` is true everywhere and reachability filtering can be
      * skipped wholesale.
@@ -1088,6 +1097,8 @@ bool ProblemData::isBreak(size_t location) const
     assert(location < isBreak_.size());
     return isBreak_[location];
 }
+
+bool ProblemData::hasBreaks() const { return hasBreaks_; }
 
 bool ProblemData::hasForbiddenLocations() const { return hasForbidden_; }
 
