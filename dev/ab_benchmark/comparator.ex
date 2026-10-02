@@ -15,6 +15,12 @@ defmodule ExVrp.ABBenchmark.Comparator do
   is common to both refs, so it cancels in the pairing. Banding on raw scatter
   instead charges a code change for variance it did not cause, which hides real
   effects on exactly the instances that scatter most.
+
+  Iterations within the same wall-clock budget measure the solver's speed, which the
+  objective alone hides: a slower search often still lands on the same solutions.
+  The candidate fails when the median instance loses more than 5% of its iterations.
+  The median, because a real slowdown shifts every instance while runner noise moves
+  single ones; a solver that did not change lands within 3% of zero on it.
   """
 
   defmodule Row do
@@ -128,6 +134,7 @@ defmodule ExVrp.ABBenchmark.Comparator do
 
   @objective_pct_threshold 0.005
   @warn_pct_threshold 0.01
+  @iteration_pct_threshold -0.05
 
   @spec compare(map(), map()) ::
           {:ok | :regression, %{hard_fails: [String.t()], warnings: [String.t()]}}
@@ -135,7 +142,10 @@ defmodule ExVrp.ABBenchmark.Comparator do
     %{per_instance: rows, missing: missing} = analyze(baseline, candidate)
 
     hard_fails =
-      infeasibility_fails(rows) ++ missing_fails(missing) ++ aggregate_objective_fail(rows)
+      infeasibility_fails(rows) ++
+        missing_fails(missing) ++
+        aggregate_objective_fail(rows) ++
+        iteration_throughput_fail(rows)
 
     warnings = localized_warnings(rows)
 
@@ -174,6 +184,26 @@ defmodule ExVrp.ABBenchmark.Comparator do
         end
     end
   end
+
+  defp iteration_throughput_fail(rows) do
+    rows
+    |> Enum.map(& &1.iter_pct_change)
+    |> Enum.reject(&is_nil/1)
+    |> median()
+    |> iteration_throughput_verdict()
+  end
+
+  defp iteration_throughput_verdict(median_pct) when is_float(median_pct) and median_pct < @iteration_pct_threshold,
+    do: ["median instance ran #{fmt_pct(median_pct)} iterations vs baseline (< -5%): the search got slower"]
+
+  defp iteration_throughput_verdict(_median_pct), do: []
+
+  defp median([]), do: nil
+  defp median(values), do: values |> Enum.sort() |> middle_of_sorted(length(values))
+
+  defp middle_of_sorted(sorted, count) when rem(count, 2) == 1, do: Enum.at(sorted, div(count, 2))
+
+  defp middle_of_sorted(sorted, count), do: (Enum.at(sorted, div(count, 2) - 1) + Enum.at(sorted, div(count, 2))) / 2
 
   defp localized_warnings(rows) do
     for r <- rows, warnable?(r) do
