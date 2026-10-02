@@ -142,11 +142,23 @@ public:
          */
         size_t size() const;
 
+        // The folds behind distance() and duration(). Without breaks they
+        // inline into their caller; the WithBreaks ones stay out of line, so
+        // their lookups never count against the inlining of models without
+        // breaks.
         template <bool WithBreaks>
-        std::pair<Cost, Distance> foldDistance() const;
+        [[gnu::always_inline]] inline std::pair<Cost, Distance>
+        foldDistance() const;
 
         template <bool WithBreaks>
-        std::pair<Cost, Duration> foldDuration() const;
+        [[gnu::always_inline]] inline std::pair<Cost, Duration>
+        foldDuration() const;
+
+        [[gnu::noinline]] std::pair<Cost, Distance> distanceWithBreaks() const;
+        [[gnu::noinline]] std::pair<Cost, Duration> durationWithBreaks() const;
+
+        // Breaks across the segments, out of line for the same reason.
+        [[gnu::noinline]] size_t countBreaks() const;
 
         /**
          * Returns whether the proposed route is empty.
@@ -163,7 +175,9 @@ public:
         missingBreaksUnderRule(ProblemData::VehicleType const &vehType) const;
 
     public:
-        Proposal(Segments &&...segments);
+        // Every move evaluation builds a Proposal, so its constructor must not
+        // become a call. GCC leaves the size and break folds out of line.
+        [[gnu::always_inline]] inline Proposal(Segments &&...segments);
 
         /**
          * The proposal's route. This is the route associated with the first
@@ -268,22 +282,22 @@ public:
         /**
          * Returns whether this node is a depot.
          */
-        [[nodiscard]] inline bool isDepot() const;
+        [[nodiscard, gnu::always_inline]] inline bool isDepot() const;
 
         /**
          * Returns whether this node is a start depot.
          */
-        [[nodiscard]] inline bool isStartDepot() const;
+        [[nodiscard, gnu::always_inline]] inline bool isStartDepot() const;
 
         /**
          * Returns whether this node is an end depot.
          */
-        [[nodiscard]] inline bool isEndDepot() const;
+        [[nodiscard, gnu::always_inline]] inline bool isEndDepot() const;
 
         /**
          * Returns whether this node is a reload depot.
          */
-        [[nodiscard]] inline bool isReloadDepot() const;
+        [[nodiscard, gnu::always_inline]] inline bool isReloadDepot() const;
 
         /**
          * Assigns the node to the given route, at the given index, in the
@@ -343,18 +357,19 @@ private:
         size_t const start;
 
     public:
-        inline Route const *route() const;
+        [[gnu::always_inline]] inline Route const *route() const;
 
-        template <bool WithBreaks = true> inline bool hasLocation() const;
         template <bool WithBreaks = true>
-        inline size_t first() const;  // first non-break client from start
+        [[gnu::always_inline]] inline bool hasLocation() const;
         template <bool WithBreaks = true>
-        inline size_t last() const;  // end depot
-        inline size_t size() const;
-        inline size_t numBreaks() const;
+        [[gnu::always_inline]] inline size_t first() const;  // first non-break
+        template <bool WithBreaks = true>
+        [[gnu::always_inline]] inline size_t last() const;  // end depot
+        [[gnu::always_inline]] inline size_t size() const;
+        [[gnu::always_inline]] inline size_t numBreaks() const;
 
-        inline bool startsAtReloadDepot() const;
-        inline bool endsAtReloadDepot() const;
+        [[gnu::always_inline]] inline bool startsAtReloadDepot() const;
+        [[gnu::always_inline]] inline bool endsAtReloadDepot() const;
 
         inline SegmentAfter(Route const &route, size_t start);
         template <bool WithBreaks = true>
@@ -387,18 +402,19 @@ private:
         size_t const end;
 
     public:
-        inline Route const *route() const;
+        [[gnu::always_inline]] inline Route const *route() const;
 
-        template <bool WithBreaks = true> inline bool hasLocation() const;
         template <bool WithBreaks = true>
-        inline size_t first() const;  // start depot
+        [[gnu::always_inline]] inline bool hasLocation() const;
         template <bool WithBreaks = true>
-        inline size_t last() const;  // last non-break client up to end
-        inline size_t size() const;
-        inline size_t numBreaks() const;
+        [[gnu::always_inline]] inline size_t first() const;  // start depot
+        template <bool WithBreaks = true>
+        [[gnu::always_inline]] inline size_t last() const;  // last non-break
+        [[gnu::always_inline]] inline size_t size() const;
+        [[gnu::always_inline]] inline size_t numBreaks() const;
 
-        inline bool startsAtReloadDepot() const;
-        inline bool endsAtReloadDepot() const;
+        [[gnu::always_inline]] inline bool startsAtReloadDepot() const;
+        [[gnu::always_inline]] inline bool endsAtReloadDepot() const;
 
         inline SegmentBefore(Route const &route, size_t end);
         template <bool WithBreaks = true>
@@ -433,19 +449,19 @@ private:
         size_t const end;
 
     public:
-        inline Route const *route() const;
+        [[gnu::always_inline]] inline Route const *route() const;
 
+        template <bool WithBreaks = true>  // false if it holds only breaks
+        [[gnu::always_inline]] inline bool hasLocation() const;
         template <bool WithBreaks = true>
-        inline bool hasLocation() const;  // false if it holds only breaks
+        [[gnu::always_inline]] inline size_t first() const;  // first non-break
         template <bool WithBreaks = true>
-        inline size_t first() const;  // first non-break client
-        template <bool WithBreaks = true>
-        inline size_t last() const;  // last non-break client
-        inline size_t size() const;
-        inline size_t numBreaks() const;
+        [[gnu::always_inline]] inline size_t last() const;  // last non-break
+        [[gnu::always_inline]] inline size_t size() const;
+        [[gnu::always_inline]] inline size_t numBreaks() const;
 
-        inline bool startsAtReloadDepot() const;
-        inline bool endsAtReloadDepot() const;
+        [[gnu::always_inline]] inline bool startsAtReloadDepot() const;
+        [[gnu::always_inline]] inline bool endsAtReloadDepot() const;
 
         inline SegmentBetween(Route const &route, size_t start, size_t end);
         template <bool WithBreaks = true>
@@ -455,6 +471,11 @@ private:
         template <bool WithBreaks = true>
         inline DurationSegment duration(size_t profile,
                                         size_t vehicleType) const;
+
+        // duration() over a route that holds breaks, out of line so the
+        // break-free case stays small enough to inline.
+        [[gnu::noinline]] DurationSegment
+        durationWithBreaks(size_t profile, size_t vehicleType) const;
 
         // Operator segments are a few nodes long, so folding beats prefix
         // lookups that would only hold for this route's own profile and limit.
@@ -631,10 +652,11 @@ private:
     // Shared by update() and Proposal::duration(), so deltas stay exact.
     // Every evaluation of a model without a break rule passes no extra, so
     // that case stays small enough to inline and the rest is out of line.
-    [[nodiscard]] static DurationSummary summarise(DurationSegment const &ds,
-                                                   Duration maxDuration,
-                                                   Duration extra,
-                                                   Duration latestEnd)
+    [[nodiscard, gnu::always_inline]] static DurationSummary
+    summarise(DurationSegment const &ds,
+              Duration maxDuration,
+              Duration extra,
+              Duration latestEnd)
     {
         if (extra > 0)
             return summariseWithBreaks(ds, maxDuration, extra, latestEnd);
@@ -1503,55 +1525,15 @@ DurationSegment Route::SegmentBetween::duration(size_t profile,
 {
     auto const &mat = route_.data.durationMatrix(profile);
 
-    if (!WithBreaks || !route_.hasBreaks_)  // then no break to swap or skip
-    {
-        auto durSegment = route_.durAt[start];
-        for (size_t step = start; step != end; ++step)
-            durSegment = DurationSegment::merge(
-                mat(route_.visits[step], route_.visits[step + 1]),
-                durSegment,
-                route_.durAt[step + 1]);
+    if (WithBreaks && route_.hasBreaks_)
+        return durationWithBreaks(profile, vehicleType);
 
-        return durSegment;
-    }
-
-    // durAt holds this route's break duration. Evaluated for a vehicle type
-    // whose break lasts differently, the segment's breaks take that duration,
-    // as they would once moved there.
-    auto const breakDuration
-        = route_.data.vehicleType(vehicleType).breakDuration;
-    auto const swapBreaks = breakDuration != route_.vehicleType_.breakDuration;
-    DurationSegment const breakDS(
-        breakDuration, 0, 0, std::numeric_limits<Duration>::max(), 0);
-
-    auto const at = [&](size_t idx) -> DurationSegment const &
-    {
-        if (swapBreaks && route_.data.isBreak(route_.visits[idx]))
-            return breakDS;
-
-        return route_.durAt[idx];
-    };
-
-    auto durSegment = at(start);
-
-    // Edges up to the first non-break node are skipped, as in distance(): the
-    // Proposal fold travels into the segment's first() before its leading
-    // breaks. That order is timing-neutral, since a break has no window.
-    auto const firstReal = route_.nextReal_[start];
-
+    auto durSegment = route_.durAt[start];
     for (size_t step = start; step != end; ++step)
-    {
-        Duration edge = 0;
-        if (step >= firstReal)
-        {
-            auto const from = route_.locs_[step];
-            auto const to = route_.locs_[step + 1];
-            assert(!route_.data.isBreak(from) && !route_.data.isBreak(to));
-            edge = mat(from, to);
-        }
-
-        durSegment = DurationSegment::merge(edge, durSegment, at(step + 1));
-    }
+        durSegment = DurationSegment::merge(
+            mat(route_.visits[step], route_.visits[step + 1]),
+            durSegment,
+            route_.durAt[step + 1]);
 
     return durSegment;
 }
@@ -1924,10 +1906,7 @@ Route::Proposal<Segments...>::Proposal(Segments &&...segments)
 
     // Empty if the proposal holds only the start and end depot, and breaks:
     // those are placed for clients, so without clients they go too.
-    auto const countBreaks
-        = [](auto &&...args) { return (args.numBreaks() + ...); };
-    auto const numBreaks
-        = route()->data.hasBreaks() ? std::apply(countBreaks, segments_) : 0;
+    auto const numBreaks = route()->data.hasBreaks() ? countBreaks() : 0;
     empty_ = size() - numBreaks == 2;
     withBreaks_ = numBreaks > 0;
 
@@ -1947,6 +1926,13 @@ template <Segment... Segments> size_t Route::Proposal<Segments...>::size() const
 }
 
 template <Segment... Segments>
+size_t Route::Proposal<Segments...>::countBreaks() const
+{
+    return std::apply([](auto &&...args) { return (args.numBreaks() + ...); },
+                      segments_);
+}
+
+template <Segment... Segments>
 Route const *Route::Proposal<Segments...>::route() const
 {
     return std::get<0>(segments_).route();
@@ -1958,7 +1944,14 @@ std::pair<Cost, Distance> Route::Proposal<Segments...>::distance() const
     if (empty())
         return std::make_pair(0, 0);
 
-    return withBreaks_ ? foldDistance<true>() : foldDistance<false>();
+    return withBreaks_ ? distanceWithBreaks() : foldDistance<false>();
+}
+
+template <Segment... Segments>
+std::pair<Cost, Distance>
+Route::Proposal<Segments...>::distanceWithBreaks() const
+{
+    return foldDistance<true>();
 }
 
 template <Segment... Segments>
@@ -2123,7 +2116,14 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
     if (empty())
         return std::make_pair(0, 0);
 
-    return withBreaks_ ? foldDuration<true>() : foldDuration<false>();
+    return withBreaks_ ? durationWithBreaks() : foldDuration<false>();
+}
+
+template <Segment... Segments>
+std::pair<Cost, Duration>
+Route::Proposal<Segments...>::durationWithBreaks() const
+{
+    return foldDuration<true>();
 }
 
 template <Segment... Segments>

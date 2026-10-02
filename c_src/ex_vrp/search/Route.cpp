@@ -316,6 +316,53 @@ template <ClockQuantity Quantity> void Route::updateClock()
 #endif
 }
 
+pyvrp::DurationSegment
+Route::SegmentBetween::durationWithBreaks(size_t profile,
+                                          size_t vehicleType) const
+{
+    auto const &mat = route_.data.durationMatrix(profile);
+
+    // durAt holds this route's break duration. Evaluated for a vehicle type
+    // whose break lasts differently, the segment's breaks take that duration,
+    // as they would once moved there.
+    auto const breakDuration
+        = route_.data.vehicleType(vehicleType).breakDuration;
+    auto const swapBreaks = breakDuration != route_.vehicleType_.breakDuration;
+    DurationSegment const breakDS(
+        breakDuration, 0, 0, std::numeric_limits<Duration>::max(), 0);
+
+    auto const at = [&](size_t idx) -> DurationSegment const &
+    {
+        if (swapBreaks && route_.data.isBreak(route_.visits[idx]))
+            return breakDS;
+
+        return route_.durAt[idx];
+    };
+
+    auto durSegment = at(start);
+
+    // Edges up to the first non-break node are skipped, as in distance(): the
+    // Proposal fold travels into the segment's first() before its leading
+    // breaks. That order is timing-neutral, since a break has no window.
+    auto const firstReal = route_.nextReal_[start];
+
+    for (size_t step = start; step != end; ++step)
+    {
+        Duration edge = 0;
+        if (step >= firstReal)
+        {
+            auto const from = route_.locs_[step];
+            auto const to = route_.locs_[step + 1];
+            assert(!route_.data.isBreak(from) && !route_.data.isBreak(to));
+            edge = mat(from, to);
+        }
+
+        durSegment = DurationSegment::merge(edge, durSegment, at(step + 1));
+    }
+
+    return durSegment;
+}
+
 Route::DurationSummary Route::summariseWithBreaks(DurationSegment ds,
                                                   Duration maxDuration,
                                                   Duration extra,
