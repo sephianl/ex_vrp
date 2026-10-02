@@ -134,6 +134,10 @@ class LocalSearch
     // whether anything changed.
     bool repairBreaks(CostEvaluator const &costEvaluator);
 
+    // Penalised cost of the loaded solution: its routes, and the prizes of
+    // the clients it leaves out.
+    Cost penalisedCost(CostEvaluator const &costEvaluator) const;
+
     // Pre-pass for initial solution: inserts most-constrained clients first
     // (fewest reachable routes), ensuring zone-restricted clients get their
     // preferred vehicles before unrestricted clients fill them.

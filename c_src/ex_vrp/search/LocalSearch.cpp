@@ -40,6 +40,7 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
                             timeout_ms > 0 ? timeout_ms : SAFETY_TIMEOUT_MS);
 
     static constexpr int MAX_OUTER_ITERS = 15;
+    auto previousCost = std::numeric_limits<Cost>::max();
     for (int outerIter = 0; outerIter < MAX_OUTER_ITERS; ++outerIter)
     {
         search(costEvaluator);
@@ -60,12 +61,25 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
 
         // Changed breaks count as updates, so the next round searches the
         // routes as they now are.
-        repairBreaks(costEvaluator);
+        auto const breaksChanged = repairBreaks(costEvaluator);
 
         if (numUpdates_ == numUpdates)
             // Then intensify (route search) did not do any additional
             // updates, so the solution is locally optimal.
             break;
+
+        // The search prices a missing break as virtual, then works around the
+        // real one repair places, and the two can return each other to the
+        // same solution round after round. Another round is only worth it
+        // while the rounds that moved breaks keep lowering the cost.
+        if (breaksChanged)
+        {
+            auto const cost = penalisedCost(costEvaluator);
+            if (cost >= previousCost)
+                break;
+
+            previousCost = cost;
+        }
     }
 
     // Re-insert unassigned prize clients as multi-trip after ILS
@@ -286,6 +300,22 @@ void LocalSearch::intensify(CostEvaluator const &costEvaluator)
             }
         }
     }
+}
+
+pyvrp::Cost LocalSearch::penalisedCost(CostEvaluator const &costEvaluator) const
+{
+    Cost cost = 0;
+    for (auto const &route : solution_.routes)
+        cost += costEvaluator.penalisedCost(route);
+
+    for (auto const client : searchSpace_.clientOrder())
+    {
+        ProblemData::Client const &clientData = data.location(client);
+        if (!solution_.nodes[client].route())
+            cost += clientData.prize;
+    }
+
+    return cost;
 }
 
 bool LocalSearch::repairBreaks(CostEvaluator const &costEvaluator)
