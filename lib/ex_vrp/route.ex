@@ -121,6 +121,10 @@ defmodule ExVrp.Route do
 
   @doc """
   Returns the duration of this route.
+
+  Includes the breaks placed for the vehicle type's limits between breaks,
+  which are none of travel, service or waiting: break time is `duration -
+  travel_duration - service_duration - wait_duration`.
   """
   @spec duration(t()) :: non_neg_integer()
   def duration(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -138,8 +142,9 @@ defmodule ExVrp.Route do
   @doc """
   Returns the time warp of this route.
 
-  Includes `drive_excess/1`, which is a penalty rather than a delay: it
-  makes the route infeasible without moving `end_time/1`.
+  Includes `drive_excess/1`, `clock_excess/1` and `work_clock_excess/1`,
+  which are penalties rather than delays: they make the route infeasible
+  without moving `end_time/1`.
   """
   @spec time_warp(t()) :: non_neg_integer()
   def time_warp(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -162,6 +167,28 @@ defmodule ExVrp.Route do
   @spec drive_excess(t()) :: non_neg_integer()
   def drive_excess(%__MODULE__{solution_ref: ref, route_idx: idx}) do
     Native.solution_route_drive_excess(ref, idx)
+  end
+
+  @doc """
+  Returns the travel past the vehicle type's `:max_drive_between_breaks`,
+  summed over the stretches between breaks.
+
+  Also counted in `time_warp/1`.
+  """
+  @spec clock_excess(t()) :: non_neg_integer()
+  def clock_excess(%__MODULE__{solution_ref: ref, route_idx: idx}) do
+    Native.solution_route_clock_excess(ref, idx)
+  end
+
+  @doc """
+  Returns the work (travel plus service) past the vehicle type's
+  `:max_work_between_breaks`, summed over the stretches between breaks.
+
+  Also counted in `time_warp/1`.
+  """
+  @spec work_clock_excess(t()) :: non_neg_integer()
+  def work_clock_excess(%__MODULE__{solution_ref: ref, route_idx: idx}) do
+    Native.solution_route_work_clock_excess(ref, idx)
   end
 
   # ---------------------------------------------------------------------------
@@ -200,7 +227,8 @@ defmodule ExVrp.Route do
   Returns the end time of this route.
 
   Time warp that shifts the timeline (arriving after a time window closes)
-  pulls the end time back; `drive_excess/1` does not.
+  pulls the end time back; `drive_excess/1`, `clock_excess/1` and
+  `work_clock_excess/1` do not.
   """
   @spec end_time(t()) :: non_neg_integer()
   def end_time(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -233,6 +261,9 @@ defmodule ExVrp.Route do
 
   @doc """
   Returns the wait duration of this route.
+
+  Excludes break time: a break taken where the vehicle would wait replaces
+  that wait.
   """
   @spec wait_duration(t()) :: non_neg_integer()
   def wait_duration(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -303,6 +334,30 @@ defmodule ExVrp.Route do
           ]
   def schedule(%__MODULE__{solution_ref: ref, route_idx: idx}) do
     Native.solution_route_schedule(ref, idx)
+  end
+
+  @doc """
+  Returns the breaks the solver placed on this route, which `schedule/1` leaves out.
+
+  `visits_before` counts this route's `visits/1` before the break, so `0` is a break before the
+  first visit and `length(visits)` one after the last. Breaks taken back to back are separate
+  entries with the same `visits_before`. A break takes no location: it is taken where the vehicle
+  is, between `start_service` and `end_service`.
+  """
+  @spec breaks(t()) :: [
+          %{
+            visits_before: non_neg_integer(),
+            trip: non_neg_integer(),
+            start_service: non_neg_integer(),
+            end_service: non_neg_integer()
+          }
+        ]
+  def breaks(%__MODULE__{solution_ref: ref, route_idx: idx}) do
+    ref
+    |> Native.solution_route_breaks(idx)
+    |> Enum.map(fn {visits_before, trip, start_service, end_service} ->
+      %{visits_before: visits_before, trip: trip, start_service: start_service, end_service: end_service}
+    end)
   end
 
   # ---------------------------------------------------------------------------

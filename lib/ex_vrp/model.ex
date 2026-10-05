@@ -80,6 +80,7 @@ defmodule ExVrp.Model do
 
   """
 
+  alias ExVrp.Breaks
   alias ExVrp.Client
   alias ExVrp.ClientGroup
   alias ExVrp.Depot
@@ -543,6 +544,7 @@ defmodule ExVrp.Model do
       |> validate_vehicle_depot_indices(model)
       |> validate_vehicle_reload_depots(model)
       |> validate_vehicle_forbidden_windows(model)
+      |> Breaks.validate(model)
       |> validate_matrix_dimensions(model)
       |> validate_matrix_diagonals(model)
       |> validate_client_groups(model)
@@ -1038,7 +1040,9 @@ defmodule ExVrp.Model do
   def to_problem_data(%__MODULE__{} = model) do
     case validate(model) do
       :ok ->
-        ExVrp.Native.create_problem_data(model)
+        model
+        |> Breaks.append_pool()
+        |> ExVrp.Native.create_problem_data()
 
       {:error, _reason} = error ->
         error

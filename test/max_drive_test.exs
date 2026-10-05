@@ -3,8 +3,7 @@ defmodule ExVrp.MaxDriveTest do
   Tests for `:max_drive`, the cap on wheels-turning time.
 
   `:max_duration` caps elapsed time, so a driver who waits two hours at a dock
-  has spent two hours of it. `:max_drive` counts only the edges driven, which is
-  what a legal driving-time limit measures.
+  has spent two hours of it. `:max_drive` counts only the edges driven.
 
   The shared model puts the depot at 0 and two clients at 30 and 60 on a line,
   with one vehicle, so the only route is 0 -> 30 -> 60 -> 0: 120 of driving.

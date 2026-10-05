@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.15.0
+
+### Added
+
+- **New vehicle-type options make the solver place breaks.** `:max_drive_between_breaks` and
+  `:max_work_between_breaks` cap what a vehicle does between two breaks, and `:break_duration` is
+  how long each lasts; set it together with at least one limit. All opt-in: models without them
+  solve exactly as before. The drive clock counts travel; the work clock counts travel plus client
+  and reload service, never waiting. Every break resets both. The model adds a pool of break
+  clients and the search places them; they never appear in `visits`, schedules, `num_clients` or
+  `unassigned`. A break placed where the vehicle would wait anyway shortens that wait.
+- The search prices a route that would need a break by the break's duration rather than as
+  infeasible, so it lengthens routes, serves optional clients and saves vehicles by taking breaks,
+  and places the real breaks before it hands a solution back.
+- `:drive_carry_in` and `:work_carry_in` add driving and work done since the last break before the
+  route to its first stretch; `:work_after_end` adds work after the last stop to its last stretch.
+  `Model.validate/1` rejects a carry that alone exceeds its limit, since no break can fix it.
+- A clock left past its limit in a solution counts as time warp, so the route is infeasible, but,
+  like `drive_excess/1`, it never moves `end_time/1`. `ExVrp.Route.clock_excess/1` (drive) and
+  `ExVrp.Route.work_clock_excess/1` report it.
+- `ExVrp.Route.breaks/1` says where each break falls (`visits_before`, counted in `visits`) and
+  when (`start_service`, `end_service`); `schedule/1` leaves breaks out.
+- `:initial_routes` takes a `:break` among a vehicle type's clients as a break taken there. Each
+  marker gets a break of its own from the pool, and the solve keeps it there unless moving or
+  dropping it pays. `ExVrp.Solution.warm_start/1` writes a marker for every break. A marker on a
+  vehicle type without limits between breaks, or more markers than the pool holds, is an invalid
+  warm start.
+
+### Changed
+
+- On a vehicle type with limits between breaks, `ExVrp.Route.duration/1` includes break time and
+  `wait_duration/1` does not.
+- `ExVrp.Client` has an internal `:is_break` field that only the model's break pool sets.
+  `Native.problem_data_num_clients/1` counts that pool; a solution's `num_clients` never does.
+- `Model.validate/1` rejects a `:max_drive_between_breaks` or `:max_work_between_breaks` that is
+  not positive, and a break client can no longer be required.
+- Models without breaks search as fast as in 0.14.0 on the GCC 13 release build (within about 2%
+  per iteration); the break work no longer evicts the search's small helpers from inlining. Models
+  with breaks run 13–20% fewer instructions per iteration, and a local search no longer repeats
+  rounds in which its search and break repair return each other to the same solution.
+- `ExVrp.Neighbourhood.compute_neighbours/2` leaves break clients out: their zero matrix rows made
+  them every client's nearest neighbours, crowding out real ones. `Native.problem_data_clients_nif/1`
+  returns each client's `is_break` as a fifth element.
+
 ## 0.14.0
 
 ### Added

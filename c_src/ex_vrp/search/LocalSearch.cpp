@@ -40,6 +40,7 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
                             timeout_ms > 0 ? timeout_ms : SAFETY_TIMEOUT_MS);
 
     static constexpr int MAX_OUTER_ITERS = 15;
+    auto previousCost = std::numeric_limits<Cost>::max();
     for (int outerIter = 0; outerIter < MAX_OUTER_ITERS; ++outerIter)
     {
         search(costEvaluator);
@@ -58,10 +59,27 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
             && std::chrono::steady_clock::now() >= timeout_deadline_)
             break;
 
+        // Changed breaks count as updates, so the next round searches the
+        // routes as they now are.
+        auto const breaksChanged = repairBreaks(costEvaluator);
+
         if (numUpdates_ == numUpdates)
             // Then intensify (route search) did not do any additional
             // updates, so the solution is locally optimal.
             break;
+
+        // The search prices a missing break as virtual, then works around the
+        // real one repair places, and the two can return each other to the
+        // same solution round after round. Another round is only worth it
+        // while the rounds that moved breaks keep lowering the cost.
+        if (breaksChanged)
+        {
+            auto const cost = penalisedCost(costEvaluator);
+            if (cost >= previousCost)
+                break;
+
+            previousCost = cost;
+        }
     }
 
     // Re-insert unassigned prize clients as multi-trip after ILS
@@ -77,9 +95,17 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
     // insert them at earlier trip boundaries in the correct time order.
     improveWithMultiTrip(costEvaluator, true);  // skip feasibility
 
+    // Clock overrun is time warp, so breaks go first: the strip below must
+    // not mistake a missing break for a forbidden window violation.
+    repairBreaks(costEvaluator);
+
     // Last resort: if any route with forbidden windows is still
     // infeasible, strip non-required clients until feasible.
     stripInfeasibleForbiddenWindowClients();
+
+    // The strip can leave a route with stale breaks, or none at all. Every
+    // route handed back has its breaks in place, as virtual ones are not.
+    repairBreaks(costEvaluator);
 
     return solution_.unload();
 }
@@ -106,6 +132,8 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
 
     search(costEvaluator);
 
+    repairBreaks(costEvaluator);
+
     // After the main search, repair routes that have forbidden window
     // violations by moving late clients to new trips.
     repairForbiddenWindowRoutes(costEvaluator);
@@ -122,9 +150,13 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
     // Re-insert stripped clients at earlier trip boundaries.
     improveWithMultiTrip(costEvaluator, true);  // skip feasibility
 
+    repairBreaks(costEvaluator);  // before the strip, as in operator()
+
     // Last resort: if any route with forbidden windows is still
     // infeasible, strip non-required clients until feasible.
     stripInfeasibleForbiddenWindowClients();
+
+    repairBreaks(costEvaluator);  // as in operator()
 
     return solution_.unload();
 }
@@ -134,6 +166,7 @@ pyvrp::Solution LocalSearch::intensify(pyvrp::Solution const &solution,
 {
     loadSolution(solution);
     intensify(costEvaluator);
+    repairBreaks(costEvaluator);  // as in operator()
     return solution_.unload();
 }
 
@@ -267,6 +300,53 @@ void LocalSearch::intensify(CostEvaluator const &costEvaluator)
             }
         }
     }
+}
+
+pyvrp::Cost LocalSearch::penalisedCost(CostEvaluator const &costEvaluator) const
+{
+    Cost cost = 0;
+    for (auto const &route : solution_.routes)
+        cost += costEvaluator.penalisedCost(route);
+
+    for (auto const client : searchSpace_.clientOrder())
+    {
+        ProblemData::Client const &clientData = data.location(client);
+        if (!solution_.nodes[client].route())
+            cost += clientData.prize;
+    }
+
+    return cost;
+}
+
+bool LocalSearch::repairBreaks(CostEvaluator const &costEvaluator)
+{
+    if (!breakRepair_.hasBreaks())  // then there is nothing to place
+        return false;
+
+    // Releasing every route first frees the breaks some routes no longer
+    // need, so the pool has them when another route materialises its own.
+    bool changed = false;
+    auto const settle = [&](Route &route, bool routeChanged)
+    {
+        if (!routeChanged)
+            return;
+
+        update(&route, &route);
+        changed = true;
+
+        for (auto *node : route)               // their moves are now priced
+            searchSpace_.markPromising(node);  // differently
+    };
+
+    for (auto &route : solution_.routes)
+        if (route.size() > 2)  // a route of only breaks releases them all
+            settle(route, breakRepair_.release(route, costEvaluator));
+
+    for (auto &route : solution_.routes)
+        if (route.size() > 2)
+            settle(route, breakRepair_.apply(route, solution_, costEvaluator));
+
+    return changed;
 }
 
 void LocalSearch::shuffle(RandomNumberGenerator &rng)
@@ -739,6 +819,9 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
 {
     ProblemData::Client const &uData = data.location(U->client());
 
+    if (uData.isBreak)  // no location, so neighbourhoods cannot place it
+        return;
+
     if (uData.required && !U->route())  // then we must insert U
     {
         if (solution_.insert(U, searchSpace_, costEvaluator, true))
@@ -963,7 +1046,8 @@ void LocalSearch::insertConstrainedFirst(CostEvaluator const &costEvaluator)
     for (auto client = data.numDepots(); client != data.numLocations();
          ++client)
     {
-        if (solution_.nodes[client].route())
+        // Breaks are placed by BreakRepair, never as clients.
+        if (solution_.nodes[client].route() || data.isBreak(client))
             continue;
 
         size_t reachable = 0;
@@ -1056,14 +1140,17 @@ void LocalSearch::repairForbiddenWindowRoutes(
         for (size_t idx = 0; idx < route.size(); ++idx)
         {
             auto *node = route[idx];
-            if (idx > 0)
-            {
-                auto const prevLoc = route[idx - 1]->client();
-                now += durations(prevLoc, node->client());
-            }
+            if (idx > 0)  // a break is no place: its edges alias around it
+                now += durations(route.location(idx - 1), route.location(idx));
 
             if (node->isDepot() || node->isReloadDepot())
                 continue;
+
+            if (data.isBreak(node->client()))  // rest, never a late client
+            {
+                now += vehType.breakDuration;
+                continue;
+            }
 
             ProblemData::Client const &cl = data.location(node->client());
             auto const wait = cl.twEarly > now ? cl.twEarly - now : Duration(0);
@@ -1161,7 +1248,7 @@ void LocalSearch::improveWithMultiTrip(
         if (U->route())
             continue;
         ProblemData::Client const &cd = data.location(client);
-        if (cd.prize > 0)
+        if (cd.prize > 0 && !cd.isBreak)
             candidates.push_back(client);
     }
 
@@ -1347,11 +1434,17 @@ void LocalSearch::improveWithMultiTrip(
             for (size_t idx = 0; idx < bestRoute->size(); ++idx)
             {
                 auto *node = (*bestRoute)[idx];
-                if (idx > 0)
-                    now += durMatrix((*bestRoute)[idx - 1]->client(),
-                                     node->client());
+                if (idx > 0)  // breaks alias to the node before them
+                    now += durMatrix(bestRoute->location(idx - 1),
+                                     bestRoute->location(idx));
 
                 now = advancePastForbidden(now, vehType.forbiddenWindows);
+
+                if (data.isBreak(node->client()))
+                {
+                    now += vehType.breakDuration;
+                    continue;
+                }
 
                 if (node->isReloadDepot() || (node->isDepot() && idx > 0))
                 {
@@ -1462,8 +1555,8 @@ void LocalSearch::stripForbiddenWindowViolations()
         for (size_t idx = 0; idx < route.size(); ++idx)
         {
             auto *node = route[idx];
-            if (idx > 0)
-                now += durations(route[idx - 1]->client(), node->client());
+            if (idx > 0)  // breaks alias to the node before them
+                now += durations(route.location(idx - 1), route.location(idx));
 
             now = advancePastForbidden(now, vehType.forbiddenWindows);
 
@@ -1478,17 +1571,22 @@ void LocalSearch::stripForbiddenWindowViolations()
 
                     // Lookahead: if next node is a client whose presence
                     // at that location would overlap a forbidden window,
-                    // wait at the depot.  Mirrors Route::update() logic.
+                    // wait at the depot.  Mirrors Route::update() logic,
+                    // where a break next is taken at the depot.
                     if (idx + 1 < route.size() && !route[idx + 1]->isDepot()
                         && !route[idx + 1]->isReloadDepot())
                     {
-                        auto const travel = durations(node->client(),
-                                                      route[idx + 1]->client());
+                        auto const travel = durations(route.location(idx),
+                                                      route.location(idx + 1));
                         auto const arrive = now + travel;
+                        auto const nextLoc = route[idx + 1]->client();
                         ProblemData::Client const &next
-                            = data.location(route[idx + 1]->client());
+                            = data.location(nextLoc);
                         auto const svcStart = std::max(arrive, next.twEarly);
-                        auto const svcEnd = svcStart + next.serviceDuration;
+                        auto const svcEnd
+                            = svcStart
+                              + (data.isBreak(nextLoc) ? vehType.breakDuration
+                                                       : next.serviceDuration);
 
                         for (auto const &[fStart, fEnd] :
                              vehType.forbiddenWindows)
@@ -1502,6 +1600,12 @@ void LocalSearch::stripForbiddenWindowViolations()
                         }
                     }
                 }
+                continue;
+            }
+
+            if (data.isBreak(node->client()))  // rest, not an optional client
+            {
+                now += vehType.breakDuration;
                 continue;
             }
 
@@ -1583,8 +1687,9 @@ void LocalSearch::stripInfeasibleForbiddenWindowClients()
             for (size_t idx = 0; idx < route.size(); ++idx)
             {
                 auto *node = route[idx];
-                if (idx > 0)
-                    now += durations(route[idx - 1]->client(), node->client());
+                if (idx > 0)  // breaks alias to the node before them
+                    now += durations(route.location(idx - 1),
+                                     route.location(idx));
 
                 now = advancePastForbidden(now, vehType.forbiddenWindows);
 
@@ -1598,6 +1703,12 @@ void LocalSearch::stripInfeasibleForbiddenWindowClients()
                         now = advancePastForbidden(now,
                                                    vehType.forbiddenWindows);
                     }
+                    continue;
+                }
+
+                if (data.isBreak(node->client()))  // never stripped
+                {
+                    now += vehType.breakDuration;
                     continue;
                 }
 
@@ -1768,6 +1879,7 @@ LocalSearch::LocalSearch(ProblemData const &data,
       solution_(data),
       searchSpace_(data, neighbours),
       perturbationManager_(perturbationManager),
+      breakRepair_(data),
       lastTestedNodes(data.numLocations()),
       lastTestedRoutes(data.numVehicles()),
       lastUpdated(data.numVehicles()),

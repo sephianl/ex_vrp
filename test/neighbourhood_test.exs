@@ -203,6 +203,35 @@ defmodule ExVrp.NeighbourhoodTest do
   # Test Fixtures
   # ---------------------------------------------------------------------------
 
+  describe "compute_neighbours with breaks" do
+    test "break clients neither have nor are neighbours, and take no client's place" do
+      {:ok, problem_data} = create_small_problem_with_breaks()
+      num_locations = ExVrp.Native.problem_data_num_locations(problem_data)
+      breaks = 5..(num_locations - 1)
+
+      neighbours = Neighbourhood.compute_neighbours(problem_data, NeighbourhoodParams.new(num_neighbours: 100))
+
+      refute Enum.empty?(breaks)
+      assert Enum.all?(breaks, &(Enum.at(neighbours, &1) == []))
+
+      for client <- 1..4 do
+        assert neighbours |> Enum.at(client) |> Enum.sort() == Enum.to_list(1..4) -- [client]
+      end
+    end
+  end
+
+  defp create_small_problem_with_breaks do
+    Model.new()
+    |> Model.add_depot([])
+    |> Model.add_client(delivery: [10])
+    |> Model.add_client(delivery: [10])
+    |> Model.add_client(delivery: [10])
+    |> Model.add_client(delivery: [10])
+    |> Model.add_vehicle_type(num_available: 1, capacity: [100], max_drive_between_breaks: 20, break_duration: 5)
+    |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {10, 10}, {0, 10}, {5, 5}])
+    |> Model.to_problem_data()
+  end
+
   defp create_small_problem do
     # 4 clients in a square pattern
     Model.new()

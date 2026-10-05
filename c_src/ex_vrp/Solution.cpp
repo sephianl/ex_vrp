@@ -29,7 +29,7 @@ void Solution::evaluate(ProblemData const &data)
     for (auto const &route : routes_)
     {
         // Whole solution statistics.
-        numClients_ += route.size();
+        numClients_ += route.numClients();  // breaks are the solver's own
         prizes_ += route.prizes();
         distance_ += route.distance();
         distanceCost_ += route.distanceCost();
@@ -187,6 +187,9 @@ Solution::Solution(ProblemData const &data, RandomNumberGenerator &rng)
     for (size_t idx = data.numDepots(); idx != data.numLocations(); ++idx)
     {
         ProblemData::Client const &clientData = data.location(idx);
+        if (clientData.isBreak)  // placed by local search, never at random
+            continue;
+
         if (clientData.required || rng.rand() < 0.5)
             clients.push_back(idx);
     }

@@ -33,6 +33,8 @@ defmodule ExVrp.VehicleType do
   | `:max_distance`          | the whole route | distance, summed over every trip       |
   | `:max_distance_per_trip` | one trip        | distance, reset at every reload        |
   | `:max_drive`             | the whole route | travel only, no service or waiting     |
+  | `:max_drive_between_breaks` | between breaks | travel only, reset at every break   |
+  | `:max_work_between_breaks`  | between breaks | travel and service, reset likewise  |
   | `:shift_duration`        | the whole route | elapsed time, idle included            |
   | `:max_duration`          | the whole route | elapsed time, idle included (hard cap) |
   | `:overtime_start`        | the whole route | clock time past the contracted end     |
@@ -88,16 +90,17 @@ defmodule ExVrp.VehicleType do
   is no per-trip duration cap: a second trip spends the same budget as the
   first. For time actually worked:
 
-      ExVrp.Route.duration(route) - ExVrp.Route.wait_duration(route)
+      ExVrp.Route.travel_duration(route) + ExVrp.Route.service_duration(route)
+
+  Not `duration - wait_duration`: that also counts break time.
 
   ## Driving time
 
   `:max_drive` caps how long the vehicle is actually moving: the travel time of
   every edge on the route, from the duration matrix, summed over all trips.
-  Service, waiting for a window to open and reload time do not count. That is
-  what a legal driving-time limit measures, and what the elapsed-time caps
-  above cannot express. A route that drives 300 but waits 600 in between has
-  an elapsed duration of 900:
+  Service, waiting for a window to open and reload time do not count, which
+  the elapsed-time caps above cannot express. A route that drives 300 but
+  waits 600 in between has an elapsed duration of 900:
 
   | Cap                 | Measures | Verdict    |
   | ------------------- | -------- | ---------- |
@@ -117,6 +120,32 @@ defmodule ExVrp.VehicleType do
 
       ExVrp.Route.drive_excess(route)
       ExVrp.Solution.drive_excess(solution)
+
+  ## Breaks
+
+  `:max_drive_between_breaks` and `:max_work_between_breaks` cap what a
+  vehicle does between two breaks, and `:break_duration` is how long each
+  break lasts. Set `:break_duration` together with at least one of the two.
+  The solver then places the breaks itself: the model adds a pool of break
+  clients that never show up in `visits`, schedules, `num_clients` or
+  `unassigned`.
+
+  The drive clock counts travel; the work clock counts travel plus client and
+  reload service. Waiting counts toward neither, and every break resets both.
+
+      iex> vt = ExVrp.VehicleType.new(num_available: 1, capacity: [10],
+      ...>   break_duration: 30, max_drive_between_breaks: 240)
+      iex> {vt.break_duration, vt.max_drive_between_breaks, vt.max_work_between_breaks}
+      {30, 240, :infinity}
+
+  A break the vehicle can take while it would wait anyway shortens that wait
+  instead of lengthening the route. Break time is part of
+  `ExVrp.Route.duration/1`, but not of `wait_duration/1`.
+
+  A clock left past its limit is infeasible: the excess counts as time warp,
+  reported by `ExVrp.Route.clock_excess/1` (drive) and
+  `ExVrp.Route.work_clock_excess/1`. Like `drive_excess/1`, it never moves
+  `end_time/1`.
 
   ## Time windows
 
@@ -142,6 +171,12 @@ defmodule ExVrp.VehicleType do
           max_distance: non_neg_integer() | :infinity,
           max_distance_per_trip: non_neg_integer() | :infinity,
           max_drive: non_neg_integer() | :infinity,
+          max_drive_between_breaks: pos_integer() | :infinity,
+          break_duration: non_neg_integer(),
+          max_work_between_breaks: pos_integer() | :infinity,
+          drive_carry_in: non_neg_integer(),
+          work_carry_in: non_neg_integer(),
+          work_after_end: non_neg_integer(),
           unit_distance_cost: non_neg_integer(),
           unit_duration_cost: non_neg_integer(),
           profile: non_neg_integer(),
@@ -169,6 +204,12 @@ defmodule ExVrp.VehicleType do
     max_distance: :infinity,
     max_distance_per_trip: :infinity,
     max_drive: :infinity,
+    max_drive_between_breaks: :infinity,
+    break_duration: 0,
+    max_work_between_breaks: :infinity,
+    drive_carry_in: 0,
+    work_carry_in: 0,
+    work_after_end: 0,
     unit_distance_cost: 1,
     unit_duration_cost: 0,
     profile: 0,
@@ -217,10 +258,19 @@ defmodule ExVrp.VehicleType do
     recharges each time it reloads, so every trip starts with a full tank.
     Independent of `:max_distance` — set either, both, or neither
   - `:max_drive` - Maximum **travel** duration of the whole route, across trips
-    (default: `:infinity`). Service, waiting and reload time do not count, so
-    this is the quantity a legal driving-time limit measures. Excess counts as
-    time warp and is reported by `ExVrp.Route.drive_excess/1` — see "Driving
-    time" above
+    (default: `:infinity`). Service, waiting and reload time do not count.
+    Excess counts as time warp and is reported by `ExVrp.Route.drive_excess/1`
+    — see "Driving time" above
+  - `:max_drive_between_breaks` - Maximum travel between two breaks (default:
+    `:infinity`) — see "Breaks" above
+  - `:max_work_between_breaks` - Maximum work, travel plus client and reload
+    service, between two breaks (default: `:infinity`)
+  - `:break_duration` - How long each break lasts (default: `0`). Set it
+    exactly when at least one of the two limits above is set
+  - `:drive_carry_in` / `:work_carry_in` - Driving / work since the last break
+    before the route starts, added to its first stretch (default: `0`)
+  - `:work_after_end` - Work after the route ends (the last unload), added to
+    its last stretch (default: `0`)
   - `:unit_distance_cost` - Cost per unit distance (default: `1`)
   - `:unit_duration_cost` - Cost per unit time (default: `0`)
   - `:profile` - Index of distance/duration matrix to use (default: `0`)

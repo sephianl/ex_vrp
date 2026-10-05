@@ -1,4 +1,5 @@
 #include "Route.h"
+#include "DriveClock.h"
 #include "DurationSegment.h"
 #include "LoadSegment.h"
 
@@ -7,6 +8,7 @@
 #include <fstream>
 #include <numeric>
 
+using pyvrp::ClockQuantity;
 using pyvrp::Coordinate;
 using pyvrp::Cost;
 using pyvrp::Distance;
@@ -228,13 +230,20 @@ void Route::makeSchedule(ProblemData const &data)
         // forbidden windows, not idle at a client location).
         if (tripIdx > 0 && !vehData.forbiddenWindows.empty() && !trip.empty())
         {
+            // A leading break takes the depot's location, as in the loop
+            // below and in search::Route's forbidden-window walk.
             auto const firstClient = *trip.begin();
-            auto const travel = durations(trip.startDepot(), firstClient);
+            auto const firstLoc
+                = data.isBreak(firstClient) ? trip.startDepot() : firstClient;
+            auto const travel = durations(trip.startDepot(), firstLoc);
             auto const arrive = now + travel;
             ProblemData::Client const &cd = data.location(firstClient);
             auto const svcStart = std::max(arrive, cd.twEarly);
 
-            auto const svcEnd = svcStart + cd.serviceDuration;
+            auto const svcEnd
+                = svcStart
+                  + (data.isBreak(firstClient) ? vehData.breakDuration
+                                               : cd.serviceDuration);
             for (auto const &[fStart, fEnd] : vehData.forbiddenWindows)
             {
                 // Would the vehicle be present at the client during
@@ -255,18 +264,24 @@ void Route::makeSchedule(ProblemData const &data)
                                wait + forbiddenWait,
                                tw);
 
-        size_t prevClient = trip.startDepot();
+        // A break takes the location of the nearest non-break node before it.
+        size_t prevLoc = trip.startDepot();
         for (auto const client : trip)
         {
-            now += durations(prevClient, client);
+            auto const loc = data.isBreak(client) ? prevLoc : client;
+            assert(!data.isBreak(prevLoc) && !data.isBreak(loc));
+            now += durations(prevLoc, loc);
 
             ProblemData::Client const &clientData = data.location(client);
-            handle(clientData, client, tripIdx, clientData.serviceDuration);
+            auto const service = data.isBreak(client)
+                                     ? vehData.breakDuration
+                                     : clientData.serviceDuration;
+            handle(clientData, client, tripIdx, service);
 
-            prevClient = client;
+            prevLoc = loc;
         }
 
-        now += durations(prevClient, trip.endDepot());
+        now += durations(prevLoc, trip.endDepot());
     }
 
     ProblemData::Depot const &end = data.location(endDepot_);
@@ -307,6 +322,12 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
 
         for (auto const client : trip)
         {
+            if (data.isBreak(client))
+            {
+                breaks_ += vehData.breakDuration;
+                numBreaks_++;
+            }
+
             penaltyCost_ += penalties[client];
 
             auto const lock = data.lockPenalty(vehType, client);
@@ -362,18 +383,32 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         ProblemData::Depot const &end = data.location(trip->endDepot());
         ds = DurationSegment::merge(0, {end}, ds);
 
-        size_t nextClient = trip->endDepot();
+        // Walking backwards, a break takes the location of the nearest
+        // non-break node after it, as in search::Route's durAfter: its
+        // outgoing edge is zero and the node before it drives on. Timing is
+        // the same as driving after the break, since a break has no window.
+        size_t nextLoc = trip->endDepot();
         for (auto it = trip->rbegin(); it != trip->rend(); ++it)
         {
             auto const client = *it;
-            auto const edgeDuration = durations(client, nextClient);
+            auto const loc = data.isBreak(client) ? nextLoc : client;
+            assert(!data.isBreak(loc) && !data.isBreak(nextLoc));
+            auto const edgeDuration = durations(loc, nextLoc);
             ProblemData::Client const &clientData = data.location(client);
+            DurationSegment const visitDS
+                = data.isBreak(client)
+                      ? DurationSegment(vehData.breakDuration,
+                                        0,
+                                        0,
+                                        std::numeric_limits<Duration>::max(),
+                                        0)
+                      : DurationSegment(clientData);
 
-            ds = DurationSegment::merge(edgeDuration, {clientData}, ds);
-            nextClient = client;
+            ds = DurationSegment::merge(edgeDuration, visitDS, ds);
+            nextLoc = loc;
         }
 
-        auto const edgeDuration = durations(trip->startDepot(), nextClient);
+        auto const edgeDuration = durations(trip->startDepot(), nextLoc);
         ProblemData::Depot const &start = data.location(trip->startDepot());
         // Service time and reload cost are only applied at reload depots (not
         // the first trip). In reverse iteration, trip + 1 == rend means this is
@@ -405,7 +440,9 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
                     + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
 
     driveExcess_ = ds.driveExcess(vehData.maxDrive);
-    timeWarp_ += driveExcess_;
+    clockExcess_ = foldClockExcess<ClockQuantity::Drive>(data);
+    workClockExcess_ = foldClockExcess<ClockQuantity::Work>(data);
+    timeWarp_ += driveExcess_ + clockExcess_ + workClockExcess_;
 
     makeSchedule(data);
 
@@ -426,8 +463,59 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
             timeWarp_ += visit.timeWarp;
         if (duration_ > vehData.maxDuration)
             timeWarp_ += duration_ - vehData.maxDuration;
-        timeWarp_ += driveExcess_;
+        timeWarp_ += driveExcess_ + clockExcess_ + workClockExcess_;
     }
+}
+
+template <ClockQuantity Quantity>
+Duration Route::foldClockExcess(ProblemData const &data) const
+{
+    auto const &vehData = data.vehicleType(vehicleType_);
+    auto const limit = vehData.breakLimit(Quantity);
+    if (limit == std::numeric_limits<Duration>::max() || empty())
+        return 0;
+
+    auto constexpr work = Quantity == ClockQuantity::Work;
+
+    // The clock runs across reload depots, which are work, not rest. Breaks
+    // count onto the leg they sit on, as in search::Route's fold. The carries
+    // are the start and end depots' own quantity, as in search::Route.
+    auto const &durations = data.durationMatrix(vehData.profile);
+    auto const carryIn = work ? vehData.workCarryIn : vehData.driveCarryIn;
+    DriveClock clock = {.head = carryIn, .tail = carryIn};
+    size_t last = startDepot_;
+
+    auto const visit = [&](size_t location, Duration own)
+    {
+        if (data.isBreak(location))
+            clock.trailRun++;
+        else
+        {
+            DriveClock const node = {.head = own, .tail = own};
+            clock = DriveClock::merge(
+                clock, durations(last, location), node, limit);
+            last = location;
+        }
+    };
+
+    for (size_t tripIdx = 0; tripIdx != trips_.size(); ++tripIdx)
+    {
+        if (tripIdx > 0)  // a reload depot, whose service is work
+        {
+            auto const depot = trips_[tripIdx].startDepot();
+            ProblemData::Depot const &depotData = data.location(depot);
+            visit(depot, work ? depotData.serviceDuration : 0);
+        }
+
+        for (auto const client : trips_[tripIdx])
+        {
+            ProblemData::Client const &clientData = data.location(client);
+            visit(client, work ? clientData.serviceDuration : 0);
+        }
+    }
+
+    visit(endDepot_, work ? vehData.workAfterEnd : 0);
+    return clock.overrun(limit);
 }
 
 bool Route::empty() const { return size() == 0; }
@@ -440,6 +528,8 @@ size_t Route::size() const
                            [](size_t count, auto const &trip)
                            { return count + trip.size(); });
 }
+
+size_t Route::numClients() const { return size() - numBreaks_; }
 
 size_t Route::numTrips() const { return trips_.size(); }
 
@@ -497,9 +587,19 @@ Duration Route::timeWarp() const { return timeWarp_; }
 
 Duration Route::driveExcess() const { return driveExcess_; }
 
-Duration Route::timelineTimeWarp() const { return timeWarp_ - driveExcess_; }
+Duration Route::clockExcess() const { return clockExcess_; }
 
-Duration Route::waitDuration() const { return duration_ - travel_ - service_; }
+Duration Route::workClockExcess() const { return workClockExcess_; }
+
+Duration Route::timelineTimeWarp() const
+{
+    return timeWarp_ - driveExcess_ - clockExcess_ - workClockExcess_;
+}
+
+Duration Route::waitDuration() const
+{
+    return duration_ - travel_ - service_ - breaks_;
+}
 
 Duration Route::travelDuration() const { return travel_; }
 

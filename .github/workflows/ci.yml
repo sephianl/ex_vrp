@@ -9,8 +9,13 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Every run step executes inside the devenv shell. devenv 2 runs all git hooks
+    # (a full `mix check`, ~2.5 min) on each shell entry and ignores DEVENV_NO_GIT_HOOKS;
+    # their failures don't fail the step, so they only cost time and print noise.
+    defaults:
+      run:
+        shell: devenv -O git-hooks.enable:bool false shell bash -e {0}
     env:
-      DEVENV_NO_GIT_HOOKS: "1"
       # Build the NIF from this ref's source. Without it, cc_precompiler may serve the
       # released binary (keyed on package version, not git ref), so tests + the quality
       # smoke would run against released code instead of the code under review.
@@ -29,6 +34,7 @@ jobs:
         uses: DeterminateSystems/magic-nix-cache-action@v8
 
       - name: Install devenv
+        shell: bash
         run: |
           nix profile install --accept-flake-config github:cachix/devenv/latest
 
@@ -44,53 +50,53 @@ jobs:
 
       - name: Get dependencies
         run: |
-          devenv shell mix deps.get
+          mix deps.get
 
       - name: Compile
         run: |
-          devenv shell mix compile --warnings-as-errors
+          mix compile --warnings-as-errors
 
       - name: Check formatting
         run: |
-          devenv shell mix format --check-formatted
+          mix format --check-formatted
 
       - name: Verify skill citations
         run: |
-          devenv shell mix run .claude/skills/verify_citations.exs
+          mix run .claude/skills/verify_citations.exs
 
       - name: Check C++ formatting
         run: |
-          devenv shell task cpp:format:check
+          task cpp:format:check
 
       - name: Run C++ static analysis
         run: |
-          devenv shell task cpp:check
+          task cpp:check
 
       - name: Run tests
         run: |
-          devenv shell mix test
+          mix test
 
       - name: Run production benchmarks
         timeout-minutes: 10
         run: |
-          devenv shell mix test test/production_benchmark_test.exs --include production_benchmark_quick --only production_benchmark_quick
+          mix test test/production_benchmark_test.exs --include production_benchmark_quick --only production_benchmark_quick
 
       - name: Run quality smoke
         timeout-minutes: 5
         run: |
-          devenv shell mix bench.smoke
+          mix bench.smoke
 
       - name: Run AddressSanitizer tests
         run: |
-          devenv shell task test:asan
+          task test:asan
 
       - name: Run full checks
         if: github.event_name == 'pull_request'
         run: |
-          devenv shell mix check
+          mix check
 
       - name: Reach change-safety analysis
         if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags origin main:refs/remotes/origin/main
-          devenv shell mix reach.check --changed --base origin/main
+          mix reach.check --changed --base origin/main

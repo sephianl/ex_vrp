@@ -84,6 +84,7 @@ PYVRP_CORE_SRC = \
 
 # PyVRP search sources
 PYVRP_SEARCH_SRC = \
+	c_src/ex_vrp/search/BreakRepair.cpp \
 	c_src/ex_vrp/search/LocalSearch.cpp \
 	c_src/ex_vrp/search/PerturbationManager.cpp \
 	c_src/ex_vrp/search/RelocateWithDepot.cpp \
@@ -136,9 +137,12 @@ $(BUILD_STAMP):
 # full rebuild takes <10s.
 HEADERS = $(wildcard c_src/*.h c_src/ex_vrp/*.h c_src/ex_vrp/search/*.h)
 
-# Object files depend on the build stamp via order-only prerequisite
-# to prevent parallel make from compiling while the stamp rule cleans obj/
-$(OBJ_DIR)/%.o: c_src/%.cpp $(HEADERS) | $(BUILD_STAMP)
+# Object files depend on the build stamp as a normal prerequisite. It orders
+# them after the stamp rule cleans obj/, and, being newer than every object it
+# deleted, also rebuilds them: with an order-only one, make had already judged
+# objects newer than their sources up to date before the stamp rule removed
+# them, so the link failed on a compiler or flag change.
+$(OBJ_DIR)/%.o: c_src/%.cpp $(HEADERS) $(BUILD_STAMP)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 

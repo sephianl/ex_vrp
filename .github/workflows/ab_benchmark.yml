@@ -9,8 +9,13 @@ jobs:
     if: contains(github.event.pull_request.labels.*.name, 'benchmark')
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    # Every run step executes inside the devenv shell. devenv 2 runs all git hooks
+    # (a full `mix check`, ~2.5 min) on each shell entry and ignores DEVENV_NO_GIT_HOOKS;
+    # their failures don't fail the step, so they only cost time and print noise.
+    defaults:
+      run:
+        shell: devenv -O git-hooks.enable:bool false shell bash -e {0}
     env:
-      DEVENV_NO_GIT_HOOKS: "1"
       # Force a from-source NIF build for BOTH refs. Without this, cc_precompiler serves the
       # released binary keyed on the package VERSION (not the git ref), so HEAD and BASE would
       # get the identical prebuilt solver and every A/B comparison would falsely show "no change".
@@ -29,6 +34,7 @@ jobs:
         uses: DeterminateSystems/magic-nix-cache-action@v8
 
       - name: Install devenv
+        shell: bash
         run: |
           nix profile install --accept-flake-config github:cachix/devenv/latest
 
@@ -50,9 +56,9 @@ jobs:
       # and then solve on an idle machine, which biases its result. See Runner's moduledoc.
       - name: Build + run HEAD
         run: |
-          devenv shell mix deps.get
-          devenv shell mix compile
-          devenv shell mix bench.run --out /tmp/results-head.json --ref head --seeds 1,2,3,4 --budget-cap 60
+          mix deps.get
+          mix compile
+          mix bench.run --out /tmp/results-head.json --ref head --seeds 1,2,3,4 --budget-cap 60
 
       # NOTE: We only revert the solver sources (lib/ and c_src/) to the PR base.
       # The benchmark harness (dev/, priv/benchmark_data/, mix tasks) intentionally stays at
@@ -73,16 +79,16 @@ jobs:
       # --budget-cap is tunable to fit the runner time budget.
       - name: Build + run BASE
         run: |
-          devenv shell mix deps.get
-          devenv shell mix compile --force
-          devenv shell mix bench.run --out /tmp/results-base.json --ref base --seeds 1,2,3,4 --budget-cap 60
+          mix deps.get
+          mix compile --force
+          mix bench.run --out /tmp/results-base.json --ref base --seeds 1,2,3,4 --budget-cap 60
 
       # set -o pipefail ensures the pipeline returns bench.compare's exit code (1 on regression)
       # rather than tee's exit code, so a regression actually fails the job.
       - name: Compare
         run: |
           set -o pipefail
-          devenv shell mix bench.compare /tmp/results-base.json /tmp/results-head.json | tee /tmp/report.txt
+          mix bench.compare /tmp/results-base.json /tmp/results-head.json | tee /tmp/report.txt
 
       - name: Post report comment
         if: always()

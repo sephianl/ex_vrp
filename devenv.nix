@@ -13,6 +13,16 @@ in
   process.managers.process-compose.tui.enable = false;
   cachix.enable = false;
 
+  # The Linux release NIF is built with ubuntu-latest's g++, GCC 13
+  # (.github/workflows/precompile.yml). Compilers, and GCC versions, inline the
+  # search differently enough to move its speed by several percent, so local runs
+  # and the CI A/B build with the same; the Makefile still switches to clang++ for
+  # SANITIZE=1. Exported in enterShell because the clang package's setup hook sets
+  # CC and CXX after env.
+  enterShell = ''
+    export CC=gcc CXX=g++
+  '';
+
   languages = {
     elixir = {
       enable = true;
@@ -24,7 +34,7 @@ in
     with pkgs;
     [
       gnumake
-      gcc
+      gcc13 # the major version ubuntu-latest builds the release NIF with
       # C++ linting, formatting, and sanitizer support
       clang
       clang-tools # provides clang-format, clang-tidy

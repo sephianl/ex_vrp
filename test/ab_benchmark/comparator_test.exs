@@ -144,6 +144,30 @@ defmodule ExVrp.ABBenchmark.ComparatorTest do
     assert_in_delta row.iter_pct_change, -0.5, 1.0e-9
   end
 
+  test "hard fail when the median instance loses more than 5% of its iterations" do
+    with_iters = fn iters ->
+      inst("cvrp", nil, %{"1" => %{"objective" => 1000, "feasible" => true, "time_ms" => 1, "iterations" => iters}})
+    end
+
+    base = results("main", %{"a" => with_iters.(1000), "b" => with_iters.(1000), "c" => with_iters.(1000)})
+    cand = results("head", %{"a" => with_iters.(930), "b" => with_iters.(900), "c" => with_iters.(1010)})
+
+    assert {:regression, summary} = Comparator.compare(base, cand)
+    assert Enum.any?(summary.hard_fails, &String.contains?(&1, "iterations"))
+  end
+
+  test "one instance losing iterations is not a throughput regression" do
+    with_iters = fn iters ->
+      inst("cvrp", nil, %{"1" => %{"objective" => 1000, "feasible" => true, "time_ms" => 1, "iterations" => iters}})
+    end
+
+    base = results("main", %{"a" => with_iters.(1000), "b" => with_iters.(1000), "c" => with_iters.(1000)})
+    cand = results("head", %{"a" => with_iters.(500), "b" => with_iters.(980), "c" => with_iters.(1000)})
+
+    assert {:ok, summary} = Comparator.compare(base, cand)
+    assert summary.hard_fails == []
+  end
+
   test "warn only for a localized >1% objective regression that doesn't move aggregate gap past 0.5pp" do
     clean = inst("cvrp", 1000, %{"1" => seed(1000, true)})
     base = results("main", %{"a" => clean, "b" => clean, "c" => clean, "d" => clean})

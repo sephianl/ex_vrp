@@ -2,6 +2,13 @@ defmodule ExVrp.ABBenchmark.Corpus do
   @moduledoc """
   Declares the A/B benchmark corpus: each instance's id, variant, how to load
   it, and its file path. BKS values are resolved separately via `bks/1`.
+
+  Every production instance also runs as a `:production_breaks` twin, which
+  `ExVrp.ABBenchmark.Loader` gives every vehicle type limits between breaks, so
+  a change is measured on plans that need breaks as well as on plans without.
+  The CI A/B builds the base solver under this harness; a base from before
+  breaks has no break fields, so it declares no twins, and the comparison
+  leaves them out instead of scoring them infeasible.
   """
 
   defmodule Entry do
@@ -43,7 +50,7 @@ defmodule ExVrp.ABBenchmark.Corpus do
 
   @spec entries() :: [Entry.t()]
   def entries do
-    literature_entries() ++ curated_entries() ++ production_entries()
+    literature_entries() ++ curated_entries() ++ production_entries() ++ production_break_entries(breaks_supported?())
   end
 
   @spec bks(String.t()) :: number() | nil
@@ -78,4 +85,14 @@ defmodule ExVrp.ABBenchmark.Corpus do
       %Entry{id: id, variant: :production, kind: :etf, path: path}
     end)
   end
+
+  defp production_break_entries(false = _breaks_supported), do: []
+
+  defp production_break_entries(true = _breaks_supported) do
+    Enum.map(production_entries(), fn %Entry{id: "prod_" <> name} = entry ->
+      %{entry | id: "prodbrk_" <> name, variant: :production_breaks}
+    end)
+  end
+
+  defp breaks_supported?, do: ExVrp.VehicleType |> struct() |> Map.has_key?(:break_duration)
 end

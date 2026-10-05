@@ -32,6 +32,10 @@ class Route
     // Creates the data returned by ``schedule()``.
     void makeSchedule(ProblemData const &data);
 
+    // Drive or work clock overrun of the whole route; zero without its limit.
+    template <ClockQuantity Quantity>
+    [[nodiscard]] Duration foldClockExcess(ProblemData const &data) const;
+
 public:
     /**
      * Forward iterator through the clients visited by this route.
@@ -120,8 +124,12 @@ private:
     Cost durationCost_ = 0;          // Total cost of route duration
     Duration timeWarp_ = 0;          // Total time warp on this route
     Duration driveExcess_ = 0;       // Travel past max_drive
+    Duration clockExcess_ = 0;       // Travel past max_drive_between_breaks
+    Duration workClockExcess_ = 0;   // Work past max_work_between_breaks
     Duration travel_ = 0;            // Total *travel* duration on this route
     Duration service_ = 0;           // Total *service* duration on this route
+    Duration breaks_ = 0;            // Total break duration on this route
+    size_t numBreaks_ = 0;           // Break clients on this route
     Duration startTime_ = 0;         // (earliest) start time of this route
     Duration slack_ = 0;             // Total time slack on this route
     Cost prizes_ = 0;                // Total value of prizes on this route
@@ -138,9 +146,15 @@ public:
     [[nodiscard]] bool empty() const;
 
     /**
-     * Returns the number of clients visited by this route.
+     * Returns the number of clients visited by this route, breaks included.
      */
     [[nodiscard]] size_t size() const;
+
+    /**
+     * Returns the number of clients visited by this route, less its breaks:
+     * those are the solver's own.
+     */
+    [[nodiscard]] size_t numClients() const;
 
     /**
      * Returns the number of trips in this route.
@@ -244,10 +258,25 @@ public:
     [[nodiscard]] Duration driveExcess() const;
 
     /**
+     * Travel duration past the vehicle type's ``max_drive_between_breaks``,
+     * summed over the stretches between breaks, which is also counted in
+     * :meth:`time_warp`.
+     */
+    [[nodiscard]] Duration clockExcess() const;
+
+    /**
+     * Work (travel plus service) past the vehicle type's
+     * ``max_work_between_breaks``, summed over the stretches between breaks,
+     * which is also counted in :meth:`time_warp`.
+     */
+    [[nodiscard]] Duration workClockExcess() const;
+
+    /**
      * The part of :meth:`~timeWarp` that is an actual shift along the
      * timeline, used to derive clock times such as :meth:`~endTime`.
      * Excludes penalty-only terms folded into :meth:`~timeWarp` that do not
-     * move when the route starts or ends (today, :meth:`~driveExcess`).
+     * move when the route starts or ends (today, :meth:`~driveExcess`,
+     * :meth:`~clockExcess` and :meth:`~workClockExcess`).
      */
     [[nodiscard]] Duration timelineTimeWarp() const;
 
@@ -257,7 +286,7 @@ public:
     [[nodiscard]] Duration travelDuration() const;
 
     /**
-     * Total waiting duration on this route.
+     * Total waiting duration on this route. Breaks are rest, not waiting.
      */
     [[nodiscard]] Duration waitDuration() const;
 

@@ -42,6 +42,13 @@ mix test test/production_benchmark_test.exs --include production_benchmark_quick
 
 Requires C++20 compiler (gcc 11+ or clang 14+).
 
+> **Compiler matters for speed:** the Linux release NIF is built with ubuntu-latest's GCC 13, and
+> GCC 13, GCC 15 and Clang inline the search differently enough to move it by 5–10%. devenv pins
+> GCC 13 (`devenv.nix`) so local builds and the CI A/B measure what ships. Measure solver speed as
+> `perf stat -e instructions:u` at a fixed iteration count, not wall-clock on a busy machine. Keep the
+> break-free path free of break work: break-only code goes in `[[gnu::noinline]]` helpers, and the
+> small hot accessors are `[[gnu::always_inline]]`, so no compiler's size heuristics evict them.
+
 > **NIF build gotcha (important — this is what silently breaks branches/CI):** the package uses
 > `cc_precompiler` (`mix.exs:18`), so a plain `mix compile` loads a **precompiled `.so` from a
 > GitHub release** and does **not** rebuild your `c_src/` changes. To compile local C++/NIF edits

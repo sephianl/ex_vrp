@@ -1,6 +1,7 @@
 #ifndef PYVRP_SEARCH_LOCALSEARCH_H
 #define PYVRP_SEARCH_LOCALSEARCH_H
 
+#include "BreakRepair.h"
 #include "CostEvaluator.h"
 #include "LocalSearchOperator.h"
 #include "PerturbationManager.h"
@@ -31,6 +32,9 @@ class LocalSearch
     // Perturbation manager that determines the size of the perturbation during
     // each LS invocation.
     PerturbationManager &perturbationManager_;
+
+    // Places break clients, which the neighbourhoods cannot propose.
+    BreakRepair breakRepair_;
 
     std::vector<NodeOperator *> nodeOps;
     std::vector<RouteOperator *> routeOps;
@@ -125,6 +129,14 @@ class LocalSearch
 
     // Performs intensify on the currently loaded solution.
     void intensify(CostEvaluator const &costEvaluator);
+
+    // Runs BreakRepair on every non-empty route until it settles. Returns
+    // whether anything changed.
+    bool repairBreaks(CostEvaluator const &costEvaluator);
+
+    // Penalised cost of the loaded solution: its routes, and the prizes of
+    // the clients it leaves out.
+    Cost penalisedCost(CostEvaluator const &costEvaluator) const;
 
     // Pre-pass for initial solution: inserts most-constrained clients first
     // (fewest reachable routes), ensuring zone-restricted clients get their

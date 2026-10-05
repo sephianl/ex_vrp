@@ -82,6 +82,16 @@ normaliseAllowed(std::vector<pyvrp::DynamicBitset> allowed,
 
     return std::vector<pyvrp::DynamicBitset>(numProfiles, all);
 }
+
+std::vector<bool> breakFlags(size_t numDepots,
+                             std::vector<ProblemData::Client> const &clients)
+{
+    std::vector<bool> flags(numDepots, false);
+    for (auto const &client : clients)
+        flags.push_back(client.isBreak);
+
+    return flags;
+}
 }  // namespace
 
 ProblemData::Client::Client(std::vector<Load> delivery,
@@ -93,7 +103,8 @@ ProblemData::Client::Client(std::vector<Load> delivery,
                             Cost prize,
                             bool required,
                             std::optional<size_t> group,
-                            std::string name)
+                            std::string name,
+                            bool isBreak)
     : serviceDuration(serviceDuration),
       twEarly(twEarly),
       twLate(twLate),
@@ -103,7 +114,8 @@ ProblemData::Client::Client(std::vector<Load> delivery,
       prize(prize),
       required(required),
       group(group),
-      name(duplicate(name.data()))
+      name(duplicate(name.data())),
+      isBreak(isBreak)
 {
     assert(delivery.size() == pickup.size());
 
@@ -130,6 +142,27 @@ ProblemData::Client::Client(std::vector<Load> delivery,
 
     if (prize < 0)
         throw std::invalid_argument("prize must be >= 0.");
+
+    // Routes place a break next to the drive it splits in either order (see
+    // search::Route::update()), which is only timing-neutral when the break
+    // is a pure delay: no window to wait for or miss, and no release time.
+    if (isBreak
+        && (twEarly != 0 || twLate != std::numeric_limits<Duration>::max()
+            || releaseTime != 0))
+        throw std::invalid_argument(
+            "break clients must not have a time window or release time.");
+
+    // A break lasts its route's VehicleType::breakDuration. A service
+    // duration here would be silently ignored, so it is refused instead.
+    if (isBreak && serviceDuration != 0)
+        throw std::invalid_argument(
+            "break clients take their duration from the vehicle type's "
+            "break_duration, not a service duration.");
+
+    // A pool holds spares no route takes, and a required one left over would
+    // count as missing forever.
+    if (isBreak && required)
+        throw std::invalid_argument("break clients must not be required.");
 }
 
 ProblemData::Client::Client(Client const &client)
@@ -142,7 +175,8 @@ ProblemData::Client::Client(Client const &client)
       prize(client.prize),
       required(client.required),
       group(client.group),
-      name(duplicate(client.name))
+      name(duplicate(client.name)),
+      isBreak(client.isBreak)
 {
 }
 
@@ -156,7 +190,8 @@ ProblemData::Client::Client(Client &&client)
       prize(client.prize),
       required(client.required),
       group(client.group),
-      name(client.name)  // we can steal
+      name(client.name),  // we can steal
+      isBreak(client.isBreak)
 {
     client.name = nullptr;  // stolen
 }
@@ -175,7 +210,8 @@ bool ProblemData::Client::operator==(Client const &other) const
         && prize == other.prize
         && required == other.required
         && group == other.group
-        && std::strcmp(name, other.name) == 0;
+        && std::strcmp(name, other.name) == 0
+        && isBreak == other.isBreak;
     // clang-format on
 }
 
@@ -382,7 +418,13 @@ ProblemData::VehicleType::VehicleType(
     std::vector<std::pair<Duration, Duration>> forbiddenWindows,
     Duration overtimeStart,
     Distance maxDistancePerTrip,
-    Duration maxDrive)
+    Duration maxDrive,
+    Duration maxDriveBetweenBreaks,
+    Duration breakDuration,
+    Duration maxWorkBetweenBreaks,
+    Duration driveCarryIn,
+    Duration workCarryIn,
+    Duration workAfterEnd)
     : numAvailable(numAvailable),
       startDepot(startDepot),
       endDepot(endDepot),
@@ -404,6 +446,12 @@ ProblemData::VehicleType::VehicleType(
       overtimeStart(overtimeStart),
       maxDuration(maxDuration.value_or(shiftDuration)),
       maxDrive(maxDrive),
+      maxDriveBetweenBreaks(maxDriveBetweenBreaks),
+      breakDuration(breakDuration),
+      maxWorkBetweenBreaks(maxWorkBetweenBreaks),
+      driveCarryIn(driveCarryIn),
+      workCarryIn(workCarryIn),
+      workAfterEnd(workAfterEnd),
       forbiddenWindows(std::move(forbiddenWindows)),
       name(duplicate(name.data()))
 {
@@ -453,6 +501,26 @@ ProblemData::VehicleType::VehicleType(
     if (this->maxDrive < 0)
         throw std::invalid_argument("max_drive must be >= 0.");
 
+    if (maxDriveBetweenBreaks <= 0)
+        throw std::invalid_argument("max_drive_between_breaks must be > 0.");
+
+    if (maxWorkBetweenBreaks <= 0)
+        throw std::invalid_argument("max_work_between_breaks must be > 0.");
+
+    if (breakDuration < 0)
+        throw std::invalid_argument("break_duration must be >= 0.");
+
+    // A limit without a break to reset it, or a break with no limit to reset,
+    // is a half-configured rule.
+    if (hasBreakRule() != (breakDuration != 0))
+        throw std::invalid_argument(
+            "break_duration must be set exactly when a break limit is "
+            "(max_drive_between_breaks or max_work_between_breaks).");
+
+    if (driveCarryIn < 0 || workCarryIn < 0 || workAfterEnd < 0)
+        throw std::invalid_argument(
+            "drive_carry_in, work_carry_in and work_after_end must be >= 0.");
+
     if (unitOvertimeCost < 0)
         throw std::invalid_argument("unit_overtime_cost must be >= 0.");
 
@@ -493,6 +561,12 @@ ProblemData::VehicleType::VehicleType(VehicleType const &vehicleType)
       overtimeStart(vehicleType.overtimeStart),
       maxDuration(vehicleType.maxDuration),
       maxDrive(vehicleType.maxDrive),
+      maxDriveBetweenBreaks(vehicleType.maxDriveBetweenBreaks),
+      breakDuration(vehicleType.breakDuration),
+      maxWorkBetweenBreaks(vehicleType.maxWorkBetweenBreaks),
+      driveCarryIn(vehicleType.driveCarryIn),
+      workCarryIn(vehicleType.workCarryIn),
+      workAfterEnd(vehicleType.workAfterEnd),
       forbiddenWindows(vehicleType.forbiddenWindows),
       name(duplicate(vehicleType.name))
 {
@@ -520,6 +594,12 @@ ProblemData::VehicleType::VehicleType(VehicleType &&vehicleType)
       overtimeStart(vehicleType.overtimeStart),
       maxDuration(vehicleType.maxDuration),
       maxDrive(vehicleType.maxDrive),
+      maxDriveBetweenBreaks(vehicleType.maxDriveBetweenBreaks),
+      breakDuration(vehicleType.breakDuration),
+      maxWorkBetweenBreaks(vehicleType.maxWorkBetweenBreaks),
+      driveCarryIn(vehicleType.driveCarryIn),
+      workCarryIn(vehicleType.workCarryIn),
+      workAfterEnd(vehicleType.workAfterEnd),
       forbiddenWindows(std::move(vehicleType.forbiddenWindows)),
       name(vehicleType.name)  // we can steal
 {
@@ -557,6 +637,12 @@ bool ProblemData::VehicleType::operator==(VehicleType const &other) const
         && maxReloads == other.maxReloads
         && maxDuration == other.maxDuration
         && maxDrive == other.maxDrive
+        && maxDriveBetweenBreaks == other.maxDriveBetweenBreaks
+        && breakDuration == other.breakDuration
+        && maxWorkBetweenBreaks == other.maxWorkBetweenBreaks
+        && driveCarryIn == other.driveCarryIn
+        && workCarryIn == other.workCarryIn
+        && workAfterEnd == other.workAfterEnd
         && unitOvertimeCost == other.unitOvertimeCost
         && overtimeStart == other.overtimeStart
         && forbiddenWindows == other.forbiddenWindows
@@ -766,6 +852,16 @@ void ProblemData::validate() const
                 throw std::out_of_range("Vehicle has invalid reload depot.");
     }
 
+    // Without break clients no route can take a break, and a route under a
+    // break rule would be priced for breaks it can never get.
+    auto const hasRule
+        = [](auto const &vehType) { return vehType.hasBreakRule(); };
+    auto const isBreak = [](auto const &client) { return client.isBreak; };
+    if (std::any_of(vehicleTypes_.begin(), vehicleTypes_.end(), hasRule)
+        && std::none_of(clients_.begin(), clients_.end(), isBreak))
+        throw std::invalid_argument("A vehicle type has limits between breaks, "
+                                    "but there are no break clients.");
+
     // Matrix checks.
     if (dists_.empty() || durs_.empty())
         throw std::invalid_argument("Need at least one distance and duration "
@@ -895,7 +991,10 @@ ProblemData::ProblemData(std::vector<Client> clients,
           || std::any_of(depots_.begin(), depots_.end(), hasTimeWindow<Depot>)
           || std::any_of(vehicleTypes_.begin(),
                          vehicleTypes_.end(),
-                         hasTimeWindow<VehicleType>))
+                         hasTimeWindow<VehicleType>)),
+      isBreak_(breakFlags(depots_.size(), clients_)),
+      hasBreaks_(std::find(isBreak_.begin(), isBreak_.end(), true)
+                 != isBreak_.end())
 {
     validate();
 }
