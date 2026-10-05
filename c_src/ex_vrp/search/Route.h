@@ -497,6 +497,18 @@ private:
     ProblemData::VehicleType const &vehicleType_;
     size_t const idx_;
 
+    // hasDurationCost(), asked on every move evaluation. It depends only on
+    // the problem and the vehicle type, so it is worked out once.
+    bool const hasDurationCost_;
+
+    // Whether the vehicle type limits drive or work between breaks, for the
+    // same reason: Proposal::duration() asks on every evaluation.
+    bool const hasBreakRule_;
+
+    [[nodiscard]] static bool
+    durationCostApplies(ProblemData const &data,
+                        ProblemData::VehicleType const &vehicleType);
+
     Distance distance_;  // Separately cached cost components
     Cost distanceCost_;
     Cost penaltyCost_;
@@ -522,28 +534,12 @@ private:
     // numClients() is right between updates too.
     size_t numBreaks_ = 0;
 
-    // cumBreaks_[idx] is the number of breaks among nodes [0, idx), so it has
-    // one entry more than there are nodes. Segments count theirs from it.
-    std::vector<size_t> cumBreaks_;
-
     // Whether the last update() saw a break node. Without one, locs_ is
     // visits and nextReal_ the identity, so the segments skip both lookups.
     bool hasBreaks_ = false;
 
     std::vector<Node *> nodes;   // Nodes in this route, including depots
     std::vector<size_t> visits;  // Locations in this route, incl. depots
-
-    // Location each node takes in edge lookups: its own, except that a break
-    // takes that of the nearest non-break node before it. Prefix structures
-    // (cumDist, durBefore) walk these, so a break's edges are matrix(i, i) = 0
-    // in and matrix(i, j) out.
-    std::vector<size_t> locs_;
-
-    // Index of the first non-break node at or after each index. Always found,
-    // since the end depot is never a break. Suffix structures (durAfter) and
-    // segments starting at a break measure from here, so they never reach
-    // back past their own start for a location.
-    std::vector<size_t> nextReal_;
 
     // nextReal_ and locs_ at idx, without the lookup on a route whose last
     // update() saw no break, where they are the identity and visits. Without
@@ -570,33 +566,7 @@ private:
     // whole trips it spans without walking them.
     std::vector<Distance> tripExcess_;
 
-    // Clock prefix structures, built only while the vehicle type has a break
-    // rule. A "reset leg" is a leg between two non-break nodes that carries
-    // breaks; stretch r runs from reset leg r (stretch 0 from the start depot)
-    // to the start of reset leg r + 1, or to the end depot. Entries 1..m
-    // describe the m reset legs; entry 0 is the start depot. Where the reset
-    // legs are is shared by both clocks:
-    //
-    // - resetBounds_: index of the non-break node each reset leg arrives at,
-    //   bracketed by 0 and nodes.size() - 1.
-    // - legBreaks_: number of breaks on each reset leg.
-    // - stretchOf_: number of reset legs arriving at or before each node.
-    std::vector<size_t> resetBounds_;
-    std::vector<size_t> legBreaks_;
-    std::vector<size_t> stretchOf_;
-
-    // What each clock has counted, built only while its limit is finite:
-    //
-    // - cum: quantity of start -> node (incl.), over locs_; each node's own
-    //   clockAt() included, so the carries sit at index 0 and the end depot.
-    // - close: cum where each reset leg begins, i.e. where the stretch before
-    //   it ends.
-    // - start: cum from which the stretch after each reset leg counts: the
-    //   leg's end, less the drive left after its pre-paid breaks and less the
-    //   arrival node's own quantity.
-    // - excess: excess[r] is the clipped excess of the closed stretches
-    //   [1, r).
-    // - need: need[r] is the breaks those same stretches lack.
+    // What each clock has counted (see clocks_ below).
     struct ClockPrefix
     {
         std::vector<Duration> cum;
@@ -605,8 +575,6 @@ private:
         std::vector<Duration> excess;
         std::vector<size_t> need;
     };
-
-    std::array<ClockPrefix, 2> clocks_;  // indexed by ClockQuantity
 
     template <ClockQuantity Quantity>
     [[nodiscard]] ClockPrefix const &clockPrefix() const
@@ -675,7 +643,14 @@ private:
     // Number of reset legs, when the clock structures are built.
     [[nodiscard]] inline size_t numResets() const;
 
-    // Builds the clock structures above; a no-op without a break rule.
+    // Builds locs_, nextReal_ and cumBreaks_. update() calls it on every route
+    // of a problem with break clients: the clocks walk them on any route whose
+    // segments a break rule's route evaluates, which can be one without a rule
+    // or breaks of its own. Problems without breaks never read them.
+    void updateBreakLookups();
+
+    // Builds the clock structures (resetBounds_ to clocks_); a no-op without a
+    // break rule.
     void updateClocks();
 
     template <ClockQuantity Quantity> void updateClock();
@@ -709,6 +684,54 @@ private:
     std::vector<DurationSegment> durAt;      // Duration data at each node
     std::vector<DurationSegment> durAfter;   // Dur of node -> end (incl.)
     std::vector<DurationSegment> durBefore;  // Dur of start -> node (incl.)
+
+    // Break lookups and clocks follow every member a move evaluation reads,
+    // so on routes without breaks they stay off the cache lines it touches.
+
+    // cumBreaks_[idx] is the number of breaks among nodes [0, idx), so it has
+    // one entry more than there are nodes. Segments count theirs from it.
+    std::vector<size_t> cumBreaks_;
+
+    // Location each node takes in edge lookups: its own, except that a break
+    // takes that of the nearest non-break node before it. Prefix structures
+    // (cumDist, durBefore) walk these, so a break's edges are matrix(i, i) = 0
+    // in and matrix(i, j) out.
+    std::vector<size_t> locs_;
+
+    // Index of the first non-break node at or after each index. Always found,
+    // since the end depot is never a break. Suffix structures (durAfter) and
+    // segments starting at a break measure from here, so they never reach
+    // back past their own start for a location.
+    std::vector<size_t> nextReal_;
+
+    // Clock prefix structures, built only while the vehicle type has a break
+    // rule. A "reset leg" is a leg between two non-break nodes that carries
+    // breaks; stretch r runs from reset leg r (stretch 0 from the start depot)
+    // to the start of reset leg r + 1, or to the end depot. Entries 1..m
+    // describe the m reset legs; entry 0 is the start depot. Where the reset
+    // legs are is shared by both clocks:
+    //
+    // - resetBounds_: index of the non-break node each reset leg arrives at,
+    //   bracketed by 0 and nodes.size() - 1.
+    // - legBreaks_: number of breaks on each reset leg.
+    // - stretchOf_: number of reset legs arriving at or before each node.
+    std::vector<size_t> resetBounds_;
+    std::vector<size_t> legBreaks_;
+    std::vector<size_t> stretchOf_;
+
+    // What each clock has counted, built only while its limit is finite:
+    //
+    // - cum: quantity of start -> node (incl.), over locs_; each node's own
+    //   clockAt() included, so the carries sit at index 0 and the end depot.
+    // - close: cum where each reset leg begins, i.e. where the stretch before
+    //   it ends.
+    // - start: cum from which the stretch after each reset leg counts: the
+    //   leg's end, less the drive left after its pre-paid breaks and less the
+    //   arrival node's own quantity.
+    // - excess: excess[r] is the clipped excess of the closed stretches
+    //   [1, r).
+    // - need: need[r] is the breaks those same stretches lack.
+    std::array<ClockPrefix, 2> clocks_;  // indexed by ClockQuantity
 
 #ifndef NDEBUG
     // When debug assertions are enabled, we use this flag to check whether
@@ -1686,26 +1709,7 @@ Cost Route::unitDurationCost() const { return vehicleType_.unitDurationCost; }
 
 Cost Route::unitOvertimeCost() const { return vehicleType_.unitOvertimeCost; }
 
-bool Route::hasDurationCost() const
-{
-    // Overtime is reachable either from a contracted end of shift, or from a
-    // finite nominal shift the route can be costed for running past. Missing
-    // the latter would leave delta evaluation blind to overtime whenever the
-    // hard cap is unbounded.
-    auto const unbounded = std::numeric_limits<Duration>::max();
-    auto const hasOvertimeCost
-        = unitOvertimeCost() != 0
-          && (overtimeStart() != unbounded || shiftDuration() != unbounded);
-
-    // clang-format off
-    return data.hasTimeWindows()
-        || unitDurationCost() != 0
-        || hasOvertimeCost
-        || maxDuration() != unbounded
-        || maxDrive() != unbounded
-        || vehicleType_.hasBreakRule();
-    // clang-format on
-}
+bool Route::hasDurationCost() const { return hasDurationCost_; }
 
 Duration Route::shiftDuration() const { return vehicleType_.shiftDuration; }
 
@@ -1837,8 +1841,8 @@ Duration Route::totalClockExcess() const
 size_t Route::location(size_t idx) const
 {
     assert(!dirty);
-    assert(idx < locs_.size());
-    return locs_[idx];
+    assert(idx < visits.size());
+    return locAt<true>(idx);
 }
 
 Cost Route::durationCostDS() const
@@ -2116,7 +2120,10 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::duration() const
     if (empty())
         return std::make_pair(0, 0);
 
-    return withBreaks_ ? durationWithBreaks() : foldDuration<false>();
+    // A break rule prices the breaks a route lacks, so it takes the break
+    // fold too, even without a break in any segment.
+    return withBreaks_ || route()->hasBreakRule_ ? durationWithBreaks()
+                                                 : foldDuration<false>();
 }
 
 template <Segment... Segments>
@@ -2139,9 +2146,16 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::foldDuration() const
     auto const profile = route()->profile();
     auto const vehicleType = route()->vehicleType();
     auto const &matrix = data.durationMatrix(profile);
-    auto const extra
-        = static_cast<Duration>(missingBreaks()) * vehType.breakDuration;
-    auto const latestEnd = extra > 0 ? route()->durAt.back().startLate() : 0;
+
+    // Missing breaks only exist under a break rule, which duration() sends to
+    // the WithBreaks fold; without one they are known to be none.
+    Duration extra = 0;
+    Duration latestEnd = 0;
+    if constexpr (WithBreaks)
+    {
+        extra = static_cast<Duration>(missingBreaks()) * vehType.breakDuration;
+        latestEnd = extra > 0 ? route()->durAt.back().startLate() : 0;
+    }
 
     // Finalising is expensive with duration segments. However, finaliseFront is
     // significantly less expensive than finaliseBack. To use it, we iterate the

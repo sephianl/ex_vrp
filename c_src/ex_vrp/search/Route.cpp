@@ -65,6 +65,8 @@ Route::Route(ProblemData const &data, size_t idx, size_t vehicleType)
     : data(data),
       vehicleType_(data.vehicleType(vehicleType)),
       idx_(idx),
+      hasDurationCost_(durationCostApplies(data, vehicleType_)),
+      hasBreakRule_(vehicleType_.hasBreakRule()),
       reloadCost_(0),
       transferableProfiles_(data.numProfiles()),
       loadAt(data.numLoadDimensions()),
@@ -217,6 +219,51 @@ void Route::swap(Node *first, Node *second)
     if (second->route_)
         second->route_->dirty = true;
 #endif
+}
+
+bool Route::durationCostApplies(ProblemData const &data,
+                                ProblemData::VehicleType const &vehicleType)
+{
+    // Overtime is reachable either from a contracted end of shift, or from a
+    // finite nominal shift the route can be costed for running past. Missing
+    // the latter would leave delta evaluation blind to overtime whenever the
+    // hard cap is unbounded.
+    auto const unbounded = std::numeric_limits<Duration>::max();
+    auto const hasOvertimeCost = vehicleType.unitOvertimeCost != 0
+                                 && (vehicleType.overtimeStart != unbounded
+                                     || vehicleType.shiftDuration != unbounded);
+
+    // clang-format off
+    return data.hasTimeWindows()
+        || vehicleType.unitDurationCost != 0
+        || hasOvertimeCost
+        || vehicleType.maxDuration != unbounded
+        || vehicleType.maxDrive != unbounded
+        || vehicleType.hasBreakRule();
+    // clang-format on
+}
+
+void Route::updateBreakLookups()
+{
+    // Break aliasing. The start and end depots are never breaks, so locs_[0]
+    // and nextReal_.back() are their own indices and both walks stay inside.
+    locs_.resize(nodes.size());
+    locs_[0] = visits[0];
+    for (size_t idx = 1; idx != nodes.size(); ++idx)
+        locs_[idx] = data.isBreak(visits[idx]) ? locs_[idx - 1] : visits[idx];
+
+    nextReal_.resize(nodes.size());
+    nextReal_.back() = nodes.size() - 1;
+    for (size_t idx = nodes.size() - 1; idx != 0; --idx)
+        nextReal_[idx - 1]
+            = data.isBreak(visits[idx - 1]) ? nextReal_[idx] : idx - 1;
+
+    cumBreaks_.resize(nodes.size() + 1);
+    cumBreaks_[0] = 0;
+    for (size_t idx = 0; idx != nodes.size(); ++idx)
+        cumBreaks_[idx + 1] = cumBreaks_[idx] + data.isBreak(visits[idx]);
+
+    assert(cumBreaks_.back() == numBreaks_);
 }
 
 void Route::updateClocks()
@@ -390,26 +437,9 @@ void Route::update()
     for (auto const *node : nodes)
         visits.emplace_back(node->client());
 
-    // Break aliasing. The start and end depots are never breaks, so locs_[0]
-    // and nextReal_.back() are their own indices and both walks stay inside.
-    locs_.resize(nodes.size());
-    locs_[0] = visits[0];
-    for (size_t idx = 1; idx != nodes.size(); ++idx)
-        locs_[idx] = data.isBreak(visits[idx]) ? locs_[idx - 1] : visits[idx];
-
-    nextReal_.resize(nodes.size());
-    nextReal_.back() = nodes.size() - 1;
-    for (size_t idx = nodes.size() - 1; idx != 0; --idx)
-        nextReal_[idx - 1]
-            = data.isBreak(visits[idx - 1]) ? nextReal_[idx] : idx - 1;
-
-    cumBreaks_.resize(nodes.size() + 1);
-    cumBreaks_[0] = 0;
-    for (size_t idx = 0; idx != nodes.size(); ++idx)
-        cumBreaks_[idx + 1] = cumBreaks_[idx] + data.isBreak(visits[idx]);
-
-    assert(cumBreaks_.back() == numBreaks_);
     hasBreaks_ = numBreaks_ > 0;
+    if (data.hasBreaks())
+        updateBreakLookups();
 
     // Distance.
     auto const &distMat = data.distanceMatrix(profile());
@@ -418,8 +448,8 @@ void Route::update()
     cumDist[0] = 0;
     for (size_t idx = 1; idx != nodes.size(); ++idx)
     {
-        auto const from = locs_[idx - 1];
-        auto const to = locs_[idx];
+        auto const from = locAt<true>(idx - 1);
+        auto const to = locAt<true>(idx);
         assert(!data.isBreak(from) && !data.isBreak(to));
         cumDist[idx] = cumDist[idx - 1] + distMat(from, to);
     }
@@ -527,8 +557,8 @@ void Route::update()
                                 ? durBefore[prev].finaliseBack()
                                 : durBefore[prev];
 
-        auto const from = locs_[prev];
-        auto const to = locs_[idx];
+        auto const from = locAt<true>(prev);
+        auto const to = locAt<true>(idx);
         assert(!data.isBreak(from) && !data.isBreak(to));
         auto const edgeDur = durations(from, to);
         durBefore[idx] = DurationSegment::merge(edgeDur, before, durAt[idx]);
@@ -551,8 +581,8 @@ void Route::update()
                                ? durAfter[next].finaliseFront()
                                : durAfter[next];
 
-        auto const from = visits[nextReal_[idx]];
-        auto const to = visits[nextReal_[next]];
+        auto const from = visits[realAt<true>(idx)];
+        auto const to = visits[realAt<true>(next)];
         assert(!data.isBreak(from) && !data.isBreak(to));
         auto const edgeDur = durations(from, to);
         durAfter[idx] = DurationSegment::merge(edgeDur, durAt[idx], after);
@@ -670,8 +700,8 @@ void Route::update()
         {
             if (idx > 0)
             {
-                auto const from = locs_[idx - 1];
-                auto const to = locs_[idx];
+                auto const from = locAt<true>(idx - 1);
+                auto const to = locAt<true>(idx);
                 assert(!data.isBreak(from) && !data.isBreak(to));
                 now += durations(from, to);
             }
@@ -756,8 +786,8 @@ void Route::update()
                 if (idx + 1 < nodes.size() && !nodes[idx + 1]->isDepot()
                     && !nodes[idx + 1]->isReloadDepot())
                 {
-                    auto const from = locs_[idx];
-                    auto const to = locs_[idx + 1];
+                    auto const from = locAt<true>(idx);
+                    auto const to = locAt<true>(idx + 1);
                     assert(!data.isBreak(from) && !data.isBreak(to));
                     auto const travel = durations(from, to);
                     auto const arrive = now + travel;
