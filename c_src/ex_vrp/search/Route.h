@@ -2160,10 +2160,12 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::foldDuration() const
             // depot, so it merges in directly and `first` carries through to
             // the next located segment on the left.
             auto const hasLocation = other.template hasLocation<WithBreaks>();
-            auto const last = other.template last<WithBreaks>();
             assert(!hasLocation
-                   || (!data.isBreak(last) && !data.isBreak(first)));
-            Duration edgeDur = hasLocation ? matrix(last, first) : 0;
+                   || (!data.isBreak(other.template last<WithBreaks>())
+                       && !data.isBreak(first)));
+            Duration edgeDur
+                = hasLocation ? matrix(other.template last<WithBreaks>(), first)
+                              : 0;
 
             if (other.endsAtReloadDepot())
             {
@@ -2177,7 +2179,8 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::foldDuration() const
                 // If not (e.g., ReloadDepotSegment), we need to add it here.
                 if (other.route() == nullptr)
                 {
-                    ProblemData::Depot const &depot = data.location(last);
+                    ProblemData::Depot const &depot
+                        = data.location(other.template last<WithBreaks>());
                     DurationSegment const depotDS(
                         depot.serviceDuration,
                         0,
