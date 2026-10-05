@@ -19,7 +19,7 @@ Checks: >
   readability-duplicate-include,
   readability-redundant-smartptr-get,
 
-WarningsAsErrors: ""
+WarningsAsErrors: "*"
 
 # Only check our NIF code, not vendored PyVRP code
 HeaderFilterRegex: "c_src/ex_vrp_nif\\.cpp"
@@ -29,9 +29,9 @@ CheckOptions:
   - key: bugprone-suspicious-include.HeaderFileExtensions
     value: ";h;hh;hpp;hxx"
   # Performance tuning
-  # Fine's ResourcePtr and std::vector must be passed by value for NIF decoding
+  # Fine's ResourcePtr, Atom and std::vector must be passed by value for NIF decoding
   - key: performance-unnecessary-value-param.AllowedTypes
-    value: "std::function;fine::ResourcePtr;std::vector"
+    value: "std::function;fine::ResourcePtr;fine::Atom;std::vector"
   # Don't flag small trivially-copyable types
   - key: performance-for-range-copy.WarnOnAllAutoCopies
     value: false

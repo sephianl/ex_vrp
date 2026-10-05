@@ -53,6 +53,9 @@ CXXFLAGS += -Wno-dangling-reference
 endif
 endif
 
+# Extra flags from the environment, e.g. EXTRA_CXXFLAGS=-Werror in CI
+CXXFLAGS += $(EXTRA_CXXFLAGS)
+
 # Fine includes (use -isystem for angle-bracket includes like <fine.hpp>)
 ifdef FINE_INCLUDE_DIR
 CXXFLAGS += -isystem $(FINE_INCLUDE_DIR)

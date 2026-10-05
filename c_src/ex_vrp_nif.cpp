@@ -199,6 +199,9 @@ struct SearchNodeResource
     {
     }
 
+    SearchNodeResource(SearchNodeResource const &) = delete;
+    SearchNodeResource &operator=(SearchNodeResource const &) = delete;
+
     ~SearchNodeResource()
     {
         if (owned && node)
@@ -1023,6 +1026,9 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     forbidden_windows.reserve(forbidden_windows_raw.size());
     for (auto const &[s, e] : forbidden_windows_raw)
         forbidden_windows.push_back({Duration(s), Duration(e)});
+
+    if (num_available < 0)
+        throw std::invalid_argument("num_available must be >= 0.");
 
     return ProblemData::VehicleType(
         static_cast<size_t>(num_available),
@@ -3189,17 +3195,19 @@ static Route decode_warm_start_trips(ErlNifEnv *env,
     std::vector<Trip> trips;
     trips.reserve(num_trips);
 
-    for (size_t idx = 0; idx != num_trips; ++idx)
-    {
-        auto const end_depot = idx + 1 == num_trips ? std::optional<size_t>{}
-                                                    : start_depots[idx + 1];
-
+    for (size_t idx = 0; idx + 1 < num_trips; ++idx)
         trips.emplace_back(data,
                            std::move(trip_visits[idx]),
                            vehicle_type,
                            start_depots[idx],
-                           end_depot);
-    }
+                           start_depots[idx + 1]);
+
+    if (num_trips > 0)
+        trips.emplace_back(data,
+                           std::move(trip_visits.back()),
+                           vehicle_type,
+                           start_depots.back(),
+                           std::nullopt);
 
     return Route(data, std::move(trips), vehicle_type);
 }
@@ -3766,7 +3774,8 @@ build_neighbours(ProblemData const &data,
         {
             size_t k_actual = std::min(k, proximities.size());
             std::partial_sort(proximities.begin(),
-                              proximities.begin() + k_actual,
+                              proximities.begin()
+                                  + static_cast<std::ptrdiff_t>(k_actual),
                               proximities.end());
 
             for (size_t n = 0; n < k_actual; ++n)

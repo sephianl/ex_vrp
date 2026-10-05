@@ -20,6 +20,9 @@ jobs:
       # released binary (keyed on package version, not git ref), so tests + the quality
       # smoke would run against released code instead of the code under review.
       EX_VRP_FORCE_BUILD: "1"
+      # Fail the build on any C++ compiler warning. CI only: consumers build with other
+      # compilers, whose new warnings must not break their builds.
+      EXTRA_CXXFLAGS: "-Werror"
     steps:
       - uses: actions/checkout@v4
         with:

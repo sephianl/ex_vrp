@@ -46,9 +46,9 @@ tasks:
     desc: Run C++ static analysis (cppcheck + clang-tidy) on NIF code
     cmds:
       - echo "Running cppcheck..."
-      - cppcheck --error-exitcode=1 --enable=warning,performance,portability --check-level=exhaustive --suppress=missingIncludeSystem --quiet c_src/ex_vrp_nif.cpp
+      - cppcheck --error-exitcode=1 --enable=warning,performance,portability --check-level=exhaustive --suppress=missingIncludeSystem --suppress=passedByValueCallback --quiet c_src/ex_vrp_nif.cpp
       - echo "Running clang-tidy..."
-      - clang-tidy --quiet --warnings-as-errors='' c_src/ex_vrp_nif.cpp -- {{.CPP_INCLUDES}}
+      - clang-tidy --quiet c_src/ex_vrp_nif.cpp -- {{.CPP_INCLUDES}}
 
   cpp:format:
     desc: Format C++ code with clang-format

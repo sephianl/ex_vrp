@@ -14,7 +14,7 @@ enum class PerturbType
     REMOVE,
     INSERT
 };
-}
+}  // namespace
 
 PerturbationParams::PerturbationParams(size_t minPerturbations,
                                        size_t maxPerturbations)

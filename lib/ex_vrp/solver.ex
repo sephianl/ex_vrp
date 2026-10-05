@@ -168,7 +168,8 @@ defmodule ExVrp.Solver do
       best_distance: Native.solution_distance(initial_solution)
     })
 
-    log_initial_solution(initial_origin, initial_solution, start_label(opts))
+    label = start_label(opts)
+    log_initial_solution(initial_origin, initial_solution, label)
 
     total_setup_time = System.monotonic_time(:millisecond) - solve_start
     Logger.debug("Total setup time before ILS: #{total_setup_time}ms")
@@ -177,7 +178,7 @@ defmodule ExVrp.Solver do
 
     ils_time = System.monotonic_time(:millisecond) - solve_start - total_setup_time
     total_time = System.monotonic_time(:millisecond) - solve_start
-    Logger.info("#{start_label(opts)}ILS completed in #{ils_time}ms (#{result.num_iterations} iterations)")
+    Logger.info("#{label}ILS completed in #{ils_time}ms (#{result.num_iterations} iterations)")
     Logger.debug("Total solve time: #{total_time}ms (setup: #{total_setup_time}ms, ILS: #{ils_time}ms)")
 
     {:ok, result}

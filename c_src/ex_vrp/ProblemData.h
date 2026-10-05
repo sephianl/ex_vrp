@@ -733,8 +733,8 @@ public:
      */
     struct VehicleLock
     {
-        size_t const vehicleType;
-        Cost const price;
+        size_t const vehicleType = 0;
+        Cost const price = 0;
 
         bool operator==(VehicleLock const &other) const = default;
     };

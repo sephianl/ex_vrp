@@ -76,7 +76,7 @@ in
       enable = !config.devenv.isTesting;
       excludes = [ "^\\.claude/" ];
     };
-    nixfmt-rfc-style.enable = !config.devenv.isTesting;
+    nixfmt.enable = !config.devenv.isTesting;
     clang-format.enable = !config.devenv.isTesting;
 
     # C++ static analysis (cppcheck + clang-tidy via task)
