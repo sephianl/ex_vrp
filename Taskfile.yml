@@ -24,11 +24,12 @@ tasks:
     env:
       MIX_ENV: test
       SANITIZE: "1"
-      LD_PRELOAD:
-        sh: clang++ -print-file-name=libclang_rt.asan-x86_64.so
       ASAN_OPTIONS: detect_leaks=0,symbolize=1
       ASAN_SYMBOLIZER_PATH:
-        sh: which llvm-symbolizer
+        sh: command -v llvm-symbolizer
+    vars:
+      ASAN_RUNTIME:
+        sh: clang++ -print-file-name=libclang_rt.asan-x86_64.so
     cmds:
       # Clean before - ensure fresh ASan build. The Makefile's build stamp
       # already forces a rebuild when the flags change, so this is belt and
@@ -36,7 +37,11 @@ tasks:
       - task: clean:nif
       - mix compile
       - defer: { task: clean:nif }
-      - mix test {{.CLI_ARGS}}
+      # Preload the ASan runtime into the test BEAM only, never task-wide. The
+      # runtime is linked against nix's glibc, and on a non-NixOS host (CI's
+      # Ubuntu) any host binary it gets preloaded into fails to start — make's
+      # /bin/sh during compile, for one. --no-compile keeps make out of it.
+      - LD_PRELOAD={{.ASAN_RUNTIME}} mix test --no-compile {{.CLI_ARGS}}
 
   # ---------------------------------------------------------------------------
   # C++ Quality
