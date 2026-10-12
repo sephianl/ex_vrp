@@ -145,6 +145,27 @@ defmodule ExVrp.RestNodesTest do
     end
   end
 
+  describe "warm start" do
+    @wide_break_rule [max_drive_between_breaks: 1_000, break_duration: @break_duration]
+
+    test "a :break marker is never given a rest client" do
+      {:ok, data} = @wide_break_rule |> model() |> Model.to_problem_data()
+      pool = Native.problem_data_break_clients(data)
+
+      assert {:ok, [{0, placed}]} = ExVrp.WarmStart.place_breaks([{0, [1, :break, :break, 2]}], pool)
+      refute @rest in placed
+      assert Native.problem_data_rest_clients(data) == [@rest]
+    end
+
+    test "a solution's warm start keeps a rest as its client, not as a :break marker" do
+      {:ok, data} = @wide_break_rule |> model() |> Model.to_problem_data()
+      {:ok, ref} = Native.create_solution_from_routes(data, [[1, @rest, 2]])
+      solution = %Solution{solution_ref: ref, problem_data: data, routes: [[1, @rest, 2]]}
+
+      assert Solution.warm_start(solution) == {:ok, [[1, @rest, 2], []]}
+    end
+  end
+
   describe "validation" do
     test "a rest client must be a break client" do
       model =

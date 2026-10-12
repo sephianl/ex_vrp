@@ -3358,25 +3358,45 @@ int64_t problem_data_num_clients(
 
 FINE_NIF(problem_data_num_clients, 0);
 
+namespace
+{
+// The location indices of the break clients whose isRest equals rests.
+std::vector<int64_t> pauseClients(ProblemData const &data, bool rests)
+{
+    std::vector<int64_t> clients;
+    for (size_t client = data.numDepots(); client != data.numLocations();
+         ++client)
+        if (data.isBreak(client) && data.isRest(client) == rests)
+            clients.push_back(static_cast<int64_t>(client));
+
+    return clients;
+}
+}  // namespace
+
 /**
- * The break clients' location indices, in order.
+ * The break clients' location indices, in order. Rest clients are left out:
+ * they are not interchangeable with breaks.
  */
 std::vector<int64_t> problem_data_break_clients(
     [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
-    auto const &data = *problem_resource->data;
-
-    std::vector<int64_t> breaks;
-    for (size_t client = data.numDepots(); client != data.numLocations();
-         ++client)
-        if (data.isBreak(client))
-            breaks.push_back(static_cast<int64_t>(client));
-
-    return breaks;
+    return pauseClients(*problem_resource->data, false);
 }
 
 FINE_NIF(problem_data_break_clients, 0);
+
+/**
+ * The rest clients' location indices, in order.
+ */
+std::vector<int64_t> problem_data_rest_clients(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<ProblemDataResource> problem_resource)
+{
+    return pauseClients(*problem_resource->data, true);
+}
+
+FINE_NIF(problem_data_rest_clients, 0);
 
 /**
  * Get the number of depots from ProblemData.
