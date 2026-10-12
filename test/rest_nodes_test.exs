@@ -23,27 +23,35 @@ defmodule ExVrp.RestNodesTest do
   @points [{0, 0}, {10, 0}, {30, 0}, {1000, 0}, {2000, 0}]
 
   defp model(vehicle_opts) do
-    vehicle =
-      Keyword.merge(
-        [
-          num_available: 1,
-          capacity: [0],
-          unit_distance_cost: 1,
-          unit_duration_cost: 1,
-          rest_duration: @rest_duration
-        ],
-        vehicle_opts
-      )
+    vehicle = vehicle(vehicle_opts)
+    model_with_vehicle_types([vehicle, Keyword.put(vehicle, :rest_duration, 2 * @rest_duration)])
+  end
 
-    Model.new()
-    |> Model.add_depot([])
-    |> Model.add_client([])
-    |> Model.add_client([])
-    |> Model.add_client(required: false, is_break: true)
-    |> Model.add_client(required: false, is_break: true, is_rest: true)
-    |> Model.add_vehicle_type(vehicle)
-    |> Model.add_vehicle_type(Keyword.put(vehicle, :rest_duration, 2 * @rest_duration))
+  defp model_with_vehicle_types(vehicle_types) do
+    model =
+      Model.new()
+      |> Model.add_depot([])
+      |> Model.add_client([])
+      |> Model.add_client([])
+      |> Model.add_client(required: false, is_break: true)
+      |> Model.add_client(required: false, is_break: true, is_rest: true)
+
+    vehicle_types
+    |> Enum.reduce(model, &Model.add_vehicle_type(&2, &1))
     |> Model.set_euclidean_matrices(@points)
+  end
+
+  defp vehicle(vehicle_opts) do
+    Keyword.merge(
+      [
+        num_available: 1,
+        capacity: [0],
+        unit_distance_cost: 1,
+        unit_duration_cost: 1,
+        rest_duration: @rest_duration
+      ],
+      vehicle_opts
+    )
   end
 
   defp route(visits, vehicle_opts \\ []) do
@@ -142,6 +150,24 @@ defmodule ExVrp.RestNodesTest do
 
       assert length(breaks) >= 2
       assert Enum.all?(breaks, &(&1.end_service - &1.start_service == @break_duration))
+    end
+
+    test "never releases a rest from a route with clients, even one the clocks do not need" do
+      vehicle = vehicle(max_drive_between_breaks: 1_000, break_duration: @break_duration)
+
+      {:ok, result} =
+        [vehicle]
+        |> model_with_vehicle_types()
+        |> Solver.solve(
+          initial_routes: [[1, @rest, 2]],
+          stop: StoppingCriteria.max_iterations(50),
+          num_starts: 1,
+          seed: 1
+        )
+
+      pauses = result.best |> Solution.routes() |> Enum.flat_map(&Route.breaks/1)
+
+      assert Enum.map(pauses, &(&1.end_service - &1.start_service)) == [@rest_duration]
     end
   end
 
