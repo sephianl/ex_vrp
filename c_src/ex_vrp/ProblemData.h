@@ -193,6 +193,11 @@ public:
         // service duration must be zero). See search::BreakSegment.
         bool const isBreak;
 
+        // A rest is a break client that lasts its route's
+        // VehicleType::restDuration instead of its breakDuration. It ends a
+        // driving period like a break does; BreakRepair never places one.
+        bool const isRest;
+
         Client(std::vector<Load> delivery = {},
                std::vector<Load> pickup = {},
                Duration serviceDuration = 0,
@@ -203,7 +208,8 @@ public:
                bool required = true,
                std::optional<size_t> group = std::nullopt,
                std::string name = "",
-               bool isBreak = false);
+               bool isBreak = false,
+               bool isRest = false);
 
         bool operator==(Client const &other) const;
 
@@ -635,6 +641,7 @@ public:
         Duration const driveCarryIn;  // Driving since the last break, at start
         Duration const workCarryIn;   // Work since the last break, at start
         Duration const workAfterEnd;  // Work after the route ends
+        Duration const restDuration;  // Duration of each daily rest
         std::vector<std::pair<Duration, Duration>> const
             forbiddenWindows;  // Forbidden time windows
         char const *name;      // Type name (for reference)
@@ -670,13 +677,20 @@ public:
             = std::numeric_limits<Duration>::max(),
             Duration driveCarryIn = 0,
             Duration workCarryIn = 0,
-            Duration workAfterEnd = 0);
+            Duration workAfterEnd = 0,
+            Duration restDuration = 0);
 
         // The limit of the clock over the given quantity; max() when unset.
         [[nodiscard]] Duration breakLimit(ClockQuantity quantity) const
         {
             return quantity == ClockQuantity::Drive ? maxDriveBetweenBreaks
                                                     : maxWorkBetweenBreaks;
+        }
+
+        // How long a break client lasts on this vehicle type's routes.
+        [[nodiscard]] Duration pauseDuration(Client const &client) const
+        {
+            return client.isRest ? restDuration : breakDuration;
         }
 
         // Whether either clock is limited, so routes may need breaks.
@@ -790,6 +804,9 @@ private:
     // Client::isBreak per location, packed: search::Route::update() asks for
     // every node, and the Client structs are too wide to scan for one flag.
     std::vector<bool> const isBreak_;
+
+    // Client::isRest per location, packed for the same reason.
+    std::vector<bool> const isRest_;
 
     // Whether isBreak_ holds any break. Every move evaluation asks, through
     // search::Route::Proposal, so problems without breaks skip counting them.
@@ -958,6 +975,12 @@ public:
     [[nodiscard]] inline bool isBreak(size_t location) const;
 
     /**
+     * Whether the given location is a rest client, a break client that lasts
+     * its route's rest duration. Depots never are.
+     */
+    [[nodiscard]] inline bool isRest(size_t location) const;
+
+    /**
      * Whether any location is a break client.
      */
     [[nodiscard]] inline bool hasBreaks() const;
@@ -1096,6 +1119,12 @@ bool ProblemData::isBreak(size_t location) const
 {
     assert(location < isBreak_.size());
     return isBreak_[location];
+}
+
+bool ProblemData::isRest(size_t location) const
+{
+    assert(location < isRest_.size());
+    return isRest_[location];
 }
 
 bool ProblemData::hasBreaks() const { return hasBreaks_; }

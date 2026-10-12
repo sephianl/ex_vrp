@@ -17,7 +17,8 @@ defmodule ExVrp.Client do
           required: boolean(),
           group: non_neg_integer() | nil,
           name: String.t(),
-          is_break: boolean()
+          is_break: boolean(),
+          is_rest: boolean()
         }
 
   defstruct delivery: [0],
@@ -30,7 +31,8 @@ defmodule ExVrp.Client do
             required: true,
             group: nil,
             name: "",
-            is_break: false
+            is_break: false,
+            is_rest: false
 
   @doc """
   Creates a new client.
@@ -55,6 +57,9 @@ defmodule ExVrp.Client do
     set it yourself: such a client vanishes from a solution's `visits`,
     `unassigned` and `num_clients` (though `Native.problem_data_num_clients/1`
     counts the pool), and costs nothing on a vehicle type without those limits
+  - `:is_rest` - Internal (default: `false`). A break client that lasts its
+    vehicle type's `:rest_duration` instead of its `:break_duration`. Must be
+    set together with `:is_break`
 
   ## Examples
 

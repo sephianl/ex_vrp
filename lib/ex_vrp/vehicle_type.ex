@@ -177,6 +177,7 @@ defmodule ExVrp.VehicleType do
           drive_carry_in: non_neg_integer(),
           work_carry_in: non_neg_integer(),
           work_after_end: non_neg_integer(),
+          rest_duration: non_neg_integer(),
           unit_distance_cost: non_neg_integer(),
           unit_duration_cost: non_neg_integer(),
           profile: non_neg_integer(),
@@ -210,6 +211,7 @@ defmodule ExVrp.VehicleType do
     drive_carry_in: 0,
     work_carry_in: 0,
     work_after_end: 0,
+    rest_duration: 0,
     unit_distance_cost: 1,
     unit_duration_cost: 0,
     profile: 0,
@@ -271,6 +273,8 @@ defmodule ExVrp.VehicleType do
     before the route starts, added to its first stretch (default: `0`)
   - `:work_after_end` - Work after the route ends (the last unload), added to
     its last stretch (default: `0`)
+  - `:rest_duration` - How long each daily rest lasts (default: `0`). A rest
+    is a break client flagged `:is_rest`; nothing places one yet
   - `:unit_distance_cost` - Cost per unit distance (default: `1`)
   - `:unit_duration_cost` - Cost per unit time (default: `0`)
   - `:profile` - Index of distance/duration matrix to use (default: `0`)

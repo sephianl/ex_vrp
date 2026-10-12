@@ -459,6 +459,7 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
     int64_t prize = 0;
     bool required = true;
     bool is_break = false;
+    bool is_rest = false;
     std::optional<size_t> group = std::nullopt;
 
     ERL_NIF_TERM key, value;
@@ -557,6 +558,14 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                     is_break = (std::string(buf) == "true");
                 }
             }
+            else if (key_str == "is_rest")
+            {
+                char buf[32];
+                if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1))
+                {
+                    is_rest = (std::string(buf) == "true");
+                }
+            }
             else if (key_str == "group")
             {
                 // Check for nil
@@ -599,7 +608,8 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                                required,
                                group,
                                std::string(""),  // name
-                               is_break);
+                               is_break,
+                               is_rest);
 }
 
 // Decode a single depot from Elixir map
@@ -687,6 +697,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     int64_t drive_carry_in = 0;
     int64_t work_carry_in = 0;
     int64_t work_after_end = 0;
+    int64_t rest_duration = 0;
     int64_t unit_distance_cost = 1;
     int64_t unit_duration_cost = 0;
     int64_t profile = 0;
@@ -889,6 +900,10 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
             {
                 nif_get_int64(env, value, &break_duration);
             }
+            else if (key_str == "rest_duration")
+            {
+                nif_get_int64(env, value, &rest_duration);
+            }
             else if (key_str == "unit_distance_cost")
             {
                 nif_get_int64(env, value, &unit_distance_cost);
@@ -1060,7 +1075,8 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
         Duration(max_work_between_breaks),
         Duration(drive_carry_in),
         Duration(work_carry_in),
-        Duration(work_after_end));
+        Duration(work_after_end),
+        Duration(rest_duration));
 }
 
 // Decode distance/duration matrix from nested list
