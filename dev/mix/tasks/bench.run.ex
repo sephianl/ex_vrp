@@ -18,6 +18,7 @@ defmodule Mix.Tasks.Bench.Run do
   """
   use Mix.Task
 
+  alias ExVrp.ABBenchmark.Checkout
   alias ExVrp.ABBenchmark.Corpus
   alias ExVrp.ABBenchmark.Runner
 
@@ -41,8 +42,8 @@ defmodule Mix.Tasks.Bench.Run do
 
     Application.ensure_all_started(:ex_vrp)
     out = opts[:out] || raise "--out is required"
-    ref = opts[:ref] || git("rev-parse", ["--abbrev-ref", "HEAD"])
-    commit = git("rev-parse", ["--short", "HEAD"])
+    ref = opts[:ref] || Checkout.branch()
+    commit = Checkout.commit()
     seeds = parse_seeds(opts[:seeds])
     entries = filter_entries(Corpus.entries(), opts[:only])
 
@@ -76,11 +77,4 @@ defmodule Mix.Tasks.Bench.Run do
 
   defp maybe_put(kw, _k, nil), do: kw
   defp maybe_put(kw, k, v), do: Keyword.put(kw, k, v)
-
-  defp git(cmd, args) do
-    case System.cmd("git", [cmd | args], stderr_to_stdout: true) do
-      {out, 0} -> String.trim(out)
-      _ -> "unknown"
-    end
-  end
 end

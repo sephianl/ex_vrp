@@ -1,7 +1,9 @@
 defmodule ExVrp.ABBenchmark.Comparator do
   @moduledoc """
-  Compares two benchmark results maps (baseline ref vs candidate ref) and
-  decides whether the candidate regressed solution quality.
+  Compares a baseline ref against a candidate ref and decides whether the candidate
+  regressed: in solution quality from two `ExVrp.ABBenchmark.Runner` results, and in
+  speed from two `ExVrp.ABBenchmark.Speed` results via
+  `ExVrp.ABBenchmark.SpeedComparison`.
 
   Solves stop on wall-clock, so the same seed on the same code does not reproduce
   exactly: instances that converge inside their budget land on identical solutions
@@ -15,13 +17,9 @@ defmodule ExVrp.ABBenchmark.Comparator do
   is common to both refs, so it cancels in the pairing. Banding on raw scatter
   instead charges a code change for variance it did not cause, which hides real
   effects on exactly the instances that scatter most.
-
-  Iterations within the same wall-clock budget measure the solver's speed, which the
-  objective alone hides: a slower search often still lands on the same solutions.
-  The candidate fails when the median instance loses more than 5% of its iterations.
-  The median, because a real slowdown shifts every instance while runner noise moves
-  single ones; a solver that did not change lands within 3% of zero on it.
   """
+
+  alias ExVrp.ABBenchmark.SpeedComparison
 
   defmodule Row do
     @moduledoc false
@@ -36,8 +34,7 @@ defmodule ExVrp.ABBenchmark.Comparator do
             baseline_gap: float() | nil,
             candidate_gap: float() | nil,
             pct_change: float() | nil,
-            noise: float() | nil,
-            iter_pct_change: float() | nil
+            noise: float() | nil
           }
     defstruct [
       :id,
@@ -50,10 +47,17 @@ defmodule ExVrp.ABBenchmark.Comparator do
       :baseline_gap,
       :candidate_gap,
       :pct_change,
-      :noise,
-      :iter_pct_change
+      :noise
     ]
   end
+
+  @type summary :: %{
+          hard_fails: [String.t()],
+          warnings: [String.t()],
+          results: [String.t()],
+          objective_rows: [Row.t()],
+          speed_rows: [SpeedComparison.Row.t()] | :not_measured
+        }
 
   @spec analyze(map(), map()) :: %{per_instance: [Row.t()], missing: [String.t()]}
   def analyze(baseline, candidate) do
@@ -67,6 +71,37 @@ defmodule ExVrp.ABBenchmark.Comparator do
     rows = Enum.map(common, fn id -> build_row(id, base_inst[id], cand_inst[id]) end)
     %{per_instance: rows, missing: missing}
   end
+
+  @doc """
+  Compares quality and, unless both speed results are `nil` (the speed job did not
+  run), speed. Fails on any hard fail of either.
+  """
+  @spec compare(map(), map(), map() | nil, map() | nil) :: {:ok | :regression, summary()}
+  def compare(baseline, candidate, speed_baseline, speed_candidate) do
+    %{per_instance: rows, missing: missing} = analyze(baseline, candidate)
+    speed = analyze_speed(speed_baseline, speed_candidate)
+
+    hard_fails =
+      infeasibility_fails(rows) ++
+        missing_fails(missing) ++
+        aggregate_objective_fail(rows) ++
+        speed_hard_fails(speed)
+
+    summary = %{
+      hard_fails: hard_fails,
+      warnings: localized_warnings(rows) ++ speed_warnings(speed),
+      results: objective_results(rows) ++ speed_results(speed),
+      objective_rows: rows,
+      speed_rows: speed_rows(speed)
+    }
+
+    {verdict(hard_fails), summary}
+  end
+
+  @spec significant?(Row.t()) :: boolean()
+  def significant?(%Row{pct_change: nil}), do: false
+  def significant?(%Row{noise: nil}), do: false
+  def significant?(%Row{pct_change: pct, noise: noise}), do: abs(pct) > noise
 
   defp build_row(id, base, cand) do
     bks = base["bks"]
@@ -86,14 +121,11 @@ defmodule ExVrp.ABBenchmark.Comparator do
       baseline_gap: gap(base_mean, bks),
       candidate_gap: gap(cand_mean, bks),
       pct_change: pct_change(base_mean, cand_mean),
-      noise: paired_noise(paired_deltas(base["seeds"], cand["seeds"])),
-      iter_pct_change: pct_change(mean_iterations(base["seeds"]), mean_iterations(cand["seeds"]))
+      noise: paired_noise(paired_deltas(base["seeds"], cand["seeds"]))
     }
   end
 
   defp feasible_objectives(seeds), do: for({_s, m} <- seeds, m["feasible"], do: m["objective"])
-
-  defp mean_iterations(seeds), do: mean(for {_s, m} <- seeds, m["feasible"], do: m["iterations"] || 0)
 
   defp mean([]), do: nil
   defp mean(list), do: Enum.sum(list) / length(list)
@@ -134,26 +166,24 @@ defmodule ExVrp.ABBenchmark.Comparator do
 
   @objective_pct_threshold 0.005
   @warn_pct_threshold 0.01
-  @iteration_pct_threshold -0.05
 
-  @spec compare(map(), map()) ::
-          {:ok | :regression, %{hard_fails: [String.t()], warnings: [String.t()]}}
-  def compare(baseline, candidate) do
-    %{per_instance: rows, missing: missing} = analyze(baseline, candidate)
+  defp analyze_speed(nil, nil), do: :not_measured
+  defp analyze_speed(speed_baseline, speed_candidate), do: SpeedComparison.analyze(speed_baseline, speed_candidate)
 
-    hard_fails =
-      infeasibility_fails(rows) ++
-        missing_fails(missing) ++
-        aggregate_objective_fail(rows) ++
-        iteration_throughput_fail(rows)
+  defp speed_hard_fails(:not_measured), do: []
+  defp speed_hard_fails(speed), do: SpeedComparison.hard_fails(speed)
 
-    warnings = localized_warnings(rows)
+  defp speed_warnings(:not_measured), do: []
+  defp speed_warnings(%{rows: rows}), do: SpeedComparison.warnings(rows)
 
-    print_report(rows, hard_fails, warnings)
+  defp speed_results(:not_measured), do: []
+  defp speed_results(%{rows: rows}), do: SpeedComparison.results(rows)
 
-    summary = %{hard_fails: hard_fails, warnings: warnings}
-    if hard_fails == [], do: {:ok, summary}, else: {:regression, summary}
-  end
+  defp speed_rows(:not_measured), do: :not_measured
+  defp speed_rows(%{rows: rows}), do: rows
+
+  defp verdict([]), do: :ok
+  defp verdict(_hard_fails), do: :regression
 
   defp infeasibility_fails(rows) do
     for r <- rows, r.baseline_feasible > 0 and r.candidate_feasible == 0 do
@@ -168,47 +198,28 @@ defmodule ExVrp.ABBenchmark.Comparator do
   end
 
   defp aggregate_objective_fail(rows) do
-    changed = Enum.filter(rows, &(&1.pct_change != nil))
-
-    case changed do
-      [] ->
-        []
-
-      _ ->
-        avg_pct = mean(Enum.map(changed, & &1.pct_change))
-
-        if avg_pct > @objective_pct_threshold do
-          ["aggregate objective worsened by #{Float.round(avg_pct * 100, 3)}% vs baseline (> 0.5%)"]
-        else
-          []
-        end
-    end
-  end
-
-  defp iteration_throughput_fail(rows) do
     rows
-    |> Enum.map(& &1.iter_pct_change)
+    |> Enum.map(& &1.pct_change)
     |> Enum.reject(&is_nil/1)
-    |> median()
-    |> iteration_throughput_verdict()
+    |> mean()
+    |> aggregate_objective_verdict()
   end
 
-  defp iteration_throughput_verdict(median_pct) when is_float(median_pct) and median_pct < @iteration_pct_threshold,
-    do: ["median instance ran #{fmt_pct(median_pct)} iterations vs baseline (< -5%): the search got slower"]
+  defp aggregate_objective_verdict(avg_pct) when is_float(avg_pct) and avg_pct > @objective_pct_threshold,
+    do: ["aggregate objective worsened by #{Float.round(avg_pct * 100, 3)}% vs baseline (> 0.5%)"]
 
-  defp iteration_throughput_verdict(_median_pct), do: []
-
-  defp median([]), do: nil
-  defp median(values), do: values |> Enum.sort() |> middle_of_sorted(length(values))
-
-  defp middle_of_sorted(sorted, count) when rem(count, 2) == 1, do: Enum.at(sorted, div(count, 2))
-
-  defp middle_of_sorted(sorted, count), do: (Enum.at(sorted, div(count, 2) - 1) + Enum.at(sorted, div(count, 2))) / 2
+  defp aggregate_objective_verdict(_avg_pct), do: []
 
   defp localized_warnings(rows) do
     for r <- rows, warnable?(r) do
       "#{r.id}: objective worsened #{Float.round(r.pct_change * 100, 2)}% " <>
         "(threshold #{Float.round(warn_floor(r) * 100, 2)}%, the greater of 1% and this instance's #{fmt_pct(r.noise)} noise)"
+    end
+  end
+
+  defp objective_results(rows) do
+    for r <- rows, significant?(r) do
+      "#{r.id}: objective #{fmt_pct(r.pct_change)} (beyond its #{fmt_pct(r.noise)} noise)"
     end
   end
 
@@ -218,51 +229,5 @@ defmodule ExVrp.ABBenchmark.Comparator do
   defp warn_floor(%Row{noise: nil}), do: @warn_pct_threshold
   defp warn_floor(%Row{noise: noise}), do: max(@warn_pct_threshold, noise)
 
-  defp print_report(rows, hard_fails, warnings) do
-    divider = String.duplicate("-", 104)
-    IO.puts("\nA/B Benchmark Comparison")
-    IO.puts(divider)
-
-    IO.puts(
-      "#{rpad("Instance", 34)} #{lpad("Base", 13)} #{lpad("Cand", 13)} #{lpad("Delta%", 9)} " <>
-        "#{lpad("Noise", 8)} #{lpad("Iter%", 8)} #{lpad("Gap b->c", 13)}"
-    )
-
-    IO.puts(divider)
-    Enum.each(rows, &print_row/1)
-    IO.puts(divider)
-
-    IO.puts(
-      "Delta% marked * exceeds the spread of this instance's paired per-seed deltas; " <>
-        "unmarked deltas are not results."
-    )
-
-    Enum.each(warnings, fn w -> IO.puts("WARN: #{w}") end)
-    Enum.each(hard_fails, fn f -> IO.puts("FAIL: #{f}") end)
-    IO.puts(if hard_fails == [], do: "\nNo regressions detected.\n", else: "\nREGRESSION DETECTED.\n")
-  end
-
-  defp print_row(r) do
-    IO.puts(
-      "#{rpad(r.id, 34)} #{lpad(fmt(r.baseline_mean), 13)} #{lpad(fmt(r.candidate_mean), 13)} " <>
-        "#{lpad(fmt_pct(r.pct_change) <> significance(r), 9)} #{lpad(fmt_pct(r.noise), 8)} " <>
-        "#{lpad(fmt_pct(r.iter_pct_change), 8)} #{lpad(fmt_gap_pair(r), 13)}"
-    )
-  end
-
-  defp significance(%Row{pct_change: nil}), do: ""
-  defp significance(%Row{noise: nil}), do: ""
-  defp significance(r), do: if(abs(r.pct_change) > r.noise, do: "*", else: "")
-
-  defp fmt_gap_pair(%Row{baseline_gap: nil, candidate_gap: nil}), do: "n/a"
-  defp fmt_gap_pair(r), do: "#{fmt_gap(r.baseline_gap)}->#{fmt_gap(r.candidate_gap)}"
-
-  defp fmt(nil), do: "n/a"
-  defp fmt(x), do: :erlang.float_to_binary(x, decimals: 1)
-  defp fmt_pct(nil), do: "n/a"
   defp fmt_pct(x), do: "#{Float.round(x * 100, 2)}%"
-  defp fmt_gap(nil), do: "n/a"
-  defp fmt_gap(x), do: "#{Float.round(x * 100, 2)}%"
-  defp rpad(s, w), do: s |> to_string() |> String.slice(0, w) |> String.pad_trailing(w)
-  defp lpad(s, w), do: String.pad_leading(to_string(s), w)
 end
