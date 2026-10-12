@@ -242,7 +242,7 @@ void Route::makeSchedule(ProblemData const &data)
 
             auto const svcEnd
                 = svcStart
-                  + (data.isBreak(firstClient) ? vehData.breakDuration
+                  + (data.isBreak(firstClient) ? vehData.pauseDuration(cd)
                                                : cd.serviceDuration);
             for (auto const &[fStart, fEnd] : vehData.forbiddenWindows)
             {
@@ -274,7 +274,7 @@ void Route::makeSchedule(ProblemData const &data)
 
             ProblemData::Client const &clientData = data.location(client);
             auto const service = data.isBreak(client)
-                                     ? vehData.breakDuration
+                                     ? vehData.pauseDuration(clientData)
                                      : clientData.serviceDuration;
             handle(clientData, client, tripIdx, service);
 
@@ -324,7 +324,7 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         {
             if (data.isBreak(client))
             {
-                breaks_ += vehData.breakDuration;
+                breaks_ += vehData.pauseDuration(data.location(client));
                 numBreaks_++;
             }
 
@@ -397,7 +397,7 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
             ProblemData::Client const &clientData = data.location(client);
             DurationSegment const visitDS
                 = data.isBreak(client)
-                      ? DurationSegment(vehData.breakDuration,
+                      ? DurationSegment(vehData.pauseDuration(clientData),
                                         0,
                                         0,
                                         std::numeric_limits<Duration>::max(),

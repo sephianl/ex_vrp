@@ -1148,7 +1148,7 @@ void LocalSearch::repairForbiddenWindowRoutes(
 
             if (data.isBreak(node->client()))  // rest, never a late client
             {
-                now += vehType.breakDuration;
+                now += vehType.pauseDuration(data.location(node->client()));
                 continue;
             }
 
@@ -1442,7 +1442,7 @@ void LocalSearch::improveWithMultiTrip(
 
                 if (data.isBreak(node->client()))
                 {
-                    now += vehType.breakDuration;
+                    now += vehType.pauseDuration(data.location(node->client()));
                     continue;
                 }
 
@@ -1583,10 +1583,10 @@ void LocalSearch::stripForbiddenWindowViolations()
                         ProblemData::Client const &next
                             = data.location(nextLoc);
                         auto const svcStart = std::max(arrive, next.twEarly);
-                        auto const svcEnd
-                            = svcStart
-                              + (data.isBreak(nextLoc) ? vehType.breakDuration
-                                                       : next.serviceDuration);
+                        auto const svcEnd = svcStart
+                                            + (data.isBreak(nextLoc)
+                                                   ? vehType.pauseDuration(next)
+                                                   : next.serviceDuration);
 
                         for (auto const &[fStart, fEnd] :
                              vehType.forbiddenWindows)
@@ -1605,7 +1605,7 @@ void LocalSearch::stripForbiddenWindowViolations()
 
             if (data.isBreak(node->client()))  // rest, not an optional client
             {
-                now += vehType.breakDuration;
+                now += vehType.pauseDuration(data.location(node->client()));
                 continue;
             }
 
@@ -1708,7 +1708,7 @@ void LocalSearch::stripInfeasibleForbiddenWindowClients()
 
                 if (data.isBreak(node->client()))  // never stripped
                 {
-                    now += vehType.breakDuration;
+                    now += vehType.pauseDuration(data.location(node->client()));
                     continue;
                 }
 

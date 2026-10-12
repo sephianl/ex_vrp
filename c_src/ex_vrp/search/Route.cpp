@@ -369,19 +369,24 @@ Route::SegmentBetween::durationWithBreaks(size_t profile,
 {
     auto const &mat = route_.data.durationMatrix(profile);
 
-    // durAt holds this route's break duration. Evaluated for a vehicle type
-    // whose break lasts differently, the segment's breaks take that duration,
-    // as they would once moved there.
-    auto const breakDuration
-        = route_.data.vehicleType(vehicleType).breakDuration;
-    auto const swapBreaks = breakDuration != route_.vehicleType_.breakDuration;
+    // durAt holds this route's break and rest durations. Evaluated for a
+    // vehicle type whose break or rest lasts differently, the segment's
+    // breaks and rests take that type's durations, as they would once moved
+    // there.
+    auto const &otherType = route_.data.vehicleType(vehicleType);
+    auto const swapBreaks
+        = otherType.breakDuration != route_.vehicleType_.breakDuration
+          || otherType.restDuration != route_.vehicleType_.restDuration;
     DurationSegment const breakDS(
-        breakDuration, 0, 0, std::numeric_limits<Duration>::max(), 0);
+        otherType.breakDuration, 0, 0, std::numeric_limits<Duration>::max(), 0);
+    DurationSegment const restDS(
+        otherType.restDuration, 0, 0, std::numeric_limits<Duration>::max(), 0);
 
     auto const at = [&](size_t idx) -> DurationSegment const &
     {
-        if (swapBreaks && route_.data.isBreak(route_.visits[idx]))
-            return breakDS;
+        auto const client = route_.visits[idx];
+        if (swapBreaks && route_.data.isBreak(client))
+            return route_.data.isRest(client) ? restDS : breakDS;
 
         return route_.durAt[idx];
     };
@@ -524,11 +529,12 @@ void Route::update()
 
         if (data.isBreak(node->client()))
             // A break lasts this vehicle type's break duration, in no window.
-            durAt[idx] = DurationSegment(vehicleType_.breakDuration,
-                                         0,
-                                         0,
-                                         std::numeric_limits<Duration>::max(),
-                                         0);
+            durAt[idx] = DurationSegment(
+                vehicleType_.pauseDuration(data.location(node->client())),
+                0,
+                0,
+                std::numeric_limits<Duration>::max(),
+                0);
         else if (!node->isReloadDepot())
         {
             ProblemData::Client const &client = data.location(node->client());

@@ -50,6 +50,83 @@ defmodule ExVrp.RestNodesTest do
     %Solution{solution_ref: ref, routes: [visits]} |> Solution.routes() |> hd()
   end
 
+  defp route_cost(route), do: route_cost(route, Native.search_route_empty_nif(route))
+
+  defp route_cost(_route, true = _empty), do: 0
+
+  defp route_cost(route, false = _empty) do
+    Native.search_route_fixed_vehicle_cost_nif(route) + Native.search_route_distance_cost_nif(route) +
+      Native.search_route_duration_cost_nif(route) + Native.search_route_time_warp_nif(route) +
+      Native.search_route_excess_distance_nif(route)
+  end
+
+  describe "stored routes" do
+    test "a rest between two clients costs no distance and adds the rest duration" do
+      plain = route([1, 2])
+      rested = route([1, @rest, 2])
+
+      assert Route.distance(rested) == Route.distance(plain)
+      assert Route.travel_duration(rested) == Route.travel_duration(plain)
+      assert Route.duration(rested) == Route.duration(plain) + @rest_duration
+    end
+
+    test "a rest lasts the rest duration while a break lasts the break duration" do
+      vehicle = [max_drive_between_breaks: 1_000, break_duration: @break_duration]
+      plain = route([1, 2], vehicle)
+
+      assert Route.duration(route([1, @break, 2], vehicle)) == Route.duration(plain) + @break_duration
+      assert Route.duration(route([1, @rest, 2], vehicle)) == Route.duration(plain) + @rest_duration
+    end
+
+    test "a rest closes the drive clock like a break" do
+      vehicle = [max_drive_between_breaks: 20, break_duration: @break_duration]
+      with_rest = Route.clock_excess(route([1, @rest, 2], vehicle))
+
+      assert with_rest == Route.clock_excess(route([1, @break, 2], vehicle))
+      assert with_rest < Route.clock_excess(route([1, 2], vehicle))
+    end
+
+    test "a rest and a break on one leg both count towards the leg" do
+      vehicle = [max_drive_between_breaks: 20, break_duration: @break_duration]
+
+      assert Route.clock_excess(route([1, @break, @rest, 2], vehicle)) <
+               Route.clock_excess(route([1, @break, 2], vehicle))
+
+      assert Route.duration(route([1, @break, @rest, 2], vehicle)) ==
+               Route.duration(route([1, 2], vehicle)) + @break_duration + @rest_duration
+    end
+  end
+
+  describe "search routes" do
+    test "a search route prices a rest as the stored route does" do
+      {:ok, data} = [] |> model() |> Model.to_problem_data()
+      search_route = Native.make_search_route_nif(data, [1, @rest, 2], 0, 0)
+
+      assert Native.search_route_duration_nif(search_route) == Route.duration(route([1, 2])) + @rest_duration
+    end
+
+    test "moving a rest to another vehicle type's route takes that type's rest duration" do
+      {:ok, data} = [] |> model() |> Model.to_problem_data()
+      {:ok, evaluator} = Native.create_cost_evaluator(load_penalties: [0.0], tw_penalty: 1.0, dist_penalty: 1.0)
+
+      route1 = Native.make_search_route_nif(data, [1, @rest], 0, 0)
+      route2 = Native.make_search_route_nif(data, [2], 1, 1)
+      before = route_cost(route1) + route_cost(route2)
+
+      op = Native.create_exchange10_nif(data)
+      u = Native.search_route_get_node_nif(route1, 2)
+      v = Native.search_route_get_node_nif(route2, 1)
+      delta = Native.exchange10_evaluate_nif(op, u, v, evaluator)
+
+      :ok = Native.exchange10_apply_nif(op, u, v)
+      Native.search_route_update_nif(route1)
+      Native.search_route_update_nif(route2)
+
+      assert delta == route_cost(route1) + route_cost(route2) - before
+      assert Native.search_route_duration_nif(route2) == Route.duration(route([2])) + 2 * @rest_duration
+    end
+  end
+
   describe "validation" do
     test "a rest client must be a break client" do
       model =
