@@ -687,12 +687,6 @@ public:
                                                     : maxWorkBetweenBreaks;
         }
 
-        // How long a break client lasts on this vehicle type's routes.
-        [[nodiscard]] Duration pauseDuration(Client const &client) const
-        {
-            return client.isRest ? restDuration : breakDuration;
-        }
-
         // Whether either clock is limited, so routes may need breaks.
         [[nodiscard]] bool hasBreakRule() const
         {
@@ -981,6 +975,13 @@ public:
     [[nodiscard]] inline bool isRest(size_t location) const;
 
     /**
+     * How long the given break client lasts on the given vehicle type's
+     * routes: its rest duration for a rest, else its break duration.
+     */
+    [[nodiscard]] inline Duration pauseDuration(VehicleType const &vehicleType,
+                                                size_t location) const;
+
+    /**
      * Whether any location is a break client.
      */
     [[nodiscard]] inline bool hasBreaks() const;
@@ -1125,6 +1126,14 @@ bool ProblemData::isRest(size_t location) const
 {
     assert(location < isRest_.size());
     return isRest_[location];
+}
+
+Duration ProblemData::pauseDuration(VehicleType const &vehicleType,
+                                    size_t location) const
+{
+    assert(isBreak(location));
+    return isRest(location) ? vehicleType.restDuration
+                            : vehicleType.breakDuration;
 }
 
 bool ProblemData::hasBreaks() const { return hasBreaks_; }

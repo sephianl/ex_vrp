@@ -123,8 +123,9 @@ of the same route coexist, and mixing them up is the trap:
   Exchange). Delta exactness is covered by `break_nodes_test.exs` and SANITIZE's
   `costAfter == costBefore + deltaCost`.
 - **Rests** (0.16.0, groundwork for daily rests) are break clients flagged `isRest` that last
-  `VehicleType::restDuration` instead of `breakDuration`, through `VehicleType::pauseDuration`.
-  Every path that prices a break node must go through it, and `SegmentBetween::durationWithBreaks`
+  `VehicleType::restDuration` instead of `breakDuration`, through `ProblemData::pauseDuration`,
+  which reads the packed `isRest_` rather than the wide `Client`. Every path that prices a break
+  node must go through it, and `SegmentBetween::durationWithBreaks`
   swaps both durations when evaluating for another vehicle type. A rest closes both clocks like a
   break, but `BreakRepair` neither places one (not in `breaks_`, and `BreakSegment` asserts it)
   nor releases one from a route with clients; only `stripBreaks` drops it, with every break on a

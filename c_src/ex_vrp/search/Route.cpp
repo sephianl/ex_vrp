@@ -530,7 +530,7 @@ void Route::update()
         if (data.isBreak(node->client()))
             // A break lasts this vehicle type's break duration, in no window.
             durAt[idx] = DurationSegment(
-                vehicleType_.pauseDuration(data.location(node->client())),
+                data.pauseDuration(vehicleType_, node->client()),
                 0,
                 0,
                 std::numeric_limits<Duration>::max(),
