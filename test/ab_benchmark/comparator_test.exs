@@ -32,7 +32,7 @@ defmodule ExVrp.ABBenchmark.ComparatorTest do
 
   test "clean when candidate equals baseline" do
     base = results("main", %{"a" => inst("cvrp", 100, %{"1" => seed(110, true)})})
-    assert {:ok, summary} = Comparator.compare(base, base)
+    assert {:ok, summary} = Comparator.compare(base, base, nil, nil)
     assert summary.hard_fails == []
     assert summary.warnings == []
   end
@@ -40,21 +40,21 @@ defmodule ExVrp.ABBenchmark.ComparatorTest do
   test "hard fail when an instance goes feasible -> infeasible" do
     base = results("main", %{"a" => inst("cvrp", 100, %{"1" => seed(110, true)})})
     cand = results("head", %{"a" => inst("cvrp", 100, %{"1" => seed(110, false)})})
-    assert {:regression, summary} = Comparator.compare(base, cand)
+    assert {:regression, summary} = Comparator.compare(base, cand, nil, nil)
     assert Enum.any?(summary.hard_fails, &String.contains?(&1, "infeasible"))
   end
 
   test "hard fail when aggregate objective worsens beyond 0.5%" do
     base = results("main", %{"a" => inst("cvrp", 100, %{"1" => seed(100, true)})})
     cand = results("head", %{"a" => inst("cvrp", 100, %{"1" => seed(101, true)})})
-    assert {:regression, summary} = Comparator.compare(base, cand)
+    assert {:regression, summary} = Comparator.compare(base, cand, nil, nil)
     assert Enum.any?(summary.hard_fails, &String.contains?(&1, "objective"))
   end
 
   test "hard fail when a production instance objective worsens beyond 0.5%" do
     base = results("main", %{"p" => inst("production", nil, %{"1" => seed(1000, true)})})
     cand = results("head", %{"p" => inst("production", nil, %{"1" => seed(1010, true)})})
-    assert {:regression, summary} = Comparator.compare(base, cand)
+    assert {:regression, summary} = Comparator.compare(base, cand, nil, nil)
     assert Enum.any?(summary.hard_fails, &String.contains?(&1, "objective"))
   end
 
@@ -66,7 +66,7 @@ defmodule ExVrp.ABBenchmark.ComparatorTest do
       })
 
     cand = results("head", %{"a" => inst("cvrp", 100, %{"1" => seed(100, true)})})
-    assert {:regression, summary} = Comparator.compare(base, cand)
+    assert {:regression, summary} = Comparator.compare(base, cand, nil, nil)
     assert Enum.any?(summary.hard_fails, &String.contains?(&1, "gone"))
   end
 
@@ -91,7 +91,7 @@ defmodule ExVrp.ABBenchmark.ComparatorTest do
     %{per_instance: [row]} = Comparator.analyze(base, cand)
     assert row.pct_change > row.noise
 
-    assert {:regression, summary} = Comparator.compare(base, cand)
+    assert {:regression, summary} = Comparator.compare(base, cand, nil, nil)
     assert Enum.any?(summary.warnings, &String.contains?(&1, "noisy"))
   end
 
@@ -112,7 +112,7 @@ defmodule ExVrp.ABBenchmark.ComparatorTest do
     assert row.pct_change > @warn_threshold
     assert row.pct_change < row.noise
 
-    assert {:ok, summary} = Comparator.compare(base, cand)
+    assert {:ok, summary} = Comparator.compare(base, cand, nil, nil)
     assert summary.warnings == []
   end
 
@@ -132,40 +132,42 @@ defmodule ExVrp.ABBenchmark.ComparatorTest do
     assert_in_delta row.noise, 0.0, 1.0e-9
   end
 
-  test "iteration throughput is reported alongside the objective" do
-    with_iters = fn obj, iters ->
-      inst("cvrp", nil, %{"1" => %{"objective" => obj, "feasible" => true, "time_ms" => 1, "iterations" => iters}})
-    end
+  defp speed(per_iteration) do
+    instances =
+      Map.new(per_iteration, fn {id, count} ->
+        {id, %{"instructions_per_iteration" => count, "distances" => [100, 90], "iterations" => [10, 30]}}
+      end)
 
-    base = results("main", %{"a" => with_iters.(1000, 1000)})
-    cand = results("head", %{"a" => with_iters.(1000, 500)})
-
-    %{per_instance: [row]} = Comparator.analyze(base, cand)
-    assert_in_delta row.iter_pct_change, -0.5, 1.0e-9
+    %{"ref" => "r", "commit" => "c", "instances" => instances}
   end
 
-  test "hard fail when the median instance loses more than 5% of its iterations" do
-    with_iters = fn iters ->
-      inst("cvrp", nil, %{"1" => %{"objective" => 1000, "feasible" => true, "time_ms" => 1, "iterations" => iters}})
-    end
+  test "a slower search fails the comparison even when every objective holds" do
+    base = results("main", %{"a" => inst("cvrp", nil, %{"1" => seed(1000, true)})})
+    speed_base = speed(%{"x" => 1.0e6, "y" => 1.0e6, "z" => 1.0e6})
+    speed_cand = speed(%{"x" => 1.03e6, "y" => 1.02e6, "z" => 1.0e6})
 
-    base = results("main", %{"a" => with_iters.(1000), "b" => with_iters.(1000), "c" => with_iters.(1000)})
-    cand = results("head", %{"a" => with_iters.(930), "b" => with_iters.(900), "c" => with_iters.(1010)})
-
-    assert {:regression, summary} = Comparator.compare(base, cand)
-    assert Enum.any?(summary.hard_fails, &String.contains?(&1, "iterations"))
+    assert {:regression, summary} = Comparator.compare(base, base, speed_base, speed_cand)
+    assert Enum.any?(summary.hard_fails, &String.contains?(&1, "slower"))
   end
 
-  test "one instance losing iterations is not a throughput regression" do
-    with_iters = fn iters ->
-      inst("cvrp", nil, %{"1" => %{"objective" => 1000, "feasible" => true, "time_ms" => 1, "iterations" => iters}})
-    end
+  test "speed that was not measured is reported as such, not as a pass on speed" do
+    base = results("main", %{"a" => inst("cvrp", nil, %{"1" => seed(1000, true)})})
+    assert {:ok, %{speed_rows: :not_measured}} = Comparator.compare(base, base, nil, nil)
+  end
 
-    base = results("main", %{"a" => with_iters.(1000), "b" => with_iters.(1000), "c" => with_iters.(1000)})
-    cand = results("head", %{"a" => with_iters.(500), "b" => with_iters.(980), "c" => with_iters.(1000)})
+  test "results list only the changes beyond noise" do
+    steady = inst("cvrp", nil, %{"1" => seed(1000, true), "2" => seed(2000, true)})
+    base = results("main", %{"same" => steady, "moved" => steady})
 
-    assert {:ok, summary} = Comparator.compare(base, cand)
-    assert summary.hard_fails == []
+    cand =
+      results("head", %{
+        "same" => steady,
+        "moved" => inst("cvrp", nil, %{"1" => seed(990, true), "2" => seed(1980, true)})
+      })
+
+    assert {:ok, summary} = Comparator.compare(base, cand, speed(%{"x" => 1.0e6}), speed(%{"x" => 1.001e6}))
+    assert [moved] = summary.results
+    assert moved =~ "moved"
   end
 
   test "warn only for a localized >1% objective regression that doesn't move aggregate gap past 0.5pp" do
@@ -180,7 +182,7 @@ defmodule ExVrp.ABBenchmark.ComparatorTest do
         "d" => inst("cvrp", 1000, %{"1" => seed(1015, true)})
       })
 
-    assert {:ok, summary} = Comparator.compare(base, cand)
+    assert {:ok, summary} = Comparator.compare(base, cand, nil, nil)
     assert summary.hard_fails == []
     assert Enum.any?(summary.warnings, &String.contains?(&1, "d"))
   end
