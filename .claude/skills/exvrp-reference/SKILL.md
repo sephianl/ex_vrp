@@ -122,6 +122,16 @@ of the same route coexist, and mixing them up is the trap:
   fixed-cost terms must count clients, not ask whether the next node is a depot (SwapTails,
   Exchange). Delta exactness is covered by `break_nodes_test.exs` and SANITIZE's
   `costAfter == costBefore + deltaCost`.
+- **Rests** (0.16.0, groundwork for daily rests) are break clients flagged `isRest` that last
+  `VehicleType::restDuration` instead of `breakDuration`, through `VehicleType::pauseDuration`.
+  Every path that prices a break node must go through it, and `SegmentBetween::durationWithBreaks`
+  swaps both durations when evaluating for another vehicle type. A rest closes both clocks like a
+  break, but `BreakRepair` neither places one (not in `breaks_`, and `BreakSegment` asserts it)
+  nor releases one from a route with clients; only `stripBreaks` drops it, with every break on a
+  route without clients or a break rule. Nothing places a rest yet, so the only way in is
+  `:initial_routes`, where `Solution.warm_start/1` keeps it as its index rather than a `:break`
+  marker. The search can still shed one by moving every client off its route. Covered by
+  `rest_nodes_test.exs`.
 
 ### Forbidden locations (`set_forbidden/2`)
 

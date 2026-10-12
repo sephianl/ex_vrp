@@ -342,7 +342,8 @@ defmodule ExVrp.Route do
   `visits_before` counts this route's `visits/1` before the break, so `0` is a break before the
   first visit and `length(visits)` one after the last. Breaks taken back to back are separate
   entries with the same `visits_before`. A break takes no location: it is taken where the vehicle
-  is, between `start_service` and `end_service`.
+  is, between `start_service` and `end_service`. Rests come back here too, lasting the vehicle
+  type's `:rest_duration`.
   """
   @spec breaks(t()) :: [
           %{

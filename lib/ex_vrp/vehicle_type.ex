@@ -274,7 +274,8 @@ defmodule ExVrp.VehicleType do
   - `:work_after_end` - Work after the route ends (the last unload), added to
     its last stretch (default: `0`)
   - `:rest_duration` - How long each daily rest lasts (default: `0`). A rest
-    is a break client flagged `:is_rest`; nothing places one yet
+    is a break client flagged `:is_rest`; nothing places one yet, so it comes from
+    `:initial_routes`, and only on a vehicle type with a limit between breaks
   - `:unit_distance_cost` - Cost per unit distance (default: `1`)
   - `:unit_duration_cost` - Cost per unit time (default: `0`)
   - `:profile` - Index of distance/duration matrix to use (default: `0`)
