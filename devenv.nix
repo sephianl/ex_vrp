@@ -26,7 +26,7 @@ in
   languages = {
     elixir = {
       enable = true;
-      package = pkgs.elixir_1_19;
+      package = pkgs.beamPackages.elixir_1_20;
     };
   };
 

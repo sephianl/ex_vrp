@@ -20,8 +20,6 @@ defmodule Mix.Tasks.Bench.Smoke do
   alias ExVrp.ABBenchmark.Runner
   alias ExVrp.ABBenchmark.Smoke
 
-  require Logger
-
   @requirements ["app.config"]
 
   @impl Mix.Task

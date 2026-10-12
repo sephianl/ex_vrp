@@ -135,13 +135,12 @@ defmodule ExVrp.ProductionBenchmarkTest do
   # --- Helpers ---
 
   defp plannable_count(model) do
-    model.clients
-    |> Enum.filter(&(&1.prize > 0))
-    |> Enum.group_by(& &1.group)
-    |> Enum.reduce(0, fn
-      {nil, clients}, acc -> acc + length(clients)
-      {_group_idx, _clients}, acc -> acc + 1
-    end)
+    {ungrouped, grouped} =
+      model.clients
+      |> Enum.filter(&(&1.prize > 0))
+      |> Enum.split_with(&is_nil(&1.group))
+
+    length(ungrouped) + length(Enum.uniq_by(grouped, & &1.group))
   end
 
   defp load_model(file) do
