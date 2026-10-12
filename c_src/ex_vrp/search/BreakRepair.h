@@ -34,6 +34,9 @@ namespace pyvrp::search
  * the cost, and every break on a route without clients or a break rule.
  * Materialising only while overrun is positive, and releasing only what adds
  * none, cannot undo one another.
+ *
+ * Rest clients are break clients, so they close the stretches this pass
+ * reads, but they are not in its pool: it never inserts one.
  */
 class BreakRepair
 {

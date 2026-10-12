@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Rest clients: a break client flagged `:is_rest` lasts its vehicle type's new `:rest_duration`
+  instead of its `:break_duration`. Like a break it resets both break clocks; the break pool never
+  holds one, so the search never places one. Groundwork for daily rests that end a duty period.
+
 ## 0.15.0
 
 ### Added

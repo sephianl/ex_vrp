@@ -11,6 +11,8 @@ defmodule ExVrp.RestNodesTest do
   alias ExVrp.Native
   alias ExVrp.Route
   alias ExVrp.Solution
+  alias ExVrp.Solver
+  alias ExVrp.StoppingCriteria
 
   @moduletag :nif_required
 
@@ -124,6 +126,22 @@ defmodule ExVrp.RestNodesTest do
 
       assert delta == route_cost(route1) + route_cost(route2) - before
       assert Native.search_route_duration_nif(route2) == Route.duration(route([2])) + 2 * @rest_duration
+    end
+  end
+
+  describe "break repair" do
+    test "never places a rest client as a break" do
+      vehicle = [max_drive_between_breaks: 20, break_duration: @break_duration]
+
+      {:ok, result} =
+        vehicle
+        |> model()
+        |> Solver.solve(stop: StoppingCriteria.max_iterations(200), num_starts: 1, seed: 1)
+
+      breaks = result.best |> Solution.routes() |> Enum.flat_map(&Route.breaks/1)
+
+      assert length(breaks) >= 2
+      assert Enum.all?(breaks, &(&1.end_service - &1.start_service == @break_duration))
     end
   end
 
