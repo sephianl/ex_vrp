@@ -4,14 +4,13 @@ on:
   pull_request:
     types: [labeled, synchronize]
 
-# Three jobs: `quality` solves the corpus on both refs on a GitHub-hosted runner, `speed`
-# counts the solver's instructions per iteration on both refs on our self-hosted fleet
-# (hosted runners expose no hardware counters), and `report` compares both and posts
-# one verdict.
+# Three jobs, all on GitHub-hosted runners: `quality` solves the corpus on both refs,
+# `speed` counts the solver's instructions per iteration on both refs under Callgrind
+# (hosted runners expose no hardware counters, and our self-hosted fleet serves only
+# private repositories), and `report` compares both and posts one verdict.
 #
-# Only PRs from this repository run it. ex_vrp is public, and a fork PR would run its
-# own code on the self-hosted fleet; its read-only token could not post the comment
-# either.
+# Only PRs from this repository run it: a fork PR's read-only token could not post the
+# comment.
 
 jobs:
   quality:
@@ -100,39 +99,48 @@ jobs:
 
   speed:
     if: contains(github.event.pull_request.labels.*.name, 'benchmark') && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: self-hosted
-    timeout-minutes: 60
-    # devenv runs from the Nix store rather than a profile install: the fleet is shared, so
-    # this job must not change what any other job finds installed. Its GCC 13 is the compiler
-    # the release NIF ships with, which is the one whose speed matters.
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
     defaults:
       run:
-        shell: nix shell github:cachix/devenv/latest --command devenv -O git-hooks.enable:bool false shell bash -e {0}
+        shell: devenv -O git-hooks.enable:bool false shell bash -e {0}
     env:
       EX_VRP_FORCE_BUILD: "1"
-      # The self-hosted runners don't enable flakes in nix.conf.
-      NIX_CONFIG: "extra-experimental-features = nix-command flakes"
-      # Per-workspace, so a hex archive left by another job's OTP never loads here.
-      MIX_HOME: ${{ github.workspace }}/.mix
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # Fails here, naming the runner, rather than after two builds, when a machine hides
-      # its hardware counters or forbids unprivileged counting.
-      - name: Check this runner can count instructions
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Install devenv
+        shell: bash
         run: |
-          echo "runner: ${RUNNER_NAME:-unknown}, kernel.perf_event_paranoid=$(cat /proc/sys/kernel/perf_event_paranoid)"
-          if ! perf stat -x, -e instructions:u -- true 2>&1 | grep -qE '^[0-9]+,'; then
-            echo "::error::${RUNNER_NAME} cannot count instructions (no PMU, or kernel.perf_event_paranoid > 2)"
-            exit 1
-          fi
+          nix profile install --accept-flake-config github:cachix/devenv/latest
+
+      - name: Cache Mix dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      # Built from source on a cold Nix cache (about ten minutes), so it gets its own step
+      # rather than hiding inside the first count.
+      - name: Build the interpreter-only Erlang
+        run: nix build --no-link -f dev/ab_benchmark/interpreter_erlang.nix
 
       - name: Fetch and compile dependencies
         run: |
-          mix local.hex --force --if-missing
-          mix local.rebar --force --if-missing
           mix deps.get
           mix deps.compile
 
@@ -163,28 +171,34 @@ jobs:
           name: speed-results
           path: ${{ runner.temp }}/speed-*.json
 
-      - name: Remove the BASE tree
-        if: always()
-        shell: bash
-        run: rm -rf "$RUNNER_TEMP/base"
-
   report:
     needs: [quality, speed]
     if: always() && needs.quality.result != 'skipped'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
     defaults:
       run:
-        shell: nix shell github:cachix/devenv/latest --command devenv -O git-hooks.enable:bool false shell bash -e {0}
+        shell: devenv -O git-hooks.enable:bool false shell bash -e {0}
     env:
       EX_VRP_FORCE_BUILD: "1"
-      NIX_CONFIG: "extra-experimental-features = nix-command flakes"
-      MIX_HOME: ${{ github.workspace }}/.mix
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Install devenv
+        shell: bash
+        run: |
+          nix profile install --accept-flake-config github:cachix/devenv/latest
 
       - name: Download results
         uses: actions/download-artifact@v4

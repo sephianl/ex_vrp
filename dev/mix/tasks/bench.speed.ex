@@ -7,8 +7,9 @@ defmodule Mix.Tasks.Bench.Speed do
       mix bench.speed --out speed-head.json --ref head
       mix bench.speed --out s.json --only pc_R1_10_4,c201
 
-  Needs `perf` on the PATH and a machine that exposes hardware counters. Build the NIF
-  first: each solve runs `mix run --no-compile`, so it measures what is already built.
+  Needs `valgrind` and `nix` on the PATH; the first run builds an interpreter-only Erlang,
+  which takes about ten minutes. Build the NIF first: each solve loads what `_build`
+  already holds.
 
   Options:
     --out   Output JSON path (required)

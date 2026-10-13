@@ -1,15 +1,22 @@
 defmodule ExVrp.ABBenchmark.Speed do
   @moduledoc """
-  Measures the solver's speed as user-space CPU instructions per search iteration.
+  Measures the solver's speed as instructions per search iteration, counted by Callgrind.
 
   Unlike iterations within a wall-clock budget, an instruction count does not depend
-  on what else the machine runs, so two refs measured on one machine differ only by
-  what their code does. It needs hardware performance counters, which GitHub-hosted
-  runners do not expose, so the A/B runs this on the self-hosted fleet.
+  on what else the machine runs, so two refs differ only by what their code does.
+  Callgrind counts in software, so this needs no hardware counters and runs on
+  GitHub-hosted runners; and since no count depends on load, instances measure
+  concurrently.
 
-  Every instance solves in a fresh BEAM under `perf stat`, once for `n` iterations
-  and once for `3n`. The difference over `2n` iterations drops boot, compilation and
-  instance loading, which a single count would mix into the solver's.
+  Every instance solves in a fresh BEAM, once for `n` iterations and once for `3n`.
+  The difference over `2n` iterations drops instance loading and solver setup, which
+  a single count would mix into the search's. Callgrind counts only inside NIF calls,
+  which is the solver and the C and C++ library code it calls, and instruments nothing
+  until the instance is loaded: booting a BEAM under instrumentation takes minutes.
+
+  Valgrind cannot run the BEAM's JIT, so each solve runs on the interpreter-only Erlang
+  that `interpreter_erlang.nix` builds from devenv's nixpkgs pin, with no super carrier
+  (`+MMscs 0`), whose memory mapping Valgrind also cannot follow.
   """
 
   alias ExVrp.ABBenchmark.Corpus
@@ -27,7 +34,9 @@ defmodule ExVrp.ABBenchmark.Speed do
     {"prodbrk_oban-966207", 50}
   ]
 
-  @idle_schedulers_sleep "+sbwt none +sbwtdcpu none +sbwtdio none"
+  @interpreter_erlang_nix Path.expand("interpreter_erlang.nix", __DIR__)
+  @nif_entry_points "*(enif_environment_t*, int, unsigned long const*)*"
+  @valgrind_compatible_beam_flags ~w(+MMscs 0 +sbwt none +sbwtdcpu none +sbwtdio none)
   @solve_marker "BENCH_SPEED"
 
   @spec corpus() :: [{String.t(), pos_integer()}]
@@ -35,28 +44,26 @@ defmodule ExVrp.ABBenchmark.Speed do
 
   @spec run([{String.t(), pos_integer()}], String.t(), String.t()) :: map()
   def run(corpus, ref, commit) do
+    interpreter_erl = build_interpreter_erl()
+
     %{
       "ref" => ref,
       "commit" => commit,
-      "instances" => Map.new(corpus, fn {id, iterations} -> {id, measure(id, iterations)} end)
-    }
-  end
-
-  @spec measure(String.t(), pos_integer()) :: map()
-  def measure(id, iterations) do
-    {short_instructions, short_distance} = count_solve(id, iterations)
-    {long_instructions, long_distance} = count_solve(id, 3 * iterations)
-
-    %{
-      "iterations" => [iterations, 3 * iterations],
-      "distances" => [short_distance, long_distance],
-      "instructions_per_iteration" => (long_instructions - short_instructions) / (2 * iterations)
+      "instances" =>
+        corpus
+        |> Task.async_stream(fn {id, iterations} -> {id, measure(interpreter_erl, id, iterations)} end,
+          max_concurrency: System.schedulers_online(),
+          timeout: :infinity,
+          ordered: false
+        )
+        |> Map.new(fn {:ok, instance} -> instance end)
     }
   end
 
   @spec solve(String.t(), pos_integer()) :: :ok
   def solve(id, iterations) do
     model = id |> corpus_entry() |> Loader.load()
+    start_instrumentation()
 
     {:ok, result} =
       ExVrp.solve(model, stop: StoppingCriteria.max_iterations(iterations), seed: 1, num_starts: 1)
@@ -64,12 +71,12 @@ defmodule ExVrp.ABBenchmark.Speed do
     IO.puts("#{@solve_marker} distance=#{result.best.distance}")
   end
 
-  @spec instructions_from_perf_csv(String.t()) :: {:ok, non_neg_integer()} | {:error, String.t()}
-  def instructions_from_perf_csv(csv) do
-    csv
-    |> String.split("\n")
-    |> Enum.find(&String.contains?(&1, ",instructions"))
-    |> instruction_count()
+  @spec instructions_from_callgrind_out(String.t()) :: non_neg_integer()
+  def instructions_from_callgrind_out(callgrind_out) do
+    case Regex.run(~r/^totals: (\d+)/m, callgrind_out) do
+      [_line, instructions] -> String.to_integer(instructions)
+      nil -> 0
+    end
   end
 
   @spec distance_from_solve_output(String.t()) :: {:ok, non_neg_integer()} | {:error, String.t()}
@@ -80,59 +87,90 @@ defmodule ExVrp.ABBenchmark.Speed do
     end
   end
 
-  defp count_solve(id, iterations) do
-    counter_file = Path.join(Mix.Project.build_path(), "bench_speed_#{id}_#{iterations}.csv")
+  defp measure(interpreter_erl, id, iterations) do
+    {short_instructions, short_distance} = count_solve(interpreter_erl, id, iterations)
+    {long_instructions, long_distance} = count_solve(interpreter_erl, id, 3 * iterations)
+
+    %{
+      "iterations" => [iterations, 3 * iterations],
+      "distances" => [short_distance, long_distance],
+      "instructions_per_iteration" => (long_instructions - short_instructions) / (2 * iterations)
+    }
+  end
+
+  defp build_interpreter_erl do
+    "nix"
+    |> System.cmd(["build", "--no-link", "--print-out-paths", "-f", @interpreter_erlang_nix], stderr_to_stdout: true)
+    |> interpreter_erl_from_nix_build()
+  end
+
+  defp interpreter_erl_from_nix_build({out_path, 0}), do: Path.join(String.trim(out_path), "bin/erl")
+
+  defp interpreter_erl_from_nix_build({output, status}),
+    do: raise(SpeedMeasurementError, instance: "every instance", reason: "nix build exited #{status}:\n#{output}")
+
+  defp start_instrumentation do
+    {_output, 0} = System.cmd("callgrind_control", ["--instr=on", System.pid()], stderr_to_stdout: true)
+  end
+
+  defp count_solve(interpreter_erl, id, iterations) do
+    out_dir = Path.join([Mix.Project.build_path(), "bench_speed", "#{id}_#{iterations}"])
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(out_dir)
 
     {output, status} =
-      System.cmd("perf", perf_stat_args(counter_file, id, iterations),
-        env: [{"ELIXIR_ERL_OPTIONS", @idle_schedulers_sleep}],
+      System.cmd("valgrind", callgrind_args(out_dir) ++ [interpreter_erl | solve_args(id, iterations)],
+        env: [{"ERL_LIBS", erl_libs()}],
         stderr_to_stdout: true
       )
 
-    {counted(counter_file, id, status, output), solved_distance(id, output)}
+    {counted(out_dir, id, status, output), solved_distance(id, output)}
   end
 
-  defp perf_stat_args(counter_file, id, iterations) do
-    solve_call = "ExVrp.ABBenchmark.Speed.solve(#{inspect(id)}, #{iterations})"
-
-    ["stat", "-x", ",", "-e", "instructions:u", "-o", counter_file, "--"] ++
-      ["mix", "run", "--no-compile", "--no-deps-check", "-e", solve_call]
+  defp callgrind_args(out_dir) do
+    [
+      "--tool=callgrind",
+      "--trace-children=yes",
+      "--trace-children-skip=*/callgrind_control,*/perl,*/vgdb",
+      "--instr-atstart=no",
+      "--collect-atstart=no",
+      "--toggle-collect=#{@nif_entry_points}",
+      "--callgrind-out-file=#{out_dir}/callgrind.%p"
+    ]
   end
 
-  defp counted(counter_file, id, 0 = _status, _output) do
-    with {:ok, csv} <- File.read(counter_file),
-         {:ok, instructions} <- instructions_from_perf_csv(csv) do
-      instructions
-    else
-      {:error, reason} -> raise SpeedMeasurementError, instance: id, reason: inspect(reason)
-    end
+  defp solve_args(id, iterations) do
+    solve_call =
+      "{ok, _} = application:ensure_all_started(ex_vrp), " <>
+        "'Elixir.ExVrp.ABBenchmark.Speed':solve(<<#{inspect(id)}>>, #{iterations}), init:stop()."
+
+    @valgrind_compatible_beam_flags ++ ["-noshell", "-eval", solve_call]
   end
 
-  defp counted(_counter_file, id, status, output),
-    do: raise(SpeedMeasurementError, instance: id, reason: "perf stat exited #{status}:\n#{output}")
+  defp erl_libs do
+    Enum.join([Path.join(Mix.Project.build_path(), "lib"), Path.dirname(:code.lib_dir(:elixir))], ":")
+  end
+
+  defp counted(out_dir, id, 0 = _status, _output) do
+    out_dir
+    |> Path.join("callgrind.*")
+    |> Path.wildcard()
+    |> Enum.sum_by(&(&1 |> File.read!() |> instructions_from_callgrind_out()))
+    |> nonzero_count(id)
+  end
+
+  defp counted(_out_dir, id, status, output),
+    do: raise(SpeedMeasurementError, instance: id, reason: "valgrind exited #{status}:\n#{output}")
+
+  defp nonzero_count(0, id),
+    do: raise(SpeedMeasurementError, instance: id, reason: "Callgrind counted no instructions inside the solver")
+
+  defp nonzero_count(instructions, _id), do: instructions
 
   defp solved_distance(id, output) do
     case distance_from_solve_output(output) do
       {:ok, distance} -> distance
       {:error, reason} -> raise SpeedMeasurementError, instance: id, reason: reason
-    end
-  end
-
-  defp instruction_count(nil), do: {:error, "perf stat reported no instructions event"}
-
-  defp instruction_count(line) do
-    line |> String.split(",", parts: 2) |> hd() |> parse_count()
-  end
-
-  defp parse_count("<not supported>"),
-    do: {:error, "this machine exposes no instruction counter (no PMU, or kernel.perf_event_paranoid > 2)"}
-
-  defp parse_count("<not counted>"), do: {:error, "perf stat counted no instructions"}
-
-  defp parse_count(count) do
-    case Integer.parse(count) do
-      {instructions, ""} -> {:ok, instructions}
-      _ -> {:error, "unreadable instruction count #{inspect(count)}"}
     end
   end
 

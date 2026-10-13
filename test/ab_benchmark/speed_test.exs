@@ -9,15 +9,13 @@ defmodule ExVrp.ABBenchmark.SpeedTest do
     assert Enum.all?(Speed.corpus(), fn {id, _iterations} -> MapSet.member?(corpus_ids, id) end)
   end
 
-  test "reads the instruction count from perf stat's CSV output" do
-    csv = "# started on Mon Oct 12 2026\n\n4421052812,,instructions:u,5153661374,100.00,,\n"
-    assert Speed.instructions_from_perf_csv(csv) == {:ok, 4_421_052_812}
+  test "reads the instruction count from Callgrind's totals line" do
+    callgrind_out = "version: 1\ncreator: callgrind-3.27.1\nevents: Ir\nsummary: 908441628\ntotals: 908441628\n"
+    assert Speed.instructions_from_callgrind_out(callgrind_out) == 908_441_628
   end
 
-  test "a machine without an instruction counter is an error, not a zero count" do
-    csv = "<not supported>,,instructions:u,0,100.00,,\n"
-    assert {:error, reason} = Speed.instructions_from_perf_csv(csv)
-    assert reason =~ "no instruction counter"
+  test "a process Callgrind traced but never counted in contributes nothing" do
+    assert Speed.instructions_from_callgrind_out("version: 1\nevents: Ir\n") == 0
   end
 
   test "reads the final distance from the solve's output, past the solver's logging" do

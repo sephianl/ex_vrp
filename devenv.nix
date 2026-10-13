@@ -46,7 +46,7 @@ in
     ]
     ++ lib.optionals pkgs.stdenv.isLinux [
       inotify-tools
-      perf # mix bench.speed counts the solver's instructions with perf stat
+      perf # for profiling the solver locally; mix bench.speed counts with Valgrind
     ];
 
   git-hooks.hooks = {
