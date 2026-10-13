@@ -25,7 +25,7 @@ Load the `exvrp-reference` skill (`.claude/skills/exvrp-reference/SKILL.md`) bef
 - Delegate test runs to `test-runner` subagent — verbose NIF output pollutes main context
 - Use `exvrp-researcher` subagent for deep PyVRP C++ internals
 - Self-review diffs before presenting
-- **Always run tests (`mix test --include nif_required`) and the quality smoke (`mix bench.smoke`) after any changes** — tests catch correctness regressions, the smoke catches solution quality regressions. For a full A/B, `mix bench.run` on each side then `mix bench.compare` (prefer CI: local runs are noisier)
+- **Always run tests (`mix test --include nif_required`) and the quality smoke (`mix bench.smoke`) after any changes** — tests catch correctness regressions, the smoke catches solution quality regressions. For a full A/B, `mix bench.run` and `mix bench.speed` on each side then `mix bench.compare` (prefer CI, the `benchmark` label: local objective runs are noisier)
 
 ### Building & Testing
 
@@ -37,7 +37,7 @@ mix test --include nif_required            # includes NIF-dependent tests
 # Real-planning benchmarks (this repo, priv/benchmark_data/production/):
 mix test test/production_benchmark_test.exs --include production_benchmark        # feasibility gate (long)
 mix test test/production_benchmark_test.exs --include production_benchmark_quick  # 5-seed quick check
-# A/B objective comparison harness: dev/ab_benchmark/ (Runner + Comparator)
+# A/B harness: dev/ab_benchmark/ — objective (Runner + Comparator), speed (Speed, `mix bench.speed`)
 ```
 
 Requires C++20 compiler (gcc 11+ or clang 14+).

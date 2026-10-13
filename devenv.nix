@@ -44,7 +44,10 @@ in
 
       go-task
     ]
-    ++ lib.optionals pkgs.stdenv.isLinux [ inotify-tools ];
+    ++ lib.optionals pkgs.stdenv.isLinux [
+      inotify-tools
+      perf # mix bench.speed counts the solver's instructions with perf stat
+    ];
 
   git-hooks.hooks = {
     mix-format = {

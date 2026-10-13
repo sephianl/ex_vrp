@@ -225,6 +225,11 @@ Benchmark caveats:
 - The production corpus (`priv/benchmark_data/production/`, anonymized Model ETF snapshots)
   asserts feasibility + `>= min(400, plannable)` clients under `max_runtime` only — not Zelo's
   stopping regime.
-- `dev/ab_benchmark/` `Runner` + `Comparator.compare/2` (0.5% aggregate-objective threshold) back
+- `dev/ab_benchmark/` `Runner` + `Comparator.compare/4` (0.5% aggregate-objective threshold) back
   `mix bench.run`/`bench.compare`/`bench.smoke`. `Runner` does not vary `ils_params`; to A/B an ILS
   param, write a directed script passing `ils_params:` per variant at equal budget and seed.
+- Speed is `Speed` + `SpeedComparison` behind `mix bench.speed`: user-space instructions per
+  iteration at a fixed iteration count under `perf stat`, repeatable to 0.05%. The CI A/B counts on
+  the self-hosted fleet (GitHub-hosted runners have no PMU) and fails when the median instance runs
+  more than 1% more. Iterations within a wall-clock budget are not a speed measure: unchanged code
+  swung −8%…+22% per instance on hosted runners.
