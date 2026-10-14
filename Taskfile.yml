@@ -41,7 +41,12 @@ tasks:
       # runtime is linked against nix's glibc, and on a non-NixOS host (CI's
       # Ubuntu) any host binary it gets preloaded into fails to start — make's
       # /bin/sh during compile, for one. --no-compile keeps make out of it.
-      - LD_PRELOAD={{.ASAN_RUNTIME}} mix test --no-compile {{.CLI_ARGS}}
+      #
+      # The sanitized NIF runs several times slower than the release one, so
+      # the multi-seed regression tests outgrow ExUnit's default 60s timeout:
+      # the SwapTails one takes 50s alone on an idle machine, and fails the
+      # pre-push hook whenever the full suite runs on a busy one.
+      - LD_PRELOAD={{.ASAN_RUNTIME}} mix test --no-compile --timeout 600000 {{.CLI_ARGS}}
 
   # ---------------------------------------------------------------------------
   # C++ Quality
