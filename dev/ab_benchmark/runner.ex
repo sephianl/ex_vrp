@@ -14,6 +14,7 @@ defmodule ExVrp.ABBenchmark.Runner do
   """
 
   alias ExVrp.ABBenchmark.Corpus
+  alias ExVrp.ABBenchmark.Instance
   alias ExVrp.ABBenchmark.Loader
   alias ExVrp.PenaltyManager
   alias ExVrp.Solution
@@ -69,11 +70,11 @@ defmodule ExVrp.ABBenchmark.Runner do
 
   defp run_instance(entry, seeds, budget_override, cap) do
     case safe_load(entry) do
-      {:ok, model} ->
-        n = ExVrp.Model.num_locations(model)
+      {:ok, instance} ->
+        n = ExVrp.Model.num_locations(instance.model)
         budget_s = budget_override || budget_for(n, cap)
         Logger.warning("[bench] #{entry.id}: n=#{n}, budget=#{budget_s}s, seeds=#{inspect(seeds)}")
-        instance_record(entry, solve_seeds(model, seeds, budget_s))
+        instance_record(entry, solve_seeds(instance, seeds, budget_s))
 
       {:error, msg} ->
         Logger.warning("[bench] #{entry.id}: load failed — #{msg}")
@@ -88,10 +89,10 @@ defmodule ExVrp.ABBenchmark.Runner do
       {:error, Exception.message(e)}
   end
 
-  defp solve_seeds(model, seeds, budget_s) do
+  defp solve_seeds(instance, seeds, budget_s) do
     seeds
     |> Task.async_stream(
-      fn seed -> {seed, solve_once(model, budget_s, seed)} end,
+      fn seed -> {seed, solve_once(instance, budget_s, seed)} end,
       max_concurrency: length(seeds),
       timeout: round(budget_s * 1000) + 60_000,
       on_timeout: :kill_task,
@@ -117,12 +118,17 @@ defmodule ExVrp.ABBenchmark.Runner do
   end
 
   @dialyzer {:nowarn_function, solve_once: 3}
-  defp solve_once(model, budget_s, seed) do
+  defp solve_once(%Instance{model: model, penalty_params: penalty_params}, budget_s, seed) do
     {elapsed_us, outcome} =
       :timer.tc(fn ->
         try do
           {:ok, result} =
-            ExVrp.solve(model, stop: StoppingCriteria.max_runtime(budget_s), seed: seed, num_starts: 1)
+            ExVrp.solve(model,
+              stop: StoppingCriteria.max_runtime(budget_s),
+              seed: seed,
+              num_starts: 1,
+              penalty_params: penalty_params
+            )
 
           {:ok, result}
         rescue

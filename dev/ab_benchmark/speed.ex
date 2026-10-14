@@ -16,28 +16,48 @@ defmodule ExVrp.ABBenchmark.Speed do
 
   Valgrind cannot run the BEAM's JIT, so each solve runs on the interpreter-only Erlang
   that `interpreter_erlang.nix` builds from devenv's nixpkgs pin, with no super carrier
-  (`+MMscs 0`), whose memory mapping Valgrind also cannot follow.
+  (`+MMscs 0`), whose memory mapping Valgrind also cannot follow. Valgrind runs one
+  thread at a time, and its default scheduling lets a thread spinning on a lock hold the
+  CPU while the thread that owns the lock waits: on a busy runner, a BEAM solve under it
+  once ran past thirty minutes against five on the run before. `--fair-sched=yes` hands
+  the CPU over in order. It changes when each thread runs, not what the solver executes,
+  so every count stays the same.
+
+  The corpus is listed longest-running first. Instances measure as many at a time as
+  there are schedulers, in list order, so the long ones start at once instead of
+  queueing behind the short ones; on a four-core runner the job then takes as long as
+  its longest instance. Order changes no count, only when each one is taken.
+
+  A solve runs under a thirty-minute time limit, so one that runs away fails
+  with its instance named instead of silently holding the job until the CI timeout; and
+  every finished instance is logged, so a slow job shows how far it got.
   """
 
   alias ExVrp.ABBenchmark.Corpus
+  alias ExVrp.ABBenchmark.Instance
   alias ExVrp.ABBenchmark.Loader
   alias ExVrp.ABBenchmark.SpeedMeasurementError
   alias ExVrp.StoppingCriteria
 
+  require Logger
+
   @corpus [
-    {"pc_R1_10_4", 200},
-    {"pc_RC1_10_4", 200},
+    {"prod_clients_125", 150},
+    {"prodbrk_clients_125", 50},
     {"cvrp_X-n439-k37", 400},
     {"c201", 600},
+    {"pc_RC1_10_4", 200},
     {"mtr_R204R0.25", 400},
-    {"prod_oban-966284", 150},
-    {"prodbrk_oban-966207", 50}
+    {"pc_R1_10_4", 200}
   ]
 
   @interpreter_erlang_nix Path.expand("interpreter_erlang.nix", __DIR__)
   @nif_entry_points "*(enif_environment_t*, int, unsigned long const*)*"
   @valgrind_compatible_beam_flags ~w(+MMscs 0 +sbwt none +sbwtdcpu none +sbwtdio none)
   @solve_marker "BENCH_SPEED"
+  @solve_time_limit_s 1_800
+  @timed_out_status 124
+  @killed_status 137
 
   @spec corpus() :: [{String.t(), pos_integer()}]
   def corpus, do: @corpus
@@ -62,11 +82,16 @@ defmodule ExVrp.ABBenchmark.Speed do
 
   @spec solve(String.t(), pos_integer()) :: :ok
   def solve(id, iterations) do
-    model = id |> corpus_entry() |> Loader.load()
+    %Instance{model: model, penalty_params: penalty_params} = id |> corpus_entry() |> Loader.load()
     start_instrumentation()
 
     {:ok, result} =
-      ExVrp.solve(model, stop: StoppingCriteria.max_iterations(iterations), seed: 1, num_starts: 1)
+      ExVrp.solve(model,
+        stop: StoppingCriteria.max_iterations(iterations),
+        seed: 1,
+        num_starts: 1,
+        penalty_params: penalty_params
+      )
 
     IO.puts("#{@solve_marker} distance=#{result.best.distance}")
   end
@@ -90,11 +115,13 @@ defmodule ExVrp.ABBenchmark.Speed do
   defp measure(interpreter_erl, id, iterations) do
     {short_instructions, short_distance} = count_solve(interpreter_erl, id, iterations)
     {long_instructions, long_distance} = count_solve(interpreter_erl, id, 3 * iterations)
+    instructions_per_iteration = (long_instructions - short_instructions) / (2 * iterations)
+    Logger.warning("[speed] #{id}: #{round(instructions_per_iteration)} instructions per iteration")
 
     %{
       "iterations" => [iterations, 3 * iterations],
       "distances" => [short_distance, long_distance],
-      "instructions_per_iteration" => (long_instructions - short_instructions) / (2 * iterations)
+      "instructions_per_iteration" => instructions_per_iteration
     }
   end
 
@@ -119,7 +146,9 @@ defmodule ExVrp.ABBenchmark.Speed do
     File.mkdir_p!(out_dir)
 
     {output, status} =
-      System.cmd("valgrind", callgrind_args(out_dir) ++ [interpreter_erl | solve_args(id, iterations)],
+      System.cmd(
+        "timeout",
+        time_limit_args() ++ ["valgrind" | callgrind_args(out_dir)] ++ [interpreter_erl | solve_args(id, iterations)],
         env: [{"ERL_LIBS", erl_libs()}],
         stderr_to_stdout: true
       )
@@ -127,9 +156,12 @@ defmodule ExVrp.ABBenchmark.Speed do
     {counted(out_dir, id, status, output), solved_distance(id, output)}
   end
 
+  defp time_limit_args, do: ["--kill-after=30", "#{@solve_time_limit_s}"]
+
   defp callgrind_args(out_dir) do
     [
       "--tool=callgrind",
+      "--fair-sched=yes",
       "--trace-children=yes",
       "--trace-children-skip=*/callgrind_control,*/perl,*/vgdb",
       "--instr-atstart=no",
@@ -157,6 +189,20 @@ defmodule ExVrp.ABBenchmark.Speed do
     |> Path.wildcard()
     |> Enum.sum_by(&(&1 |> File.read!() |> instructions_from_callgrind_out()))
     |> nonzero_count(id)
+  end
+
+  defp counted(_out_dir, id, @timed_out_status, output) do
+    raise SpeedMeasurementError,
+      instance: id,
+      reason: "the solve did not finish within #{@solve_time_limit_s}s under Callgrind:\n#{output}"
+  end
+
+  defp counted(_out_dir, id, @killed_status, output) do
+    raise SpeedMeasurementError,
+      instance: id,
+      reason:
+        "the solve was killed: it ignored the stop at the #{@solve_time_limit_s}s time limit, " <>
+          "or ran out of memory:\n#{output}"
   end
 
   defp counted(_out_dir, id, status, output),

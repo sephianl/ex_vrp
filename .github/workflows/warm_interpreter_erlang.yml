@@ -1,0 +1,46 @@
+name: Warm the interpreter-only Erlang
+
+# The A/B benchmark's speed job runs every solve on an Erlang built without the JIT, which
+# takes about twelve minutes from source. A PR can only restore Actions caches saved by
+# itself or by main, and the A/B workflow never runs on main, so this saves the build from
+# main whenever what it is built from changes. Every PR then starts with it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - dev/ab_benchmark/interpreter_erlang.nix
+      - dev/ab_benchmark/interpreter_erlang.sh
+      - devenv.lock
+      - .github/workflows/warm_interpreter_erlang.yml
+  workflow_dispatch:
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore the interpreter-only Erlang
+        id: interpreter-erlang
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/interpreter-erlang-cache
+          key: interpreter-erlang-${{ runner.os }}-${{ hashFiles('dev/ab_benchmark/interpreter_erlang.nix', 'devenv.lock') }}
+
+      - name: Build the interpreter-only Erlang
+        if: steps.interpreter-erlang.outputs.cache-hit != 'true'
+        run: dev/ab_benchmark/interpreter_erlang.sh "$HOME/interpreter-erlang-cache"
+
+      - name: Save the interpreter-only Erlang
+        if: steps.interpreter-erlang.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/interpreter-erlang-cache
+          key: ${{ steps.interpreter-erlang.outputs.cache-primary-key }}
