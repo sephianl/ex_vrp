@@ -196,6 +196,14 @@ Local feature patches in the vendored core (not upstream lag): same-vehicle grou
 windows, reload/multi-trip pricing, depot-service removal, penalty channel, forbidden locations,
 vehicle locks.
 
+Local speed patch: `CostEvaluator::deltaCost` prices only `ProblemData::loadedDimensions()` (a
+copy lives on each `search::Route`, next to its load data), not every load dimension. Exact:
+nothing can exceed capacity in a dimension no client or vehicle type loads. Zelo models declare
+every capacity type its vehicles carry but the production plannings use one, so 5 of 8 dimensions are
+unused: −23–34% instructions per iteration on the production corpus. Tried and dropped: a
+delivery prefix sum for `SegmentBetween::load()` on pickup-free dimensions — exact, but no
+measurable gain, as long between-segments are rare.
+
 ## NIF Layer
 
 Resources are reference-counted `shared_ptr`s: `ProblemData`, `Solution` (holds its

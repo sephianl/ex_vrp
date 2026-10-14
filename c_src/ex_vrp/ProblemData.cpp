@@ -93,6 +93,40 @@ std::vector<bool> clientFlags(size_t numDepots,
 
     return flags;
 }
+
+bool putsLoadIn(std::vector<pyvrp::Load> const &loads, size_t dimension)
+{
+    return dimension < loads.size() && loads[dimension] != 0;
+}
+
+std::vector<size_t>
+dimensionsWithLoad(size_t numLoadDimensions,
+                   std::vector<ProblemData::Client> const &clients,
+                   std::vector<ProblemData::VehicleType> const &vehicleTypes)
+{
+    auto const isLoaded = [&](size_t dimension)
+    {
+        return std::any_of(clients.begin(),
+                           clients.end(),
+                           [&](auto const &client)
+                           {
+                               return putsLoadIn(client.delivery, dimension)
+                                      || putsLoadIn(client.pickup, dimension);
+                           })
+               || std::any_of(
+                   vehicleTypes.begin(),
+                   vehicleTypes.end(),
+                   [&](auto const &type)
+                   { return putsLoadIn(type.initialLoad, dimension); });
+    };
+
+    std::vector<size_t> dimensions;
+    for (size_t dimension = 0; dimension != numLoadDimensions; ++dimension)
+        if (isLoaded(dimension))
+            dimensions.push_back(dimension);
+
+    return dimensions;
+}
 }  // namespace
 
 ProblemData::Client::Client(std::vector<Load> delivery,
@@ -1011,7 +1045,9 @@ ProblemData::ProblemData(std::vector<Client> clients,
       isBreak_(clientFlags(depots_.size(), clients_, &Client::isBreak)),
       isRest_(clientFlags(depots_.size(), clients_, &Client::isRest)),
       hasBreaks_(std::find(isBreak_.begin(), isBreak_.end(), true)
-                 != isBreak_.end())
+                 != isBreak_.end()),
+      loadedDimensions_(
+          dimensionsWithLoad(numLoadDimensions_, clients_, vehicleTypes_))
 {
     validate();
 }

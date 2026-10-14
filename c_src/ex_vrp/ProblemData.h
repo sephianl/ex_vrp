@@ -806,6 +806,11 @@ private:
     // search::Route::Proposal, so problems without breaks skip counting them.
     bool const hasBreaks_;
 
+    // The load dimensions some client or vehicle type puts load in, ascending.
+    // Load is zero along every route in any other dimension, so it can never
+    // exceed capacity there, and move evaluation prices only these.
+    std::vector<size_t> const loadedDimensions_;
+
 public:
     bool operator==(ProblemData const &other) const = default;
 
@@ -1046,6 +1051,13 @@ public:
      */
     [[nodiscard]] size_t numLoadDimensions() const;
 
+    /**
+     * The load dimensions some client delivers or picks up in, or some vehicle
+     * type starts with load in, in ascending order. No route can exceed its
+     * capacity in any other dimension.
+     */
+    [[nodiscard]] inline std::vector<size_t> const &loadedDimensions() const;
+
     ProblemData(std::vector<Client> clients,
                 std::vector<Depot> depots,
                 std::vector<VehicleType> vehicleTypes,
@@ -1137,6 +1149,11 @@ Duration ProblemData::pauseDuration(VehicleType const &vehicleType,
 }
 
 bool ProblemData::hasBreaks() const { return hasBreaks_; }
+
+std::vector<size_t> const &ProblemData::loadedDimensions() const
+{
+    return loadedDimensions_;
+}
 
 bool ProblemData::hasForbiddenLocations() const { return hasForbidden_; }
 
