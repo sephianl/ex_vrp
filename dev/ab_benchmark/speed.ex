@@ -18,6 +18,11 @@ defmodule ExVrp.ABBenchmark.Speed do
   that `interpreter_erlang.nix` builds from devenv's nixpkgs pin, with no super carrier
   (`+MMscs 0`), whose memory mapping Valgrind also cannot follow.
 
+  The corpus is listed longest-running first. Instances measure as many at a time as
+  there are schedulers, in list order, so the long ones start at once instead of
+  queueing behind the short ones; on a four-core runner the job then takes as long as
+  its longest instance. Order changes no count, only when each one is taken.
+
   A solve runs under a thirty-minute time limit, so one that runs away fails
   with its instance named instead of silently holding the job until the CI timeout; and
   every finished instance is logged, so a slow job shows how far it got.
@@ -32,13 +37,13 @@ defmodule ExVrp.ABBenchmark.Speed do
   require Logger
 
   @corpus [
-    {"pc_R1_10_4", 200},
-    {"pc_RC1_10_4", 200},
+    {"prod_clients_125", 150},
+    {"prodbrk_clients_125", 50},
     {"cvrp_X-n439-k37", 400},
     {"c201", 600},
+    {"pc_RC1_10_4", 200},
     {"mtr_R204R0.25", 400},
-    {"prod_clients_125", 150},
-    {"prodbrk_clients_125", 50}
+    {"pc_R1_10_4", 200}
   ]
 
   @interpreter_erlang_nix Path.expand("interpreter_erlang.nix", __DIR__)
