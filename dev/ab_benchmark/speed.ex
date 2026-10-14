@@ -16,7 +16,12 @@ defmodule ExVrp.ABBenchmark.Speed do
 
   Valgrind cannot run the BEAM's JIT, so each solve runs on the interpreter-only Erlang
   that `interpreter_erlang.nix` builds from devenv's nixpkgs pin, with no super carrier
-  (`+MMscs 0`), whose memory mapping Valgrind also cannot follow.
+  (`+MMscs 0`), whose memory mapping Valgrind also cannot follow. Valgrind runs one
+  thread at a time, and its default scheduling lets a thread spinning on a lock hold the
+  CPU while the thread that owns the lock waits: on a busy runner, a BEAM solve under it
+  once ran past thirty minutes against five on the run before. `--fair-sched=yes` hands
+  the CPU over in order. It changes when each thread runs, not what the solver executes,
+  so every count stays the same.
 
   The corpus is listed longest-running first. Instances measure as many at a time as
   there are schedulers, in list order, so the long ones start at once instead of
@@ -52,6 +57,7 @@ defmodule ExVrp.ABBenchmark.Speed do
   @solve_marker "BENCH_SPEED"
   @solve_time_limit_s 1_800
   @timed_out_status 124
+  @killed_status 137
 
   @spec corpus() :: [{String.t(), pos_integer()}]
   def corpus, do: @corpus
@@ -155,6 +161,7 @@ defmodule ExVrp.ABBenchmark.Speed do
   defp callgrind_args(out_dir) do
     [
       "--tool=callgrind",
+      "--fair-sched=yes",
       "--trace-children=yes",
       "--trace-children-skip=*/callgrind_control,*/perl,*/vgdb",
       "--instr-atstart=no",
@@ -188,6 +195,14 @@ defmodule ExVrp.ABBenchmark.Speed do
     raise SpeedMeasurementError,
       instance: id,
       reason: "the solve did not finish within #{@solve_time_limit_s}s under Callgrind:\n#{output}"
+  end
+
+  defp counted(_out_dir, id, @killed_status, output) do
+    raise SpeedMeasurementError,
+      instance: id,
+      reason:
+        "the solve was killed: it ignored the stop at the #{@solve_time_limit_s}s time limit, " <>
+          "or ran out of memory:\n#{output}"
   end
 
   defp counted(_out_dir, id, status, output),
