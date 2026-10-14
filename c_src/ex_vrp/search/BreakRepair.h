@@ -34,6 +34,11 @@ namespace pyvrp::search
  * the cost, and every break on a route without clients or a break rule.
  * Materialising only while overrun is positive, and releasing only what adds
  * none, cannot undo one another.
+ *
+ * Rest clients are break clients, so they close the stretches this pass
+ * reads, but they are not in its pool: it never inserts one, and releases
+ * one only with every break on a route without clients or a break rule,
+ * since it could not put one back.
  */
 class BreakRepair
 {
@@ -49,7 +54,7 @@ class BreakRepair
     static constexpr size_t MAX_LEGS_PER_OVERRUN = 6;
 
     ProblemData const &data;
-    std::vector<size_t> breaks_;             // every break client
+    std::vector<size_t> breaks_;             // every break but the rests
     std::vector<Candidate> candidates_;      // scratch, per insert
     std::vector<Route::Node *> freeBreaks_;  // scratch, per insert
 

@@ -83,12 +83,13 @@ normaliseAllowed(std::vector<pyvrp::DynamicBitset> allowed,
     return std::vector<pyvrp::DynamicBitset>(numProfiles, all);
 }
 
-std::vector<bool> breakFlags(size_t numDepots,
-                             std::vector<ProblemData::Client> const &clients)
+std::vector<bool> clientFlags(size_t numDepots,
+                              std::vector<ProblemData::Client> const &clients,
+                              bool const ProblemData::Client::*flag)
 {
     std::vector<bool> flags(numDepots, false);
     for (auto const &client : clients)
-        flags.push_back(client.isBreak);
+        flags.push_back(client.*flag);
 
     return flags;
 }
@@ -104,7 +105,8 @@ ProblemData::Client::Client(std::vector<Load> delivery,
                             bool required,
                             std::optional<size_t> group,
                             std::string name,
-                            bool isBreak)
+                            bool isBreak,
+                            bool isRest)
     : serviceDuration(serviceDuration),
       twEarly(twEarly),
       twLate(twLate),
@@ -115,7 +117,8 @@ ProblemData::Client::Client(std::vector<Load> delivery,
       required(required),
       group(group),
       name(duplicate(name.data())),
-      isBreak(isBreak)
+      isBreak(isBreak),
+      isRest(isRest)
 {
     assert(delivery.size() == pickup.size());
 
@@ -163,6 +166,11 @@ ProblemData::Client::Client(std::vector<Load> delivery,
     // count as missing forever.
     if (isBreak && required)
         throw std::invalid_argument("break clients must not be required.");
+
+    // A rest is a kind of break: without the flag it would be a real client
+    // with a location, which a rest never is.
+    if (isRest && !isBreak)
+        throw std::invalid_argument("rest clients must be break clients.");
 }
 
 ProblemData::Client::Client(Client const &client)
@@ -176,7 +184,8 @@ ProblemData::Client::Client(Client const &client)
       required(client.required),
       group(client.group),
       name(duplicate(client.name)),
-      isBreak(client.isBreak)
+      isBreak(client.isBreak),
+      isRest(client.isRest)
 {
 }
 
@@ -191,7 +200,8 @@ ProblemData::Client::Client(Client &&client)
       required(client.required),
       group(client.group),
       name(client.name),  // we can steal
-      isBreak(client.isBreak)
+      isBreak(client.isBreak),
+      isRest(client.isRest)
 {
     client.name = nullptr;  // stolen
 }
@@ -211,7 +221,8 @@ bool ProblemData::Client::operator==(Client const &other) const
         && required == other.required
         && group == other.group
         && std::strcmp(name, other.name) == 0
-        && isBreak == other.isBreak;
+        && isBreak == other.isBreak
+        && isRest == other.isRest;
     // clang-format on
 }
 
@@ -424,7 +435,8 @@ ProblemData::VehicleType::VehicleType(
     Duration maxWorkBetweenBreaks,
     Duration driveCarryIn,
     Duration workCarryIn,
-    Duration workAfterEnd)
+    Duration workAfterEnd,
+    Duration restDuration)
     : numAvailable(numAvailable),
       startDepot(startDepot),
       endDepot(endDepot),
@@ -452,6 +464,7 @@ ProblemData::VehicleType::VehicleType(
       driveCarryIn(driveCarryIn),
       workCarryIn(workCarryIn),
       workAfterEnd(workAfterEnd),
+      restDuration(restDuration),
       forbiddenWindows(std::move(forbiddenWindows)),
       name(duplicate(name.data()))
 {
@@ -506,6 +519,9 @@ ProblemData::VehicleType::VehicleType(
 
     if (breakDuration < 0)
         throw std::invalid_argument("break_duration must be >= 0.");
+
+    if (restDuration < 0)
+        throw std::invalid_argument("rest_duration must be >= 0.");
 
     // A limit without a break to reset it, or a break with no limit to reset,
     // is a half-configured rule.
@@ -564,6 +580,7 @@ ProblemData::VehicleType::VehicleType(VehicleType const &vehicleType)
       driveCarryIn(vehicleType.driveCarryIn),
       workCarryIn(vehicleType.workCarryIn),
       workAfterEnd(vehicleType.workAfterEnd),
+      restDuration(vehicleType.restDuration),
       forbiddenWindows(vehicleType.forbiddenWindows),
       name(duplicate(vehicleType.name))
 {
@@ -597,6 +614,7 @@ ProblemData::VehicleType::VehicleType(VehicleType &&vehicleType)
       driveCarryIn(vehicleType.driveCarryIn),
       workCarryIn(vehicleType.workCarryIn),
       workAfterEnd(vehicleType.workAfterEnd),
+      restDuration(vehicleType.restDuration),
       forbiddenWindows(std::move(vehicleType.forbiddenWindows)),
       name(vehicleType.name)  // we can steal
 {
@@ -640,6 +658,7 @@ bool ProblemData::VehicleType::operator==(VehicleType const &other) const
         && driveCarryIn == other.driveCarryIn
         && workCarryIn == other.workCarryIn
         && workAfterEnd == other.workAfterEnd
+        && restDuration == other.restDuration
         && unitOvertimeCost == other.unitOvertimeCost
         && overtimeStart == other.overtimeStart
         && forbiddenWindows == other.forbiddenWindows
@@ -989,7 +1008,8 @@ ProblemData::ProblemData(std::vector<Client> clients,
           || std::any_of(vehicleTypes_.begin(),
                          vehicleTypes_.end(),
                          hasTimeWindow<VehicleType>)),
-      isBreak_(breakFlags(depots_.size(), clients_)),
+      isBreak_(clientFlags(depots_.size(), clients_, &Client::isBreak)),
+      isRest_(clientFlags(depots_.size(), clients_, &Client::isRest)),
       hasBreaks_(std::find(isBreak_.begin(), isBreak_.end(), true)
                  != isBreak_.end())
 {

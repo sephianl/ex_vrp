@@ -56,6 +56,7 @@ defmodule ExVrp.Native do
     problem_data_num_load_dims: 1,
     problem_data_num_clients: 1,
     problem_data_break_clients: 1,
+    problem_data_rest_clients: 1,
     problem_data_num_depots: 1,
     problem_data_num_locations: 1,
     problem_data_num_vehicle_types: 1,
@@ -471,10 +472,17 @@ defmodule ExVrp.Native do
   def problem_data_num_clients(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
-  The location indices of the break clients `ExVrp.Model` adds, in order.
+  The location indices of the break clients `ExVrp.Model` adds, in order. Rest clients are left
+  out (see `problem_data_rest_clients/1`).
   """
   @spec problem_data_break_clients(reference()) :: [non_neg_integer()]
   def problem_data_break_clients(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  The location indices of the rest clients, in order: break clients that last the rest duration.
+  """
+  @spec problem_data_rest_clients(reference()) :: [non_neg_integer()]
+  def problem_data_rest_clients(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Gets the number of depots from ProblemData.

@@ -47,7 +47,7 @@ defmodule ExVrp.ABBenchmark.Report do
   defp results_heading(_results), do: "Changes beyond noise:"
 
   defp speed_coverage(:not_measured),
-    do: ["", "Speed not measured: the speed job did not run (a fork PR, or no self-hosted runner)."]
+    do: ["", "Speed not measured: the comparison was given no `mix bench.speed` results."]
 
   defp speed_coverage(_speed_rows), do: []
 

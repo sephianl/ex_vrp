@@ -22,8 +22,6 @@ defmodule Mix.Tasks.Bench.Run do
   alias ExVrp.ABBenchmark.Corpus
   alias ExVrp.ABBenchmark.Runner
 
-  require Logger
-
   @requirements ["app.config"]
 
   @impl Mix.Task

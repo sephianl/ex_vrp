@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.16.0
+
+### Added
+
+- Rest clients: a break client flagged `:is_rest` lasts its vehicle type's new `:rest_duration`
+  instead of its `:break_duration`. Like a break it resets both break clocks; the break pool never
+  holds one, so the search never places one and a warm start's `:break` marker is never given one.
+  Break repair never releases a rest from a route that still has clients, so one given in
+  `:initial_routes` stays where it was put.
+  `Solution.warm_start/1` keeps a rest as its own client index, and
+  `Native.problem_data_rest_clients/1` lists them (`problem_data_break_clients/1` now leaves them
+  out). Groundwork for daily rests that end a duty period.
+
 ## 0.15.0
 
 ### Added

@@ -612,17 +612,20 @@ defmodule ExVrp.Solver do
   # the handful of drops the arithmetic actually calls for.
   defp best_removal(nil, _solution, _problem_data), do: :no_removal
 
-  # The rebuild keeps the route's break clients, so positions count them too, but a break is never
-  # the visit given up: dropping one only trades its duration for clock overrun.
+  # The rebuild keeps the route's break and rest clients, so positions count them too, but neither
+  # is ever the visit given up: dropping one only trades its duration for clock overrun.
   defp best_removal({_visits, route_idx}, solution, problem_data) do
     typed = WarmStart.vehicle_type_trips(solution)
-    breaks = problem_data |> Native.problem_data_break_clients() |> MapSet.new()
+
+    breaks_and_rests =
+      MapSet.new(Native.problem_data_break_clients(problem_data) ++ Native.problem_data_rest_clients(problem_data))
+
     {_vehicle_type, trips} = Enum.at(typed, route_idx)
 
     trips
     |> Enum.flat_map(& &1.clients)
     |> Enum.with_index()
-    |> Enum.reject(fn {client, _position} -> MapSet.member?(breaks, client) end)
+    |> Enum.reject(fn {client, _position} -> MapSet.member?(breaks_and_rests, client) end)
     |> Enum.map(fn {_client, position} -> rebuild_without(typed, route_idx, position, problem_data) end)
     |> Enum.filter(&match?({:ok, _candidate}, &1))
     |> least_violating()

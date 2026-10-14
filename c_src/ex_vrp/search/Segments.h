@@ -176,7 +176,7 @@ public:
     BreakSegment(ProblemData const &data, size_t client, size_t count = 1)
         : data(data), client(client), count(count)
     {
-        assert(data.isBreak(client));
+        assert(data.isBreak(client) && !data.isRest(client));
         assert(count >= 1);
     }
 

@@ -45,7 +45,7 @@ Requires C++20 compiler (gcc 11+ or clang 14+).
 > **Compiler matters for speed:** the Linux release NIF is built with ubuntu-latest's GCC 13, and
 > GCC 13, GCC 15 and Clang inline the search differently enough to move it by 5–10%. devenv pins
 > GCC 13 (`devenv.nix`) so local builds and the CI A/B measure what ships. Measure solver speed as
-> `perf stat -e instructions:u` at a fixed iteration count, not wall-clock on a busy machine. Keep the
+> instructions at a fixed iteration count (`mix bench.speed`), not wall-clock on a busy machine. Keep the
 > break-free path free of break work: break-only code goes in `[[gnu::noinline]]` helpers, and the
 > small hot accessors are `[[gnu::always_inline]]`, so no compiler's size heuristics evict them.
 

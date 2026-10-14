@@ -459,6 +459,7 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
     int64_t prize = 0;
     bool required = true;
     bool is_break = false;
+    bool is_rest = false;
     std::optional<size_t> group = std::nullopt;
 
     ERL_NIF_TERM key, value;
@@ -557,6 +558,14 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                     is_break = (std::string(buf) == "true");
                 }
             }
+            else if (key_str == "is_rest")
+            {
+                char buf[32];
+                if (enif_get_atom(env, value, buf, sizeof(buf), ERL_NIF_LATIN1))
+                {
+                    is_rest = (std::string(buf) == "true");
+                }
+            }
             else if (key_str == "group")
             {
                 // Check for nil
@@ -599,7 +608,8 @@ ProblemData::Client decode_client([[maybe_unused]] ErlNifEnv *env,
                                required,
                                group,
                                std::string(""),  // name
-                               is_break);
+                               is_break,
+                               is_rest);
 }
 
 // Decode a single depot from Elixir map
@@ -687,6 +697,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     int64_t drive_carry_in = 0;
     int64_t work_carry_in = 0;
     int64_t work_after_end = 0;
+    int64_t rest_duration = 0;
     int64_t unit_distance_cost = 1;
     int64_t unit_duration_cost = 0;
     int64_t profile = 0;
@@ -889,6 +900,10 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
             {
                 nif_get_int64(env, value, &break_duration);
             }
+            else if (key_str == "rest_duration")
+            {
+                nif_get_int64(env, value, &rest_duration);
+            }
             else if (key_str == "unit_distance_cost")
             {
                 nif_get_int64(env, value, &unit_distance_cost);
@@ -1060,7 +1075,8 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
         Duration(max_work_between_breaks),
         Duration(drive_carry_in),
         Duration(work_carry_in),
-        Duration(work_after_end));
+        Duration(work_after_end),
+        Duration(rest_duration));
 }
 
 // Decode distance/duration matrix from nested list
@@ -3342,25 +3358,45 @@ int64_t problem_data_num_clients(
 
 FINE_NIF(problem_data_num_clients, 0);
 
+namespace
+{
+// The location indices of the break clients whose isRest equals rests.
+std::vector<int64_t> pauseClients(ProblemData const &data, bool rests)
+{
+    std::vector<int64_t> clients;
+    for (size_t client = data.numDepots(); client != data.numLocations();
+         ++client)
+        if (data.isBreak(client) && data.isRest(client) == rests)
+            clients.push_back(static_cast<int64_t>(client));
+
+    return clients;
+}
+}  // namespace
+
 /**
- * The break clients' location indices, in order.
+ * The break clients' location indices, in order. Rest clients are left out:
+ * they are not interchangeable with breaks.
  */
 std::vector<int64_t> problem_data_break_clients(
     [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
-    auto const &data = *problem_resource->data;
-
-    std::vector<int64_t> breaks;
-    for (size_t client = data.numDepots(); client != data.numLocations();
-         ++client)
-        if (data.isBreak(client))
-            breaks.push_back(static_cast<int64_t>(client));
-
-    return breaks;
+    return pauseClients(*problem_resource->data, false);
 }
 
 FINE_NIF(problem_data_break_clients, 0);
+
+/**
+ * The rest clients' location indices, in order.
+ */
+std::vector<int64_t> problem_data_rest_clients(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<ProblemDataResource> problem_resource)
+{
+    return pauseClients(*problem_resource->data, true);
+}
+
+FINE_NIF(problem_data_rest_clients, 0);
 
 /**
  * Get the number of depots from ProblemData.

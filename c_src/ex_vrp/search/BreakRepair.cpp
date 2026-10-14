@@ -13,7 +13,7 @@ BreakRepair::BreakRepair(ProblemData const &data) : data(data)
 {
     for (size_t client = data.numDepots(); client != data.numLocations();
          ++client)
-        if (data.isBreak(client))
+        if (data.isBreak(client) && !data.isRest(client))
             breaks_.push_back(client);
 }
 
@@ -188,7 +188,8 @@ bool BreakRepair::removeRedundant(Route &route,
     // Backwards, so a removal leaves the indices still to visit in place.
     for (size_t idx = route.size() - 1; idx-- > 1;)
     {
-        if (!data.isBreak(route[idx]->client()))
+        auto const client = route[idx]->client();
+        if (!data.isBreak(client) || data.isRest(client))
             continue;
 
         Route::Proposal const proposal(route.before(idx - 1),
