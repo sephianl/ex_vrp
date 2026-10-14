@@ -134,10 +134,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-mix-
 
-      # Built from source on a cold Nix cache (about ten minutes), so it gets its own step
-      # rather than hiding inside the first count.
+      # Built from source it takes about twelve minutes, so it is kept as a Nix binary cache in
+      # the Actions cache, keyed on what it is built from. `warm_interpreter_erlang.yml` saves
+      # it from main, which every PR can restore; a PR that changes the key builds and saves
+      # its own.
+      - name: Restore the interpreter-only Erlang
+        id: interpreter-erlang
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/interpreter-erlang-cache
+          key: interpreter-erlang-${{ runner.os }}-${{ hashFiles('dev/ab_benchmark/interpreter_erlang.nix', 'devenv.lock') }}
+
       - name: Build the interpreter-only Erlang
-        run: nix build --no-link -f dev/ab_benchmark/interpreter_erlang.nix
+        run: dev/ab_benchmark/interpreter_erlang.sh "$HOME/interpreter-erlang-cache"
+
+      - name: Save the interpreter-only Erlang
+        if: steps.interpreter-erlang.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/interpreter-erlang-cache
+          key: ${{ steps.interpreter-erlang.outputs.cache-primary-key }}
 
       - name: Fetch and compile dependencies
         run: |
