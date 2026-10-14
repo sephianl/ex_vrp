@@ -20,6 +20,7 @@ defmodule ExVrp.ABBenchmark.Speed do
   """
 
   alias ExVrp.ABBenchmark.Corpus
+  alias ExVrp.ABBenchmark.Instance
   alias ExVrp.ABBenchmark.Loader
   alias ExVrp.ABBenchmark.SpeedMeasurementError
   alias ExVrp.StoppingCriteria
@@ -30,8 +31,8 @@ defmodule ExVrp.ABBenchmark.Speed do
     {"cvrp_X-n439-k37", 400},
     {"c201", 600},
     {"mtr_R204R0.25", 400},
-    {"prod_oban-966284", 150},
-    {"prodbrk_oban-966207", 50}
+    {"prod_clients_125", 150},
+    {"prodbrk_clients_125", 50}
   ]
 
   @interpreter_erlang_nix Path.expand("interpreter_erlang.nix", __DIR__)
@@ -62,11 +63,16 @@ defmodule ExVrp.ABBenchmark.Speed do
 
   @spec solve(String.t(), pos_integer()) :: :ok
   def solve(id, iterations) do
-    model = id |> corpus_entry() |> Loader.load()
+    %Instance{model: model, penalty_params: penalty_params} = id |> corpus_entry() |> Loader.load()
     start_instrumentation()
 
     {:ok, result} =
-      ExVrp.solve(model, stop: StoppingCriteria.max_iterations(iterations), seed: 1, num_starts: 1)
+      ExVrp.solve(model,
+        stop: StoppingCriteria.max_iterations(iterations),
+        seed: 1,
+        num_starts: 1,
+        penalty_params: penalty_params
+      )
 
     IO.puts("#{@solve_marker} distance=#{result.best.distance}")
   end

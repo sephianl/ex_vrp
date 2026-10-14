@@ -2,6 +2,7 @@ defmodule ExVrp.ABBenchmark.CorpusTest do
   use ExUnit.Case, async: true
 
   alias ExVrp.ABBenchmark.Corpus
+  alias ExVrp.ABBenchmark.Instance
   alias ExVrp.ABBenchmark.Loader
   alias ExVrp.Model
 
@@ -37,7 +38,7 @@ defmodule ExVrp.ABBenchmark.CorpusTest do
 
   test "a break twin loads with limits between breaks on every vehicle type" do
     entry = Enum.find(Corpus.entries(), &(&1.variant == :production_breaks))
-    model = Loader.load(entry)
+    %Instance{model: model} = Loader.load(entry)
 
     assert Enum.all?(model.vehicle_types, &(&1.break_duration > 0 and &1.max_drive_between_breaks != :infinity))
     assert Model.validate(model) == :ok

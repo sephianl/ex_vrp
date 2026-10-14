@@ -13,14 +13,22 @@ defmodule ExVrp.ProductionBenchmarkTest do
 
   ## Adding new benchmarks
 
-  In Zelo, set `config :zelo, :benchmark_capture_dir, "path"` and run a
-  planning job. The anonymized model ETF will be written to that directory.
-  Copy it to `priv/benchmark_data/production/`.
+  Every Zelo planning run uploads a `-prepared.etf` debug artefact. Rebuild its
+  model with `Zelo.Planner.Exvrp.ModelBuilder.build_model/1` at the Zelo release
+  that ran it (the artefact's shape follows the builder, not its
+  `schema_version`), rename every client, depot, vehicle type and group to an
+  index-based name, and write the base64-encoded ETF of
+  `%{model: model, penalty_params: ExvrpSolver.penalty_params()}` to
+  `priv/benchmark_data/production/clients_<count>_model.etf`, so it is solved
+  under the penalty bounds of its cost scale (see `ExVrp.ABBenchmark.Loader`).
+  This repository is public: no Zelo id, customer or depot name may survive
+  into the file.
   """
 
   use ExUnit.Case, async: true
 
   alias ExVrp.ABBenchmark.Corpus
+  alias ExVrp.ABBenchmark.Instance
   alias ExVrp.ABBenchmark.Loader
   alias ExVrp.StoppingCriteria
 
@@ -47,14 +55,19 @@ defmodule ExVrp.ProductionBenchmarkTest do
 
   defp run_benchmark(file) do
     name = Path.basename(file, "_model.etf")
-    model = load_model(file)
+    %Instance{model: model, penalty_params: penalty_params} = load_instance(file)
     n = ExVrp.Model.num_locations(model)
     plannable = plannable_count(model)
     timeout_s = round(102.6622 * :math.exp(0.00096445 * n))
 
     Logger.warning("[benchmark] #{name}: n=#{n}, plannable=#{plannable}, timeout=#{timeout_s}s")
 
-    {:ok, result} = ExVrp.solve(model, stop: StoppingCriteria.max_runtime(timeout_s), num_starts: 1)
+    {:ok, result} =
+      ExVrp.solve(model,
+        stop: StoppingCriteria.max_runtime(timeout_s),
+        num_starts: 1,
+        penalty_params: penalty_params
+      )
 
     Logger.warning("[benchmark] #{name}: done — #{result.best.num_clients}/#{plannable} clients")
 
@@ -80,7 +93,7 @@ defmodule ExVrp.ProductionBenchmarkTest do
   end
 
   defp run_quick_benchmark(file) do
-    model = load_model(file)
+    %Instance{model: model, penalty_params: penalty_params} = load_instance(file)
     plannable = plannable_count(model)
     n = ExVrp.Model.num_locations(model)
     # Scale timeout with problem size: ~5s for small, ~30s for large
@@ -90,7 +103,9 @@ defmodule ExVrp.ProductionBenchmarkTest do
       @seeds
       |> Task.async_stream(
         fn seed ->
-          {:ok, result} = ExVrp.solve(model, max_runtime: timeout_ms, seed: seed, num_starts: 1)
+          {:ok, result} =
+            ExVrp.solve(model, max_runtime: timeout_ms, seed: seed, num_starts: 1, penalty_params: penalty_params)
+
           {seed, result}
         end,
         max_concurrency: System.schedulers_online(),
@@ -143,7 +158,7 @@ defmodule ExVrp.ProductionBenchmarkTest do
     length(ungrouped) + length(Enum.uniq_by(grouped, & &1.group))
   end
 
-  defp load_model(file) do
+  defp load_instance(file) do
     Loader.load(%Corpus.Entry{
       id: Path.basename(file, "_model.etf"),
       variant: :production,
