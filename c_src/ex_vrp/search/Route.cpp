@@ -298,49 +298,100 @@ void Route::updateClocks()
     resetBounds_.push_back(size - 1);
     legBreaks_.push_back(0);
 
-    updateClock<ClockQuantity::Drive>();
-    updateClock<ClockQuantity::Work>();
+    updateCum<ClockQuantity::Drive>();
+    updateCum<ClockQuantity::Work>();
+
+    // A reset leg's breaks fall where the first of the stretches it continues
+    // reaches its limit, so each leg reads both clocks' starts before it.
+    auto const limits = vehicleType_.breakLimits();
+    auto &drive = clocks_[static_cast<size_t>(ClockQuantity::Drive)];
+    auto &work = clocks_[static_cast<size_t>(ClockQuantity::Work)];
+    drive.close.assign(1, 0);
+    drive.start.assign(1, 0);
+    work.close.assign(1, 0);
+    work.start.assign(1, 0);
+
+    for (size_t r = 1; r <= numResets(); ++r)
+    {
+        // Breaks alias to the node before them, so cum[idx - 1] is where the
+        // leg begins, and the leg's own travel is the last edge.
+        auto const idx = resetBounds_[r];
+        auto const ownDrive = clockAt<ClockQuantity::Drive>(idx);
+        auto const ownWork = clockAt<ClockQuantity::Work>(idx);
+        auto const edge = drive.cum[idx] - drive.cum[idx - 1] - ownDrive;
+        auto const driveStretch = drive.cum[idx - 1] - drive.start[r - 1];
+        auto const workStretch = work.cum[idx - 1] - work.start[r - 1];
+        auto const leg
+            = BreakPlacement::along(driveStretch, workStretch, edge, limits);
+
+        auto const place
+            = [&](ClockPrefix &prefix, Duration stretch, Duration own)
+        {
+            auto const across
+                = DriveClock::acrossBreaks(stretch, edge, legBreaks_[r], leg);
+            prefix.close.push_back(prefix.start[r - 1] + across.closed);
+            prefix.start.push_back(prefix.cum[idx] - own - across.after);
+        };
+
+        place(drive, driveStretch, ownDrive);
+        place(work, workStretch, ownWork);
+    }
+
+    updateStretches<ClockQuantity::Drive>();
+    updateStretches<ClockQuantity::Work>();
+
+#ifndef NDEBUG
+    // The prefix answers must match a plain fold over the same nodes, and
+    // the route cut before any non-break node must extend back to the whole.
+    if (size < 20)
+    {
+        auto const &durations = data.durationMatrix(profile());
+        auto const whole = foldClocks(0, size - 1, profile(), limits);
+        for (size_t idx = 0; idx != size; ++idx)
+        {
+            auto const before
+                = SegmentBefore(*this, idx).clocks(profile(), limits);
+            assert(before == foldClocks(0, idx, profile(), limits));
+            assert(SegmentAfter(*this, idx).clocks(profile(), limits)
+                   == foldClocks(idx, size - 1, profile(), limits));
+
+            auto const next = idx + 1;
+            if (next != size && !data.isBreak(visits[next]))
+                assert(SegmentAfter(*this, next)
+                           .extendClocks(before,
+                                         durations(locs_[idx], visits[next]),
+                                         profile(),
+                                         limits)
+                       == whole);
+        }
+    }
+#endif
 }
 
-template <ClockQuantity Quantity> void Route::updateClock()
+template <ClockQuantity Quantity> void Route::updateCum()
 {
-    auto const limit = breakLimit<Quantity>();
-    if (limit == std::numeric_limits<Duration>::max())
-        return;  // nothing reads this clock's structures without a limit
-
-    auto const &durations = data.durationMatrix(profile());
-    auto const size = nodes.size();
-    auto &[cum, close, start, excess, need]
-        = clocks_[static_cast<size_t>(Quantity)];
-
     // Each node's own quantity is part of cum, so the carry-in sits in cum[0]
     // and every SegmentBefore sees it; the work after the end sits in
     // cum.back(), where every SegmentAfter sees it.
+    auto const &durations = data.durationMatrix(profile());
+    auto const size = nodes.size();
+    auto &cum = clocks_[static_cast<size_t>(Quantity)].cum;
+
     cum.resize(size);
     cum[0] = clockAt<Quantity>(0);
     for (size_t idx = 1; idx != size; ++idx)
         cum[idx] = cum[idx - 1] + durations(locs_[idx - 1], locs_[idx])
                    + clockAt<Quantity>(idx);
+}
 
-    close.assign(1, 0);
-    start.assign(1, 0);
-
-    auto const numResets = this->numResets();
-    for (size_t r = 1; r <= numResets; ++r)
-    {
-        // Breaks alias to the node before them, so cum[idx - 1] is where the
-        // leg begins, and the leg's own drive is the last edge.
-        auto const idx = resetBounds_[r];
-        auto const own = clockAt<Quantity>(idx);
-        auto const drive = cum[idx] - cum[idx - 1] - own;
-        auto const prepaid = static_cast<Duration>(legBreaks_[r] - 1) * limit;
-        auto const after = drive > prepaid ? drive - prepaid : 0;
-
-        close.push_back(cum[idx - 1]);
-        start.push_back(cum[idx] - own - after);
-    }
-
+template <ClockQuantity Quantity> void Route::updateStretches()
+{
     // Stretch r, for 1 <= r < m, is closed on both sides by reset legs.
+    auto const limit = vehicleType_.breakLimit(Quantity);
+    auto const numResets = this->numResets();
+    auto &[cum, close, start, excess, need]
+        = clocks_[static_cast<size_t>(Quantity)];
+
     excess.assign(numResets + 1, 0);
     need.assign(numResets + 1, 0);
     for (size_t r = 2; r <= numResets; ++r)
@@ -349,19 +400,6 @@ template <ClockQuantity Quantity> void Route::updateClock()
         excess[r] = excess[r - 1] + DriveClock::clip(stretch, limit);
         need[r] = need[r - 1] + DriveClock::needOf(stretch, limit);
     }
-
-#ifndef NDEBUG
-    // The prefix answers must match a plain fold over the same nodes.
-    if (size < 20)
-        for (size_t idx = 0; idx != size; ++idx)
-        {
-            assert(
-                clockOf<Quantity>(SegmentBefore(*this, idx), profile(), limit)
-                == foldClock<Quantity>(0, idx, profile(), limit));
-            assert(clockOf<Quantity>(SegmentAfter(*this, idx), profile(), limit)
-                   == foldClock<Quantity>(idx, size - 1, profile(), limit));
-        }
-#endif
 }
 
 pyvrp::DurationSegment
@@ -655,13 +693,10 @@ void Route::update()
 
     // Clock overrun is priced as the breaks that would fix it, as in
     // Proposal::duration(); the true overrun is kept for BreakRepair.
-    auto const driveClock = wholeClock<ClockQuantity::Drive>();
-    auto const workClock = wholeClock<ClockQuantity::Work>();
-    totalClockExcess_ = driveClock.overrun(breakLimit<ClockQuantity::Drive>())
-                        + workClock.overrun(breakLimit<ClockQuantity::Work>());
-    virtualBreaks_ = vehicleType_.hasBreakRule()
-                         ? missingBreaks(driveClock, workClock, vehicleType_)
-                         : 0;
+    auto const clocks = wholeClocks();
+    auto const limits = vehicleType_.breakLimits();
+    totalClockExcess_ = clocks.overrun(limits);
+    virtualBreaks_ = vehicleType_.hasBreakRule() ? clocks.missing(limits) : 0;
 
     auto const extra
         = static_cast<Duration>(virtualBreaks_) * vehicleType_.breakDuration;

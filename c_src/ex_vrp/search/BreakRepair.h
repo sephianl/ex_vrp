@@ -58,8 +58,8 @@ class BreakRepair
     std::vector<Candidate> candidates_;      // scratch, per insert
     std::vector<Route::Node *> freeBreaks_;  // scratch, per insert
 
-    // Adds the legs a break could go on for each of the clock's overruns.
-    template <ClockQuantity Quantity> void addCandidates(Route const &route);
+    // Adds the legs a break could go on for each overrun of either clock.
+    void addCandidates(Route const &route);
 
     // Fills freeBreaks_ with up to count breaks not on any route.
     void collectFreeBreaks(Solution &solution, size_t count);

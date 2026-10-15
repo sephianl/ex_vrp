@@ -224,11 +224,13 @@ defmodule ExVrp.BreakNodesTest do
       assert with_break.duration == plain.duration + @break_duration
     end
 
-    test "a break on the first leg resets the clock before any driving" do
-      assert stats([@break, 1, 2], @long).clock_excess == 30
+    test "a break on a leg comes once the limit is reached, or at the leg's end" do
+      # The first leg's 100 never reaches 270, so its break comes at its end,
+      # and the 50 + 150 after it fits.
+      assert stats([@break, 1, 2], @long).clock_excess == 0
     end
 
-    test "each extra break on a leg pre-pays the limit of that leg's drive" do
+    test "each extra break on a leg takes another limit of that leg's drive" do
       # Client 1 sits 700 out, so the route drives 700 there and 700 back.
       # Clients 2 and 3 are both breaks.
       {:ok, data} =
@@ -246,11 +248,12 @@ defmodule ExVrp.BreakNodesTest do
         %Solution{solution_ref: ref, routes: [visits]} |> Solution.routes() |> hd() |> Route.clock_excess()
       end
 
-      # One break on the way out resets the clock before any drive: 1400 left.
-      assert excess.([2, 1]) == 1400 - 270
-      # A second one pre-pays 270 of the outbound 700: 430 + 700 left.
-      assert excess.([2, 3, 1]) == 1130 - 270
-      # Breaks on the way back: 700 before them, 700 - 270 after.
+      # One break on the way out comes 270 into it: 430 + 700 after it.
+      assert excess.([2, 1]) == 1130 - 270
+      # A second one comes another 270 on: 160 + 700 after it.
+      assert excess.([2, 3, 1]) == 860 - 270
+      # Breaks on the way back, already 700 in: the first comes at once, so
+      # 700 before them and 700 - 270 after.
       assert excess.([1, 2, 3]) == 700 - 270 + (430 - 270)
     end
 

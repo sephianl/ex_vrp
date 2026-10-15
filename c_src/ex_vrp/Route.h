@@ -32,9 +32,9 @@ class Route
     // Creates the data returned by ``schedule()``.
     void makeSchedule(ProblemData const &data);
 
-    // Drive or work clock overrun of the whole route; zero without its limit.
-    template <ClockQuantity Quantity>
-    [[nodiscard]] Duration foldClockExcess(ProblemData const &data) const;
+    // Both clocks over the whole route, folded together; empty without a
+    // break rule or clients.
+    [[nodiscard]] BreakClocks foldClocks(ProblemData const &data) const;
 
 public:
     /**

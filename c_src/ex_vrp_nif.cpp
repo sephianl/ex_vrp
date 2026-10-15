@@ -2113,7 +2113,8 @@ FINE_NIF(solution_route_work_clock_excess, 0);
 // Test-only drive clock NIFs. A token is {:leg, drive}, a drive to the next
 // real node; {:stop, service}, service at the real node reached last (or the
 // start node); or :break, a break on the leg after it. Routes start and end
-// at a real node. The quantity is :drive, which ignores service, or :work.
+// at a real node. Both clocks fold together under a drive and a work limit:
+// the drive clock ignores service, the work clock counts it.
 namespace
 {
 using ClockToken = std::variant<std::tuple<fine::Atom, int64_t>, fine::Atom>;
@@ -2128,51 +2129,57 @@ std::optional<Duration> legDrive(ClockToken const &token)
 }
 
 // Service of a stop token, counted only by the work clock; nullopt otherwise.
-std::optional<Duration> stopWork(ClockToken const &token, bool work)
+std::optional<Duration> stopService(ClockToken const &token)
 {
     if (auto const *stop = std::get_if<std::tuple<fine::Atom, int64_t>>(&token))
         if (std::get<0>(*stop) == "stop")
-            return Duration(work ? std::get<1>(*stop) : 0);
+            return Duration(std::get<1>(*stop));
 
     return std::nullopt;
 }
 
-// Adds a real node's own work to a clock ending at that node. Breaks already
+// Adds a real node's own work to clocks ending at that node. Breaks already
 // counted in trailRun sit on the next leg, so the work still precedes them.
-void addWork(DriveClock &clock, Duration work)
+void addWork(BreakClocks &clocks, Duration work)
 {
-    clock.tail += work;
-    if (clock.resets == 0)
-        clock.head += work;
+    clocks.work.tail += work;
+    if (clocks.work.resets == 0)
+        clocks.work.head += work;
 }
 
-// Folds tokens [begin, end) onto `clock`, which ends at a real node.
-DriveClock foldTokens(std::vector<ClockToken> const &tokens,
-                      size_t begin,
-                      size_t end,
-                      bool work,
-                      Duration limit,
-                      DriveClock clock = {})
+// Folds tokens [begin, end) onto `clocks`, which end at a real node.
+BreakClocks foldTokens(std::vector<ClockToken> const &tokens,
+                       size_t begin,
+                       size_t end,
+                       BreakLimits limits,
+                       BreakClocks clocks = {})
 {
     for (size_t idx = begin; idx != end; ++idx)
         if (auto const drive = legDrive(tokens[idx]))
-            clock = DriveClock::merge(clock, *drive, {}, limit);
-        else if (auto const service = stopWork(tokens[idx], work))
-            addWork(clock, *service);
+            clocks = BreakClocks::merge(clocks, *drive, {}, limits);
+        else if (auto const service = stopService(tokens[idx]))
+            addWork(clocks, *service);
         else
-            clock.trailRun++;
+            clocks.addTrailRun(1);
 
-    return clock;
+    return clocks;
 }
 
-bool isWork(fine::Atom const &quantity) { return quantity == "work"; }
-
 using ClockAnswer = std::tuple<int64_t, int64_t>;  // {overrun, missing}
+
+// {drive, work}
+using ClocksAnswer = std::tuple<ClockAnswer, ClockAnswer>;
 
 ClockAnswer answer(DriveClock const &clock, Duration limit)
 {
     return {static_cast<int64_t>(clock.overrun(limit).get()),
             static_cast<int64_t>(clock.missing(limit))};
+}
+
+ClocksAnswer answer(BreakClocks const &clocks, BreakLimits limits)
+{
+    return {answer(clocks.drive, limits.drive),
+            answer(clocks.work, limits.work)};
 }
 
 // Taken as a Term and decoded here, since fine cannot decode into a const
@@ -2183,31 +2190,31 @@ std::vector<ClockToken> decodeTokens(ErlNifEnv *env, fine::Term term)
 }
 }  // namespace
 
-ClockAnswer drive_clock_fold_nif(ErlNifEnv *env,
-                                 fine::Term tokensTerm,
-                                 fine::Atom quantity,
-                                 int64_t limit)
+ClocksAnswer drive_clock_fold_nif(ErlNifEnv *env,
+                                  fine::Term tokensTerm,
+                                  int64_t driveLimit,
+                                  int64_t workLimit)
 {
     auto const tokens = decodeTokens(env, tokensTerm);
-    auto const work = isWork(quantity);
-    return answer(foldTokens(tokens, 0, tokens.size(), work, limit), limit);
+    BreakLimits const limits = {driveLimit, workLimit};
+    return answer(foldTokens(tokens, 0, tokens.size(), limits), limits);
 }
 
 FINE_NIF(drive_clock_fold_nif, 0);
 
 // Folds tokens [0, split) and [split, end) separately, then merges the two
 // over the leg joining them, as SegmentBefore and SegmentAfter are merged.
-ClockAnswer drive_clock_fold_split_nif(ErlNifEnv *env,
-                                       fine::Term tokensTerm,
-                                       int64_t split,
-                                       fine::Atom quantity,
-                                       int64_t limit)
+ClocksAnswer drive_clock_fold_split_nif(ErlNifEnv *env,
+                                        fine::Term tokensTerm,
+                                        int64_t split,
+                                        int64_t driveLimit,
+                                        int64_t workLimit)
 {
     auto const tokens = decodeTokens(env, tokensTerm);
-    auto const work = isWork(quantity);
+    BreakLimits const limits = {driveLimit, workLimit};
     auto const mid = std::min(static_cast<size_t>(std::max<int64_t>(split, 0)),
                               tokens.size());
-    auto first = foldTokens(tokens, 0, mid, work, limit);
+    auto first = foldTokens(tokens, 0, mid, limits);
 
     // Segments split between real nodes, never inside one: stops before the
     // joining leg belong to the first part's last node. The second part's
@@ -2217,79 +2224,98 @@ ClockAnswer drive_clock_fold_split_nif(ErlNifEnv *env,
     for (auto joining = mid; joining != tokens.size(); ++joining)
         if (auto const edge = legDrive(tokens[joining]))
         {
-            DriveClock const lead = {.leadRun = leadRun};
-            auto const second = foldTokens(
-                tokens, joining + 1, tokens.size(), work, limit, lead);
+            BreakClocks lead;
+            lead.addLeadRun(leadRun);
+            auto const second
+                = foldTokens(tokens, joining + 1, tokens.size(), limits, lead);
 
-            return answer(DriveClock::merge(first, *edge, second, limit),
-                          limit);
+            return answer(BreakClocks::merge(first, *edge, second, limits),
+                          limits);
         }
-        else if (auto const service = stopWork(tokens[joining], work))
+        else if (auto const service = stopService(tokens[joining]))
             addWork(first, *service);
         else
             leadRun++;
 
     // No leg after the split, so no second real node: nothing to merge.
-    return answer(first, limit);
+    return answer(first, limits);
 }
 
 FINE_NIF(drive_clock_fold_split_nif, 0);
 
-// The spec's rule, walked directly: a leg carrying k >= 1 breaks closes the
-// stretch before it, and the next stretch starts with the leg's drive less
-// (k - 1) * limit. Work adds each stop's service to the open stretch; breaks
-// before the first leg sit on it and close the (carried-in) stretch there.
-ClockAnswer drive_clock_brute_nif(ErlNifEnv *env,
-                                  fine::Term tokensTerm,
-                                  fine::Atom quantity,
-                                  int64_t limit)
+// The spec's rule, walked the way a driver takes it: along a leg carrying
+// breaks, drive until either clock reaches its limit (or the leg ends), take a
+// break, which stops both clocks, and repeat for each break the leg carries;
+// whatever is left of the leg starts the next stretches. Travel counts on
+// both clocks, each stop's service on the work clock only; breaks before the
+// first leg sit on it.
+ClocksAnswer drive_clock_brute_nif(ErlNifEnv *env,
+                                   fine::Term tokensTerm,
+                                   int64_t driveLimit,
+                                   int64_t workLimit)
 {
-    auto const tokens = decodeTokens(env, tokensTerm);
-    auto const work = isWork(quantity);
-    int64_t overrun = 0;
-    int64_t missing = 0;
-    int64_t stretch = 0;
-    int64_t breaks = 0;
-
-    // Breaks a stretch lacks: the smallest m with stretch <= (m + 1) * limit.
-    auto const lacking = [limit](int64_t drive)
+    struct Clock
     {
-        int64_t m = 0;
-        while (drive > (m + 1) * limit)
-            m++;
-        return m;
+        int64_t limit = 0;
+        int64_t stretch = 0;
+        int64_t overrun = 0;
+        int64_t missing = 0;
+
+        // Ends the open stretch, counting its overrun and the breaks it
+        // lacks: the smallest m with stretch <= (m + 1) * limit.
+        void close()
+        {
+            overrun += std::max<int64_t>(stretch - limit, 0);
+            for (int64_t m = 1; stretch > m * limit; ++m)
+                missing++;
+            stretch = 0;
+        }
+
+        [[nodiscard]] int64_t room() const
+        {
+            return std::max<int64_t>(limit - stretch, 0);
+        }
     };
+
+    auto const tokens = decodeTokens(env, tokensTerm);
+    Clock drive = {.limit = driveLimit};
+    Clock work = {.limit = workLimit};
+    int64_t breaks = 0;
 
     for (auto const &token : tokens)
     {
-        if (auto const service = stopWork(token, work))
+        if (auto const service = stopService(token))
         {
-            stretch += static_cast<int64_t>(service->get());
+            work.stretch += static_cast<int64_t>(service->get());
             continue;
         }
 
-        auto const drive = legDrive(token);
-        if (!drive)
+        auto const leg = legDrive(token);
+        if (!leg)
         {
             breaks++;
             continue;
         }
 
-        auto const leg = static_cast<int64_t>(drive->get());
-        if (breaks == 0)
+        auto left = static_cast<int64_t>(leg->get());
+        for (; breaks != 0; --breaks)
         {
-            stretch += leg;
-            continue;
+            auto const driven = std::clamp<int64_t>(
+                std::min(drive.room(), work.room()), 0, left);
+            left -= driven;
+            drive.stretch += driven;
+            work.stretch += driven;
+            drive.close();
+            work.close();
         }
 
-        overrun += std::max<int64_t>(stretch - limit, 0);
-        missing += lacking(stretch);
-        stretch = std::max<int64_t>(leg - (breaks - 1) * limit, 0);
-        breaks = 0;
+        drive.stretch += left;
+        work.stretch += left;
     }
 
-    return {overrun + std::max<int64_t>(stretch - limit, 0),
-            missing + lacking(stretch)};
+    drive.close();
+    work.close();
+    return {{drive.overrun, drive.missing}, {work.overrun, work.missing}};
 }
 
 FINE_NIF(drive_clock_brute_nif, 0);
