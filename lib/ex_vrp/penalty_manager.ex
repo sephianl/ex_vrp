@@ -78,15 +78,7 @@ defmodule ExVrp.PenaltyManager do
   @spec init_from(reference(), Params.t()) :: t()
   def init_from(problem_data, params \\ %Params{}) do
     num_dims = Native.problem_data_num_load_dims(problem_data)
-    num_locs = Native.problem_data_num_locations(problem_data)
-
-    edge_costs = compute_min_edge_costs(problem_data)
-    min_distances = compute_min_matrix(problem_data, &Native.problem_data_distance_matrix_nif/2)
-    min_durations = compute_min_matrix(problem_data, &Native.problem_data_duration_matrix_nif/2)
-
-    avg_cost = matrix_avg(edge_costs, num_locs)
-    avg_distance = matrix_avg(min_distances, num_locs)
-    avg_duration = matrix_avg(min_durations, num_locs)
+    {avg_cost, avg_distance, avg_duration} = Native.problem_data_mean_edge_measures(problem_data)
 
     # For load penalty, use max_penalty since we don't have easy access to
     # pickup/delivery data here. The penalty manager will adapt during search.
@@ -113,57 +105,6 @@ defmodule ExVrp.PenaltyManager do
       end
 
     new(init_load, init_tw, init_dist, params)
-  end
-
-  defp compute_min_edge_costs(problem_data) do
-    problem_data
-    |> Native.problem_data_vehicle_types_nif()
-    |> Enum.uniq()
-    |> Enum.map(fn {unit_dist, unit_dur, profile} ->
-      compute_edge_cost_matrix(problem_data, profile, unit_dist, unit_dur)
-    end)
-    |> elementwise_min_matrices()
-  end
-
-  defp compute_edge_cost_matrix(problem_data, profile, unit_dist, unit_dur) do
-    dist_mat = Native.problem_data_distance_matrix_nif(problem_data, profile)
-    dur_mat = Native.problem_data_duration_matrix_nif(problem_data, profile)
-
-    Enum.zip_with(dist_mat, dur_mat, fn row_dist, row_dur ->
-      Enum.zip_with(row_dist, row_dur, fn d, t ->
-        unit_dist * d + unit_dur * t
-      end)
-    end)
-  end
-
-  defp compute_min_matrix(problem_data, matrix_fn) do
-    num_profiles = Native.problem_data_num_profiles_nif(problem_data)
-
-    0..(num_profiles - 1)
-    |> Enum.map(&matrix_fn.(problem_data, &1))
-    |> elementwise_min_matrices()
-  end
-
-  defp elementwise_min_matrices([single]), do: single
-
-  defp elementwise_min_matrices([first | rest]) do
-    Enum.reduce(rest, first, &elementwise_min/2)
-  end
-
-  defp elementwise_min(mat_a, mat_b) do
-    Enum.zip_with(mat_a, mat_b, fn row_a, row_b ->
-      Enum.zip_with(row_a, row_b, &min/2)
-    end)
-  end
-
-  defp matrix_avg(matrix, num_locs) do
-    matrix_sum(matrix) / (num_locs * num_locs)
-  end
-
-  defp matrix_sum(matrix) do
-    Enum.reduce(matrix, 0, fn row, acc ->
-      acc + Enum.sum(row)
-    end)
   end
 
   @doc """
