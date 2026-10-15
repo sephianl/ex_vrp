@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **A break is taken along its leg, as late as the limit allows.** A break used to reset the clock
+  where its leg began, so the whole leg counted after it: a driver carrying driving into a route,
+  or a leg longer than the stretch left, needed a break more than the law does. A driver with
+  3.1 h carried in and two 2.8 h legs to drive got two breaks; they now get one, 1.4 h out. The
+  first break on a leg comes once the clock reaches its limit (or at the leg's end), and each
+  further one after another limit. Arrival times are unchanged, as is where the schedule reports
+  a break. `DriveClock::merge` is no longer associative, so a route segment holding breaks extends
+  a clock by walking its reset legs rather than merging a summary of itself.
+
 ## 0.16.1
 
 ### Changed

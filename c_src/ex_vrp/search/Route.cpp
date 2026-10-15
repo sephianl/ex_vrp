@@ -325,6 +325,8 @@ template <ClockQuantity Quantity> void Route::updateClock()
     close.assign(1, 0);
     start.assign(1, 0);
 
+    // A reset leg's first break falls where the stretch it continues reaches
+    // the limit, so each leg reads the start of the stretch before it.
     auto const numResets = this->numResets();
     for (size_t r = 1; r <= numResets; ++r)
     {
@@ -333,11 +335,12 @@ template <ClockQuantity Quantity> void Route::updateClock()
         auto const idx = resetBounds_[r];
         auto const own = clockAt<Quantity>(idx);
         auto const drive = cum[idx] - cum[idx - 1] - own;
-        auto const prepaid = static_cast<Duration>(legBreaks_[r] - 1) * limit;
-        auto const after = drive > prepaid ? drive - prepaid : 0;
+        auto const stretch = cum[idx - 1] - start[r - 1];
+        auto const leg
+            = DriveClock::acrossBreaks(stretch, drive, legBreaks_[r], limit);
 
-        close.push_back(cum[idx - 1]);
-        start.push_back(cum[idx] - own - after);
+        close.push_back(start[r - 1] + leg.closed);
+        start.push_back(cum[idx] - own - leg.after);
     }
 
     // Stretch r, for 1 <= r < m, is closed on both sides by reset legs.
@@ -351,16 +354,30 @@ template <ClockQuantity Quantity> void Route::updateClock()
     }
 
 #ifndef NDEBUG
-    // The prefix answers must match a plain fold over the same nodes.
+    // The prefix answers must match a plain fold over the same nodes, and
+    // the route cut before any non-break node must extend back to the whole.
     if (size < 20)
+    {
+        auto const whole = foldClock<Quantity>(0, size - 1, profile(), limit);
         for (size_t idx = 0; idx != size; ++idx)
         {
-            assert(
-                clockOf<Quantity>(SegmentBefore(*this, idx), profile(), limit)
-                == foldClock<Quantity>(0, idx, profile(), limit));
+            auto const before = clockOf<Quantity>(
+                SegmentBefore(*this, idx), profile(), limit);
+            assert(before == foldClock<Quantity>(0, idx, profile(), limit));
             assert(clockOf<Quantity>(SegmentAfter(*this, idx), profile(), limit)
                    == foldClock<Quantity>(idx, size - 1, profile(), limit));
+
+            auto const next = idx + 1;
+            if (next != size && !data.isBreak(visits[next]))
+                assert(SegmentAfter(*this, next)
+                           .extendClock<Quantity>(
+                               before,
+                               durations(locs_[idx], visits[next]),
+                               profile(),
+                               limit)
+                       == whole);
         }
+    }
 #endif
 }
 

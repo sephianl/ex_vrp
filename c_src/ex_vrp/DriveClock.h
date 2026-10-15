@@ -3,6 +3,7 @@
 
 #include "Measure.h"
 
+#include <algorithm>
 #include <cstddef>
 
 namespace pyvrp
@@ -19,9 +20,15 @@ enum class ClockQuantity
 
 /**
  * Driving (or work) since the last break, folded over a segment the way
- * TripDistance is folded over trips. Breaks belong to legs: a leg carrying
- * k >= 1 breaks resets the clock at its start and pre-pays (k - 1) * limit of
- * its own drive. A real node doing q of the quantity itself is {q, 0, q}.
+ * TripDistance is folded over trips. Breaks belong to legs, and are taken
+ * along them as late as the limit allows (see acrossBreaks()). A real node
+ * doing q of the quantity itself is {q, 0, q}.
+ *
+ * How much of a leg fits before its first break depends on the stretch it
+ * continues, so merge() is exact only when that stretch is whole: when first
+ * starts where the route does, and second has no reset of its own. A segment
+ * with resets extends a clock by walking them instead (search::Route's
+ * extendClock()), which is why the folds run from the route's start.
  *
  * Alongside the clipped overrun it counts the breaks the stretches still
  * lack, ceil(stretch / limit) - 1 each: what the search prices a stretch that
@@ -51,6 +58,30 @@ struct DriveClock
                    : 0;
     }
 
+    // What a leg carrying breaks leaves either side of them.
+    struct BreakLeg
+    {
+        Duration closed;  // the stretch its first break closes
+        Duration after;   // its drive left after its last break
+    };
+
+    // A leg of `drive` carrying `breaks` >= 1, continuing a stretch of
+    // `stretch`. The first break comes once the stretch reaches the limit, or
+    // at the leg's end if it does not, and each further one after another
+    // limit of the leg's drive. Where a break falls along its leg changes no
+    // time, only the clock. Only call with a finite limit.
+    [[nodiscard]] static BreakLeg acrossBreaks(Duration stretch,
+                                               Duration drive,
+                                               size_t breaks,
+                                               Duration limit)
+    {
+        auto const room = stretch < limit ? limit - stretch : Duration(0);
+        auto const before = std::min(drive, room);
+        auto const left = drive - before;
+        auto const prepaid = static_cast<Duration>(breaks - 1) * limit;
+        return {stretch + before, left > prepaid ? left - prepaid : 0};
+    }
+
     // Only call with a finite limit: (onLeg - 1) * limit must not overflow.
     [[nodiscard]] static DriveClock merge(DriveClock const &first,
                                           Duration edge,
@@ -77,17 +108,17 @@ struct DriveClock
             return out;
         }
 
-        auto const prepaid = static_cast<Duration>(onLeg - 1) * limit;
-        auto const after = (edge > prepaid ? edge - prepaid : 0) + second.head;
+        auto const leg = acrossBreaks(first.tail, edge, onLeg, limit);
+        auto const after = leg.after + second.head;
 
-        out.head = first.head;
+        out.head = first.resets ? first.head : leg.closed;
         out.tail = second.resets ? second.tail : after;
         out.resets = first.resets + second.resets + 1;
         out.excess = first.excess + second.excess
-                     + (first.resets ? clip(first.tail, limit) : 0)
+                     + (first.resets ? clip(leg.closed, limit) : 0)
                      + (second.resets ? clip(after, limit) : 0);
         out.need = first.need + second.need
-                   + (first.resets ? needOf(first.tail, limit) : 0)
+                   + (first.resets ? needOf(leg.closed, limit) : 0)
                    + (second.resets ? needOf(after, limit) : 0);
         return out;
     }

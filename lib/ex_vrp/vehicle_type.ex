@@ -132,6 +132,9 @@ defmodule ExVrp.VehicleType do
 
   The drive clock counts travel; the work clock counts travel plus client and
   reload service. Waiting counts toward neither, and every break resets both.
+  A break is taken along its leg as late as the clocks allow, once one reaches
+  its limit or at the leg's end, never inside service. Where along the leg it
+  falls moves no arrival, so the schedule reports it where the leg begins.
 
       iex> vt = ExVrp.VehicleType.new(num_available: 1, capacity: [10],
       ...>   break_duration: 30, max_drive_between_breaks: 240)

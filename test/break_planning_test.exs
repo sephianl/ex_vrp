@@ -180,9 +180,10 @@ defmodule ExVrp.BreakPlanningTest do
     assert Route.clock_excess(route) == 0
   end
 
-  # One client at 600, so each leg drives 600. Under the search's rule a leg
-  # with k breaks leaves 600 - (k - 1) * 270 after its reset: k = 2 leaves 330
-  # (overrun), k = 3 leaves 60. So 3 per leg, 6 in all: 6 * 45 = 270 of break.
+  # One client at 600, so out and back drives 1200 with no stop to break at.
+  # Breaks fall along the legs, so 1200 needs ceil(1200 / 270) - 1 = 4: two
+  # on the way out leave 60, and two on the way back take 210 and 270 of it,
+  # leaving 120. 4 * 45 = 180 of break.
   test "a leg longer than twice the limit gets enough breaks" do
     model =
       Model.new()
@@ -196,12 +197,13 @@ defmodule ExVrp.BreakPlanningTest do
 
     assert Solution.feasible?(solution)
     assert Route.clock_excess(route) == 0
-    assert break_time(route) == 6 * 45
+    assert break_time(route) == 4 * 45
   end
 
   # Work is 150 + 200 service + 150 = 500 against a 400 limit, while driving
-  # is only 300. The one break that works goes after the service: before the
-  # client, the stretch after it would still hold 500.
+  # is only 300. One break fixes it on either leg: at the end of the way out,
+  # leaving 200 + 150 after it, or 50 into the way back. A break never falls
+  # inside the service.
   test "the work clock alone makes the solver insert a break" do
     solution =
       [service_duration: 200] |> one_client_model(max_work_between_breaks: 400, break_duration: 45) |> best()
@@ -211,7 +213,6 @@ defmodule ExVrp.BreakPlanningTest do
     assert Solution.feasible?(solution)
     assert Route.work_clock_excess(route) == 0
     assert break_time(route) == 45
-    assert client_start(solution, 1) == 150
 
     drive_only =
       [service_duration: 200] |> one_client_model(max_drive_between_breaks: 400, break_duration: 45) |> best()
@@ -220,8 +221,8 @@ defmodule ExVrp.BreakPlanningTest do
   end
 
   # Without a carry, 150 + 150 overruns 270 on the way back: one break there.
-  # A carry of 150 overruns on the way out, so a break comes before the client,
-  # and the whole 300 after it needs a second one.
+  # A carry of 150 overruns on the way out, so the break comes 120 into it,
+  # and the 30 + 150 after it fits: still one break, now before the client.
   for {carry, limit} <- [drive_carry_in: :max_drive_between_breaks, work_carry_in: :max_work_between_breaks] do
     test "#{carry} brings the first break a leg earlier" do
       rule = [{unquote(limit), 270}, break_duration: 45]
@@ -235,9 +236,34 @@ defmodule ExVrp.BreakPlanningTest do
 
       assert Solution.feasible?(carried)
       assert Route.clock_excess(route) + Route.work_clock_excess(route) == 0
-      assert break_time(route) == 90
+      assert break_time(route) == 45
       assert client_start(carried, 1) == 195
     end
+  end
+
+  # EU 561 as Zelo plans it: 3.1 h driven before the route, then 2.8 h out and
+  # 2.8 h back. The break comes 1.4 h out, and the 5.6 h after it fits 4.5 h.
+  test "a driver carrying driving in takes one break along the way out, not two" do
+    solution =
+      Model.new()
+      |> Model.add_depot([])
+      |> Model.add_client(delivery: [1])
+      |> Model.add_vehicle_type(
+        num_available: 1,
+        capacity: [10],
+        drive_carry_in: 11_196,
+        max_drive_between_breaks: 16_200,
+        break_duration: 2_700,
+        max_drive: 21_204
+      )
+      |> Model.set_euclidean_matrices([{0, 0}, {10_022, 0}])
+      |> best()
+
+    [route] = Solution.routes(solution)
+
+    assert Solution.feasible?(solution)
+    assert Route.clock_excess(route) == 0
+    assert break_time(route) == 2_700
   end
 
   # 300 of work fits a 350 limit; 100 more after the last stop does not.

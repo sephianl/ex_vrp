@@ -33,9 +33,9 @@ void BreakRepair::addCandidates(Route const &route)
     std::array<Candidate, MAX_LEGS_PER_OVERRUN> legs = {};
     size_t numLegs = 0;
 
-    // The walk applies the search's rule leg by leg: a leg carrying k >= 1
-    // breaks closes the stretch before it, and the next one starts with what
-    // is left of its drive after (k - 1) * limit is pre-paid.
+    // The walk applies the search's rule leg by leg (DriveClock::acrossBreaks):
+    // a leg carrying k >= 1 breaks closes the stretch it continues at its
+    // first break, and the next stretch starts with what the leg leaves.
     auto stretch = route.template clockAt<Quantity>(0);
     size_t from = 0;    // the real node the current leg leaves
     size_t breaks = 0;  // breaks on the current leg
@@ -49,17 +49,19 @@ void BreakRepair::addCandidates(Route const &route)
 
         auto const drive = durations(route.location(from), route.location(idx));
         auto const own = route.template clockAt<Quantity>(idx);
-        auto const afterPrepaid = [&](size_t onLeg)
+        auto const continued = stretch;
+        auto const afterBreaks = [&](size_t onLeg)
         {
-            auto const prepaid = static_cast<Duration>(onLeg - 1) * limit;
-            return (drive > prepaid ? drive - prepaid : Duration(0)) + own;
+            return DriveClock::acrossBreaks(continued, drive, onLeg, limit)
+                       .after
+                   + own;
         };
 
         if (breaks == 0)
             stretch += drive + own;
         else
         {
-            stretch = afterPrepaid(breaks);
+            stretch = afterBreaks(breaks);
             numLegs = 0;
         }
 
@@ -70,10 +72,12 @@ void BreakRepair::addCandidates(Route const &route)
         }
 
         // Breaks the leg needs in all so that what its drive leaves after the
-        // pre-paid ones, plus the arrival's own quantity, fits the limit (or
-        // leaves only that quantity, when it alone does not).
+        // first break's share and each further limit, plus the arrival's own
+        // quantity, fits the limit (or leaves only that quantity, when it
+        // alone does not).
+        auto const left = afterBreaks(1) - own;
         auto const room = limit > own ? limit - own : Duration(0);
-        auto const excess = drive > room ? (drive - room).get() : 0;
+        auto const excess = left > room ? (left - room).get() : 0;
         auto const needed  // 1 + ceil(excess / limit)
             = 1 + static_cast<size_t>((excess + limit.get() - 1) / limit.get());
         auto const count = needed > breaks ? needed - breaks : 1;
@@ -86,7 +90,7 @@ void BreakRepair::addCandidates(Route const &route)
 
             // Walk on as if this leg took its breaks, so the stretches after
             // it offer candidates too.
-            stretch = afterPrepaid(breaks + count);
+            stretch = afterBreaks(breaks + count);
             numLegs = 0;
         }
 

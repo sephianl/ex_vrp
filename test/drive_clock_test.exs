@@ -7,7 +7,13 @@ defmodule ExVrp.DriveClockTest do
   service; the work clock counts it. Each fold answers `{overrun, missing}`:
   the clipped time past the limit, and the breaks the stretches still lack,
   ceil(stretch / limit) - 1 for each. The brute walk applies the spec's rule
-  directly; the fold must agree with it however the route is cut.
+  directly: a break is taken along its leg once the stretch reaches the limit.
+
+  The fold must agree with it from the route's start, but not cut anywhere:
+  how much of a leg fits before its break depends on the stretch the leg
+  continues, so a second part folded on its own merges exactly only while it
+  holds no break of its own. The search extends a clock through such parts
+  instead (covered by `break_nodes_test.exs` and SANITIZE's asserts).
   """
   use ExUnit.Case, async: true
   use ExUnitProperties
@@ -47,27 +53,58 @@ defmodule ExVrp.DriveClockTest do
     end
   end
 
-  property "the fold equals the brute walk, split anywhere, for both quantities" do
+  property "the fold equals the brute walk, for both quantities" do
     check all(
             tokens <- route_tokens(),
-            split <- integer(0..length(tokens)),
             quantity <- member_of([:drive, :work]),
             max_runs: 2_000
           ) do
-      expected = Native.drive_clock_brute_nif(tokens, quantity, @limit)
-
-      assert Native.drive_clock_fold_nif(tokens, quantity, @limit) == expected
-      assert Native.drive_clock_fold_split_nif(tokens, split, quantity, @limit) == expected
+      assert Native.drive_clock_fold_nif(tokens, quantity, @limit) ==
+               Native.drive_clock_brute_nif(tokens, quantity, @limit)
     end
+  end
+
+  property "a split merges back exactly when the second part holds no break" do
+    check all(
+            tokens <- route_tokens(),
+            split <- integer(last_break(tokens)..length(tokens)),
+            quantity <- member_of([:drive, :work]),
+            max_runs: 2_000
+          ) do
+      assert Native.drive_clock_fold_split_nif(tokens, split, quantity, @limit) ==
+               Native.drive_clock_brute_nif(tokens, quantity, @limit)
+    end
+  end
+
+  # Breaks from the split up to the leg joining the parts sit on that leg, so
+  # a split at or after the last break leaves the second part none of its own.
+  defp last_break(tokens) do
+    tokens
+    |> Enum.with_index()
+    |> Enum.filter(&match?({:break, _index}, &1))
+    |> Enum.map(&elem(&1, 1))
+    |> Enum.max(fn -> 0 end)
   end
 
   test "hand cases" do
     assert fold([{:leg, 300}]) == 30
-    assert fold([{:leg, 0}, :break, {:leg, 300}]) == 30
     assert fold([{:leg, 0}, :break, :break, {:leg, 300}]) == 0
     assert fold([{:leg, 200}, :break, {:leg, 100}]) == 0
     assert fold([{:leg, 200}, {:leg, 100}]) == 30
-    assert fold([:break, {:leg, 300}]) == 30
+  end
+
+  test "a break is taken along its leg once the stretch reaches the limit" do
+    assert fold([{:leg, 0}, :break, {:leg, 300}]) == 0
+    assert fold([:break, {:leg, 300}]) == 0
+    assert fold([:break, {:leg, 600}]) == 60
+    assert fold([:break, :break, {:leg, 600}]) == 0
+
+    # 150 carried in leaves 120 of the leg before the break, so 30 after it.
+    assert fold([{:leg, 150}, :break, {:leg, 150}, {:leg, 150}]) == 0
+    assert missing([{:leg, 150}, :break, {:leg, 150}, {:leg, 250}]) == 1
+
+    # A stretch already over the limit gets nothing of the leg before its break.
+    assert fold([{:leg, 300}, :break, {:leg, 100}]) == 30
   end
 
   test "missing breaks, per stretch" do
@@ -92,6 +129,10 @@ defmodule ExVrp.DriveClockTest do
 
     # Service at the start node is a carry-in; at the last node, work after end.
     assert fold([{:stop, 100}, {:leg, 200}], :work) == 30
-    assert fold([{:leg, 0}, :break, {:leg, 200}, {:stop, 100}], :work) == 30
+    assert fold([{:leg, 0}, {:leg, 200}, {:stop, 100}], :work) == 30
+
+    # A break never falls inside service: 200 of the leg fits before it, and
+    # the 100 of service comes after.
+    assert fold([{:leg, 0}, :break, {:leg, 200}, {:stop, 100}], :work) == 0
   end
 end

@@ -2235,10 +2235,11 @@ ClockAnswer drive_clock_fold_split_nif(ErlNifEnv *env,
 
 FINE_NIF(drive_clock_fold_split_nif, 0);
 
-// The spec's rule, walked directly: a leg carrying k >= 1 breaks closes the
-// stretch before it, and the next stretch starts with the leg's drive less
-// (k - 1) * limit. Work adds each stop's service to the open stretch; breaks
-// before the first leg sit on it and close the (carried-in) stretch there.
+// The spec's rule, walked the way a driver takes it: along a leg carrying
+// breaks, drive until the stretch reaches the limit (or the leg ends), take a
+// break, and repeat for each break the leg carries; whatever is left of the
+// leg starts the next stretch. Work adds each stop's service to the open
+// stretch; breaks before the first leg sit on it.
 ClockAnswer drive_clock_brute_nif(ErlNifEnv *env,
                                   fine::Term tokensTerm,
                                   fine::Atom quantity,
@@ -2282,10 +2283,18 @@ ClockAnswer drive_clock_brute_nif(ErlNifEnv *env,
             continue;
         }
 
-        overrun += std::max<int64_t>(stretch - limit, 0);
-        missing += lacking(stretch);
-        stretch = std::max<int64_t>(leg - (breaks - 1) * limit, 0);
-        breaks = 0;
+        auto left = leg;
+        for (; breaks != 0; --breaks)
+        {
+            auto const driven = std::clamp<int64_t>(limit - stretch, 0, left);
+            left -= driven;
+            stretch += driven;
+            overrun += std::max<int64_t>(stretch - limit, 0);
+            missing += lacking(stretch);
+            stretch = 0;
+        }
+
+        stretch = left;
     }
 
     return {overrun + std::max<int64_t>(stretch - limit, 0),
