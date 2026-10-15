@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.17.0
 
 ### Changed
 
@@ -14,6 +14,17 @@
   schedule reports a break. `DriveClock::merge` is no longer associative, so a route segment
   holding breaks extends the clocks by walking its reset legs rather than merging a summary of
   itself.
+
+## 0.16.2
+
+### Changed
+
+- **Large models start searching sooner.** `PenaltyManager.init_from/2` computed its starting
+  penalties in Elixir from every distance and duration matrix, pulled out of the NIF as lists, and
+  a cost matrix per vehicle type; `Native.problem_data_mean_edge_measures/1` now does it in C++.
+  The penalties are bit-identical, so solutions are unchanged. On a 593-client production model
+  it takes 29ms instead of 696ms, which halves the setup every solve pays before its first search
+  iteration, from its own runtime budget.
 
 ## 0.16.1
 

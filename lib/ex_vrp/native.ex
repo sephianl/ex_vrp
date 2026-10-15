@@ -68,6 +68,7 @@ defmodule ExVrp.Native do
     problem_data_distance_matrix_nif: 2,
     problem_data_duration_matrix_nif: 2,
     problem_data_vehicle_types_nif: 1,
+    problem_data_mean_edge_measures: 1,
     problem_data_groups_nif: 1,
     build_neighbours_nif: 1,
     # LocalSearch (stateless)
@@ -553,6 +554,15 @@ defmodule ExVrp.Native do
   @spec problem_data_vehicle_types_nif(reference()) ::
           [{integer(), integer(), integer()}]
   def problem_data_vehicle_types_nif(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Mean over all location pairs, the diagonal included, of the cheapest edge cost any vehicle
+  type's `{unit_distance_cost, unit_duration_cost, profile}` gives it, of its shortest distance
+  over all profiles, and of its shortest duration over all profiles. What
+  `ExVrp.PenaltyManager.init_from/2` scales its first penalties by.
+  """
+  @spec problem_data_mean_edge_measures(reference()) :: {float(), float(), float()}
+  def problem_data_mean_edge_measures(_problem_data), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Gets client groups for neighbourhood computation.

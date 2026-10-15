@@ -3580,6 +3580,88 @@ std::vector<std::vector<int64_t>> problem_data_duration_matrix_nif(
 FINE_NIF(problem_data_duration_matrix_nif, 0);
 
 /**
+ * Mean over all location pairs, the diagonal included, of the cheapest edge
+ * cost any vehicle type's cost profile gives it, its shortest distance and its
+ * shortest duration over all routing profiles, for PenaltyManager.init_from/2.
+ * Returns: {mean_edge_cost, mean_distance, mean_duration}
+ *
+ * Sums are exact 128-bit integers, divided as doubles, as Elixir's integer
+ * arithmetic and / give them: the same penalties as computing it in Elixir,
+ * where pulling every matrix out as lists took most of a large solve's setup.
+ */
+std::tuple<double, double, double> problem_data_mean_edge_measures(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<ProblemDataResource> problem_resource)
+{
+    auto const &data = *problem_resource->data;
+    auto const numLocations = data.numLocations();
+    auto const numProfiles = data.numProfiles();
+
+    std::vector<std::tuple<int64_t, int64_t, size_t>> costProfiles;
+    for (auto const &vt : data.vehicleTypes())
+        costProfiles.emplace_back(static_cast<int64_t>(vt.unitDistanceCost),
+                                  static_cast<int64_t>(vt.unitDurationCost),
+                                  vt.profile);
+
+    std::sort(costProfiles.begin(), costProfiles.end());
+    costProfiles.erase(std::unique(costProfiles.begin(), costProfiles.end()),
+                       costProfiles.end());
+
+    __int128 costSum = 0;
+    __int128 distanceSum = 0;
+    __int128 durationSum = 0;
+
+    for (size_t from = 0; from != numLocations; ++from)
+        for (size_t to = 0; to != numLocations; ++to)
+        {
+            auto const edgeCost = [&](auto const &costProfile)
+            {
+                auto const [unitDistance, unitDuration, profile] = costProfile;
+                auto const distance = static_cast<int64_t>(
+                    data.distanceMatrix(profile)(from, to));
+                auto const duration = static_cast<int64_t>(
+                    data.durationMatrix(profile)(from, to));
+
+                return static_cast<__int128>(unitDistance) * distance
+                       + static_cast<__int128>(unitDuration) * duration;
+            };
+
+            auto cheapest = edgeCost(costProfiles.front());
+            for (auto const &costProfile : costProfiles)
+                cheapest = std::min(cheapest, edgeCost(costProfile));
+
+            auto shortestDistance
+                = static_cast<int64_t>(data.distanceMatrix(0)(from, to));
+            auto shortestDuration
+                = static_cast<int64_t>(data.durationMatrix(0)(from, to));
+
+            for (size_t profile = 1; profile != numProfiles; ++profile)
+            {
+                shortestDistance
+                    = std::min(shortestDistance,
+                               static_cast<int64_t>(
+                                   data.distanceMatrix(profile)(from, to)));
+                shortestDuration
+                    = std::min(shortestDuration,
+                               static_cast<int64_t>(
+                                   data.durationMatrix(profile)(from, to)));
+            }
+
+            costSum += cheapest;
+            distanceSum += shortestDistance;
+            durationSum += shortestDuration;
+        }
+
+    auto const numPairs = static_cast<double>(numLocations * numLocations);
+
+    return {static_cast<double>(costSum) / numPairs,
+            static_cast<double>(distanceSum) / numPairs,
+            static_cast<double>(durationSum) / numPairs};
+}
+
+FINE_NIF(problem_data_mean_edge_measures, 0);
+
+/**
  * Get vehicle type cost info for neighbourhood computation.
  * Returns: [{unit_distance_cost, unit_duration_cost, profile}, ...]
  */
