@@ -2256,7 +2256,7 @@ ClocksAnswer drive_clock_brute_nif(ErlNifEnv *env,
 {
     struct Clock
     {
-        int64_t limit;
+        int64_t limit = 0;
         int64_t stretch = 0;
         int64_t overrun = 0;
         int64_t missing = 0;
