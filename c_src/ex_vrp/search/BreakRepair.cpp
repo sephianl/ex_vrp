@@ -19,13 +19,9 @@ BreakRepair::BreakRepair(ProblemData const &data) : data(data)
 
 bool BreakRepair::hasBreaks() const { return !breaks_.empty(); }
 
-template <pyvrp::ClockQuantity Quantity>
 void BreakRepair::addCandidates(Route const &route)
 {
-    auto const limit = route.vehicleTypeData().breakLimit(Quantity);
-    if (limit == std::numeric_limits<Duration>::max())
-        return;
-
+    auto const limits = route.vehicleTypeData().breakLimits();
     auto const &durations = data.durationMatrix(route.profile());
 
     // The open stretch's legs, oldest first. Only the most recent ones are
@@ -33,10 +29,12 @@ void BreakRepair::addCandidates(Route const &route)
     std::array<Candidate, MAX_LEGS_PER_OVERRUN> legs = {};
     size_t numLegs = 0;
 
-    // The walk applies the search's rule leg by leg (DriveClock::acrossBreaks):
-    // a leg carrying k >= 1 breaks closes the stretch it continues at its
-    // first break, and the next stretch starts with what the leg leaves.
-    auto stretch = route.template clockAt<Quantity>(0);
+    // The walk applies the search's rule leg by leg, over both clocks at once
+    // (BreakPlacement): a leg carrying k >= 1 breaks closes the stretches it
+    // continues at its first break, and the next ones start with what the leg
+    // leaves.
+    auto drive = route.clockAt<ClockQuantity::Drive>(0);
+    auto work = route.clockAt<ClockQuantity::Work>(0);
     size_t from = 0;    // the real node the current leg leaves
     size_t breaks = 0;  // breaks on the current leg
     for (size_t idx = 1; idx != route.size(); ++idx)
@@ -47,21 +45,22 @@ void BreakRepair::addCandidates(Route const &route)
             continue;
         }
 
-        auto const drive = durations(route.location(from), route.location(idx));
-        auto const own = route.template clockAt<Quantity>(idx);
-        auto const continued = stretch;
-        auto const afterBreaks = [&](size_t onLeg)
-        {
-            return DriveClock::acrossBreaks(continued, drive, onLeg, limit)
-                       .after
-                   + own;
-        };
+        auto const edge = durations(route.location(from), route.location(idx));
+        auto const ownDrive = route.clockAt<ClockQuantity::Drive>(idx);
+        auto const ownWork = route.clockAt<ClockQuantity::Work>(idx);
+        auto const leg = BreakPlacement::along(drive, work, edge, limits);
+        auto const left = [&, continued = drive](size_t onLeg)
+        { return DriveClock::acrossBreaks(continued, edge, onLeg, leg).after; };
 
         if (breaks == 0)
-            stretch += drive + own;
+        {
+            drive += edge + ownDrive;
+            work += edge + ownWork;
+        }
         else
         {
-            stretch = afterBreaks(breaks);
+            drive = left(breaks) + ownDrive;
+            work = left(breaks) + ownWork;
             numLegs = 0;
         }
 
@@ -71,26 +70,34 @@ void BreakRepair::addCandidates(Route const &route)
             numLegs--;
         }
 
-        // Breaks the leg needs in all so that what its drive leaves after the
-        // first break's share and each further limit, plus the arrival's own
-        // quantity, fits the limit (or leaves only that quantity, when it
-        // alone does not).
-        auto const left = afterBreaks(1) - own;
-        auto const room = limit > own ? limit - own : Duration(0);
-        auto const excess = left > room ? (left - room).get() : 0;
-        auto const needed  // 1 + ceil(excess / limit)
-            = 1 + static_cast<size_t>((excess + limit.get() - 1) / limit.get());
-        auto const count = needed > breaks ? needed - breaks : 1;
+        // Breaks the leg needs in all so that, on each clock, what its travel
+        // leaves after the first break's share and each further spacing, plus
+        // the arrival's own quantity, fits the limit (or leaves only that
+        // quantity, when it alone does not).
+        auto const needed = [&](Duration own, Duration limit)
+        {
+            auto const room = limit > own ? limit - own : Duration(0);
+            auto const excess = left(1) > room ? (left(1) - room).get() : 0;
+            auto const spacing = leg.spacing.get();
+            return 1 + static_cast<size_t>((excess + spacing - 1) / spacing);
+        };
+
+        auto const all = std::max(needed(ownDrive, limits.drive),
+                                  needed(ownWork, limits.work));
+        auto const count = all > breaks ? all - breaks : 1;
         legs[numLegs++] = {from, count};
 
-        if (stretch > limit)  // the leg into idx is where it overruns, so it
-        {                     // is tried first, then the earlier ones
-            for (size_t leg = numLegs; leg-- != 0;)
-                candidates_.push_back(legs[leg]);
+        // The leg into idx is where a clock overruns, so it is tried first,
+        // then the earlier ones.
+        if (drive > limits.drive || work > limits.work)
+        {
+            for (size_t candidate = numLegs; candidate-- != 0;)
+                candidates_.push_back(legs[candidate]);
 
             // Walk on as if this leg took its breaks, so the stretches after
             // it offer candidates too.
-            stretch = afterBreaks(breaks + count);
+            drive = left(breaks + count) + ownDrive;
+            work = left(breaks + count) + ownWork;
             numLegs = 0;
         }
 
@@ -117,8 +124,7 @@ bool BreakRepair::insertBreak(Route &route,
                               CostEvaluator const &costEvaluator)
 {
     candidates_.clear();
-    addCandidates<ClockQuantity::Drive>(route);
-    addCandidates<ClockQuantity::Work>(route);
+    addCandidates(route);
 
     size_t maxCount = 0;
     for (auto const &candidate : candidates_)
@@ -141,8 +147,7 @@ bool BreakRepair::insertBreak(Route &route,
                                        BreakSegment(data, client, count),
                                        route.after(from + 1));
 
-        auto const after
-            = proposal.driveClockOverrun() + proposal.workClockOverrun();
+        auto const after = proposal.clockOverrun();
         if (after >= overrun)
             continue;
 
@@ -199,8 +204,7 @@ bool BreakRepair::removeRedundant(Route &route,
         Route::Proposal const proposal(route.before(idx - 1),
                                        route.after(idx + 1));
 
-        auto const after
-            = proposal.driveClockOverrun() + proposal.workClockOverrun();
+        auto const after = proposal.clockOverrun();
         if (after > route.totalClockExcess())
             continue;
 

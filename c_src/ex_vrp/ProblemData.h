@@ -687,6 +687,12 @@ public:
                                                     : maxWorkBetweenBreaks;
         }
 
+        // Both clocks' limits, which place every break together.
+        [[nodiscard]] BreakLimits breakLimits() const
+        {
+            return {maxDriveBetweenBreaks, maxWorkBetweenBreaks};
+        }
+
         // Whether either clock is limited, so routes may need breaks.
         [[nodiscard]] bool hasBreakRule() const
         {

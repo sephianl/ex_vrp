@@ -62,18 +62,11 @@ public:
         return {clientData};
     }
 
-    DriveClock driveClock([[maybe_unused]] size_t profile,
-                          [[maybe_unused]] Duration limit) const
-    {
-        return {};
-    }
-
-    DriveClock workClock([[maybe_unused]] size_t profile,
-                         [[maybe_unused]] Duration limit) const
+    BreakClocks clocks([[maybe_unused]] size_t profile,
+                       [[maybe_unused]] BreakLimits limits) const
     {
         ProblemData::Client const &clientData = data.location(client);
-        return {.head = clientData.serviceDuration,
-                .tail = clientData.serviceDuration};
+        return BreakClocks::node(0, clientData.serviceDuration);
     }
 
     LoadSegment load(size_t dimension) const
@@ -144,16 +137,10 @@ public:
             0, 0, 0, std::numeric_limits<Duration>::max(), 0);
     }
 
-    DriveClock driveClock([[maybe_unused]] size_t profile,
-                          [[maybe_unused]] Duration limit) const
+    BreakClocks clocks([[maybe_unused]] size_t profile,
+                       [[maybe_unused]] BreakLimits limits) const
     {
-        return {};
-    }
-
-    DriveClock workClock([[maybe_unused]] size_t profile,
-                         [[maybe_unused]] Duration limit) const
-    {
-        return {.head = service_, .tail = service_};
+        return BreakClocks::node(0, service_);
     }
 
     LoadSegment load([[maybe_unused]] size_t dimension) const { return {}; }
@@ -222,16 +209,14 @@ public:
     }
 
     // No location, so the Proposal fold adds trailRun to the leg it sits on.
-    DriveClock driveClock([[maybe_unused]] size_t profile,
-                          [[maybe_unused]] Duration limit) const
-    {
-        return {.leadRun = count, .trailRun = count};
-    }
-
     // A break is rest, so it resets the work clock exactly as the drive clock.
-    DriveClock workClock(size_t profile, Duration limit) const
+    BreakClocks clocks([[maybe_unused]] size_t profile,
+                       [[maybe_unused]] BreakLimits limits) const
     {
-        return driveClock(profile, limit);
+        BreakClocks clocks;
+        clocks.addLeadRun(count);
+        clocks.addTrailRun(count);
+        return clocks;
     }
 
     LoadSegment load([[maybe_unused]] size_t dimension) const { return {}; }

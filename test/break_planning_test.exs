@@ -266,6 +266,37 @@ defmodule ExVrp.BreakPlanningTest do
     assert break_time(route) == 2_700
   end
 
+  # One break serves both clocks, so it falls where the first of them needs it.
+  # 330 of work carried in leaves 30 of the 240 out before the work limit, and
+  # a break there leaves 210 + 90 = 300 of driving after it, past 270: a second
+  # break is due, though the drive clock alone would place one break at 210.
+  test "a break falls where the first of the two clocks needs it" do
+    matrix = [[0, 240], [90, 0]]
+
+    solution =
+      Model.new()
+      |> Model.add_depot([])
+      |> Model.add_client(delivery: [1])
+      |> Model.add_vehicle_type(
+        num_available: 1,
+        capacity: [10],
+        max_drive_between_breaks: 270,
+        max_work_between_breaks: 360,
+        drive_carry_in: 60,
+        work_carry_in: 330,
+        break_duration: 45
+      )
+      |> Model.set_distance_matrices([matrix])
+      |> Model.set_duration_matrices([matrix])
+      |> best()
+
+    [route] = Solution.routes(solution)
+
+    assert Solution.feasible?(solution)
+    assert Route.clock_excess(route) + Route.work_clock_excess(route) == 0
+    assert break_time(route) == 90
+  end
+
   # 300 of work fits a 350 limit; 100 more after the last stop does not.
   test "work_after_end counts against the last stretch" do
     rule = [max_work_between_breaks: 350, break_duration: 45]
