@@ -681,6 +681,11 @@ private:
     std::vector<Load> load_;        // Route loads (for each dimension)
     std::vector<Load> excessLoad_;  // Route excess load (for each dimension)
 
+    // ProblemData::loadedDimensions(), copied next to the load data every move
+    // evaluation reads anyway: reaching it through data costs an instance with
+    // nothing to skip about 1% more instructions.
+    std::vector<size_t> const loadedDimensions_;
+
     std::vector<DurationSegment> durAt;      // Duration data at each node
     std::vector<DurationSegment> durAfter;   // Dur of node -> end (incl.)
     std::vector<DurationSegment> durBefore;  // Dur of start -> node (incl.)
@@ -806,6 +811,12 @@ public:
      * Capacity of the vehicle servicing this route.
      */
     [[nodiscard]] inline std::vector<Load> const &capacity() const;
+
+    /**
+     * The problem's loaded dimensions: the only ones in which this route can
+     * exceed its capacity. See ProblemData::loadedDimensions().
+     */
+    [[nodiscard]] inline std::vector<size_t> const &loadedDimensions() const;
 
     /**
      * @return The location index of this route's starting depot.
@@ -1633,6 +1644,11 @@ Distance Route::excessDistance() const
 std::vector<Load> const &Route::capacity() const
 {
     return vehicleType_.capacity;
+}
+
+std::vector<size_t> const &Route::loadedDimensions() const
+{
+    return loadedDimensions_;
 }
 
 size_t Route::startDepot() const { return vehicleType_.startDepot; }

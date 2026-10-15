@@ -328,8 +328,7 @@ bool CostEvaluator::deltaCost(Cost &out, T<Args...> const &proposal) const
 
     if constexpr (!skipLoad)
     {
-        auto const &capacity = route->capacity();
-        for (size_t dim = 0; dim != capacity.size(); ++dim)
+        for (auto const dim : route->loadedDimensions())
         {
             if constexpr (!exact)
                 if (out >= 0)
@@ -408,8 +407,7 @@ bool CostEvaluator::deltaCost(Cost &out,
 
     if constexpr (!skipLoad)
     {
-        auto const &uCapacity = uRoute->capacity();
-        for (size_t dim = 0; dim != uCapacity.size(); ++dim)
+        for (auto const dim : uRoute->loadedDimensions())
         {
             if constexpr (!exact)
                 if (out >= 0)
@@ -418,8 +416,7 @@ bool CostEvaluator::deltaCost(Cost &out,
             out += loadPenalty(uProposal.excessLoad(dim), 0, dim);
         }
 
-        auto const &vCapacity = vRoute->capacity();
-        for (size_t dim = 0; dim != vCapacity.size(); ++dim)
+        for (auto const dim : vRoute->loadedDimensions())
         {
             if constexpr (!exact)
                 if (out >= 0)

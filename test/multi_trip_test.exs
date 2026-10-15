@@ -784,8 +784,6 @@ defmodule ExVrp.MultiTripTest do
   end
 
   describe "infeasible insertion scenarios - must not hang" do
-    @moduletag timeout: 10_000
-
     test "client demand exceeds vehicle capacity - drops client without hanging" do
       # Scenario from zelo: weight_demands: [-125], capacity: 100
       # Client demand (125) > vehicle capacity (100), so client can never be served

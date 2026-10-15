@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.16.1
+
+### Changed
+
+- **The search no longer prices load dimensions nothing uses.** A dimension in which no client
+  delivers or picks up and no vehicle type starts with load can never exceed capacity, yet every
+  move evaluation computed its excess. Models that declare capacity types their orders do not use,
+  as Zelo's do, run 23–34% fewer instructions per search iteration; solutions are unchanged, and
+  models that use every dimension run as before.
+
 ## 0.16.0
 
 ### Added
