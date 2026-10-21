@@ -84,8 +84,14 @@ defmodule ExVrp.Model do
   alias ExVrp.Client
   alias ExVrp.ClientGroup
   alias ExVrp.Depot
+  alias ExVrp.Matrix
   alias ExVrp.SameVehicleGroup
   alias ExVrp.VehicleType
+
+  @type profile :: %{
+          matrix: non_neg_integer(),
+          override_row: nil | {non_neg_integer(), Matrix.row(), Matrix.row()}
+        }
 
   @type t :: %__MODULE__{
           clients: [Client.t()],
@@ -93,8 +99,9 @@ defmodule ExVrp.Model do
           vehicle_types: [VehicleType.t()],
           client_groups: [ClientGroup.t()],
           same_vehicle_groups: [SameVehicleGroup.t()],
-          distance_matrices: [[[non_neg_integer()]]],
-          duration_matrices: [[[non_neg_integer()]]],
+          distance_matrices: [Matrix.t()],
+          duration_matrices: [Matrix.t()],
+          profiles: [profile()],
           penalties: [[non_neg_integer()]],
           forbidden: [[non_neg_integer()]],
           vehicle_locks: [map()]
@@ -107,6 +114,7 @@ defmodule ExVrp.Model do
             same_vehicle_groups: [],
             distance_matrices: [],
             duration_matrices: [],
+            profiles: [],
             penalties: [],
             forbidden: [],
             vehicle_locks: []
@@ -397,13 +405,17 @@ defmodule ExVrp.Model do
   A model must carry at least one distance matrix before it can be solved;
   `validate/1` rejects a model without one.
 
+  A matrix is nested lists of rows, or one binary of little-endian signed
+  64-bit integers in row-major order (see `ExVrp.Matrix`). The solver copies a
+  binary in without walking it, so prefer it for large matrices.
+
   ## Example
 
       model
       |> ExVrp.Model.set_distance_matrices([matrix1, matrix2])
 
   """
-  @spec set_distance_matrices(t(), [[[non_neg_integer()]]]) :: t()
+  @spec set_distance_matrices(t(), [Matrix.t()]) :: t()
   def set_distance_matrices(%__MODULE__{} = model, matrices) do
     %{model | distance_matrices: matrices}
   end
@@ -436,7 +448,8 @@ defmodule ExVrp.Model do
   end
 
   @doc """
-  Sets custom duration matrices.
+  Sets custom duration matrices, in either form `set_distance_matrices/2`
+  takes.
 
   If not provided, distances are used as durations.
 
@@ -446,10 +459,70 @@ defmodule ExVrp.Model do
       |> ExVrp.Model.set_duration_matrices([matrix1, matrix2])
 
   """
-  @spec set_duration_matrices(t(), [[[non_neg_integer()]]]) :: t()
+  @spec set_duration_matrices(t(), [Matrix.t()]) :: t()
   def set_duration_matrices(%__MODULE__{} = model, matrices) do
     %{model | duration_matrices: matrices}
   end
+
+  @doc """
+  Sets the routing profiles a vehicle type's `:profile` indexes.
+
+  Each profile reads the distance and duration matrices at index `:matrix`,
+  and, when `:override_row` is `{row, distances, durations}`, takes row `row`
+  of both from those two rows instead. Rows come in either form a matrix does.
+  Profiles that differ only in one row, such as a depot row dated at each
+  vehicle's departure hour, then share their matrices instead of each carrying
+  a full copy, which keeps a model with many such profiles small.
+
+  Penalties and forbidden locations stay one list per profile. Defaults to
+  one profile per matrix pair, overriding nothing, when left unset.
+
+  ## Example
+
+      model
+      |> ExVrp.Model.set_profiles([
+        %{matrix: 0, override_row: nil},
+        %{matrix: 0, override_row: {0, [0, 120, 300], [0, 60, 150]}}
+      ])
+
+  """
+  @spec set_profiles(t(), [profile()]) :: t()
+  def set_profiles(%__MODULE__{} = model, profiles) do
+    %{model | profiles: profiles}
+  end
+
+  @doc """
+  The distance matrix `profile` reads, as nested lists, with its override row
+  in place.
+  """
+  @spec distance_matrix(t(), non_neg_integer()) :: [[integer()]]
+  def distance_matrix(%__MODULE__{} = model, profile) do
+    profile_matrix(model.distance_matrices, profile_at(model, profile), &elem(&1, 1))
+  end
+
+  @doc """
+  The duration matrix `profile` reads, as nested lists, with its override row
+  in place.
+  """
+  @spec duration_matrix(t(), non_neg_integer()) :: [[integer()]]
+  def duration_matrix(%__MODULE__{} = model, profile) do
+    profile_matrix(model.duration_matrices, profile_at(model, profile), &elem(&1, 2))
+  end
+
+  defp profile_at(%__MODULE__{profiles: []}, profile), do: %{matrix: profile, override_row: nil}
+  defp profile_at(%__MODULE__{profiles: profiles}, profile), do: Enum.at(profiles, profile)
+
+  defp profile_matrix(matrices, %{matrix: matrix, override_row: override_row}, override_of) do
+    matrices
+    |> Enum.at(matrix)
+    |> Matrix.to_lists()
+    |> with_override_row(override_row, override_of)
+  end
+
+  defp with_override_row(rows, nil, _override_of), do: rows
+
+  defp with_override_row(rows, {row, _distances, _durations} = override_row, override_of),
+    do: List.replace_at(rows, row, Matrix.row_to_list(override_of.(override_row)))
 
   @doc """
   Sets per-profile, per-location penalties.
@@ -547,6 +620,7 @@ defmodule ExVrp.Model do
       |> Breaks.validate(model)
       |> validate_matrix_dimensions(model)
       |> validate_matrix_diagonals(model)
+      |> validate_profiles(model)
       |> validate_client_groups(model)
       |> validate_same_vehicle_groups(model)
       |> validate_penalties(model)
@@ -894,6 +968,8 @@ defmodule ExVrp.Model do
 
   defp non_neg_integer?(value), do: is_integer(value) and value >= 0
 
+  defp num_profiles(%{profiles: [_first | _rest] = profiles}), do: length(profiles)
+
   defp num_profiles(%{distance_matrices: [], vehicle_types: vehicle_types}) do
     Enum.reduce(vehicle_types, 1, &max(&1.profile + 1, &2))
   end
@@ -914,56 +990,84 @@ defmodule ExVrp.Model do
   end
 
   defp validate_matrices(errors, matrices, expected_size, name) do
-    if matrices_valid?(matrices, expected_size) do
+    if Enum.all?(matrices, &Matrix.square?(&1, expected_size)) do
       errors
     else
       ["#{name} matrix dimensions don't match number of locations" | errors]
     end
   end
 
-  defp matrices_valid?(matrices, expected_size) do
-    Enum.all?(matrices, &matrix_valid?(&1, expected_size))
-  end
-
-  defp matrix_valid?(matrix, expected_size) when is_list(matrix) do
-    length(matrix) == expected_size and Enum.all?(matrix, &row_valid?(&1, expected_size))
-  end
-
-  defp matrix_valid?(_matrix, _expected_size), do: false
-
-  defp row_valid?(row, expected_size) when is_list(row), do: length(row) == expected_size
-  defp row_valid?(_row, _expected_size), do: false
-
   defp validate_matrix_diagonals(errors, %{distance_matrices: [], duration_matrices: []}) do
     errors
   end
 
-  defp validate_matrix_diagonals(errors, %{distance_matrices: dist, duration_matrices: dur}) do
+  defp validate_matrix_diagonals(errors, model) do
+    %{distance_matrices: dist, duration_matrices: dur} = model
+    size = num_locations(model)
+
     errors
-    |> check_diagonal(dist, "Distance")
-    |> check_diagonal(dur, "Duration")
+    |> check_diagonal(dist, size, "Distance")
+    |> check_diagonal(dur, size, "Duration")
   end
 
-  defp check_diagonal(errors, matrices, name) do
-    if Enum.any?(matrices, &has_nonzero_diagonal?/1) do
-      ["#{name} matrix diagonal must be zero" | errors]
-    else
+  defp check_diagonal(errors, matrices, size, name) do
+    if matrices |> Enum.filter(&Matrix.square?(&1, size)) |> Enum.all?(&Matrix.zero_diagonal?/1) do
       errors
+    else
+      ["#{name} matrix diagonal must be zero" | errors]
     end
   end
 
-  defp has_nonzero_diagonal?(matrix) when is_list(matrix) do
-    row_tuples = Enum.map(matrix, fn row -> if is_list(row), do: List.to_tuple(row) end)
+  defp validate_profiles(errors, %{profiles: []}), do: errors
 
-    row_tuples
-    |> Stream.with_index()
-    |> Enum.any?(fn
-      {nil, _i} -> false
-      {row_tuple, i} -> elem(row_tuple, i) != 0
-    end)
+  defp validate_profiles(errors, model) do
+    num_matrices = min(length(model.distance_matrices), length(model.duration_matrices))
+    size = num_locations(model)
+
+    model.profiles
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {profile, index} -> profile_errors(profile, index, num_matrices, size) end)
+    |> Enum.reverse(errors)
   end
 
-  defp has_nonzero_diagonal?(_matrix), do: false
+  defp profile_errors(%{matrix: matrix, override_row: override_row}, index, num_matrices, size) do
+    matrix_errors(matrix, index, num_matrices) ++ override_row_errors(override_row, index, size)
+  end
+
+  defp profile_errors(malformed, index, _num_matrices, _size) do
+    ["Profile #{index} is not a %{matrix:, override_row:} map: #{inspect(malformed)}"]
+  end
+
+  defp matrix_errors(matrix, _index, num_matrices) when is_integer(matrix) and matrix in 0..(num_matrices - 1)//1,
+    do: []
+
+  defp matrix_errors(matrix, index, num_matrices) do
+    ["Profile #{index} names matrix #{inspect(matrix)}, but there are #{num_matrices}"]
+  end
+
+  defp override_row_errors(nil, _index, _size), do: []
+
+  defp override_row_errors({row, distances, durations}, index, size) when is_integer(row) and row in 0..(size - 1)//1 do
+    Enum.flat_map([{"distance", distances}, {"duration", durations}], &override_cell_errors(&1, row, index, size))
+  end
+
+  defp override_row_errors(override_row, index, _size) do
+    [
+      "Profile #{index} override_row must be nil or {row, distances, durations} on a location, got: " <>
+        inspect(override_row, limit: 3)
+    ]
+  end
+
+  defp override_cell_errors({name, cells}, row, index, size) do
+    if Matrix.row?(cells, size),
+      do: diagonal_cell_errors(name, Matrix.row_at(cells, row), index),
+      else: ["Profile #{index} override #{name} row must hold one cell per location"]
+  end
+
+  defp diagonal_cell_errors(_name, 0, _index), do: []
+
+  defp diagonal_cell_errors(name, _cell, index),
+    do: ["Profile #{index} override #{name} row must be zero on the diagonal"]
 
   defp validate_client_groups(errors, %{client_groups: [], clients: _clients}) do
     errors

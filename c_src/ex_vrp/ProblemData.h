@@ -4,6 +4,7 @@
 #include "DriveClock.h"
 #include "DynamicBitset.h"
 #include "Matrix.h"
+#include "MatrixView.h"
 #include "Measure.h"
 
 #include <cassert>
@@ -60,14 +61,20 @@ advancePastForbidden(Duration now,
  *     List of vehicle types in the problem instance.
  * distance_matrices
  *     Distance matrices that give the travel distances between all locations
- *     (both depots and clients). Each matrix corresponds to a routing profile.
+ *     (both depots and clients). Each matrix corresponds to a routing profile,
+ *     unless ``profiles`` says otherwise.
  * duration_matrices
  *     Duration matrices that give the travel durations between all locations
- *     (both depots and clients). Each matrix corresponds to a routing profile.
+ *     (both depots and clients). Each matrix corresponds to a routing profile,
+ *     unless ``profiles`` says otherwise.
  * groups
  *     List of client groups. Client groups have certain restrictions - see the
  *     definition for details. By default there are no groups, and empty groups
  *     must not be passed.
+ * profiles
+ *     Routing profiles, each naming the matrix pair it reads and at most one
+ *     row it replaces. By default there is one profile per matrix pair, which
+ *     replaces nothing.
  *
  * Raises
  * ------
@@ -753,6 +760,23 @@ public:
         bool operator==(VehicleLock const &other) const = default;
     };
 
+    /**
+     * A routing profile: the distance and duration matrices at index
+     * ``matrix``, with row ``overrideRow`` read from ``distanceRow`` and
+     * ``durationRow`` instead when the profile replaces one. Profiles that
+     * differ only in that row share their matrices rather than each owning a
+     * copy.
+     */
+    struct Profile
+    {
+        size_t matrix = 0;
+        std::optional<size_t> overrideRow = std::nullopt;
+        std::vector<Distance> distanceRow = {};
+        std::vector<Duration> durationRow = {};
+
+        bool operator==(Profile const &other) const = default;
+    };
+
 private:
     /**
      * Simple union type that distinguishes between client and depot locations.
@@ -766,8 +790,17 @@ private:
         inline operator Depot const &() const;
     };
 
-    std::vector<Matrix<Distance>> const dists_;    // Distance matrices
-    std::vector<Matrix<Duration>> const durs_;     // Duration matrices
+    std::vector<Matrix<Distance>> const dists_;  // Distance matrices
+    std::vector<Matrix<Duration>> const durs_;   // Duration matrices
+    std::vector<Profile> const profiles_;        // Routing profiles
+
+    // One view per profile into dists_, durs_ and profiles_' rows, built once
+    // so that reading a profile's matrix costs the search a row-pointer
+    // lookup, no more than when every profile owned its matrices. They point
+    // into this instance, which is why ProblemData cannot be copied.
+    std::vector<MatrixView<Distance>> const distViews_;
+    std::vector<MatrixView<Duration>> const durViews_;
+
     std::vector<Client> const clients_;            // Client information
     std::vector<Depot> const depots_;              // Depot information
     std::vector<VehicleType> const vehicleTypes_;  // Vehicle type information
@@ -859,7 +892,8 @@ public:
     [[nodiscard]] std::vector<VehicleType> const &vehicleTypes() const;
 
     /**
-     * Returns a list of all distance matrices in the problem instance.
+     * Returns the distance matrices the routing profiles are built on. A
+     * profile's own matrix is :meth:`distanceMatrix`, which may replace a row.
      *
      * .. note::
      *
@@ -870,7 +904,8 @@ public:
     [[nodiscard]] std::vector<Matrix<Distance>> const &distanceMatrices() const;
 
     /**
-     * Returns a list of all duration matrices in the problem instance.
+     * Returns the duration matrices the routing profiles are built on. A
+     * profile's own matrix is :meth:`durationMatrix`, which may replace a row.
      *
      * .. note::
      *
@@ -925,7 +960,7 @@ public:
      * profile
      *     Routing profile whose associated distance matrix to retrieve.
      */
-    [[nodiscard]] inline Matrix<Distance> const &
+    [[nodiscard]] inline MatrixView<Distance> const &
     distanceMatrix(size_t profile) const;
 
     /**
@@ -943,8 +978,14 @@ public:
      * profile
      *     Routing profile whose associated duration matrix to retrieve.
      */
-    [[nodiscard]] inline Matrix<Duration> const &
+    [[nodiscard]] inline MatrixView<Duration> const &
     durationMatrix(size_t profile) const;
+
+    /**
+     * The routing profiles: which matrices each reads, and the row it
+     * replaces, if any.
+     */
+    [[nodiscard]] std::vector<Profile> const &profiles() const;
 
     /**
      * Per-location penalties (in cost units) for the given routing profile.
@@ -1073,9 +1114,12 @@ public:
                 std::vector<SameVehicleGroup> sameVehicleGroups = {},
                 std::vector<std::vector<Cost>> penalties = {},
                 std::vector<DynamicBitset> allowed = {},
-                std::vector<std::optional<VehicleLock>> locks = {});
+                std::vector<std::optional<VehicleLock>> locks = {},
+                std::vector<Profile> profiles = {});
 
     ProblemData() = delete;
+    ProblemData(ProblemData const &) = delete;
+    ProblemData &operator=(ProblemData const &) = delete;
 };
 
 ProblemData::Location::operator Client const &() const { return *client; }
@@ -1090,16 +1134,16 @@ ProblemData::Location ProblemData::location(size_t idx) const
                : Location{.client = &clients_[idx - depots_.size()]};
 }
 
-Matrix<Distance> const &ProblemData::distanceMatrix(size_t profile) const
+MatrixView<Distance> const &ProblemData::distanceMatrix(size_t profile) const
 {
-    assert(profile < dists_.size());
-    return dists_[profile];
+    assert(profile < distViews_.size());
+    return distViews_[profile];
 }
 
-Matrix<Duration> const &ProblemData::durationMatrix(size_t profile) const
+MatrixView<Duration> const &ProblemData::durationMatrix(size_t profile) const
 {
-    assert(profile < durs_.size());
-    return durs_[profile];
+    assert(profile < durViews_.size());
+    return durViews_[profile];
 }
 
 std::vector<Cost> const &ProblemData::penalties(size_t profile) const

@@ -83,6 +83,48 @@ normaliseAllowed(std::vector<pyvrp::DynamicBitset> allowed,
     return std::vector<pyvrp::DynamicBitset>(numProfiles, all);
 }
 
+// An empty profiles argument means one profile per matrix pair, replacing no
+// row: what every model meant before profiles could share matrices.
+std::vector<ProblemData::Profile>
+normaliseProfiles(std::vector<ProblemData::Profile> profiles,
+                  size_t numMatrices)
+{
+    if (!profiles.empty())
+        return profiles;
+
+    std::vector<ProblemData::Profile> oneEach(numMatrices);
+    for (size_t matrix = 0; matrix != numMatrices; ++matrix)
+        oneEach[matrix].matrix = matrix;
+
+    return oneEach;
+}
+
+// Built before validate() runs, which rejects the profiles these views cannot
+// serve. A profile naming a matrix that does not exist gets an empty one in
+// the meantime, so that validate() reports it rather than this reading past
+// the end.
+template <typename T, typename Row>
+std::vector<pyvrp::MatrixView<T>>
+profileViews(std::vector<pyvrp::Matrix<T>> const &matrices,
+             std::vector<ProblemData::Profile> const &profiles,
+             Row const ProblemData::Profile::*row)
+{
+    static pyvrp::Matrix<T> const missing;
+
+    std::vector<pyvrp::MatrixView<T>> views;
+    views.reserve(profiles.size());
+
+    for (auto const &profile : profiles)
+    {
+        auto const &base = profile.matrix < matrices.size()
+                               ? matrices[profile.matrix]
+                               : missing;
+        views.emplace_back(base, profile.overrideRow, (profile.*row).data());
+    }
+
+    return views;
+}
+
 std::vector<bool> clientFlags(size_t numDepots,
                               std::vector<ProblemData::Client> const &clients,
                               bool const ProblemData::Client::*flag)
@@ -736,6 +778,11 @@ std::vector<Matrix<Duration>> const &ProblemData::durationMatrices() const
     return durs_;
 }
 
+std::vector<ProblemData::Profile> const &ProblemData::profiles() const
+{
+    return profiles_;
+}
+
 ProblemData::ClientGroup const &ProblemData::group(size_t group) const
 {
     assert(group < groups_.size());
@@ -773,11 +820,7 @@ size_t ProblemData::numVehicleTypes() const { return vehicleTypes_.size(); }
 
 size_t ProblemData::numVehicles() const { return numVehicles_; }
 
-size_t ProblemData::numProfiles() const
-{
-    assert(dists_.size() == durs_.size());
-    return dists_.size();
-}
+size_t ProblemData::numProfiles() const { return profiles_.size(); }
 
 size_t ProblemData::numLoadDimensions() const { return numLoadDimensions_; }
 
@@ -886,7 +929,7 @@ void ProblemData::validate() const
         if (vehicleType.endDepot >= numDepots())
             throw std::out_of_range("Vehicle type has invalid end depot.");
 
-        if (vehicleType.profile >= dists_.size())
+        if (vehicleType.profile >= numProfiles())
             throw std::out_of_range("Vehicle type has invalid profile.");
 
         if (!hasTimeOverlap(depots_[vehicleType.startDepot], vehicleType))
@@ -921,9 +964,9 @@ void ProblemData::validate() const
         throw std::invalid_argument("Inconsistent number of distance and "
                                     "duration matrices.");
 
+    auto const numLocs = numLocations();
     for (size_t idx = 0; idx != dists_.size(); ++idx)
     {
-        auto const numLocs = numLocations();
         auto const &dist = dists_[idx];
         auto const &dur = durs_[idx];
 
@@ -934,7 +977,27 @@ void ProblemData::validate() const
         if (dur.numRows() != numLocs || dur.numCols() != numLocs)
             throw std::invalid_argument("Duration matrix shape does not match "
                                         "the problem size.");
+    }
 
+    // A profile's diagonal is checked through its view, so it holds for the
+    // matrices as every profile actually reads them, override rows included.
+    for (size_t profile = 0; profile != numProfiles(); ++profile)
+    {
+        auto const &[matrix, overrideRow, distRow, durRow] = profiles_[profile];
+
+        if (matrix >= dists_.size())
+            throw std::out_of_range("Profile has invalid matrix.");
+
+        if (overrideRow && *overrideRow >= numLocs)
+            throw std::out_of_range("Profile has invalid override row.");
+
+        if (overrideRow
+            && (distRow.size() != numLocs || durRow.size() != numLocs))
+            throw std::invalid_argument("Profile override row size does not "
+                                        "match the problem size.");
+
+        auto const &dist = distViews_[profile];
+        auto const &dur = durViews_[profile];
         for (size_t loc = 0; loc != numLocs; ++loc)
         {
             if (dist(loc, loc) != 0)
@@ -1003,20 +1066,25 @@ ProblemData::ProblemData(std::vector<Client> clients,
                          std::vector<SameVehicleGroup> sameVehicleGroups,
                          std::vector<std::vector<Cost>> penalties,
                          std::vector<DynamicBitset> allowed,
-                         std::vector<std::optional<VehicleLock>> locks)
+                         std::vector<std::optional<VehicleLock>> locks,
+                         std::vector<Profile> profiles)
     : dists_(std::move(distMats)),
       durs_(std::move(durMats)),
+      profiles_(normaliseProfiles(std::move(profiles), dists_.size())),
+      distViews_(profileViews(dists_, profiles_, &Profile::distanceRow)),
+      durViews_(profileViews(durs_, profiles_, &Profile::durationRow)),
       clients_(std::move(clients)),
       depots_(std::move(depots)),
       vehicleTypes_(std::move(vehicleTypes)),
       groups_(std::move(groups)),
       sameVehicleGroups_(std::move(sameVehicleGroups)),
       penalties_(normalisePenalties(std::move(penalties),
-                                    dists_.size(),
+                                    profiles_.size(),
                                     clients_.size() + depots_.size())),
       locks_(std::move(locks)),
-      allowed_(normaliseAllowed(
-          std::move(allowed), dists_.size(), clients_.size() + depots_.size())),
+      allowed_(normaliseAllowed(std::move(allowed),
+                                profiles_.size(),
+                                clients_.size() + depots_.size())),
       // normaliseAllowed and the NIF both set every bit before clearing the
       // forbidden ones, padding included, so a fully-permissive set is all().
       hasForbidden_(std::any_of(allowed_.begin(),

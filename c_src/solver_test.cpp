@@ -267,6 +267,120 @@ void test_basic_vrp()
     PASS();
 }
 
+ProblemData::VehicleType vehicleOnProfile(size_t numAvailable, size_t profile)
+{
+    return ProblemData::VehicleType(
+        numAvailable,
+        std::vector<Load>{20},
+        0,
+        0,
+        Cost(0),
+        Duration(0),
+        Duration(100000),
+        Duration(100000),
+        Distance(std::numeric_limits<int64_t>::max()),
+        Cost(1),
+        Cost(1),
+        profile,
+        std::nullopt,
+        std::vector<Load>{},
+        std::vector<size_t>{},
+        0,
+        std::nullopt,
+        Cost(0),
+        "");
+}
+
+// Row 0 of `matrix` scaled by three: a depot row dated at a slower hour.
+template <typename T> std::vector<T> slowFirstRow(Matrix<T> const &matrix)
+{
+    std::vector<T> row;
+    for (size_t j = 0; j < matrix.numCols(); ++j)
+        row.push_back(T(matrix(0, j).get() * 3));
+    return row;
+}
+
+template <typename T>
+Matrix<T> withFirstRow(Matrix<T> const &matrix, std::vector<T> const &row)
+{
+    std::vector<T> flat(matrix.begin(), matrix.end());
+    std::copy(row.begin(), row.end(), flat.begin());
+    return Matrix<T>(std::move(flat), matrix.numRows(), matrix.numCols());
+}
+
+void test_shared_profile_override_row()
+{
+    TEST("profile replacing a row of a shared matrix (20 clients)");
+
+    size_t n = 21;
+    std::vector<std::pair<int64_t, int64_t>> coords;
+    coords.push_back({0, 0});
+    for (size_t i = 1; i < n; ++i)
+        coords.push_back({static_cast<int64_t>((i * 7) % 100),
+                          static_cast<int64_t>((i * 13) % 100)});
+
+    std::vector<ProblemData::Client> clients;
+    for (size_t i = 1; i < n; ++i)
+        clients.emplace_back(std::vector<Load>{1},
+                             std::vector<Load>{},
+                             Duration(0),
+                             Duration(0),
+                             Duration(100000),
+                             Duration(0),
+                             Cost(0),
+                             true,
+                             std::nullopt,
+                             "");
+
+    std::vector<ProblemData::Depot> depots;
+    depots.emplace_back(
+        Duration(0), Duration(100000), Duration(0), Cost(0), "");
+
+    std::vector<ProblemData::VehicleType> vts{vehicleOnProfile(2, 0),
+                                              vehicleOnProfile(2, 1)};
+
+    auto const dist = makeDistMatrix(n, coords);
+    auto const dur = makeDurMatrix(n, coords);
+    auto const distRow = slowFirstRow(dist);
+    auto const durRow = slowFirstRow(dur);
+
+    ProblemData full(clients,
+                     depots,
+                     vts,
+                     {dist, withFirstRow(dist, distRow)},
+                     {dur, withFirstRow(dur, durRow)});
+
+    ProblemData::Profile dated{0, 0, distRow, durRow};
+    ProblemData shared(clients,
+                       depots,
+                       vts,
+                       {dist},
+                       {dur},
+                       {},
+                       {},
+                       {},
+                       {},
+                       {},
+                       {ProblemData::Profile{}, dated});
+
+    assert(shared.numProfiles() == 2);
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = 0; j < n; ++j)
+        {
+            assert(shared.distanceMatrix(1)(i, j)
+                   == full.distanceMatrix(1)(i, j));
+            assert(shared.durationMatrix(1)(i, j)
+                   == full.durationMatrix(1)(i, j));
+        }
+
+    auto const fromFull = solveWithPerturbation(full);
+    auto const fromShared = solveWithPerturbation(shared);
+    assert(fromShared.numClients() == 20);
+    assert(fromShared.distance() == fromFull.distance());
+    assert(fromShared.duration() == fromFull.duration());
+    PASS();
+}
+
 void test_prize_collecting()
 {
     TEST("prize collecting (30 clients, 4 vehicles, optional)");
@@ -1000,6 +1114,7 @@ int main()
     printf("==============================================\n\n");
 
     test_basic_vrp();
+    test_shared_profile_override_row();
     test_prize_collecting();
     test_svg_small();
     test_svg_large();

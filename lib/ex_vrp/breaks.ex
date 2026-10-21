@@ -14,6 +14,7 @@ defmodule ExVrp.Breaks do
   """
 
   alias ExVrp.Client
+  alias ExVrp.Matrix
   alias ExVrp.Model
   alias ExVrp.VehicleType
 
@@ -97,18 +98,17 @@ defmodule ExVrp.Breaks do
     %{
       model
       | clients: model.clients ++ List.duplicate(break, pool_size),
-        distance_matrices: Enum.map(model.distance_matrices, &pad_matrix(&1, pool_size)),
-        duration_matrices: Enum.map(model.duration_matrices, &pad_matrix(&1, pool_size)),
+        distance_matrices: Enum.map(model.distance_matrices, &Matrix.pad(&1, pool_size)),
+        duration_matrices: Enum.map(model.duration_matrices, &Matrix.pad(&1, pool_size)),
+        profiles: Enum.map(model.profiles, &pad_override_row(&1, pool_size)),
         penalties: Enum.map(model.penalties, &(&1 ++ List.duplicate(0, pool_size)))
     }
   end
 
-  defp pad_matrix(matrix, pool_size) do
-    padding = List.duplicate(0, pool_size)
-    zero_row = List.duplicate(0, length(matrix) + pool_size)
+  defp pad_override_row(%{override_row: {row, distances, durations}} = profile, pool_size),
+    do: %{profile | override_row: {row, Matrix.pad_row(distances, pool_size), Matrix.pad_row(durations, pool_size)}}
 
-    Enum.map(matrix, &(&1 ++ padding)) ++ List.duplicate(zero_row, pool_size)
-  end
+  defp pad_override_row(profile, _pool_size), do: profile
 
   defp breaks_per_vehicle(%VehicleType{} = vehicle_type) do
     [
