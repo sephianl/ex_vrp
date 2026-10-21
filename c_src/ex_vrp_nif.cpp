@@ -35,7 +35,7 @@
 #include <variant>
 #include <vector>
 
-using namespace pyvrp;
+using namespace ex_vrp;
 
 // Portable wrapper for enif_get_int64. On macOS (both ARM64 and x86_64), the
 // NIF API macro maps enif_get_int64 to enif_get_long (which takes `long*`),
@@ -3851,7 +3851,7 @@ FINE_NIF(problem_data_groups_nif, 0);
  * Proximity is based on Vidal et al. (2013) hybrid genetic algorithm paper.
  * This considers edge costs, time window penalties, and prizes.
  */
-pyvrp::search::SearchSpace::Neighbours
+ex_vrp::search::SearchSpace::Neighbours
 build_neighbours(ProblemData const &data,
                  size_t numNeighbours = 60,
                  double weightWaitTime = 0.2,
@@ -3861,7 +3861,7 @@ build_neighbours(ProblemData const &data,
     size_t const numLocs = data.numLocations();
     size_t const numDepots = data.numDepots();
     size_t const numClients = data.numClients();
-    pyvrp::search::SearchSpace::Neighbours neighbours(numLocs);
+    ex_vrp::search::SearchSpace::Neighbours neighbours(numLocs);
 
     // Step 1: Collect unique (unitDistCost, unitDurCost, profile) combinations
     std::set<std::tuple<Cost, Cost, size_t>> uniqueEdgeCosts;
@@ -4118,36 +4118,37 @@ local_search_nif([[maybe_unused]] ErlNifEnv *env,
     auto neighbours = build_neighbours(problem_data);
 
     // Create perturbation manager with default params
-    pyvrp::search::PerturbationParams perturbParams(1, 25);
-    pyvrp::search::PerturbationManager perturbManager(perturbParams);
+    ex_vrp::search::PerturbationParams perturbParams(1, 25);
+    ex_vrp::search::PerturbationManager perturbManager(perturbParams);
 
     // Create local search
-    pyvrp::search::LocalSearch ls(problem_data, neighbours, perturbManager);
+    ex_vrp::search::LocalSearch ls(problem_data, neighbours, perturbManager);
 
     // Add node operators - matching PyVRP's default NODE_OPERATORS
-    pyvrp::search::Exchange<1, 0> relocate(problem_data);   // RELOCATE
-    pyvrp::search::Exchange<2, 0> relocate2(problem_data);  // 2-RELOCATE
-    pyvrp::search::Exchange<1, 1> swap11(problem_data);     // SWAP(1,1)
-    pyvrp::search::Exchange<2, 1> swap21(problem_data);     // SWAP(2,1)
-    pyvrp::search::Exchange<2, 2> swap22(problem_data);     // SWAP(2,2)
-    pyvrp::search::SwapTails swapTails(problem_data);       // SWAP-TAILS
+    ex_vrp::search::Exchange<1, 0> relocate(problem_data);   // RELOCATE
+    ex_vrp::search::Exchange<2, 0> relocate2(problem_data);  // 2-RELOCATE
+    ex_vrp::search::Exchange<1, 1> swap11(problem_data);     // SWAP(1,1)
+    ex_vrp::search::Exchange<2, 1> swap21(problem_data);     // SWAP(2,1)
+    ex_vrp::search::Exchange<2, 2> swap22(problem_data);     // SWAP(2,2)
+    ex_vrp::search::SwapTails swapTails(problem_data);       // SWAP-TAILS
 
     ls.addNodeOperator(relocate);
     ls.addNodeOperator(relocate2);
     ls.addNodeOperator(swap11);
     ls.addNodeOperator(swap21);
     ls.addNodeOperator(swap22);
-    if (pyvrp::search::supports<pyvrp::search::SwapTails>(problem_data))
+    if (ex_vrp::search::supports<ex_vrp::search::SwapTails>(problem_data))
     {
         ls.addNodeOperator(swapTails);
     }
 
     // RelocateWithDepot only if supported (needs reload depots)
-    std::unique_ptr<pyvrp::search::RelocateWithDepot> relocateDepot;
-    if (pyvrp::search::supports<pyvrp::search::RelocateWithDepot>(problem_data))
+    std::unique_ptr<ex_vrp::search::RelocateWithDepot> relocateDepot;
+    if (ex_vrp::search::supports<ex_vrp::search::RelocateWithDepot>(
+            problem_data))
     {
         relocateDepot
-            = std::make_unique<pyvrp::search::RelocateWithDepot>(problem_data);
+            = std::make_unique<ex_vrp::search::RelocateWithDepot>(problem_data);
         ls.addNodeOperator(*relocateDepot);
     }
 
@@ -4201,22 +4202,22 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
 
     // Create perturbation manager (won't be used but required for LocalSearch
     // constructor)
-    pyvrp::search::PerturbationParams perturbParams(1, 25);
-    pyvrp::search::PerturbationManager perturbManager(perturbParams);
+    ex_vrp::search::PerturbationParams perturbParams(1, 25);
+    ex_vrp::search::PerturbationManager perturbManager(perturbParams);
 
     // Create local search
-    pyvrp::search::LocalSearch ls(problem_data, neighbours, perturbManager);
+    ex_vrp::search::LocalSearch ls(problem_data, neighbours, perturbManager);
 
     // Add node operators - matching PyVRP's default NODE_OPERATORS:
     // Exchange10, Exchange20, Exchange11, Exchange21, Exchange22, SwapTails,
     // RelocateWithDepot Note: PyVRP's default ROUTE_OPERATORS is empty, so we
     // don't add SwapRoutes here
-    pyvrp::search::Exchange<1, 0> relocate(problem_data);   // RELOCATE
-    pyvrp::search::Exchange<2, 0> relocate2(problem_data);  // 2-RELOCATE
-    pyvrp::search::Exchange<1, 1> swap11(problem_data);     // SWAP(1,1)
-    pyvrp::search::Exchange<2, 1> swap21(problem_data);     // SWAP(2,1)
-    pyvrp::search::Exchange<2, 2> swap22(problem_data);     // SWAP(2,2)
-    pyvrp::search::SwapTails swapTails(problem_data);       // SWAP-TAILS
+    ex_vrp::search::Exchange<1, 0> relocate(problem_data);   // RELOCATE
+    ex_vrp::search::Exchange<2, 0> relocate2(problem_data);  // 2-RELOCATE
+    ex_vrp::search::Exchange<1, 1> swap11(problem_data);     // SWAP(1,1)
+    ex_vrp::search::Exchange<2, 1> swap21(problem_data);     // SWAP(2,1)
+    ex_vrp::search::Exchange<2, 2> swap22(problem_data);     // SWAP(2,2)
+    ex_vrp::search::SwapTails swapTails(problem_data);       // SWAP-TAILS
 
     ls.addNodeOperator(relocate);
     ls.addNodeOperator(relocate2);
@@ -4224,17 +4225,18 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
     ls.addNodeOperator(swap21);
     ls.addNodeOperator(swap22);
     // SwapTails.supports() returns true if numVehicles > 1
-    if (pyvrp::search::supports<pyvrp::search::SwapTails>(problem_data))
+    if (ex_vrp::search::supports<ex_vrp::search::SwapTails>(problem_data))
     {
         ls.addNodeOperator(swapTails);
     }
 
     // RelocateWithDepot only if supported (needs reload depots)
-    std::unique_ptr<pyvrp::search::RelocateWithDepot> relocateDepot;
-    if (pyvrp::search::supports<pyvrp::search::RelocateWithDepot>(problem_data))
+    std::unique_ptr<ex_vrp::search::RelocateWithDepot> relocateDepot;
+    if (ex_vrp::search::supports<ex_vrp::search::RelocateWithDepot>(
+            problem_data))
     {
         relocateDepot
-            = std::make_unique<pyvrp::search::RelocateWithDepot>(problem_data);
+            = std::make_unique<ex_vrp::search::RelocateWithDepot>(problem_data);
         ls.addNodeOperator(*relocateDepot);
     }
 
@@ -4348,26 +4350,26 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
     auto neighbours = build_neighbours(problem_data);
 
     // Create perturbation manager with default params
-    pyvrp::search::PerturbationParams perturbParams(1, 25);
-    pyvrp::search::PerturbationManager perturbManager(perturbParams);
+    ex_vrp::search::PerturbationParams perturbParams(1, 25);
+    ex_vrp::search::PerturbationManager perturbManager(perturbParams);
 
     // Create local search
-    pyvrp::search::LocalSearch ls(problem_data, neighbours, perturbManager);
+    ex_vrp::search::LocalSearch ls(problem_data, neighbours, perturbManager);
 
     // Create operators (kept alive in vectors)
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<1, 0>>> exchange10_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<1, 1>>> exchange11_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<2, 0>>> exchange20_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<2, 1>>> exchange21_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<2, 2>>> exchange22_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<3, 0>>> exchange30_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<3, 1>>> exchange31_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<3, 2>>> exchange32_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<3, 3>>> exchange33_ops;
-    std::vector<std::unique_ptr<pyvrp::search::SwapTails>> swap_tails_ops;
-    std::vector<std::unique_ptr<pyvrp::search::RelocateWithDepot>>
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<1, 0>>> exchange10_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<1, 1>>> exchange11_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<2, 0>>> exchange20_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<2, 1>>> exchange21_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<2, 2>>> exchange22_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<3, 0>>> exchange30_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<3, 1>>> exchange31_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<3, 2>>> exchange32_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<3, 3>>> exchange33_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::SwapTails>> swap_tails_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::RelocateWithDepot>>
         relocate_depot_ops;
-    std::vector<std::unique_ptr<pyvrp::search::SwapRoutes>> swap_routes_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::SwapRoutes>> swap_routes_ops;
 
     // Add specified node operators
     for (const auto &op_name : node_ops)
@@ -4375,67 +4377,67 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
         if (op_name == "exchange10" || op_name == "relocate")
         {
             exchange10_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<1, 0>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<1, 0>>(problem_data));
             ls.addNodeOperator(*exchange10_ops.back());
         }
         else if (op_name == "exchange11" || op_name == "swap11")
         {
             exchange11_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<1, 1>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<1, 1>>(problem_data));
             ls.addNodeOperator(*exchange11_ops.back());
         }
         else if (op_name == "exchange20" || op_name == "relocate2")
         {
             exchange20_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<2, 0>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<2, 0>>(problem_data));
             ls.addNodeOperator(*exchange20_ops.back());
         }
         else if (op_name == "exchange21" || op_name == "swap21")
         {
             exchange21_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<2, 1>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<2, 1>>(problem_data));
             ls.addNodeOperator(*exchange21_ops.back());
         }
         else if (op_name == "exchange22" || op_name == "swap22")
         {
             exchange22_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<2, 2>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<2, 2>>(problem_data));
             ls.addNodeOperator(*exchange22_ops.back());
         }
         else if (op_name == "exchange30" || op_name == "relocate3")
         {
             exchange30_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<3, 0>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<3, 0>>(problem_data));
             ls.addNodeOperator(*exchange30_ops.back());
         }
         else if (op_name == "exchange31" || op_name == "swap31")
         {
             exchange31_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<3, 1>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<3, 1>>(problem_data));
             ls.addNodeOperator(*exchange31_ops.back());
         }
         else if (op_name == "exchange32" || op_name == "swap32")
         {
             exchange32_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<3, 2>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<3, 2>>(problem_data));
             ls.addNodeOperator(*exchange32_ops.back());
         }
         else if (op_name == "exchange33" || op_name == "swap33")
         {
             exchange33_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<3, 3>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<3, 3>>(problem_data));
             ls.addNodeOperator(*exchange33_ops.back());
         }
         else if (op_name == "swap_tails")
         {
             swap_tails_ops.push_back(
-                std::make_unique<pyvrp::search::SwapTails>(problem_data));
+                std::make_unique<ex_vrp::search::SwapTails>(problem_data));
             ls.addNodeOperator(*swap_tails_ops.back());
         }
         else if (op_name == "relocate_with_depot")
         {
             relocate_depot_ops.push_back(
-                std::make_unique<pyvrp::search::RelocateWithDepot>(
+                std::make_unique<ex_vrp::search::RelocateWithDepot>(
                     problem_data));
             ls.addNodeOperator(*relocate_depot_ops.back());
         }
@@ -4447,7 +4449,7 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
         if (op_name == "swap_routes")
         {
             swap_routes_ops.push_back(
-                std::make_unique<pyvrp::search::SwapRoutes>(problem_data));
+                std::make_unique<ex_vrp::search::SwapRoutes>(problem_data));
             ls.addRouteOperator(*swap_routes_ops.back());
         }
     }
@@ -4543,39 +4545,39 @@ fine::Term local_search_stats_nif(
     auto neighbours = build_neighbours(problem_data);
 
     // Create perturbation manager with default params
-    pyvrp::search::PerturbationParams perturbParams(1, 25);
-    pyvrp::search::PerturbationManager perturbManager(perturbParams);
+    ex_vrp::search::PerturbationParams perturbParams(1, 25);
+    ex_vrp::search::PerturbationManager perturbManager(perturbParams);
 
     // Create local search
-    pyvrp::search::LocalSearch ls(problem_data, neighbours, perturbManager);
+    ex_vrp::search::LocalSearch ls(problem_data, neighbours, perturbManager);
 
     // Track operators for stats collection
-    std::vector<std::pair<std::string, pyvrp::search::NodeOperator *>>
+    std::vector<std::pair<std::string, ex_vrp::search::NodeOperator *>>
         node_operator_ptrs;
-    std::vector<std::pair<std::string, pyvrp::search::RouteOperator *>>
+    std::vector<std::pair<std::string, ex_vrp::search::RouteOperator *>>
         route_operator_ptrs;
 
     // Create and add operators
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<1, 0>>> exchange10_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<1, 1>>> exchange11_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<2, 0>>> exchange20_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<2, 1>>> exchange21_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<2, 2>>> exchange22_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<3, 0>>> exchange30_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<3, 1>>> exchange31_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<3, 2>>> exchange32_ops;
-    std::vector<std::unique_ptr<pyvrp::search::Exchange<3, 3>>> exchange33_ops;
-    std::vector<std::unique_ptr<pyvrp::search::SwapTails>> swap_tails_ops;
-    std::vector<std::unique_ptr<pyvrp::search::RelocateWithDepot>>
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<1, 0>>> exchange10_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<1, 1>>> exchange11_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<2, 0>>> exchange20_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<2, 1>>> exchange21_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<2, 2>>> exchange22_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<3, 0>>> exchange30_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<3, 1>>> exchange31_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<3, 2>>> exchange32_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::Exchange<3, 3>>> exchange33_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::SwapTails>> swap_tails_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::RelocateWithDepot>>
         relocate_depot_ops;
-    std::vector<std::unique_ptr<pyvrp::search::SwapRoutes>> swap_routes_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::SwapRoutes>> swap_routes_ops;
 
     for (const auto &op_name : node_ops)
     {
         if (op_name == "exchange10" || op_name == "relocate")
         {
             exchange10_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<1, 0>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<1, 0>>(problem_data));
             ls.addNodeOperator(*exchange10_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange10_ops.back().get()});
@@ -4583,7 +4585,7 @@ fine::Term local_search_stats_nif(
         else if (op_name == "exchange11" || op_name == "swap11")
         {
             exchange11_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<1, 1>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<1, 1>>(problem_data));
             ls.addNodeOperator(*exchange11_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange11_ops.back().get()});
@@ -4591,7 +4593,7 @@ fine::Term local_search_stats_nif(
         else if (op_name == "exchange20" || op_name == "relocate2")
         {
             exchange20_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<2, 0>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<2, 0>>(problem_data));
             ls.addNodeOperator(*exchange20_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange20_ops.back().get()});
@@ -4599,7 +4601,7 @@ fine::Term local_search_stats_nif(
         else if (op_name == "exchange21" || op_name == "swap21")
         {
             exchange21_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<2, 1>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<2, 1>>(problem_data));
             ls.addNodeOperator(*exchange21_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange21_ops.back().get()});
@@ -4607,7 +4609,7 @@ fine::Term local_search_stats_nif(
         else if (op_name == "exchange22" || op_name == "swap22")
         {
             exchange22_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<2, 2>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<2, 2>>(problem_data));
             ls.addNodeOperator(*exchange22_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange22_ops.back().get()});
@@ -4615,7 +4617,7 @@ fine::Term local_search_stats_nif(
         else if (op_name == "exchange30" || op_name == "relocate3")
         {
             exchange30_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<3, 0>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<3, 0>>(problem_data));
             ls.addNodeOperator(*exchange30_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange30_ops.back().get()});
@@ -4623,7 +4625,7 @@ fine::Term local_search_stats_nif(
         else if (op_name == "exchange31" || op_name == "swap31")
         {
             exchange31_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<3, 1>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<3, 1>>(problem_data));
             ls.addNodeOperator(*exchange31_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange31_ops.back().get()});
@@ -4631,7 +4633,7 @@ fine::Term local_search_stats_nif(
         else if (op_name == "exchange32" || op_name == "swap32")
         {
             exchange32_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<3, 2>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<3, 2>>(problem_data));
             ls.addNodeOperator(*exchange32_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange32_ops.back().get()});
@@ -4639,7 +4641,7 @@ fine::Term local_search_stats_nif(
         else if (op_name == "exchange33" || op_name == "swap33")
         {
             exchange33_ops.push_back(
-                std::make_unique<pyvrp::search::Exchange<3, 3>>(problem_data));
+                std::make_unique<ex_vrp::search::Exchange<3, 3>>(problem_data));
             ls.addNodeOperator(*exchange33_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, exchange33_ops.back().get()});
@@ -4647,7 +4649,7 @@ fine::Term local_search_stats_nif(
         else if (op_name == "swap_tails")
         {
             swap_tails_ops.push_back(
-                std::make_unique<pyvrp::search::SwapTails>(problem_data));
+                std::make_unique<ex_vrp::search::SwapTails>(problem_data));
             ls.addNodeOperator(*swap_tails_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, swap_tails_ops.back().get()});
@@ -4655,7 +4657,7 @@ fine::Term local_search_stats_nif(
         else if (op_name == "relocate_with_depot")
         {
             relocate_depot_ops.push_back(
-                std::make_unique<pyvrp::search::RelocateWithDepot>(
+                std::make_unique<ex_vrp::search::RelocateWithDepot>(
                     problem_data));
             ls.addNodeOperator(*relocate_depot_ops.back());
             node_operator_ptrs.push_back(
@@ -4668,7 +4670,7 @@ fine::Term local_search_stats_nif(
         if (op_name == "swap_routes")
         {
             swap_routes_ops.push_back(
-                std::make_unique<pyvrp::search::SwapRoutes>(problem_data));
+                std::make_unique<ex_vrp::search::SwapRoutes>(problem_data));
             ls.addRouteOperator(*swap_routes_ops.back());
             route_operator_ptrs.push_back(
                 {op_name, swap_routes_ops.back().get()});
@@ -6168,7 +6170,7 @@ bool relocate_with_depot_supports_nif(
     [[maybe_unused]] ErlNifEnv *env,
     fine::ResourcePtr<ProblemDataResource> problem_resource)
 {
-    return pyvrp::search::supports<pyvrp::search::RelocateWithDepot>(
+    return ex_vrp::search::supports<ex_vrp::search::RelocateWithDepot>(
         *problem_resource->data);
 }
 
@@ -6829,8 +6831,8 @@ FINE_NIF(load_segment_excess_load_nif, 0);
 
 struct PerturbationManagerResource
 {
-    pyvrp::search::PerturbationParams params;
-    pyvrp::search::PerturbationManager manager;
+    ex_vrp::search::PerturbationParams params;
+    ex_vrp::search::PerturbationManager manager;
 
     PerturbationManagerResource(size_t min_perturbations,
                                 size_t max_perturbations)

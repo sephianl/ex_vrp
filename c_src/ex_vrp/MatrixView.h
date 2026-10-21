@@ -1,5 +1,5 @@
-#ifndef PYVRP_MATRIXVIEW_H
-#define PYVRP_MATRIXVIEW_H
+#ifndef EX_VRP_MATRIXVIEW_H
+#define EX_VRP_MATRIXVIEW_H
 
 #include "Matrix.h"
 
@@ -7,7 +7,7 @@
 #include <optional>
 #include <vector>
 
-namespace pyvrp
+namespace ex_vrp
 {
 /**
  * A read-only view of a square matrix in which at most one row is replaced by
@@ -57,6 +57,6 @@ public:
 
     [[nodiscard]] size_t numRows() const { return rows_.size(); }
 };
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
-#endif  // PYVRP_MATRIXVIEW_H
+#endif  // EX_VRP_MATRIXVIEW_H

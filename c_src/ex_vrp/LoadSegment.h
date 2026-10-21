@@ -1,12 +1,12 @@
-#ifndef PYVRP_LOADSEGMENT_H
-#define PYVRP_LOADSEGMENT_H
+#ifndef EX_VRP_LOADSEGMENT_H
+#define EX_VRP_LOADSEGMENT_H
 
 #include "Measure.h"
 #include "ProblemData.h"
 
 #include <iosfwd>
 
-namespace pyvrp
+namespace ex_vrp
 {
 /**
  * LoadSegment(delivery: int, pickup: int, load: int, excess_load: int = 0)
@@ -122,9 +122,9 @@ LoadSegment::LoadSegment(Load delivery, Load pickup, Load load, Load excessLoad)
     : delivery_(delivery), pickup_(pickup), load_(load), excessLoad_(excessLoad)
 {
 }
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
 std::ostream &operator<<(std::ostream &out,  // helpful for debugging
-                         pyvrp::LoadSegment const &segment);
+                         ex_vrp::LoadSegment const &segment);
 
-#endif  // PYVRP_LOADSEGMENT_H
+#endif  // EX_VRP_LOADSEGMENT_H

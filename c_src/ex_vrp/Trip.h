@@ -1,12 +1,12 @@
-#ifndef PYVRP_TRIP_H
-#define PYVRP_TRIP_H
+#ifndef EX_VRP_TRIP_H
+#define EX_VRP_TRIP_H
 
 #include "ProblemData.h"
 
 #include <optional>
 #include <vector>
 
-namespace pyvrp
+namespace ex_vrp
 {
 /**
  * Trip(
@@ -24,7 +24,7 @@ namespace pyvrp
  * .. note::
  *
  *    A trip does not stand on its own - it is intended to be part of a
- *    :class:`~pyvrp._pyvrp.Route`, which tracks overall route statistics
+ *    :class:`Route`, which tracks overall route statistics
  *    involving all trips, and determines route feasibility.
  */
 class Trip
@@ -168,8 +168,8 @@ public:
          size_t startDepot,
          size_t endDepot);
 };
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
-std::ostream &operator<<(std::ostream &out, pyvrp::Trip const &trip);
+std::ostream &operator<<(std::ostream &out, ex_vrp::Trip const &trip);
 
-#endif  // PYVRP_TRIP_H
+#endif  // EX_VRP_TRIP_H

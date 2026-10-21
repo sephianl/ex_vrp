@@ -1,13 +1,13 @@
-#ifndef PYVRP_SEARCH_LOCALSEARCHOPERATOR_H
-#define PYVRP_SEARCH_LOCALSEARCHOPERATOR_H
+#ifndef EX_VRP_SEARCH_LOCALSEARCHOPERATOR_H
+#define EX_VRP_SEARCH_LOCALSEARCHOPERATOR_H
 
-#include "../Solution.h"  // pyvrp::Solution
+#include "../Solution.h"  // ex_vrp::Solution
 #include "CostEvaluator.h"
 #include "Measure.h"
 #include "ProblemData.h"
 #include "Route.h"
 
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 /**
  * Simple data structure that tracks statistics about the number of times
@@ -63,7 +63,7 @@ public:
      * Called once after loading the solution to improve. This can be used to
      * e.g. update local operator state.
      */
-    virtual void init([[maybe_unused]] pyvrp::Solution const &solution)
+    virtual void init([[maybe_unused]] ex_vrp::Solution const &solution)
     {
         stats_ = {};  // reset call statistics
     };
@@ -131,6 +131,6 @@ template <typename Op> bool supports([[maybe_unused]] ProblemData const &data)
 {
     return true;
 }
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
-#endif  // PYVRP_SEARCH_LOCALSEARCHOPERATOR_H
+#endif  // EX_VRP_SEARCH_LOCALSEARCHOPERATOR_H

@@ -2,8 +2,8 @@
 
 #include <fstream>
 
-using pyvrp::Duration;
-using pyvrp::DurationSegment;
+using ex_vrp::Duration;
+using ex_vrp::DurationSegment;
 
 Duration DurationSegment::prevEndLate() const { return prevEndLate_; }
 

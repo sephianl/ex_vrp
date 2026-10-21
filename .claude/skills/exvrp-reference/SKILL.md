@@ -111,7 +111,7 @@ of the same route coexist, and mixing them up is the trap:
   as the breaks it lacks (`DriveClock::missing`, max over both clocks) appended before the end
   depot, through the shared `Route::summarise()`. Clock overrun is **not** time warp here. `k`
   depends on the proposal, so it is never cached in `durAt/durBefore/durAfter`.
-- **True price** (`pyvrp::Route`, what the ILS sees): overrun is time warp. `BreakRepair`
+- **True price** (`ex_vrp::Route`, what the ILS sees): overrun is time warp. `BreakRepair`
   materialises virtual breaks whenever that lowers true overrun, _whatever the delta_, and
   releases a break only if true overrun does not grow — change either rule and it oscillates or
   strips needed breaks. `LocalSearch` repairs breaks after every round and before every `unload()`.

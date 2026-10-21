@@ -5,13 +5,13 @@
 #include <cassert>
 #include <fstream>
 
-using pyvrp::Coordinate;
-using pyvrp::Cost;
-using pyvrp::Distance;
-using pyvrp::Duration;
-using pyvrp::Load;
-using pyvrp::ProblemData;
-using pyvrp::Trip;
+using ex_vrp::Coordinate;
+using ex_vrp::Cost;
+using ex_vrp::Distance;
+using ex_vrp::Duration;
+using ex_vrp::Load;
+using ex_vrp::ProblemData;
+using ex_vrp::Trip;
 
 namespace
 {

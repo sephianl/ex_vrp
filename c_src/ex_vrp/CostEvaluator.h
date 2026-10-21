@@ -1,5 +1,5 @@
-#ifndef PYVRP_COSTEVALUATOR_H
-#define PYVRP_COSTEVALUATOR_H
+#ifndef EX_VRP_COSTEVALUATOR_H
+#define EX_VRP_COSTEVALUATOR_H
 
 #include "Measure.h"
 #include "Solution.h"
@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-namespace pyvrp
+namespace ex_vrp
 {
 // The following methods must be implemented for a type to be evaluatable by
 // the CostEvaluator.
@@ -446,6 +446,6 @@ bool CostEvaluator::deltaCost(Cost &out,
 
     return true;
 }
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
-#endif  // PYVRP_COSTEVALUATOR_H
+#endif  // EX_VRP_COSTEVALUATOR_H

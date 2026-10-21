@@ -5,8 +5,8 @@
 #include <ostream>
 #include <utility>
 
-using pyvrp::ClockQuantity;
-using pyvrp::search::Route;
+using ex_vrp::ClockQuantity;
+using ex_vrp::search::Route;
 
 Route::Node::Node(size_t loc) : loc_(loc), idx_(0), trip_(0), route_(nullptr) {}
 
@@ -402,7 +402,7 @@ template <ClockQuantity Quantity> void Route::updateStretches()
     }
 }
 
-pyvrp::DurationSegment
+ex_vrp::DurationSegment
 Route::SegmentBetween::durationWithBreaks(size_t profile,
                                           size_t vehicleType) const
 {
@@ -920,7 +920,7 @@ bool Route::operator==(Route const &other) const
     // clang-format on
 }
 
-bool Route::operator==(pyvrp::Route const &other) const
+bool Route::operator==(ex_vrp::Route const &other) const
 {
     assert(!dirty);
 

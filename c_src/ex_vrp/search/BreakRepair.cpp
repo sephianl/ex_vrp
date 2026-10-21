@@ -6,8 +6,8 @@
 #include <array>
 #include <limits>
 
-using pyvrp::search::BreakRepair;
-using pyvrp::search::Route;
+using ex_vrp::search::BreakRepair;
+using ex_vrp::search::Route;
 
 BreakRepair::BreakRepair(ProblemData const &data) : data(data)
 {

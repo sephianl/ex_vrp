@@ -1,5 +1,5 @@
-#ifndef PYVRP_RANDOMNUMBERGENERATOR_H
-#define PYVRP_RANDOMNUMBERGENERATOR_H
+#ifndef EX_VRP_RANDOMNUMBERGENERATOR_H
+#define EX_VRP_RANDOMNUMBERGENERATOR_H
 
 #include <array>
 #include <cstddef>
@@ -7,7 +7,7 @@
 #include <limits>
 #include <type_traits>
 
-namespace pyvrp
+namespace ex_vrp
 {
 /**
  * RandomNumberGenerator(seed: int)
@@ -105,6 +105,6 @@ void RandomNumberGenerator::shuffle(RandomIt first, RandomIt last)
     for (auto idx = last - first - 1; idx > 0; --idx)
         std::swap(first[idx], first[randint(idx + 1)]);
 }
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
-#endif  // PYVRP_RANDOMNUMBERGENERATOR_H
+#endif  // EX_VRP_RANDOMNUMBERGENERATOR_H

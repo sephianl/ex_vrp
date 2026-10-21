@@ -1,9 +1,9 @@
-#ifndef PYVRP_SEARCH_RELOCATEWITHDEPOT_H
-#define PYVRP_SEARCH_RELOCATEWITHDEPOT_H
+#ifndef EX_VRP_SEARCH_RELOCATEWITHDEPOT_H
+#define EX_VRP_SEARCH_RELOCATEWITHDEPOT_H
 
 #include "LocalSearchOperator.h"
 
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 /**
  * RelocateWithDepot(data: ProblemData)
@@ -69,6 +69,6 @@ public:
 };
 
 template <> bool supports<RelocateWithDepot>(ProblemData const &data);
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
-#endif  // PYVRP_SEARCH_RELOCATEWITHDEPOT_H
+#endif  // EX_VRP_SEARCH_RELOCATEWITHDEPOT_H

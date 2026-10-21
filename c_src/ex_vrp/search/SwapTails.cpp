@@ -4,18 +4,18 @@
 
 #include <cassert>
 
-using pyvrp::search::SwapTails;
+using ex_vrp::search::SwapTails;
 
 namespace
 {
-bool onLastTrip(pyvrp::search::Route::Node *node)
+bool onLastTrip(ex_vrp::search::Route::Node *node)
 {
     auto const *route = node->route();
     return node->trip() + 1 == route->numTrips();
 }
 
 // Clients after node, up to the end depot. Breaks there are not clients.
-size_t clientsAfter(pyvrp::search::Route::Node *node)
+size_t clientsAfter(ex_vrp::search::Route::Node *node)
 {
     auto const *route = node->route();
     auto const last = route->size() - 2;
@@ -29,20 +29,20 @@ size_t clientsAfter(pyvrp::search::Route::Node *node)
 // Change in fixed cost when route's tail after `node` becomes `incoming`
 // clients: a route that gains its first client pays it, one that loses its
 // last is spared it.
-pyvrp::Cost fixedCostDelta(pyvrp::search::Route::Node *node, size_t incoming)
+ex_vrp::Cost fixedCostDelta(ex_vrp::search::Route::Node *node, size_t incoming)
 {
     auto const *route = node->route();
     auto const before = route->numClients();
     auto const after = before - clientsAfter(node) + incoming;
     return route->fixedVehicleCost()
-           * (static_cast<pyvrp::Cost>(after > 0)
-              - static_cast<pyvrp::Cost>(before > 0));
+           * (static_cast<ex_vrp::Cost>(after > 0)
+              - static_cast<ex_vrp::Cost>(before > 0));
 }
 }  // namespace
 
-pyvrp::Cost SwapTails::evaluate(Route::Node *U,
-                                Route::Node *V,
-                                CostEvaluator const &costEvaluator)
+ex_vrp::Cost SwapTails::evaluate(Route::Node *U,
+                                 Route::Node *V,
+                                 CostEvaluator const &costEvaluator)
 {
     stats_.numEvaluations++;
     assert(!U->isEndDepot() && !U->isReloadDepot());
@@ -154,7 +154,7 @@ void SwapTails::apply(Route::Node *U, Route::Node *V) const
     }
 }
 
-template <> bool pyvrp::search::supports<SwapTails>(ProblemData const &data)
+template <> bool ex_vrp::search::supports<SwapTails>(ProblemData const &data)
 {
     // Does not work for TSP, since the operator needs at least two routes.
     return data.numVehicles() > 1;

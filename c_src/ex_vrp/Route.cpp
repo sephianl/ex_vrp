@@ -8,14 +8,14 @@
 #include <fstream>
 #include <numeric>
 
-using pyvrp::ClockQuantity;
-using pyvrp::Coordinate;
-using pyvrp::Cost;
-using pyvrp::Distance;
-using pyvrp::Duration;
-using pyvrp::Load;
-using pyvrp::Route;
-using pyvrp::Trip;
+using ex_vrp::ClockQuantity;
+using ex_vrp::Coordinate;
+using ex_vrp::Cost;
+using ex_vrp::Distance;
+using ex_vrp::Duration;
+using ex_vrp::Load;
+using ex_vrp::Route;
+using ex_vrp::Trip;
 
 using Client = size_t;
 
@@ -470,7 +470,7 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     }
 }
 
-pyvrp::BreakClocks Route::foldClocks(ProblemData const &data) const
+ex_vrp::BreakClocks Route::foldClocks(ProblemData const &data) const
 {
     auto const &vehData = data.vehicleType(vehicleType_);
     if (!vehData.hasBreakRule() || empty())

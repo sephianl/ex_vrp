@@ -1,5 +1,5 @@
-#ifndef PYVRP_DURATIONSEGMENT_H
-#define PYVRP_DURATIONSEGMENT_H
+#ifndef EX_VRP_DURATIONSEGMENT_H
+#define EX_VRP_DURATIONSEGMENT_H
 
 #include "Matrix.h"
 #include "Measure.h"
@@ -8,7 +8,7 @@
 #include <cassert>
 #include <iosfwd>
 
-namespace pyvrp
+namespace ex_vrp
 {
 /**
  * DurationSegment(
@@ -358,9 +358,9 @@ DurationSegment::DurationSegment(Duration duration,
       drive_(drive)
 {
 }
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
 std::ostream &operator<<(std::ostream &out,  // helpful for debugging
-                         pyvrp::DurationSegment const &segment);
+                         ex_vrp::DurationSegment const &segment);
 
-#endif  // PYVRP_DURATIONSEGMENT_H
+#endif  // EX_VRP_DURATIONSEGMENT_H

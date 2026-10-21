@@ -1,5 +1,5 @@
-#ifndef PYVRP_SOLUTION_H
-#define PYVRP_SOLUTION_H
+#ifndef EX_VRP_SOLUTION_H
+#define EX_VRP_SOLUTION_H
 
 #include "Measure.h"
 #include "ProblemData.h"
@@ -11,7 +11,7 @@
 #include <optional>
 #include <vector>
 
-namespace pyvrp
+namespace ex_vrp
 {
 /**
  * Solution(data: ProblemData, routes: list[Route] | list[list[int]])
@@ -298,22 +298,22 @@ public:
     // This constructs from the given list of Routes.
     Solution(ProblemData const &data, Routes routes);
 };
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
-std::ostream &operator<<(std::ostream &out, pyvrp::Solution const &sol);
+std::ostream &operator<<(std::ostream &out, ex_vrp::Solution const &sol);
 
-template <> struct std::hash<pyvrp::Solution>
+template <> struct std::hash<ex_vrp::Solution>
 {
-    size_t operator()(pyvrp::Solution const &sol) const
+    size_t operator()(ex_vrp::Solution const &sol) const
     {
         size_t res = 17;
         res = res * 31 + std::hash<size_t>()(sol.numRoutes());
-        res = res * 31 + std::hash<pyvrp::Distance>()(sol.distance());
-        res = res * 31 + std::hash<pyvrp::Duration>()(sol.duration());
-        res = res * 31 + std::hash<pyvrp::Duration>()(sol.timeWarp());
+        res = res * 31 + std::hash<ex_vrp::Distance>()(sol.distance());
+        res = res * 31 + std::hash<ex_vrp::Duration>()(sol.duration());
+        res = res * 31 + std::hash<ex_vrp::Duration>()(sol.timeWarp());
 
         return res;
     }
 };
 
-#endif  // PYVRP_SOLUTION_H
+#endif  // EX_VRP_SOLUTION_H

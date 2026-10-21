@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The C++ core is in namespace `ex_vrp`.** `pyvrp::` and `pyvrp::search::` are now `ex_vrp::` and
+  `ex_vrp::search::`, and the `PYVRP_*_H` header guards are `EX_VRP_*_H`. They were kept to ease
+  upstream merges, and ExVrp no longer takes them. Nothing changes for Elixir callers, and the code
+  the compiler emits is the same.
+
 ## 0.18.0
 
 ### Added

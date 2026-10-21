@@ -5,10 +5,10 @@
 #include <cassert>
 #include <limits>
 
-pyvrp::Cost pyvrp::search::insertCost(Route::Node *U,
-                                      Route::Node *V,
-                                      ProblemData const &data,
-                                      CostEvaluator const &costEvaluator)
+ex_vrp::Cost ex_vrp::search::insertCost(Route::Node *U,
+                                        Route::Node *V,
+                                        ProblemData const &data,
+                                        CostEvaluator const &costEvaluator)
 {
     if (!V->route() || U->isDepot())
         return 0;
@@ -28,12 +28,12 @@ pyvrp::Cost pyvrp::search::insertCost(Route::Node *U,
     return deltaCost;
 }
 
-pyvrp::Cost pyvrp::search::insertTripCost(Route::Node *U,
-                                          Route const *route,
-                                          size_t depot,
-                                          size_t idx,
-                                          ProblemData const &data,
-                                          CostEvaluator const &costEvaluator)
+ex_vrp::Cost ex_vrp::search::insertTripCost(Route::Node *U,
+                                            Route const *route,
+                                            size_t depot,
+                                            size_t idx,
+                                            ProblemData const &data,
+                                            CostEvaluator const &costEvaluator)
 {
     // Not a move that can be made, so it must never win a `<` comparison
     // against a real delta cost the way a zero would.
@@ -60,9 +60,9 @@ pyvrp::Cost pyvrp::search::insertTripCost(Route::Node *U,
     return deltaCost;
 }
 
-pyvrp::Cost pyvrp::search::removeCost(Route::Node *U,
-                                      ProblemData const &data,
-                                      CostEvaluator const &costEvaluator)
+ex_vrp::Cost ex_vrp::search::removeCost(Route::Node *U,
+                                        ProblemData const &data,
+                                        CostEvaluator const &costEvaluator)
 {
     if (!U->route() || U->isStartDepot() || U->isEndDepot())
         return 0;
@@ -85,10 +85,10 @@ pyvrp::Cost pyvrp::search::removeCost(Route::Node *U,
     return deltaCost;
 }
 
-pyvrp::Cost pyvrp::search::inplaceCost(Route::Node *U,
-                                       Route::Node *V,
-                                       ProblemData const &data,
-                                       CostEvaluator const &costEvaluator)
+ex_vrp::Cost ex_vrp::search::inplaceCost(Route::Node *U,
+                                         Route::Node *V,
+                                         ProblemData const &data,
+                                         CostEvaluator const &costEvaluator)
 {
     if (U->route() || !V->route())
         return 0;
