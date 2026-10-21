@@ -8,7 +8,7 @@
 #include <iterator>
 #include <limits>
 
-using pyvrp::search::Solution;
+using ex_vrp::search::Solution;
 
 Solution::Solution(ProblemData const &data) : data_(data)
 {
@@ -26,7 +26,7 @@ Solution::Solution(ProblemData const &data) : data_(data)
     }
 }
 
-void Solution::load(pyvrp::Solution const &solution)
+void Solution::load(ex_vrp::Solution const &solution)
 {
     // Determine offsets for vehicle types.
     std::vector<size_t> vehicleOffset(data_.numVehicleTypes(), 0);
@@ -87,9 +87,9 @@ void Solution::load(pyvrp::Solution const &solution)
     }
 }
 
-pyvrp::Solution Solution::unload() const
+ex_vrp::Solution Solution::unload() const
 {
-    std::vector<pyvrp::Route> solRoutes;
+    std::vector<ex_vrp::Route> solRoutes;
     solRoutes.reserve(data_.numVehicles());
 
     std::vector<size_t> visits;

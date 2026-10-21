@@ -1,5 +1,5 @@
-#ifndef PYVRP_MATRIX_H
-#define PYVRP_MATRIX_H
+#ifndef EX_VRP_MATRIX_H
+#define EX_VRP_MATRIX_H
 
 #include <algorithm>
 #include <cassert>
@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace pyvrp
+namespace ex_vrp
 {
 template <typename T> class Matrix
 {
@@ -119,6 +119,6 @@ template <typename T> T Matrix<T>::max() const
 }
 
 template <typename T> size_t Matrix<T>::size() const { return data_.size(); }
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
-#endif  // PYVRP_MATRIX_H
+#endif  // EX_VRP_MATRIX_H

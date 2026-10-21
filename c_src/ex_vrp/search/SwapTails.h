@@ -1,9 +1,9 @@
-#ifndef PYVRP_SEARCH_SWAPTAILS_H
-#define PYVRP_SEARCH_SWAPTAILS_H
+#ifndef EX_VRP_SEARCH_SWAPTAILS_H
+#define EX_VRP_SEARCH_SWAPTAILS_H
 
 #include "LocalSearchOperator.h"
 
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 /**
  * SwapTails(data: ProblemData)
@@ -32,6 +32,6 @@ public:
 };
 
 template <> bool supports<SwapTails>(ProblemData const &data);
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
-#endif  // PYVRP_SEARCH_SWAPTAILS_H
+#endif  // EX_VRP_SEARCH_SWAPTAILS_H

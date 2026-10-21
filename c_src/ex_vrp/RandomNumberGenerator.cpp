@@ -1,6 +1,6 @@
 #include "RandomNumberGenerator.h"
 
-using pyvrp::RandomNumberGenerator;
+using ex_vrp::RandomNumberGenerator;
 
 RandomNumberGenerator::RandomNumberGenerator(uint32_t seed)
     : state_{seed, 123456789, 362436069, 521288629}

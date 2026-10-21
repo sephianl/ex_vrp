@@ -5,7 +5,7 @@
 
 #include <cassert>
 
-using pyvrp::search::RelocateWithDepot;
+using ex_vrp::search::RelocateWithDepot;
 
 void RelocateWithDepot::evalDepotBefore(Cost fixedCost,
                                         Route::Node *U,
@@ -150,9 +150,9 @@ void RelocateWithDepot::evalInPlaceDepot(Route::Node *V,
     }
 }
 
-pyvrp::Cost RelocateWithDepot::evaluate(Route::Node *U,
-                                        Route::Node *V,
-                                        CostEvaluator const &costEvaluator)
+ex_vrp::Cost RelocateWithDepot::evaluate(Route::Node *U,
+                                         Route::Node *V,
+                                         CostEvaluator const &costEvaluator)
 {
     assert(!U->isDepot() && !V->isEndDepot());
     stats_.numEvaluations++;
@@ -240,7 +240,7 @@ void RelocateWithDepot::apply(Route::Node *U, Route::Node *V) const
 }
 
 template <>
-bool pyvrp::search::supports<RelocateWithDepot>(ProblemData const &data)
+bool ex_vrp::search::supports<RelocateWithDepot>(ProblemData const &data)
 {
     // We need at least one vehicle type for which reloading is enabled.
     for (auto const &vehType : data.vehicleTypes())

@@ -4,8 +4,8 @@
 #include <numeric>
 #include <stdexcept>
 
-using pyvrp::search::Route;
-using pyvrp::search::SearchSpace;
+using ex_vrp::search::Route;
+using ex_vrp::search::SearchSpace;
 
 SearchSpace::SearchSpace(ProblemData const &data, Neighbours neighbours)
     : data_(data),

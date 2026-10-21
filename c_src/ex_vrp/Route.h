@@ -1,5 +1,5 @@
-#ifndef PYVRP_ROUTE_H
-#define PYVRP_ROUTE_H
+#ifndef EX_VRP_ROUTE_H
+#define EX_VRP_ROUTE_H
 
 #include "Measure.h"
 #include "ProblemData.h"
@@ -10,13 +10,13 @@
 #include <optional>
 #include <vector>
 
-namespace pyvrp
+namespace ex_vrp
 {
 /**
  * Route(data: ProblemData, visits: list[int] | list[Trip], vehicle_type: int)
  *
  * A simple class that stores the route plan and some statistics. Internally,
- * a route consists of one or more :class:`~pyvrp._pyvrp.Trip` objects.
+ * a route consists of one or more :class:`Trip` objects.
  */
 class Route
 {
@@ -417,8 +417,8 @@ public:
 
     Route(ProblemData const &data, Visits visits, VehicleType vehicleType);
 };
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
-std::ostream &operator<<(std::ostream &out, pyvrp::Route const &route);
+std::ostream &operator<<(std::ostream &out, ex_vrp::Route const &route);
 
-#endif  // PYVRP_ROUTE_H
+#endif  // EX_VRP_ROUTE_H

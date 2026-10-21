@@ -23,6 +23,9 @@ jobs:
       # Fail the build on any C++ compiler warning. CI only: consumers build with other
       # compilers, whose new warnings must not break their builds.
       EXTRA_CXXFLAGS: "-Werror"
+      # One Mix environment for the whole job, so the deps and the NIF compile once.
+      # Under the default dev, `mix test` compiled everything a second time for test.
+      MIX_ENV: test
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,9 +50,14 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          # A hit on the primary key is never saved again, so the entry stays as the run that
+          # made it left it; keying on the run as well saves each run's build (and its
+          # dialyzer PLT) for the next. devenv.lock pins Elixir and OTP, whose builds Mix
+          # recompiles every dependency for.
+          key: ${{ runner.os }}-mix-test-${{ hashFiles('**/mix.lock', 'devenv.lock') }}-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-mix-
+            ${{ runner.os }}-mix-test-${{ hashFiles('**/mix.lock', 'devenv.lock') }}-
+            ${{ runner.os }}-mix-test-
 
       - name: Get dependencies
         run: |
@@ -89,17 +97,20 @@ jobs:
         run: |
           mix bench.smoke
 
-      - name: Run AddressSanitizer tests
-        run: |
-          task test:asan
-
+      # ex_unit already ran in "Run tests"; mix check would run the suite again.
       - name: Run full checks
         if: github.event_name == 'pull_request'
         run: |
-          mix check
+          mix check --except ex_unit
 
       - name: Reach change-safety analysis
         if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags origin main:refs/remotes/origin/main
           mix reach.check --changed --base origin/main
+
+      # Last: it rebuilds the NIF with sanitizers and deletes it afterwards, so any Mix
+      # step after it would compile the NIF once more.
+      - name: Run AddressSanitizer tests
+        run: |
+          task test:asan

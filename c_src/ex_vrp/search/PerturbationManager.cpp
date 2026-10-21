@@ -4,8 +4,8 @@
 #include <cassert>
 #include <stdexcept>
 
-using pyvrp::search::PerturbationManager;
-using pyvrp::search::PerturbationParams;
+using ex_vrp::search::PerturbationManager;
+using ex_vrp::search::PerturbationParams;
 
 namespace
 {

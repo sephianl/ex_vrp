@@ -1,5 +1,5 @@
-#ifndef PYVRP_SEARCH_SEGMENTS_H
-#define PYVRP_SEARCH_SEGMENTS_H
+#ifndef EX_VRP_SEARCH_SEGMENTS_H
+#define EX_VRP_SEARCH_SEGMENTS_H
 
 #include "ProblemData.h"
 #include "Route.h"
@@ -7,7 +7,7 @@
 #include <cassert>
 #include <limits>
 
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 /**
  * Simple wrapper class that implements the required evaluation interface for
@@ -225,6 +225,6 @@ public:
 static_assert(Segment<ClientSegment>);
 static_assert(Segment<ReloadDepotSegment>);
 static_assert(Segment<BreakSegment>);
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
-#endif  // PYVRP_SEARCH_SEGMENTS_H
+#endif  // EX_VRP_SEARCH_SEGMENTS_H

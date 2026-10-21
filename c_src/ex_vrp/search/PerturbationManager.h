@@ -1,5 +1,5 @@
-#ifndef PYVRP_SEARCH_PERTURBATIONMANAGER_H
-#define PYVRP_SEARCH_PERTURBATIONMANAGER_H
+#ifndef EX_VRP_SEARCH_PERTURBATIONMANAGER_H
+#define EX_VRP_SEARCH_PERTURBATIONMANAGER_H
 
 #include "CostEvaluator.h"
 #include "RandomNumberGenerator.h"
@@ -8,7 +8,7 @@
 
 #include <iosfwd>
 
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 /**
  * PerturbationParams(min_perturbations: int = 1, max_perturbations: int = 25)
@@ -81,6 +81,6 @@ public:
                  SearchSpace &searchSpace,
                  CostEvaluator const &costEvaluator) const;
 };
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
-#endif  // PYVRP_SEARCH_PERTURBATIONMANAGER_H
+#endif  // EX_VRP_SEARCH_PERTURBATIONMANAGER_H

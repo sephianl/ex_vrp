@@ -2,7 +2,7 @@
 
 #include <cassert>
 
-using pyvrp::DynamicBitset;
+using ex_vrp::DynamicBitset;
 
 DynamicBitset::DynamicBitset(size_t numBits)
     // numBits / BLOCK_SIZE blocks, with an adjustment in case the division of
