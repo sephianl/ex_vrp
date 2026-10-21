@@ -21,14 +21,17 @@
 #include "ex_vrp/search/primitives.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <optional>
 #include <set>
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -1079,67 +1082,94 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
         Duration(rest_duration));
 }
 
-// Decode distance/duration matrix from nested list
-Matrix<Distance> decode_distance_matrix([[maybe_unused]] ErlNifEnv *env,
-                                        ERL_NIF_TERM term)
+static_assert(std::endian::native == std::endian::little,
+              "Matrix binaries are little-endian int64s, copied as they are");
+
+// Measures arrive as binaries of little-endian int64s and are copied straight
+// into the solver's storage, which holds for any measure that is one int64.
+template <typename T>
+constexpr bool copies_from_int64_binary
+    = sizeof(T) == sizeof(int64_t) && std::is_trivially_copyable_v<T>;
+
+// Decodes a binary of little-endian int64s into `count` measures. Throws when
+// the binary holds any other number.
+template <typename T>
+std::vector<T> decode_int64_binary(ErlNifBinary const &bin, size_t count)
 {
-    unsigned num_rows;
-    if (!enif_get_list_length(env, term, &num_rows) || num_rows == 0)
-    {
-        return Matrix<Distance>();
-    }
+    static_assert(copies_from_int64_binary<T>);
 
-    // Get first row to determine columns
-    ERL_NIF_TERM head, tail = term;
-    enif_get_list_cell(env, tail, &head, &tail);
+    if (bin.size != count * sizeof(int64_t))
+        throw std::invalid_argument(
+            "Matrix binary holds " + std::to_string(bin.size / sizeof(int64_t))
+            + " values, expected " + std::to_string(count));
 
-    unsigned num_cols;
-    if (!enif_get_list_length(env, head, &num_cols) || num_cols == 0)
-    {
-        return Matrix<Distance>();
-    }
-
-    std::vector<Distance> data;
-    data.reserve(static_cast<size_t>(num_rows) * num_cols);
-
-    // Reset to beginning
-    tail = term;
-    for (unsigned r = 0; r < num_rows; r++)
-    {
-        enif_get_list_cell(env, tail, &head, &tail);
-
-        ERL_NIF_TERM cell_head, cell_tail = head;
-        for (unsigned c = 0; c < num_cols; c++)
-        {
-            enif_get_list_cell(env, cell_tail, &cell_head, &cell_tail);
-            int64_t val = 0;
-            nif_get_int64(env, cell_head, &val);
-            data.push_back(Distance(val));
-        }
-    }
-
-    return Matrix<Distance>(std::move(data), num_rows, num_cols);
+    std::vector<T> data(count);
+    std::memcpy(data.data(), bin.data, bin.size);
+    return data;
 }
 
-Matrix<Duration> decode_duration_matrix([[maybe_unused]] ErlNifEnv *env,
-                                        ERL_NIF_TERM term)
+// Decodes a list of integers into measures.
+template <typename T>
+std::vector<T> decode_int64_list(ErlNifEnv *env, ERL_NIF_TERM term)
 {
+    unsigned length;
+    if (!enif_get_list_length(env, term, &length))
+        throw std::invalid_argument("Expected a matrix row as a list or "
+                                    "binary");
+
+    std::vector<T> data;
+    data.reserve(length);
+
+    ERL_NIF_TERM head, tail = term;
+    while (enif_get_list_cell(env, tail, &head, &tail))
+    {
+        int64_t val = 0;
+        nif_get_int64(env, head, &val);
+        data.push_back(T(val));
+    }
+
+    return data;
+}
+
+// Decodes one matrix row, given as a list of integers or as a binary of
+// `num_locations` little-endian int64s.
+template <typename T>
+std::vector<T>
+decode_matrix_row(ErlNifEnv *env, ERL_NIF_TERM term, size_t num_locations)
+{
+    ErlNifBinary bin;
+    if (enif_inspect_binary(env, term, &bin))
+        return decode_int64_binary<T>(bin, num_locations);
+
+    return decode_int64_list<T>(env, term);
+}
+
+// Decodes a square matrix over `num_locations` locations, given as a nested
+// list of rows or as one binary of little-endian int64s in row-major order.
+// The binary is copied, never walked, so it is the cheap form for large
+// matrices.
+template <typename T>
+Matrix<T> decode_matrix(ErlNifEnv *env, ERL_NIF_TERM term, size_t num_locations)
+{
+    ErlNifBinary bin;
+    if (enif_inspect_binary(env, term, &bin))
+        return Matrix<T>(
+            decode_int64_binary<T>(bin, num_locations * num_locations),
+            num_locations,
+            num_locations);
+
     unsigned num_rows;
     if (!enif_get_list_length(env, term, &num_rows) || num_rows == 0)
-    {
-        return Matrix<Duration>();
-    }
+        return Matrix<T>();
 
     ERL_NIF_TERM head, tail = term;
     enif_get_list_cell(env, tail, &head, &tail);
 
     unsigned num_cols;
     if (!enif_get_list_length(env, head, &num_cols) || num_cols == 0)
-    {
-        return Matrix<Duration>();
-    }
+        return Matrix<T>();
 
-    std::vector<Duration> data;
+    std::vector<T> data;
     data.reserve(static_cast<size_t>(num_rows) * num_cols);
 
     tail = term;
@@ -1153,11 +1183,58 @@ Matrix<Duration> decode_duration_matrix([[maybe_unused]] ErlNifEnv *env,
             enif_get_list_cell(env, cell_tail, &cell_head, &cell_tail);
             int64_t val = 0;
             nif_get_int64(env, cell_head, &val);
-            data.push_back(Duration(val));
+            data.push_back(T(val));
         }
     }
 
-    return Matrix<Duration>(std::move(data), num_rows, num_cols);
+    return Matrix<T>(std::move(data), num_rows, num_cols);
+}
+
+// Decodes a list of `%{matrix: index, override_row: nil | {row, distances,
+// durations}}` maps, one per routing profile.
+std::vector<ProblemData::Profile>
+decode_profiles(ErlNifEnv *env, ERL_NIF_TERM term, size_t num_locations)
+{
+    unsigned length;
+    if (!enif_get_list_length(env, term, &length))
+        throw std::invalid_argument("Expected list for profiles");
+
+    std::vector<ProblemData::Profile> profiles;
+    profiles.reserve(length);
+
+    ERL_NIF_TERM head, tail = term;
+    while (enif_get_list_cell(env, tail, &head, &tail))
+    {
+        ProblemData::Profile profile;
+        profile.matrix = get_map_uint(env, head, "matrix");
+
+        ERL_NIF_TERM override_term;
+        ERL_NIF_TERM key = enif_make_atom(env, "override_row");
+        if (!enif_get_map_value(env, head, key, &override_term)
+            || enif_is_identical(override_term, enif_make_atom(env, "nil")))
+        {
+            profiles.push_back(std::move(profile));
+            continue;
+        }
+
+        int arity;
+        ERL_NIF_TERM const *elements;
+        int64_t row;
+        if (!enif_get_tuple(env, override_term, &arity, &elements) || arity != 3
+            || !nif_get_int64(env, elements[0], &row) || row < 0)
+            throw std::invalid_argument("Expected override_row as nil or "
+                                        "{row, distances, durations}");
+
+        profile.overrideRow = static_cast<size_t>(row);
+        profile.distanceRow
+            = decode_matrix_row<Distance>(env, elements[1], num_locations);
+        profile.durationRow
+            = decode_matrix_row<Duration>(env, elements[2], num_locations);
+
+        profiles.push_back(std::move(profile));
+    }
+
+    return profiles;
 }
 
 // Decode Elixir binary to std::string
@@ -1313,6 +1390,12 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
     bool has_dur_matrices
         = enif_get_map_value(env, model_term, key, &duration_matrices_term);
 
+    // Get profiles (optional)
+    ERL_NIF_TERM profiles_term;
+    key = enif_make_atom(env, "profiles");
+    bool has_profiles
+        = enif_get_map_value(env, model_term, key, &profiles_term);
+
     // Get client groups (optional)
     ERL_NIF_TERM client_groups_term;
     key = enif_make_atom(env, "client_groups");
@@ -1394,6 +1477,8 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
         vehicle_types.push_back(decode_vehicle_type(env, head, num_dims));
     }
 
+    size_t const num_locations = depots.size() + clients.size();
+
     // Create matrices
     std::vector<Matrix<Distance>> dist_matrices;
     std::vector<Matrix<Duration>> dur_matrices;
@@ -1408,7 +1493,8 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
             for (unsigned i = 0; i < dm_len; i++)
             {
                 enif_get_list_cell(env, tail, &head, &tail);
-                dist_matrices.push_back(decode_distance_matrix(env, head));
+                dist_matrices.push_back(
+                    decode_matrix<Distance>(env, head, num_locations));
             }
         }
     }
@@ -1423,7 +1509,8 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
             for (unsigned i = 0; i < dm_len; i++)
             {
                 enif_get_list_cell(env, tail, &head, &tail);
-                dur_matrices.push_back(decode_duration_matrix(env, head));
+                dur_matrices.push_back(
+                    decode_matrix<Duration>(env, head, num_locations));
             }
         }
     }
@@ -1465,7 +1552,9 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
         }
     }
 
-    size_t const num_locations = depots.size() + clients.size();
+    std::vector<ProblemData::Profile> profiles;
+    if (has_profiles)
+        profiles = decode_profiles(env, profiles_term, num_locations);
 
     // Decode penalties: one list of per-location costs per profile. An empty
     // list is the caller declining the feature; anything else that does not
@@ -1586,7 +1675,8 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
                                         std::move(same_vehicle_groups),
                                         std::move(penalties),
                                         std::move(allowed),
-                                        std::move(locks));
+                                        std::move(locks),
+                                        std::move(profiles));
 
     return fine::Ok(fine::make_resource<ProblemDataResource>(problem_data));
 }
@@ -3579,6 +3669,27 @@ std::vector<std::vector<int64_t>> problem_data_duration_matrix_nif(
 
 FINE_NIF(problem_data_duration_matrix_nif, 0);
 
+template <typename Item>
+void push_distinct(std::vector<Item> &items, Item const &item)
+{
+    if (std::find(items.begin(), items.end(), item) == items.end())
+        items.push_back(item);
+}
+
+/**
+ * The distinct rows `row_of` gives over all profiles. Profiles built on one
+ * matrix return the same row pointer unless one replaces that row, so a loop
+ * over these rows costs as many passes as there are matrices, not profiles.
+ */
+template <typename RowOf> auto distinct_rows(size_t num_profiles, RowOf row_of)
+{
+    std::vector<decltype(row_of(0))> rows;
+    for (size_t profile = 0; profile != num_profiles; ++profile)
+        push_distinct(rows, row_of(profile));
+
+    return rows;
+}
+
 /**
  * Mean over all location pairs, the diagonal included, of the cheapest edge
  * cost any vehicle type's cost profile gives it, its shortest distance and its
@@ -3612,45 +3723,58 @@ std::tuple<double, double, double> problem_data_mean_edge_measures(
     __int128 durationSum = 0;
 
     for (size_t from = 0; from != numLocations; ++from)
+    {
+        std::vector<
+            std::tuple<int64_t, int64_t, Distance const *, Duration const *>>
+            costRows;
+        for (auto const &[unitDistance, unitDuration, profile] : costProfiles)
+            push_distinct(costRows,
+                          {unitDistance,
+                           unitDuration,
+                           data.distanceMatrix(profile).row(from),
+                           data.durationMatrix(profile).row(from)});
+
+        auto const distanceRows
+            = distinct_rows(numProfiles,
+                            [&](size_t profile)
+                            { return data.distanceMatrix(profile).row(from); });
+        auto const durationRows
+            = distinct_rows(numProfiles,
+                            [&](size_t profile)
+                            { return data.durationMatrix(profile).row(from); });
+
         for (size_t to = 0; to != numLocations; ++to)
         {
-            auto const edgeCost = [&](auto const &costProfile)
+            auto const edgeCost = [to](auto const &costRow)
             {
-                auto const [unitDistance, unitDuration, profile] = costProfile;
-                auto const distance = static_cast<int64_t>(
-                    data.distanceMatrix(profile)(from, to));
-                auto const duration = static_cast<int64_t>(
-                    data.durationMatrix(profile)(from, to));
+                auto const [unitDistance, unitDuration, distances, durations]
+                    = costRow;
 
-                return static_cast<__int128>(unitDistance) * distance
-                       + static_cast<__int128>(unitDuration) * duration;
+                return static_cast<__int128>(unitDistance)
+                           * static_cast<int64_t>(distances[to])
+                       + static_cast<__int128>(unitDuration)
+                             * static_cast<int64_t>(durations[to]);
             };
 
-            auto cheapest = edgeCost(costProfiles.front());
-            for (auto const &costProfile : costProfiles)
-                cheapest = std::min(cheapest, edgeCost(costProfile));
+            auto cheapest = edgeCost(costRows.front());
+            for (auto const &costRow : costRows)
+                cheapest = std::min(cheapest, edgeCost(costRow));
 
-            auto shortestDistance
-                = static_cast<int64_t>(data.distanceMatrix(0)(from, to));
-            auto shortestDuration
-                = static_cast<int64_t>(data.durationMatrix(0)(from, to));
+            auto shortestDistance = static_cast<int64_t>(distanceRows[0][to]);
+            for (auto const *distances : distanceRows)
+                shortestDistance = std::min(
+                    shortestDistance, static_cast<int64_t>(distances[to]));
 
-            for (size_t profile = 1; profile != numProfiles; ++profile)
-            {
-                shortestDistance
-                    = std::min(shortestDistance,
-                               static_cast<int64_t>(
-                                   data.distanceMatrix(profile)(from, to)));
-                shortestDuration
-                    = std::min(shortestDuration,
-                               static_cast<int64_t>(
-                                   data.durationMatrix(profile)(from, to)));
-            }
+            auto shortestDuration = static_cast<int64_t>(durationRows[0][to]);
+            for (auto const *durations : durationRows)
+                shortestDuration = std::min(
+                    shortestDuration, static_cast<int64_t>(durations[to]));
 
             costSum += cheapest;
             distanceSum += shortestDistance;
             durationSum += shortestDuration;
         }
+    }
 
     auto const numPairs = static_cast<double>(numLocations * numLocations);
 
@@ -3747,22 +3871,30 @@ build_neighbours(ProblemData const &data,
             {vt.unitDistanceCost, vt.unitDurationCost, vt.profile});
     }
 
-    // Step 2: Compute minimum edge cost matrix across all vehicle types
+    // Step 2: Compute minimum edge cost matrix across all vehicle types, row
+    // by row over the distinct rows those types read
     std::vector<std::vector<double>> edgeCosts(
         numLocs, std::vector<double>(numLocs, 0.0));
-    bool first = true;
-    for (auto const &[unitDist, unitDur, profile] : uniqueEdgeCosts)
+    for (size_t i = 0; i < numLocs; ++i)
     {
-        auto const &distMat = data.distanceMatrix(profile);
-        auto const &durMat = data.durationMatrix(profile);
-        for (size_t i = 0; i < numLocs; ++i)
+        std::vector<std::tuple<Cost, Cost, Distance const *, Duration const *>>
+            costRows;
+        for (auto const &[unitDist, unitDur, profile] : uniqueEdgeCosts)
+            push_distinct(costRows,
+                          {unitDist,
+                           unitDur,
+                           data.distanceMatrix(profile).row(i),
+                           data.durationMatrix(profile).row(i)});
+
+        bool first = true;
+        for (auto const &[unitDist, unitDur, distRow, durRow] : costRows)
         {
             for (size_t j = 0; j < numLocs; ++j)
             {
                 double cost = static_cast<double>(unitDist.get())
-                                  * static_cast<double>(distMat(i, j).get())
+                                  * static_cast<double>(distRow[j].get())
                               + static_cast<double>(unitDur.get())
-                                    * static_cast<double>(durMat(i, j).get());
+                                    * static_cast<double>(durRow[j].get());
                 if (first)
                 {
                     edgeCosts[i][j] = cost;
@@ -3772,26 +3904,27 @@ build_neighbours(ProblemData const &data,
                     edgeCosts[i][j] = std::min(edgeCosts[i][j], cost);
                 }
             }
+            first = false;
         }
-        first = false;
     }
 
     // Step 3: Compute minimum duration matrix across all profiles (store as
-    // double)
+    // double), row by row over the distinct rows they read
     std::vector<std::vector<double>> minDuration(numLocs,
                                                  std::vector<double>(numLocs));
     for (size_t i = 0; i < numLocs; ++i)
     {
+        auto const durationRows
+            = distinct_rows(data.numProfiles(),
+                            [&](size_t profile)
+                            { return data.durationMatrix(profile).row(i); });
+
         for (size_t j = 0; j < numLocs; ++j)
         {
-            double minDur
-                = static_cast<double>(data.durationMatrix(0)(i, j).get());
-            for (size_t p = 1; p < data.numProfiles(); ++p)
-            {
-                minDur = std::min(
-                    minDur,
-                    static_cast<double>(data.durationMatrix(p)(i, j).get()));
-            }
+            double minDur = static_cast<double>(durationRows[0][j].get());
+            for (auto const *durRow : durationRows)
+                minDur = std::min(minDur, static_cast<double>(durRow[j].get()));
+
             minDuration[i][j] = minDur;
         }
     }

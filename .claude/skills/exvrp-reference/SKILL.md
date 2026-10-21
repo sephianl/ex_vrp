@@ -78,6 +78,10 @@ reproduce that cancel.
 
 Locations carry **no coordinates**: distance matrices (one per profile) are mandatory;
 `Model.set_euclidean_matrices/2` derives them explicitly in location order (depots first).
+`Model.set_profiles/2` lets profiles share a matrix pair and replace one row each (Zelo's depot
+row dated per departure hour): `ProblemData::distanceMatrix(profile)` is then a `MatrixView`
+over the shared `Matrix`, and a matrix may be a binary of little-endian int64s (`ExVrp.Matrix`),
+which the NIF copies rather than walks.
 Never encode unreachability as a huge distance — the `1_000_000_000` sentinel is not a contract;
 use `set_forbidden/2`.
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.18.0
+
+### Added
+
+- **Profiles can share matrices.** `Model.set_profiles/2` gives each routing profile a matrix pair
+  by index and at most one row it replaces (`override_row`), so profiles that differ in one row,
+  such as a depot row dated per departure hour, no longer each carry a full copy. In C++ a profile's
+  matrix is a `MatrixView` over the shared `Matrix`; the mean-edge and neighbour passes read each
+  distinct row once, so their cost follows the number of matrices rather than profiles. Models
+  that set no profiles get one per matrix pair, as before.
+- **Matrices as binaries.** A matrix or override row may be a binary of little-endian int64s in
+  row-major order (`ExVrp.Matrix`). The NIF copies it in instead of walking nested lists, and
+  `Model.validate/1` checks its size and diagonal without decoding it.
+
+### Fixed
+
+- **`Model.validate/1` rejects a model without one duration matrix per distance matrix.** It used
+  to pass, and the NIF then raised `ArgumentError` when building the problem. The
+  `set_duration_matrices/2` doc no longer claims distances stand in for missing durations; they
+  never did.
+
 ## 0.17.0
 
 ### Changed
