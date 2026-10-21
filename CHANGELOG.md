@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.18.0
 
 ### Added
 
@@ -13,6 +13,13 @@
 - **Matrices as binaries.** A matrix or override row may be a binary of little-endian int64s in
   row-major order (`ExVrp.Matrix`). The NIF copies it in instead of walking nested lists, and
   `Model.validate/1` checks its size and diagonal without decoding it.
+
+### Fixed
+
+- **`Model.validate/1` rejects a model without one duration matrix per distance matrix.** It used
+  to pass, and the NIF then raised `ArgumentError` when building the problem. The
+  `set_duration_matrices/2` doc no longer claims distances stand in for missing durations; they
+  never did.
 
 ## 0.17.0
 
