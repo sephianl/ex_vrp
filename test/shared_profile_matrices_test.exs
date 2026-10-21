@@ -145,9 +145,22 @@ defmodule ExVrp.SharedProfileMatricesTest do
       lean = shared(model)
 
       for profile <- 0..2 do
-        assert Model.distance_matrix(lean, profile) == Model.distance_matrix(full, profile)
-        assert Model.duration_matrix(lean, profile) == Model.duration_matrix(full, profile)
+        assert {:ok, distances} = Model.distance_matrix(full, profile)
+        assert {:ok, durations} = Model.duration_matrix(full, profile)
+        assert Model.distance_matrix(lean, profile) == {:ok, distances}
+        assert Model.duration_matrix(lean, profile) == {:ok, durations}
       end
+    end
+
+    test "reads back an error for a profile or matrix the model does not have" do
+      lean = shared(base_model([]))
+      without_profiles = materialised(base_model([]))
+
+      misdirected = Model.set_profiles(lean, [%{matrix: 0, override_row: nil}, %{matrix: 5, override_row: nil}])
+
+      assert Model.distance_matrix(lean, 3) == {:error, "Model has 3 profiles, so no profile 3"}
+      assert Model.duration_matrix(without_profiles, 3) == {:error, "Profile 3 reads matrix 3, but the model has 3"}
+      assert Model.distance_matrix(misdirected, 1) == {:error, "Profile 1 reads matrix 5, but the model has 2"}
     end
   end
 
@@ -190,6 +203,14 @@ defmodule ExVrp.SharedProfileMatricesTest do
       model = base_model([])
       %{car: car} = matrices()
       %{model: model, car: car, size: @num_clients + 1}
+    end
+
+    test "rejects a model without one duration matrix per distance matrix", %{model: model, car: car} do
+      expected = "Expected one duration matrix per distance matrix (2), got 1 — see set_duration_matrices/2"
+      model = model |> Model.set_distance_matrices([car, car]) |> Model.set_duration_matrices([car])
+
+      assert {:error, errors} = Model.validate(model)
+      assert expected in errors
     end
 
     test "rejects a binary matrix of the wrong size", %{model: model, car: car} do

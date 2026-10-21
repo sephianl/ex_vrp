@@ -451,7 +451,9 @@ defmodule ExVrp.Model do
   Sets custom duration matrices, in either form `set_distance_matrices/2`
   takes.
 
-  If not provided, distances are used as durations.
+  A model needs one duration matrix per distance matrix; `validate/1` rejects
+  it otherwise. To travel at one distance unit per time unit, pass the
+  distance matrices here too, as `set_euclidean_matrices/2` does.
 
   ## Example
 
@@ -494,30 +496,50 @@ defmodule ExVrp.Model do
   @doc """
   The distance matrix `profile` reads, as nested lists, with its override row
   in place.
+
+  Returns `{:error, reason}` when the model has no such profile, or the
+  profile names a matrix the model does not have.
   """
-  @spec distance_matrix(t(), non_neg_integer()) :: [[integer()]]
-  def distance_matrix(%__MODULE__{} = model, profile) do
-    profile_matrix(model.distance_matrices, profile_at(model, profile), &elem(&1, 1))
+  @spec distance_matrix(t(), non_neg_integer()) :: {:ok, [[integer()]]} | {:error, String.t()}
+  def distance_matrix(%__MODULE__{} = model, profile) when is_integer(profile) and profile >= 0 do
+    profile_matrix(model, model.distance_matrices, profile, &elem(&1, 1))
   end
 
   @doc """
   The duration matrix `profile` reads, as nested lists, with its override row
   in place.
+
+  Returns `{:error, reason}` when the model has no such profile, or the
+  profile names a matrix the model does not have.
   """
-  @spec duration_matrix(t(), non_neg_integer()) :: [[integer()]]
-  def duration_matrix(%__MODULE__{} = model, profile) do
-    profile_matrix(model.duration_matrices, profile_at(model, profile), &elem(&1, 2))
+  @spec duration_matrix(t(), non_neg_integer()) :: {:ok, [[integer()]]} | {:error, String.t()}
+  def duration_matrix(%__MODULE__{} = model, profile) when is_integer(profile) and profile >= 0 do
+    profile_matrix(model, model.duration_matrices, profile, &elem(&1, 2))
   end
 
-  defp profile_at(%__MODULE__{profiles: []}, profile), do: %{matrix: profile, override_row: nil}
-  defp profile_at(%__MODULE__{profiles: profiles}, profile), do: Enum.at(profiles, profile)
+  defp profile_matrix(model, matrices, profile, override_of) do
+    with {:ok, %{matrix: matrix, override_row: override_row}} <- profile_at(model, profile),
+         {:ok, base} <- matrix_at(matrices, matrix, profile) do
+      {:ok, base |> Matrix.to_lists() |> with_override_row(override_row, override_of)}
+    end
+  end
 
-  defp profile_matrix(matrices, %{matrix: matrix, override_row: override_row}, override_of) do
+  defp profile_at(%__MODULE__{profiles: []}, profile), do: {:ok, %{matrix: profile, override_row: nil}}
+
+  defp profile_at(%__MODULE__{profiles: profiles}, profile) do
+    profiles
+    |> Enum.fetch(profile)
+    |> found_or("Model has #{length(profiles)} profiles, so no profile #{profile}")
+  end
+
+  defp matrix_at(matrices, matrix, profile) do
     matrices
-    |> Enum.at(matrix)
-    |> Matrix.to_lists()
-    |> with_override_row(override_row, override_of)
+    |> Enum.fetch(matrix)
+    |> found_or("Profile #{profile} reads matrix #{matrix}, but the model has #{length(matrices)}")
   end
+
+  defp found_or({:ok, _found} = found, _reason), do: found
+  defp found_or(:error, reason), do: {:error, reason}
 
   defp with_override_row(rows, nil, _override_of), do: rows
 
@@ -606,6 +628,7 @@ defmodule ExVrp.Model do
       |> validate_has_depots(model)
       |> validate_has_vehicle_types(model)
       |> validate_has_distance_matrix(model)
+      |> validate_duration_matrix_count(model)
       |> validate_capacity_dimensions(model)
       |> validate_client_time_windows(model)
       |> validate_client_service_duration(model)
@@ -650,6 +673,17 @@ defmodule ExVrp.Model do
   end
 
   defp validate_has_distance_matrix(errors, _model), do: errors
+
+  defp validate_duration_matrix_count(errors, %{distance_matrices: dist, duration_matrices: dur}),
+    do: duration_matrix_count_errors(length(dist), length(dur)) ++ errors
+
+  defp duration_matrix_count_errors(count, count), do: []
+
+  defp duration_matrix_count_errors(distance_count, duration_count) do
+    [
+      "Expected one duration matrix per distance matrix (#{distance_count}), got #{duration_count} — see set_duration_matrices/2"
+    ]
+  end
 
   defp validate_capacity_dimensions(errors, %{vehicle_types: []}) do
     errors
