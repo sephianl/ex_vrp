@@ -38,6 +38,11 @@ mix test --include nif_required            # includes NIF-dependent tests
 mix test test/production_benchmark_test.exs --include production_benchmark        # feasibility gate (long)
 mix test test/production_benchmark_test.exs --include production_benchmark_quick  # 5-seed quick check
 # A/B harness: dev/ab_benchmark/ — objective (Runner + Comparator), speed (Speed, `mix bench.speed`)
+
+# Literature benchmarks vs PyVRP's published gaps and CVRPLib optima (dev/literature/; needs 7z):
+mix bench.lit.fetch                                    # download instances, check every BKS on our model
+mix bench.lit.run --passmark <single-thread score>     # resumable; --budget-scale 0.02 --limit 2 for a smoke
+mix bench.lit.report literature-run.jsonl --html report.html
 ```
 
 Requires C++20 compiler (gcc 11+ or clang 14+).

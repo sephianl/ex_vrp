@@ -68,3 +68,6 @@ vgcore.*
 
 # Standalone valgrind harness binary (make test-solver)
 /solver_test
+
+# Literature benchmark instances (mix bench.lit.fetch)
+/priv/benchmark_data/literature/

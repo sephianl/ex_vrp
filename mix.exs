@@ -43,7 +43,7 @@ defmodule ExVrp.MixProject do
 
       # Dialyzer
       dialyzer: [
-        plt_add_apps: [:mix]
+        plt_add_apps: [:mix, :inets, :ssl, :public_key]
       ],
       aliases: aliases()
     ]

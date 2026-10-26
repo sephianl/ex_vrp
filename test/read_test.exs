@@ -192,6 +192,31 @@ defmodule ExVrp.ReadTest do
     end
   end
 
+  describe "triangular edge weight formats" do
+    @describetag :tmp_dir
+
+    for {format, weights} <- [
+          {"LOWER_ROW", "1\n2 3"},
+          {"LOWER_DIAG_ROW", "0\n1 0\n2 3 0"},
+          {"UPPER_ROW", "1 2\n3"},
+          {"UPPER_DIAG_ROW", "0 1 2\n0 3\n0"}
+        ] do
+      test "#{format} expands to the full symmetric matrix", %{tmp_dir: tmp_dir} do
+        path = Path.join(tmp_dir, "triangle.vrp")
+        File.write!(path, triangular_instance(unquote(format), unquote(weights)))
+
+        assert hd(Read.read(path).distance_matrices) == [[0, 1, 2], [1, 0, 3], [2, 3, 0]]
+      end
+    end
+
+    test "raises on an unsupported format", %{tmp_dir: tmp_dir} do
+      path = Path.join(tmp_dir, "unknown.vrp")
+      File.write!(path, triangular_instance("FUNCTION", "1 2 3"))
+
+      assert_raise ArgumentError, ~r/Unsupported edge weight format: FUNCTION/, fn -> Read.read(path) end
+    end
+  end
+
   describe "rounding functions" do
     test ":round rounds to nearest integer" do
       path = Path.join(@data_dir, "OkSmall.txt")
@@ -356,6 +381,27 @@ defmodule ExVrp.ReadTest do
       assert result1.stats.initial_cost == result2.stats.initial_cost
       assert result1.best.routes == result2.best.routes
     end
+  end
+
+  defp triangular_instance(format, weights) do
+    """
+    NAME : TRIANGLE
+    TYPE : CVRP
+    DIMENSION : 3
+    EDGE_WEIGHT_TYPE : EXPLICIT
+    EDGE_WEIGHT_FORMAT : #{format}
+    CAPACITY : 10
+    EDGE_WEIGHT_SECTION
+    #{weights}
+    DEMAND_SECTION
+    1 0
+    2 1
+    3 1
+    DEPOT_SECTION
+    1
+    -1
+    EOF
+    """
   end
 
   defp unrounded_distances do
