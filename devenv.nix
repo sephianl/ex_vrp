@@ -43,6 +43,7 @@ in
       cppcheck
 
       go-task
+      p7zip # mix bench.lit.fetch unpacks CVRPLib's .7z instance sets
     ]
     ++ lib.optionals pkgs.stdenv.isLinux [
       inotify-tools

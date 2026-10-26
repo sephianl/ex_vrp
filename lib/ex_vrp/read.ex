@@ -155,22 +155,11 @@ defmodule ExVrp.Read do
 
   # Parse section data based on section type
   defp parse_section_data(:edge_weight, lines) do
-    # Parse matrix data (can be multi-row)
-    flat =
-      Enum.flat_map(lines, fn line ->
-        line
-        |> String.split()
-        |> Enum.map(&parse_number/1)
-      end)
-
-    size = trunc(:math.sqrt(length(flat)))
-
-    if size * size == length(flat) do
-      Enum.chunk_every(flat, size)
-    else
-      # Handle non-square (triangular, etc.) - for now assume square
-      [flat]
-    end
+    Enum.flat_map(lines, fn line ->
+      line
+      |> String.split()
+      |> Enum.map(&parse_number/1)
+    end)
   end
 
   defp parse_section_data(:node_coord, lines) do
@@ -597,9 +586,11 @@ defmodule ExVrp.Read do
   end
 
   defp build_distance_matrix("EXPLICIT", instance, _coords, dimension, round_fn) do
+    format = instance |> Map.get(:edge_weight_format, "FULL_MATRIX") |> to_string() |> String.upcase()
+
     instance
     |> Map.get(:edge_weight, [])
-    |> parse_edge_weights(dimension)
+    |> expand_edge_weights(format, dimension)
     |> apply_rounding(round_fn)
   end
 
@@ -615,8 +606,44 @@ defmodule ExVrp.Read do
     raise ArgumentError, "Unsupported edge weight type: #{other}"
   end
 
-  defp parse_edge_weights([[_head | _tail] | _rest] = matrix, _dimension), do: matrix
-  defp parse_edge_weights(flat_list, dimension), do: Enum.chunk_every(flat_list, dimension)
+  @triangular_edge_weight_formats ["LOWER_ROW", "LOWER_DIAG_ROW", "UPPER_ROW", "UPPER_DIAG_ROW"]
+
+  defp expand_edge_weights(weights, "FULL_MATRIX", dimension), do: Enum.chunk_every(weights, dimension)
+
+  defp expand_edge_weights(weights, format, dimension) when format in @triangular_edge_weight_formats do
+    rows =
+      weights
+      |> split_into_rows(triangle_row_lengths(format, dimension))
+      |> Enum.map(&List.to_tuple/1)
+      |> List.to_tuple()
+
+    for i <- 0..(dimension - 1) do
+      for j <- 0..(dimension - 1), do: triangle_weight(format, rows, i, j)
+    end
+  end
+
+  defp expand_edge_weights(_weights, format, _dimension) do
+    raise ArgumentError, "Unsupported edge weight format: #{format}"
+  end
+
+  defp triangle_row_lengths("LOWER_ROW", dimension), do: Enum.map(0..(dimension - 1), & &1)
+  defp triangle_row_lengths("LOWER_DIAG_ROW", dimension), do: Enum.map(0..(dimension - 1), &(&1 + 1))
+  defp triangle_row_lengths("UPPER_ROW", dimension), do: Enum.map(0..(dimension - 1), &(dimension - 1 - &1))
+  defp triangle_row_lengths("UPPER_DIAG_ROW", dimension), do: Enum.map(0..(dimension - 1), &(dimension - &1))
+
+  defp split_into_rows(weights, row_lengths) do
+    {rows, _rest} = Enum.map_reduce(row_lengths, weights, &Enum.split(&2, &1))
+    rows
+  end
+
+  defp triangle_weight(format, _rows, i, i) when format in ["LOWER_ROW", "UPPER_ROW"], do: 0
+
+  defp triangle_weight(format, rows, i, j) when format in ["LOWER_ROW", "LOWER_DIAG_ROW"] do
+    rows |> elem(max(i, j)) |> elem(min(i, j))
+  end
+
+  defp triangle_weight("UPPER_ROW", rows, i, j), do: rows |> elem(min(i, j)) |> elem(abs(i - j) - 1)
+  defp triangle_weight("UPPER_DIAG_ROW", rows, i, j), do: rows |> elem(min(i, j)) |> elem(abs(i - j))
 
   defp apply_rounding(matrix, round_fn) do
     Enum.map(matrix, fn row -> Enum.map(row, round_fn) end)

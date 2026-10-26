@@ -283,3 +283,14 @@ Benchmark caveats:
   more than 1% more. Valgrind cannot run the BEAM JIT, so solves run on the interpreter-only Erlang
   of `dev/ab_benchmark/interpreter_erlang.nix`. Iterations within a wall-clock budget are not a
   speed measure: unchanged code swung −8%…+22% per instance on hosted runners.
+- Literature quality is `dev/literature/` behind `mix bench.lit.fetch`/`bench.lit.run`/`bench.lit.report`:
+  gaps on PyVRP/Instances (X, HFVRP, MTVRPTWR, MDVRPTW) and CVRPLib (Solomon, Homberger–Gehring
+  200, DIMACS ORTEC/Loggi). PyVRP is compared through its *published* per-version averages
+  (`BenchmarkGroup` holds them), not by running it, so a run must follow PyVRP's protocol:
+  one core per solve, its per-group budgets scaled by the machine's single-thread PassMark, and
+  budget scale 1; anything else the report flags as not comparable. The default `Sample` is a
+  stratified subset whose mean estimates the full-set mean; the report carries its standard error
+  into the verdict. Fetch evaluates every `.sol` through our own cost function and fails on any
+  mismatch, which is what makes the gaps trustworthy across the sources' different scalings.
+  Seeds `1..K` at one start each equal `num_starts: K` (independent starts, best kept), so the
+  report's best-of-K is the multi-start result. The fetched data is gitignored; fetch recreates it.
