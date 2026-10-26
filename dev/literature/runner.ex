@@ -5,8 +5,8 @@ defmodule ExVrp.Literature.Runner do
   same file skips what is already there, so a long run survives an interruption.
 
   The longest solves start first, so the run does not end on one long solve while every
-  other core idles. Each record carries the solve's convergence trace: every improvement
-  of the best feasible cost as `[elapsed_ms, cost]`.
+  other core idles. Each record carries what `ExVrp.Literature.SearchRecording` captured
+  of the solve, and how long the model took to load.
   """
 
   alias ExVrp.ABBenchmark.Checkout
@@ -19,6 +19,7 @@ defmodule ExVrp.Literature.Runner do
   alias ExVrp.Literature.Manifest
   alias ExVrp.Literature.ProgressBoard
   alias ExVrp.Literature.RunSettings
+  alias ExVrp.Literature.SearchRecording
 
   @spec run([BenchmarkInstance.t()], RunSettings.t()) :: :ok | {:error, String.t()}
   def run(instances, %RunSettings{} = settings) do
@@ -62,13 +63,15 @@ defmodule ExVrp.Literature.Runner do
   defp run_job({instance, seed, budget_s}, board, machine) do
     job_label = "#{instance.group} #{instance.name} seed #{seed}"
     best_known = BenchmarkInstance.best_known(instance)
-    on_progress = progress_reporter(self(), board, job_label, budget_s, best_known)
+    {load_us, loaded} = :timer.tc(fn -> load(instance) end)
+    show = &show_progress(&1, board, job_label, budget_s, best_known)
+    on_progress = SearchRecording.reporter(self(), System.monotonic_time(:millisecond), show)
 
-    solve_record = solve(instance, budget_s, seed, on_progress)
-    trace = collect_trace(solve_record)
+    solve_record = Solve.solve(loaded, budget_s, seed, on_progress)
     ProgressBoard.finished(board, job_label, Gap.format(Gap.of(solve_record["objective"], best_known)))
 
     solve_record
+    |> Map.merge(SearchRecording.collect(solve_record))
     |> Map.merge(machine)
     |> Map.merge(%{
       "instance" => instance.name,
@@ -76,54 +79,29 @@ defmodule ExVrp.Literature.Runner do
       "num_clients" => instance.num_clients,
       "seed" => seed,
       "budget_s" => budget_s,
+      "load_ms" => div(load_us, 1000),
       "bks" => instance.bks,
       "best_known" => best_known,
-      "optimal" => instance.optimal,
-      "trace" => trace
+      "optimal" => instance.optimal
     })
   end
 
-  defp solve(instance, budget_s, seed, on_progress) do
-    entry = %Corpus.Entry{
+  defp load(instance) do
+    Loader.load(%Corpus.Entry{
       id: instance.name,
       variant: instance.group,
       kind: :vrplib,
       path: Manifest.absolute_path(instance),
       round_func: BenchmarkInstance.group(instance).round_func
-    }
-
-    entry |> Loader.load() |> Solve.solve(budget_s, seed, on_progress)
+    })
   end
 
-  defp progress_reporter(job, board, job_label, budget_s, best_known) do
-    fn
-      %{elapsed_ms: elapsed_ms, best_cost: best_cost} ->
-        send(job, {:trace_point, elapsed_ms, best_cost})
-
-        ProgressBoard.progress(board, job_label, %{
-          elapsed_s: elapsed_ms / 1000,
-          budget_s: budget_s,
-          gap: Gap.of(best_cost, best_known)
-        })
-
-      %{stage: _setup_stage} ->
-        :ok
-    end
-  end
-
-  defp collect_trace(%{"objective" => objective, "time_ms" => time_ms}) do
-    [[time_ms, objective] | drain_trace_points([])]
-    |> Enum.reverse()
-    |> Enum.filter(fn [_elapsed_ms, cost] -> is_number(cost) end)
-    |> Enum.dedup_by(fn [_elapsed_ms, cost] -> cost end)
-  end
-
-  defp drain_trace_points(points) do
-    receive do
-      {:trace_point, elapsed_ms, cost} -> drain_trace_points([[elapsed_ms, cost] | points])
-    after
-      0 -> points
-    end
+  defp show_progress(%{elapsed_ms: elapsed_ms, best_cost: best_cost}, board, job_label, budget_s, best_known) do
+    ProgressBoard.progress(board, job_label, %{
+      elapsed_s: elapsed_ms / 1000,
+      budget_s: budget_s,
+      gap: Gap.of(best_cost, best_known)
+    })
   end
 
   defp completed_jobs(%RunSettings{out_path: out_path} = settings) do

@@ -30,7 +30,8 @@ defmodule ExVrp.Literature.GroupSummary do
           gap_over_budget: [{float(), float() | nil}],
           worst_instances: [{String.t(), float()}],
           instance_gaps: [%{name: String.t(), num_clients: pos_integer(), gap: float()}],
-          iterations_per_second: float() | nil
+          iterations_per_second: float() | nil,
+          slowest_instances: [{String.t(), pos_integer(), float()}]
         }
 
   defstruct [
@@ -48,7 +49,8 @@ defmodule ExVrp.Literature.GroupSummary do
     :gap_over_budget,
     :worst_instances,
     :instance_gaps,
-    :iterations_per_second
+    :iterations_per_second,
+    :slowest_instances
   ]
 
   @spec from_records([map()]) :: [t()]
@@ -101,9 +103,20 @@ defmodule ExVrp.Literature.GroupSummary do
       unsolved_instances: for(result <- per_instance, is_nil(result.mean_objective), do: result.name),
       proven_optimal: Enum.count(per_instance, & &1.optimal),
       optimum_reached: Enum.count(per_instance, &(&1.optimal and &1.best_of_seeds_gap == 0.0)),
-      iterations_per_second: records |> Enum.map(&(&1["iterations"] / max(&1["time_ms"], 1) * 1000)) |> median()
+      iterations_per_second: records |> Enum.map(&iterations_per_second/1) |> median(),
+      slowest_instances:
+        per_instance
+        |> Enum.sort_by(& &1.iterations_per_second)
+        |> Enum.take(3)
+        |> Enum.map(&{&1.name, &1.num_clients, &1.iterations_per_second})
     }
   end
+
+  defp iterations_per_second(%{"iterations" => iterations, "search_ms" => search_ms}) when is_integer(search_ms),
+    do: iterations / max(search_ms, 1) * 1000
+
+  defp iterations_per_second(%{"iterations" => iterations, "time_ms" => time_ms}),
+    do: iterations / max(time_ms, 1) * 1000
 
   defp gaps(records, solved) do
     gaps_to_bks = Enum.map(solved, & &1.gap_to_bks)
@@ -132,6 +145,7 @@ defmodule ExVrp.Literature.GroupSummary do
       name: name,
       num_clients: num_clients,
       optimal: optimal,
+      iterations_per_second: seeds |> Enum.map(&iterations_per_second/1) |> mean(),
       mean_objective: mean_objective,
       gap_to_bks: Gap.of(mean_objective, bks),
       gap_to_best_known: Gap.of(mean_objective, best_known),
