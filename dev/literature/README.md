@@ -152,17 +152,54 @@ Short-budget runs are still useful for smoke tests and trends.
 
 ## How much time it takes
 
-At the full protocol, on a CPU about twice PyVRP's reference, with 16 cores and one seed:
+At the full protocol, with 16 physical cores. Wall-clock scales with cores (8 cores doubles
+it, 32 halves it) and with the CPU's speed, since the time limits shrink with its PassMark score:
 
-| Run                         | CPU-hours    | Wall-clock on 16 cores                                             |
-| --------------------------- | ------------ | ------------------------------------------------------------------ |
-| Default sample (110 inst.)  | ~12          | ~45 min (the floor is the longest single solve, X-n957 at ~20 min) |
-| Default sample, 4 seeds     | ~46          | ~3 h                                                               |
-| Full sets (incl. MDVRPTW)   | ~65 per seed | ~4 h per seed                                                      |
-| `--budget-scale 0.1` sample | ~1.2         | ~5 min                                                             |
+| Run                                          | CPU-hours | Fast CPU (PassMark ~4000) | Reference CPU (~2000) |
+| -------------------------------------------- | --------- | ------------------------- | --------------------- |
+| Default sample (110 inst.), 1 seed           | ~12       | ~45 min                   | ~1.5 h                |
+| **Default sample, 4 seeds (start here)**     | ~46       | **~3 h**                  | ~6 h                  |
+| All 527 instances, MDVRPTW left out, 4 seeds | ~205      | ~13 h                     | ~26 h                 |
+| All instances incl. MDVRPTW, 4 seeds         | ~260      | ~16 h                     | ~32 h                 |
+| `--budget-scale 0.1` sample, 1 seed          | ~1.2      | ~5 min                    | ~10 min               |
 
-The run prints its own estimate before it starts. The longest solves are started first, so the
-run doesn't end on one long solve while the other cores sit idle.
+A single solve can't be split, so no run is shorter than its longest solve (X-n957, about
+20 minutes on a fast CPU). The run prints its own estimate before it starts, and starts the
+longest solves first so it doesn't end on one long solve while the other cores sit idle.
+
+**Recommended order.** Start with the four-seed sample: about 3 hours, and it already gives
+the PyVRP comparison with a noise estimate and every signal in
+[What the results tell us](#what-the-results-tell-us-and-what-they-dont). Then run all
+instances, overnight, only for the groups that look interesting, e.g.
+`--subset full --groups cvrp,solomon --seeds 1,2,3,4`, rather than everything.
+
+## What the results tell us, and what they don't
+
+One run is the first broad view of where ExVrp stands, and the data is rich enough to point at
+where to improve:
+
+- **Where we're weak.** Groups and instance types with the largest gaps, against PyVRP (are our
+  fork changes helping or hurting?) and against best-knowns and optima. The worst instances per
+  group and the gap-by-size charts show whether we degrade on large or clustered instances, or on
+  one feature such as the mixed fleet.
+- **Slow convergence or stuck.** The gap at 10 / 25 / 50 / 100 % of the time limit. Still falling
+  at 100 %: more speed or time would pay off. Flat early: the search is stuck, which points at
+  diversification (perturbation, restarts) rather than speed.
+- **What one start loses.** The average seed against the best of four, and how far the seeds
+  spread. That is what Zelo's multiple starts buy, and how robust a single run is.
+- **Search behaviour.** The restart and improvement counts, and current against best cost over
+  time, show how the search accepts moves and escapes local optima.
+- **Speed.** Iterations per second per instance flags slow cases, such as the unlimited mixed
+  fleet. Setup time and initial-solution quality show whether starting points matter.
+
+What it can't tell us:
+
+- It shows **where**, not **why**. Finding the cause takes follow-up: `mix bench.speed` for
+  speed, or targeted experiments on the weak instances.
+- These public benchmarks are not Zelo. The time-window groups are close, but nothing public
+  has per-vehicle routing profiles, optional clients or time-dominated costs (see
+  [How the groups relate to Zelo's plans](#how-the-groups-relate-to-zelos-plans)). Check any
+  change made because of this data on the production benchmarks with the A/B harness too.
 
 ## Multiple seeds: we probably want them
 
