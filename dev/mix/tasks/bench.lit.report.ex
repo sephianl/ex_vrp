@@ -122,6 +122,17 @@ defmodule Mix.Tasks.Bench.Lit.Report do
       Mix.shell().info("  #{summary.group.id}: #{worst}")
     end)
 
+    Mix.shell().info("\nSlowest instances per group (iterations/s, wall-clock under the run's load)")
+
+    Enum.each(summaries, fn summary ->
+      slowest =
+        Enum.map_join(summary.slowest_instances, ", ", fn {name, num_clients, rate} ->
+          "#{name} (n=#{num_clients}) #{format_rate(rate)}"
+        end)
+
+      Mix.shell().info("  #{summary.group.id}: #{slowest}")
+    end)
+
     Enum.each(summaries, &warn_infeasible/1)
     records |> Enum.map(& &1["budget_scale"]) |> Enum.uniq() |> warn_budget_scale()
   end

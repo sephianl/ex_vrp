@@ -108,7 +108,7 @@ At the full protocol, on a CPU about twice PyVRP's reference, with 16 cores and 
 The run prints its own estimate before it starts. The longest solves are started first, so the
 run doesn't end on one long solve while the other cores sit idle.
 
-## Multiple starts
+## Multiple seeds: we probably want them
 
 `num_starts: K` is exactly K independent single-start solves with seeds `base..base+K-1`, keeping
 the best (`ExVrp.Solver`'s parallel solve). Running with `--seeds 1,2,3,4` therefore gives both:
@@ -117,6 +117,83 @@ the best (`ExVrp.Solver`'s parallel solve). Running with `--seeds 1,2,3,4` there
 - the **best-of-4**, which is what `num_starts: 4` would have returned.
 
 So there is no separate multi-start mode. More seeds cost proportionally more CPU time.
+
+**Run with several seeds, at least for the first real run.** One seed answers "how do we
+compare with PyVRP", but not "does a single start get stuck in a bad local optimum". The
+search restarts from its best solution when it stops improving, but a start can still settle
+in a worse region than another start would. The gap between the single-start mean and the
+best-of-K measures exactly that. The short local check already showed it on X: 0.66 % for
+the average seed against 0.32 % for the better of two, at 2 % of the budget. At full budget
+the difference should shrink; how much is what the run will tell us.
+
+It also matters for production. Zelo already multi-starts: the nightly plan solves with
+`FlavorPlacement.starts_per_runner/0` starts, which is cores − 1 on Northflank. The
+best-of-K numbers show what those extra starts buy, and the per-seed `progress` tables
+show whether the seeds diverge early (different regions) or late (luck near the end).
+
+The recommended first run on the dedicated machine:
+
+```bash
+mix bench.lit.run --passmark <score> --seeds 1,2,3,4 --out run-$(date +%F).jsonl   # ~3 h on 16 cores
+```
+
+## Iteration speed
+
+The report's `iter/s` is iterations per second of search time (`search_ms`, so without setup
+and model loading), as the median per group. It also lists each group's three slowest
+instances. It is wall-clock speed under the run's own load: a signal for spotting slow
+instances, not a speed benchmark. `mix bench.speed` measures speed precisely, as instructions
+per iteration. On a laptop shared with other work, the numbers drop by half or more; use
+the idle machine.
+
+Iterations get more expensive as instances grow, and also with the number of vehicles the
+model allows. A standalone 10 s solve on a lightly loaded laptop:
+
+| Instance                 | Clients | Vehicles allowed | Iterations/s |
+| ------------------------ | ------- | ---------------- | ------------ |
+| X-n115-k10               | 114     | 114              | 837          |
+| C104 (Solomon)           | 100     | 25               | 730          |
+| X106-FSMD (mixed fleet)  | 105     | 315              | 501          |
+| X-n957-k87               | 956     | 956              | 112          |
+| X1001-FSMF (mixed fleet) | 1000    | 5000             | 35           |
+
+X1001-FSMF is the outlier, and it is still more than 100 % off its best known after 2 % of the
+budget. Two causes show in its record:
+
+- it allows 5000 vehicles (an unlimited fleet over 5 types), against 24 routes in the best-known
+  solution, and the per-iteration work grows with the vehicles the model allows;
+- the initial solution uses 97 routes, and with fixed vehicle costs dominating the objective,
+  the search spends its iterations removing routes (87 left after 48 s).
+
+Zelo's models allow 1–30 vehicles, so production does not hit this, but an unlimited fleet is
+a known weak spot to look into.
+
+## How the groups relate to Zelo's plans
+
+The five real-depot models in `priv/benchmark_data/production/` share a shape:
+
+- every route starts at one depot (some end at another), so multi-depot benchmarks do not apply;
+- every client has a time window, with a median of 3–5 hours in a 15–16 hour shift; this is
+  where the difficulty lies;
+- 13–20 stops per route, about 8 minutes of service each;
+- vehicles share capacity and costs and differ only in routing profile, and loads use 22–42 %
+  of capacity;
+- every client is optional, with a large prize; reload depots are set but `max_reloads` is 0;
+- the objective is mostly driving time, and distances are real road distances.
+
+The closest public groups are therefore the time-window ones (Solomon and Homberger–Gehring,
+especially the mixed RC classes) and ORTEC/Loggi for real road data. Mixed fleet (`hfvrp`) and
+multi-trip (`mtvrptwr`) stay in the default run: they are features ExVrp has, and these are
+the benchmarks that exercise them. Multi-depot does not apply, so it is opt-in. Nothing public
+covers per-vehicle routing profiles, 8 load dimensions or separate end depots; the production
+benchmarks cover those.
+
+## First results
+
+A short local check (2 % of the budget, 2 instances per group, 2 seeds, on a loaded laptop)
+already found the **proven optimum on every Solomon and Homberger–Gehring 200 instance it ran**.
+On X it was at 0.66 % on average, 0.32 % for the better seed. These numbers are not comparable
+with PyVRP's yet; the full run on the dedicated machine is.
 
 ## Why the gaps can be trusted: the fetch check
 
@@ -166,7 +243,7 @@ four triangular formats, as PyVRP's reader does.
 | `gap→best`                    | mean gap to the lowest known cost (CVRPLib's newer bounds included)                                                                                  |
 | `best-of`                     | mean gap of the best seed per instance, i.e. the `num_starts: K` result                                                                              |
 | `optimum`                     | proven optima reached by the best seed / proven optima in the group                                                                                  |
-| `iter/s`                      | median iterations per second per solve: a rough speed signal, not a speed benchmark (use `mix bench.speed` for that)                                 |
+| `iter/s`                      | median iterations per second of search time per solve; see [Iteration speed](#iteration-speed)                                                       |
 
 Then:
 
@@ -174,6 +251,7 @@ Then:
   means no feasible solution yet at that point. This shows whether more time would help, and
   how a shorter budget would have scored, without rerunning.
 - **The three worst instances per group,** where to look first.
+- **The three slowest instances per group,** in iterations per second.
 - **Warnings** for infeasible solves and for budget scales ≠ 1.
 
 `--html report.html` writes a self-contained page with the same table and, per group, a
@@ -195,20 +273,41 @@ dashed reference lines. It works in light and dark mode and can be shared as is.
 
 ## Output format
 
-One JSON object per line, per (instance, seed):
+One JSON object per line, per (instance, seed). Every solve records as much as the solver
+reports, so later questions can be answered from the file without rerunning. This one is
+a real record from a short local run:
 
 ```json
-{"instance": "X-n251-k28", "group": "cvrp", "seed": 1, "num_clients": 250,
- "objective": 38735, "feasible": true, "distance": 38735, "num_routes": 28,
- "bks": 38684, "best_known": 38684, "optimal": true,
- "budget_s": 274.3, "time_ms": 274512, "iterations": 812345,
- "trace": [[1001, 41022], [2003, 40210], ...],
- "passmark": 4200, "budget_scale": 1.0, "commit": "f8f813a",
- "cpu": "AMD Ryzen 9 7950X 16-Core Processor", "cores": 32}
+{"instance": "X-n115-k10", "group": "cvrp", "seed": 1, "num_clients": 114,
+ "objective": 12747, "feasible": true, "distance": 12747, "duration": 12747, "num_routes": 10,
+ "bks": 12747, "best_known": 12747, "optimal": true,
+ "budget_s": 5.5, "load_ms": 56, "time_ms": 5560, "search_ms": 5464,
+ "iterations": 2174, "improvements": 19, "restarts": 1,
+ "initial_solution": {"at_ms": 100, "feasible": true, "distance": 15070, "duration": 15070,
+                      "num_routes": 10, "num_clients": 114},
+ "progress": {"columns": ["elapsed_ms", "iteration", "best_cost", "current_cost", "feasible",
+                          "improvements", "restarts", "num_routes", "num_clients",
+                          "best_distance", "total_duration"],
+              "rows": [[1001, 395, 12823, 12823, true, 14, 0, 10, 114, 12823, 12823],
+                       [2001, 779, 12747, 12801, true, 19, 0, 10, 114, 12747, 12747], ...]},
+ "trace": [[1001, 12823], [2001, 12747]],
+ "passmark": null, "budget_scale": 0.02, "commit": "cccccdf",
+ "cpu": "AMD Ryzen 7 PRO 6850U with Radeon Graphics", "cores": 16}
 ```
 
-`objective` is `Solution.cost/2` (distance plus vehicle costs), `nil` when infeasible. `trace`
-holds each improvement of the best feasible cost as `[ms since the search started, cost]`.
+| Field                                    | Meaning                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `objective`                              | `Solution.cost/2`: distance plus vehicle costs plus missed prizes; `null` when infeasible                                                                                                                                                                                                                                                     |
+| `load_ms`                                | reading the instance file into a model                                                                                                                                                                                                                                                                                                        |
+| `time_ms`                                | the whole solve: problem data, initial solution and search                                                                                                                                                                                                                                                                                    |
+| `search_ms`                              | the search alone; `time_ms − search_ms` is setup                                                                                                                                                                                                                                                                                              |
+| `iterations`, `improvements`, `restarts` | the search's final counters; restarts are its restarts from the best solution after too long without improvement                                                                                                                                                                                                                              |
+| `initial_solution`                       | the solution the search started from, and when it was ready (ms after the solve started)                                                                                                                                                                                                                                                      |
+| `progress`                               | the search's progress report, about once a second, as a column table: `elapsed_ms` since the search started, iterations so far, best and current (penalised) cost, whether the best is feasible, the counters, and the best solution's routes, clients, distance and duration. Iterations per second over time is the difference of two rows. |
+| `trace`                                  | the best feasible cost each time it improved, from `progress` plus the final result (the last improvement can fall between two reports)                                                                                                                                                                                                       |
+
+A full sample run with one seed writes about 110 records; with the progress table at one row
+per second, the file stays in the tens of megabytes.
 
 ## Code map
 
@@ -219,7 +318,8 @@ holds each improvement of the best feasible cost as `[ms since the search starte
 | `fetch.ex`, `download.ex`, `cvrplib_table.ex`, `solomon_format.ex` | Downloading, CVRPLib bound scraping, Solomon → VRPLIB                                                |
 | `best_known_solution.ex`                                           | `.sol` parsing and evaluation on our model                                                           |
 | `manifest.ex`, `benchmark_instance.ex`                             | The fetched instance list (gitignored `priv/benchmark_data/literature/manifest.json`)                |
-| `runner.ex`, `run_settings.ex`, `progress_board.ex`                | The resumable run, traces, live progress                                                             |
+| `runner.ex`, `run_settings.ex`, `progress_board.ex`                | The resumable run and its live progress                                                              |
+| `search_recording.ex`                                              | What each solve records while it runs: initial solution, progress table, best-cost trace             |
 | `group_summary.ex`, `gap.ex`, `html_report.ex`                     | The report                                                                                           |
 | `../ab_benchmark/solve.ex`                                         | The single solve, shared with the A/B harness                                                        |
 | `../mix/tasks/bench.lit.*.ex`                                      | `mix bench.lit.fetch` / `run` / `report`                                                             |

@@ -5,7 +5,8 @@ defmodule ExVrp.ABBenchmark.Solve do
   infeasible instead of crashing the run.
 
   The objective is `Solution.cost/2`: distance plus fixed and per-unit vehicle costs
-  and missed prizes, and `nil` when the solution is infeasible.
+  and missed prizes, and `nil` when the solution is infeasible. The A/B harness also
+  solves base checkouts, so result fields an older solver lacks are left out, not failed on.
   """
 
   alias ExVrp.ABBenchmark.Instance
@@ -37,18 +38,27 @@ defmodule ExVrp.ABBenchmark.Solve do
   end
 
   defp seed_record({:ok, %{best: best} = result}, time_ms) do
-    %{
+    record = %{
       "objective" => feasible_objective(best),
       "distance" => best.distance,
       "feasible" => best.is_feasible,
       "num_clients" => best.num_clients,
       "num_routes" => length(best.routes),
+      "duration" => best.duration,
       "time_ms" => time_ms,
+      "search_ms" => Map.get(result, :runtime),
       "iterations" => Map.get(result, :num_iterations, 0)
     }
+
+    Map.merge(record, search_stats(Map.get(result, :stats)))
   end
 
   defp seed_record({:error, _reason}, time_ms), do: infeasible_record(time_ms)
+
+  defp search_stats(%{improvements: improvements, restarts: restarts}),
+    do: %{"improvements" => improvements, "restarts" => restarts}
+
+  defp search_stats(_stats_from_an_older_solver), do: %{}
 
   defp feasible_objective(%{is_feasible: false}), do: nil
 
