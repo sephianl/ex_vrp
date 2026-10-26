@@ -10,30 +10,86 @@ benchmark instances, against two references:
    and [PyVRP/Instances](https://github.com/PyVRP/Instances). Many instances up to a few hundred
    clients are solved to proven optimality, so for those the gap is a gap to the true optimum.
 
-## Quick start
+## Running it on the benchmark machine
+
+Step by step, for a person or an agent. Every step says what to expect; if a step does not
+give that, stop and report it instead of working around it.
+
+**1. Set up the checkout.** In the repo root, enter the dev shell (`devenv shell`, or let
+direnv load it). It provides Elixir, GCC 13 and `7z`. Then:
 
 ```bash
-# once: download instances (needs 7z, in devenv.nix) and check every best-known solution
-mix bench.lit.fetch
-
-# local smoke: 2% of the budget, 2 instances per group (~1 minute)
-mix bench.lit.run --budget-scale 0.02 --limit 2 --out smoke.jsonl
-mix bench.lit.report smoke.jsonl
-
-# the real run, on an idle machine
-mix bench.lit.run --passmark <single-thread PassMark of the CPU> --out run-$(date +%F).jsonl
-mix bench.lit.report run-*.jsonl --html report.html
+mix deps.get && mix compile
 ```
 
-Look the CPU's **single-thread** PassMark score up on cpubenchmark.net. Without `--passmark` the
-run assumes PyVRP's reference CPU (≈2000), which gives the longest, safest budgets.
+This loads the precompiled solver. To benchmark a branch that changes C++ under `c_src/`, use
+`EX_VRP_FORCE_BUILD=1 mix compile` instead, or the run measures the released solver, not the
+branch (see CLAUDE.md, "NIF build gotcha").
 
-The run is **resumable**. Each finished solve is appended to the output file at once, and
-rerunning with the same `--out` skips what is already there. Ctrl-C and reboots are fine. A
-file holding results at a different `--passmark` or `--budget-scale` is refused, so runs never mix.
+**2. Check the machine is idle and count its cores.**
 
-While running, it prints one line per finished solve (`[37/140] cvrp X-n251-k28 seed 1: 0.21%`).
-Every minute it also prints a line per running solve with its elapsed time and current gap.
+```bash
+uptime                                   # load average should be near 0
+grep -m1 "model name" /proc/cpuinfo      # the CPU model, for step 3
+lscpu | grep -E "^(Socket|Core|Thread)"  # physical cores = sockets × cores per socket
+```
+
+Solves stop on wall-clock time, so any other load costs them iterations and makes gaps worse.
+Use the **physical** core count for `--workers` below. Two solves sharing a core through
+hyperthreading each get about half the iterations.
+
+**3. Find the CPU's single-thread PassMark score.** Search the CPU model from step 2 on
+<https://www.cpubenchmark.net> and take its **Single Thread Rating** (not the multi-thread CPU
+Mark). The time limits are scaled by it, so the run matches PyVRP's protocol. If no score can
+be found, leave `--passmark` out and say so in the results. The run then uses PyVRP's reference
+CPU (≈2000), so a faster machine gets more search time than PyVRP had, and gaps look better
+than a fair comparison would.
+
+**4. Download the instances and check them.**
+
+```bash
+mix bench.lit.fetch
+```
+
+Expect a table of groups and instance counts, ending with `Every best-known solution checks
+out on our model.` Any `PROBLEM` line means we read an instance differently from its source.
+Stop there.
+
+**5. Smoke test (about a minute).**
+
+```bash
+mix bench.lit.run --budget-scale 0.02 --limit 2 --out smoke.jsonl && mix bench.lit.report smoke.jsonl
+```
+
+Expect every solve to finish with a percentage (not `infeasible`) and a report table. The
+gaps mean nothing at 2 % of the budget.
+
+**6. The real run: four seeds, detached.** About 3 hours on 16 cores (the run prints its own
+estimate on the first line of the log).
+
+```bash
+RUN=run-$(date +%F)
+nohup mix bench.lit.run --passmark <score> --seeds 1,2,3,4 --workers <physical cores> \
+  --out $RUN.jsonl > $RUN.log 2>&1 &
+```
+
+Follow it with `tail -f $RUN.log`. Each line `[n/total] group instance seed s: gap` is a finished
+solve, and every minute it prints the running ones with their current gap. `wc -l $RUN.jsonl`
+counts finished solves. If it stops for any reason (crash, reboot, Ctrl-C), run **the same
+command with the same `--out`**: it skips finished solves and continues. A file with results at
+another `--passmark` or `--budget-scale` is refused, so runs never mix.
+
+**7. Report.**
+
+```bash
+mix bench.lit.report $RUN.jsonl --html $RUN.html > $RUN-report.txt
+```
+
+**8. Hand back:**
+
+- `$RUN.jsonl` (all raw data), `$RUN-report.txt`, `$RUN.html` and `$RUN.log`;
+- the CPU model, the PassMark score used (or that none was found), and `--workers`;
+- anything unusual: warnings in the report, `PROBLEM` lines, a non-idle machine.
 
 ## What is benchmarked
 
