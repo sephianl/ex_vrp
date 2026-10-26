@@ -10,16 +10,16 @@
 #include <cstring>
 #include <numeric>
 
-using pyvrp::Solution;
-using pyvrp::search::LocalSearch;
-using pyvrp::search::NodeOperator;
-using pyvrp::search::RouteOperator;
-using pyvrp::search::SearchSpace;
+using ex_vrp::Solution;
+using ex_vrp::search::LocalSearch;
+using ex_vrp::search::NodeOperator;
+using ex_vrp::search::RouteOperator;
+using ex_vrp::search::SearchSpace;
 
-pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
-                                        CostEvaluator const &costEvaluator,
-                                        bool exhaustive,
-                                        int64_t timeout_ms)
+ex_vrp::Solution LocalSearch::operator()(ex_vrp::Solution const &solution,
+                                         CostEvaluator const &costEvaluator,
+                                         bool exhaustive,
+                                         int64_t timeout_ms)
 {
     loadSolution(solution);
 
@@ -110,9 +110,9 @@ pyvrp::Solution LocalSearch::operator()(pyvrp::Solution const &solution,
     return solution_.unload();
 }
 
-pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
-                                    CostEvaluator const &costEvaluator,
-                                    int64_t timeout_ms)
+ex_vrp::Solution LocalSearch::search(ex_vrp::Solution const &solution,
+                                     CostEvaluator const &costEvaluator,
+                                     int64_t timeout_ms)
 {
     loadSolution(solution);
 
@@ -161,8 +161,8 @@ pyvrp::Solution LocalSearch::search(pyvrp::Solution const &solution,
     return solution_.unload();
 }
 
-pyvrp::Solution LocalSearch::intensify(pyvrp::Solution const &solution,
-                                       CostEvaluator const &costEvaluator)
+ex_vrp::Solution LocalSearch::intensify(ex_vrp::Solution const &solution,
+                                        CostEvaluator const &costEvaluator)
 {
     loadSolution(solution);
     intensify(costEvaluator);
@@ -302,7 +302,8 @@ void LocalSearch::intensify(CostEvaluator const &costEvaluator)
     }
 }
 
-pyvrp::Cost LocalSearch::penalisedCost(CostEvaluator const &costEvaluator) const
+ex_vrp::Cost
+LocalSearch::penalisedCost(CostEvaluator const &costEvaluator) const
 {
     Cost cost = 0;
     for (auto const &route : solution_.routes)
@@ -1807,7 +1808,7 @@ void LocalSearch::update(Route *U, Route *V)
     }
 }
 
-void LocalSearch::loadSolution(pyvrp::Solution const &solution)
+void LocalSearch::loadSolution(ex_vrp::Solution const &solution)
 {
     std::fill(lastTestedNodes.begin(), lastTestedNodes.end(), -1);
     std::fill(lastTestedRoutes.begin(), lastTestedRoutes.end(), -1);

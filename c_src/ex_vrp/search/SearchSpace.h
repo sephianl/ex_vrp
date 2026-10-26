@@ -1,5 +1,5 @@
-#ifndef PYVRP_SEARCH_SEARCHSPACE_H
-#define PYVRP_SEARCH_SEARCHSPACE_H
+#ifndef EX_VRP_SEARCH_SEARCHSPACE_H
+#define EX_VRP_SEARCH_SEARCHSPACE_H
 
 #include "DynamicBitset.h"
 #include "ProblemData.h"
@@ -8,7 +8,7 @@
 
 #include <vector>
 
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 /**
  * SearchSpace(data: ProblemData, neighbours: list[list[int]])
@@ -119,6 +119,6 @@ public:
      */
     void shuffle(RandomNumberGenerator &rng);
 };
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
-#endif  // PYVRP_SEARCH_SEARCHSPACE_H
+#endif  // EX_VRP_SEARCH_SEARCHSPACE_H

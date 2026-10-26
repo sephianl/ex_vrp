@@ -1,5 +1,5 @@
-#ifndef PYVRP_MEASURE_H
-#define PYVRP_MEASURE_H
+#ifndef EX_VRP_MEASURE_H
+#define EX_VRP_MEASURE_H
 
 #include <cassert>
 #include <cmath>
@@ -10,7 +10,7 @@
 #include <limits>
 #include <type_traits>
 
-namespace pyvrp
+namespace ex_vrp
 {
 enum class MeasureType
 {
@@ -220,40 +220,40 @@ Measure<Type, Value> operator/(Measure<Type, Value> const lhs,
 {
     return lhs.get() / rhs.get();
 }
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
 // For printing.
-template <pyvrp::MeasureType Type, pyvrp::NumberType Value>
+template <ex_vrp::MeasureType Type, ex_vrp::NumberType Value>
 std::ostream &operator<<(std::ostream &out,
-                         pyvrp::Measure<Type, Value> const measure)
+                         ex_vrp::Measure<Type, Value> const measure)
 {
     return out << measure.get();
 }
 
 // Specialisations for hashing and numerical limits.
 
-template <pyvrp::MeasureType Type, pyvrp::NumberType Value>
-struct std::hash<pyvrp::Measure<Type, Value>>
+template <ex_vrp::MeasureType Type, ex_vrp::NumberType Value>
+struct std::hash<ex_vrp::Measure<Type, Value>>
 {
-    size_t operator()(pyvrp::Measure<Type, Value> const measure) const
+    size_t operator()(ex_vrp::Measure<Type, Value> const measure) const
     {
         return std::hash<Value>()(measure.get());
     }
 };
 
-template <pyvrp::MeasureType Type, pyvrp::NumberType Value>
-class std::numeric_limits<pyvrp::Measure<Type, Value>>
+template <ex_vrp::MeasureType Type, ex_vrp::NumberType Value>
+class std::numeric_limits<ex_vrp::Measure<Type, Value>>
 {
 public:
-    static pyvrp::Measure<Type, Value> max()
+    static ex_vrp::Measure<Type, Value> max()
     {
         return std::numeric_limits<Value>::max();
     }
 
-    static pyvrp::Measure<Type, Value> min()
+    static ex_vrp::Measure<Type, Value> min()
     {
         return std::numeric_limits<Value>::min();
     }
 };
 
-#endif  // PYVRP_MEASURE_H
+#endif  // EX_VRP_MEASURE_H

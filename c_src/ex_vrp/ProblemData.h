@@ -1,5 +1,5 @@
-#ifndef PYVRP_PROBLEMDATA_H
-#define PYVRP_PROBLEMDATA_H
+#ifndef EX_VRP_PROBLEMDATA_H
+#define EX_VRP_PROBLEMDATA_H
 
 #include "DriveClock.h"
 #include "DynamicBitset.h"
@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace pyvrp
+namespace ex_vrp
 {
 
 /**
@@ -48,7 +48,7 @@ advancePastForbidden(Duration now,
  *
  *    The matrices in the ``distance_matrices`` and ``duration_matrices``
  *    arguments should have all depots in the lower indices, starting from
- *    index ``0``. See also the :meth:`~pyvrp._pyvrp.ProblemData.location`
+ *    index ``0``. See also the :meth:`ProblemData.location`
  *    method for details.
  *
  * Parameters
@@ -1208,6 +1208,6 @@ std::vector<size_t> const &ProblemData::loadedDimensions() const
 bool ProblemData::hasForbiddenLocations() const { return hasForbidden_; }
 
 bool ProblemData::hasTimeWindows() const { return hasTimeWindows_; }
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
-#endif  // PYVRP_PROBLEMDATA_H
+#endif  // EX_VRP_PROBLEMDATA_H

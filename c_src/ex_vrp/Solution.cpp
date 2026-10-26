@@ -8,12 +8,12 @@
 #include <numeric>
 #include <unordered_map>
 
-using pyvrp::Cost;
-using pyvrp::Distance;
-using pyvrp::Duration;
-using pyvrp::Load;
-using pyvrp::Route;
-using pyvrp::Solution;
+using ex_vrp::Cost;
+using ex_vrp::Distance;
+using ex_vrp::Duration;
+using ex_vrp::Load;
+using ex_vrp::Route;
+using ex_vrp::Solution;
 
 using Client = size_t;
 using Routes = std::vector<Route>;

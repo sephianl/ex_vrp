@@ -1,7 +1,7 @@
 #include "SwapRoutes.h"
 
-using pyvrp::Cost;
-using pyvrp::search::SwapRoutes;
+using ex_vrp::Cost;
+using ex_vrp::search::SwapRoutes;
 
 Cost SwapRoutes::evaluate(Route *U,
                           Route *V,
@@ -26,7 +26,7 @@ SwapRoutes::SwapRoutes(ProblemData const &data) : RouteOperator(data), op(data)
 {
 }
 
-template <> bool pyvrp::search::supports<SwapRoutes>(ProblemData const &data)
+template <> bool ex_vrp::search::supports<SwapRoutes>(ProblemData const &data)
 {
     // Swapping routes has no benefit if all vehicles are the same.
     return data.numVehicleTypes() > 1;

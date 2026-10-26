@@ -1,15 +1,15 @@
-#ifndef PYVRP_SEARCH_SOLUTION_H
-#define PYVRP_SEARCH_SOLUTION_H
+#ifndef EX_VRP_SEARCH_SOLUTION_H
+#define EX_VRP_SEARCH_SOLUTION_H
 
-#include "../Solution.h"  // pyvrp::Solution
+#include "../Solution.h"  // ex_vrp::Solution
 #include "CostEvaluator.h"
 #include "ProblemData.h"
-#include "Route.h"  // pyvrp::search::Route
+#include "Route.h"  // ex_vrp::search::Route
 #include "SearchSpace.h"
 
 #include <vector>
 
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 /**
  * Solution(data: ProblemData)
@@ -38,10 +38,10 @@ public:
     Solution(ProblemData const &data);
 
     // Converts the given solution into our node-based representation.
-    void load(pyvrp::Solution const &solution);
+    void load(ex_vrp::Solution const &solution);
 
     // Converts from our representation to a proper solution.
-    pyvrp::Solution unload() const;
+    ex_vrp::Solution unload() const;
 
     // Inserts the given node into the solution - either in its neighbourhood,
     // or in an empty route, if improving or required. Returns true if the node
@@ -52,6 +52,6 @@ public:
                 CostEvaluator const &costEvaluator,
                 bool required);
 };
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
-#endif  // PYVRP_SEARCH_SOLUTION_H
+#endif  // EX_VRP_SEARCH_SOLUTION_H

@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-using pyvrp::CostEvaluator;
+using ex_vrp::CostEvaluator;
 
 CostEvaluator::CostEvaluator(std::vector<double> loadPenalties,
                              double twPenalty,

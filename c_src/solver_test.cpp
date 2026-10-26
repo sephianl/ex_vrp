@@ -22,7 +22,7 @@
 #include <cstdio>
 #include <vector>
 
-using namespace pyvrp;
+using namespace ex_vrp;
 
 // ---------------------------------------------------------------------------
 // Helpers

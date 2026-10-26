@@ -1,5 +1,5 @@
-#ifndef PYVRP_SEARCH_EXCHANGE_H
-#define PYVRP_SEARCH_EXCHANGE_H
+#ifndef EX_VRP_SEARCH_EXCHANGE_H
+#define EX_VRP_SEARCH_EXCHANGE_H
 
 #include "LocalSearchOperator.h"
 #include "Route.h"
@@ -7,7 +7,7 @@
 
 #include <cassert>
 
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 /**
  * Exchange(data: ProblemData)
@@ -260,6 +260,6 @@ void Exchange<N, M>::apply(Route::Node *U, Route::Node *V) const
         V = n(V);
     }
 }
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
-#endif  // PYVRP_SEARCH_EXCHANGE_H
+#endif  // EX_VRP_SEARCH_EXCHANGE_H

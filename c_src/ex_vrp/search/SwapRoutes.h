@@ -1,10 +1,10 @@
-#ifndef PYVRP_SEARCH_SWAPROUTES_H
-#define PYVRP_SEARCH_SWAPROUTES_H
+#ifndef EX_VRP_SEARCH_SWAPROUTES_H
+#define EX_VRP_SEARCH_SWAPROUTES_H
 
 #include "LocalSearchOperator.h"
 #include "SwapTails.h"
 
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 /**
  * SwapRoutes(data: ProblemData)
@@ -26,6 +26,6 @@ public:
 };
 
 template <> bool supports<SwapRoutes>(ProblemData const &data);
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
-#endif  // PYVRP_SEARCH_SWAPROUTES_H
+#endif  // EX_VRP_SEARCH_SWAPROUTES_H

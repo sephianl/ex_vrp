@@ -5,11 +5,11 @@
 #include <numeric>
 #include <stdexcept>
 
-using pyvrp::Distance;
-using pyvrp::Duration;
-using pyvrp::Load;
-using pyvrp::Matrix;
-using pyvrp::ProblemData;
+using ex_vrp::Distance;
+using ex_vrp::Duration;
+using ex_vrp::Load;
+using ex_vrp::Matrix;
+using ex_vrp::ProblemData;
 
 namespace
 {
@@ -54,8 +54,8 @@ bool hasTimeWindow(auto const &arg)
 
 // An empty penalty argument means "no penalties anywhere". Materialising that
 // to full size here keeps every read site unconditional.
-std::vector<std::vector<pyvrp::Cost>>
-normalisePenalties(std::vector<std::vector<pyvrp::Cost>> penalties,
+std::vector<std::vector<ex_vrp::Cost>>
+normalisePenalties(std::vector<std::vector<ex_vrp::Cost>> penalties,
                    size_t numProfiles,
                    size_t numLocations)
 {
@@ -64,23 +64,23 @@ normalisePenalties(std::vector<std::vector<pyvrp::Cost>> penalties,
 
     // Deliberately parenthesised: the braced form would select the
     // initializer_list constructor and build a two-element vector.
-    return std::vector<std::vector<pyvrp::Cost>>(
-        numProfiles, std::vector<pyvrp::Cost>(numLocations, 0));
+    return std::vector<std::vector<ex_vrp::Cost>>(
+        numProfiles, std::vector<ex_vrp::Cost>(numLocations, 0));
 }
 
 // An empty allowed argument means "everything is reachable".
-std::vector<pyvrp::DynamicBitset>
-normaliseAllowed(std::vector<pyvrp::DynamicBitset> allowed,
+std::vector<ex_vrp::DynamicBitset>
+normaliseAllowed(std::vector<ex_vrp::DynamicBitset> allowed,
                  size_t numProfiles,
                  size_t numLocations)
 {
     if (!allowed.empty())
         return allowed;
 
-    pyvrp::DynamicBitset all(numLocations);
+    ex_vrp::DynamicBitset all(numLocations);
     all.set();
 
-    return std::vector<pyvrp::DynamicBitset>(numProfiles, all);
+    return std::vector<ex_vrp::DynamicBitset>(numProfiles, all);
 }
 
 // An empty profiles argument means one profile per matrix pair, replacing no
@@ -104,14 +104,14 @@ normaliseProfiles(std::vector<ProblemData::Profile> profiles,
 // the meantime, so that validate() reports it rather than this reading past
 // the end.
 template <typename T, typename Row>
-std::vector<pyvrp::MatrixView<T>>
-profileViews(std::vector<pyvrp::Matrix<T>> const &matrices,
+std::vector<ex_vrp::MatrixView<T>>
+profileViews(std::vector<ex_vrp::Matrix<T>> const &matrices,
              std::vector<ProblemData::Profile> const &profiles,
              Row const ProblemData::Profile::*row)
 {
-    static pyvrp::Matrix<T> const missing;
+    static ex_vrp::Matrix<T> const missing;
 
-    std::vector<pyvrp::MatrixView<T>> views;
+    std::vector<ex_vrp::MatrixView<T>> views;
     views.reserve(profiles.size());
 
     for (auto const &profile : profiles)
@@ -136,7 +136,7 @@ std::vector<bool> clientFlags(size_t numDepots,
     return flags;
 }
 
-bool putsLoadIn(std::vector<pyvrp::Load> const &loads, size_t dimension)
+bool putsLoadIn(std::vector<ex_vrp::Load> const &loads, size_t dimension)
 {
     return dimension < loads.size() && loads[dimension] != 0;
 }

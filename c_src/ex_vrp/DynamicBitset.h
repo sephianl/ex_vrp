@@ -1,10 +1,10 @@
-#ifndef PYVRP_DYNAMICBITSET_H
-#define PYVRP_DYNAMICBITSET_H
+#ifndef EX_VRP_DYNAMICBITSET_H
+#define EX_VRP_DYNAMICBITSET_H
 
 #include <bitset>
 #include <vector>
 
-namespace pyvrp
+namespace ex_vrp
 {
 /**
  * DynamicBitset(num_bits: int)
@@ -56,6 +56,6 @@ public:
     DynamicBitset &set();
     DynamicBitset &reset();
 };
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
-#endif  // PYVRP_DYNAMICBITSET_H
+#endif  // EX_VRP_DYNAMICBITSET_H

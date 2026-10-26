@@ -1,5 +1,5 @@
-#ifndef PYVRP_SEARCH_BREAKREPAIR_H
-#define PYVRP_SEARCH_BREAKREPAIR_H
+#ifndef EX_VRP_SEARCH_BREAKREPAIR_H
+#define EX_VRP_SEARCH_BREAKREPAIR_H
 
 #include "CostEvaluator.h"
 #include "DriveClock.h"
@@ -10,7 +10,7 @@
 #include <array>
 #include <vector>
 
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 /**
  * Places break clients on a single route. A break has no location, so the
@@ -97,6 +97,6 @@ public:
     bool
     apply(Route &route, Solution &solution, CostEvaluator const &costEvaluator);
 };
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
-#endif  // PYVRP_SEARCH_BREAKREPAIR_H
+#endif  // EX_VRP_SEARCH_BREAKREPAIR_H

@@ -2,8 +2,8 @@
 
 #include <fstream>
 
-using pyvrp::Load;
-using pyvrp::LoadSegment;
+using ex_vrp::Load;
+using ex_vrp::LoadSegment;
 
 Load LoadSegment::delivery() const { return delivery_; }
 

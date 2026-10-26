@@ -1,12 +1,12 @@
-#ifndef PYVRP_DRIVECLOCK_H
-#define PYVRP_DRIVECLOCK_H
+#ifndef EX_VRP_DRIVECLOCK_H
+#define EX_VRP_DRIVECLOCK_H
 
 #include "Measure.h"
 
 #include <algorithm>
 #include <cstddef>
 
-namespace pyvrp
+namespace ex_vrp
 {
 /**
  * What a clock counts. Drive: edge travel only. Work: edge travel plus each
@@ -233,6 +233,6 @@ struct BreakClocks
         return std::max(drive.missing(limits.drive), work.missing(limits.work));
     }
 };
-}  // namespace pyvrp
+}  // namespace ex_vrp
 
-#endif  // PYVRP_DRIVECLOCK_H
+#endif  // EX_VRP_DRIVECLOCK_H

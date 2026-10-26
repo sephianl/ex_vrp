@@ -1,5 +1,5 @@
-#ifndef PYVRP_SEARCH_PRIMITIVES_H
-#define PYVRP_SEARCH_PRIMITIVES_H
+#ifndef EX_VRP_SEARCH_PRIMITIVES_H
+#define EX_VRP_SEARCH_PRIMITIVES_H
 
 #include "CostEvaluator.h"
 #include "Measure.h"
@@ -8,7 +8,7 @@
 // This file stores a few basic functions for (precisely) evaluating really
 // common moves. Those primitives may be useful implementing higher order
 // operators.
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 /**
  * Evaluates the delta cost of inserting U after V in V's route. The evaluation
@@ -112,6 +112,6 @@ Cost inplaceCost(Route::Node *U,
 Cost removeCost(Route::Node *U,
                 ProblemData const &data,
                 CostEvaluator const &costEvaluator);
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
-#endif  // PYVRP_SEARCH_PRIMITIVES_H
+#endif  // EX_VRP_SEARCH_PRIMITIVES_H

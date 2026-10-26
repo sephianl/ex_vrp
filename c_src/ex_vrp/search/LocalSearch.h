@@ -1,5 +1,5 @@
-#ifndef PYVRP_SEARCH_LOCALSEARCH_H
-#define PYVRP_SEARCH_LOCALSEARCH_H
+#ifndef EX_VRP_SEARCH_LOCALSEARCH_H
+#define EX_VRP_SEARCH_LOCALSEARCH_H
 
 #include "BreakRepair.h"
 #include "CostEvaluator.h"
@@ -9,14 +9,14 @@
 #include "RandomNumberGenerator.h"
 #include "Route.h"
 #include "SearchSpace.h"
-#include "Solution.h"  // pyvrp::search::Solution
+#include "Solution.h"  // ex_vrp::search::Solution
 
 #include <chrono>
 #include <functional>
 #include <stdexcept>
 #include <vector>
 
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 class LocalSearch
 {
@@ -54,7 +54,7 @@ class LocalSearch
     bool has_timeout_ = false;
 
     // Load an initial solution that we will attempt to improve.
-    void loadSolution(pyvrp::Solution const &solution);
+    void loadSolution(ex_vrp::Solution const &solution);
 
     // Tests the node pair (U, V).
     bool applyNodeOps(Route::Node *U,
@@ -236,25 +236,25 @@ public:
      * Iteratively calls ``search()`` and ``intensify()`` until no further
      * improvements are made.
      */
-    pyvrp::Solution operator()(pyvrp::Solution const &solution,
-                               CostEvaluator const &costEvaluator,
-                               bool exhaustive = false,
-                               int64_t timeout_ms = 0);
+    ex_vrp::Solution operator()(ex_vrp::Solution const &solution,
+                                CostEvaluator const &costEvaluator,
+                                bool exhaustive = false,
+                                int64_t timeout_ms = 0);
 
     /**
      * Performs regular (node-based) local search around the given solution,
      * and returns a new, hopefully improved solution.
      */
-    pyvrp::Solution search(pyvrp::Solution const &solution,
-                           CostEvaluator const &costEvaluator,
-                           int64_t timeout_ms = 0);
+    ex_vrp::Solution search(ex_vrp::Solution const &solution,
+                            CostEvaluator const &costEvaluator,
+                            int64_t timeout_ms = 0);
 
     /**
      * Performs a more intensive route-based local search around the given
      * solution, and returns a new, hopefully improved solution.
      */
-    pyvrp::Solution intensify(pyvrp::Solution const &solution,
-                              CostEvaluator const &costEvaluator);
+    ex_vrp::Solution intensify(ex_vrp::Solution const &solution,
+                               CostEvaluator const &costEvaluator);
 
     /**
      * Shuffles the order in which the node and route pairs are evaluated, and
@@ -266,6 +266,6 @@ public:
                 SearchSpace::Neighbours neighbours,
                 PerturbationManager &perturbationManager);
 };
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
-#endif  // PYVRP_SEARCH_LOCALSEARCH_H
+#endif  // EX_VRP_SEARCH_LOCALSEARCH_H

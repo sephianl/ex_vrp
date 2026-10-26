@@ -1,7 +1,7 @@
-#ifndef PYVRP_SEARCH_ROUTE_H
-#define PYVRP_SEARCH_ROUTE_H
+#ifndef EX_VRP_SEARCH_ROUTE_H
+#define EX_VRP_SEARCH_ROUTE_H
 
-#include "../Route.h"  // pyvrp::Route
+#include "../Route.h"  // ex_vrp::Route
 #include "DriveClock.h"
 #include "DurationSegment.h"
 #include "LoadSegment.h"
@@ -14,7 +14,7 @@
 #include <iosfwd>
 #include <utility>
 
-namespace pyvrp::search
+namespace ex_vrp::search
 {
 /**
  * A segment's travel distance, split at the trip boundaries inside it.
@@ -981,7 +981,7 @@ public:
 
     /**
      * @return The true drive and work clock overrun on this route, summed.
-     *         Not part of timeWarp() (see virtualBreaks()); pyvrp::Route
+     *         Not part of timeWarp() (see virtualBreaks()); ex_vrp::Route
      *         counts it as time warp, apart as clockExcess() (drive) and
      *         workClockExcess().
      */
@@ -1132,7 +1132,7 @@ public:
     void update();
 
     bool operator==(Route const &other) const;
-    bool operator==(pyvrp::Route const &other) const;
+    bool operator==(ex_vrp::Route const &other) const;
 
     Route(ProblemData const &data, size_t idx, size_t vehicleType);
     ~Route();
@@ -2471,12 +2471,12 @@ Load Route::Proposal<Segments...>::excessLoad(size_t dimension) const
 
     return std::apply(fn, segments_);
 }
-}  // namespace pyvrp::search
+}  // namespace ex_vrp::search
 
 // Outputs a route into a given ostream in human-readable format
-std::ostream &operator<<(std::ostream &out, pyvrp::search::Route const &route);
+std::ostream &operator<<(std::ostream &out, ex_vrp::search::Route const &route);
 
 std::ostream &operator<<(std::ostream &out,  // for debugging
-                         pyvrp::search::Route::Node const &node);
+                         ex_vrp::search::Route::Node const &node);
 
-#endif  // PYVRP_SEARCH_ROUTE_H
+#endif  // EX_VRP_SEARCH_ROUTE_H
