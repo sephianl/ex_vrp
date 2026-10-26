@@ -39,15 +39,15 @@ Every minute it also prints a line per running solve with its elapsed time and c
 
 ### Groups
 
-| Group      | Source                                                     | Default sample            | Compared against                        | Why it matters for Zelo                                             |
-| ---------- | ---------------------------------------------------------- | ------------------------- | --------------------------------------- | ------------------------------------------------------------------- |
-| `cvrp`     | PyVRP/Instances, X set (Uchoa 2017), 100 inst., n 100–1000 | 25, one per size stratum  | PyVRP published + CVRPLib bound/optimum | Baseline routing quality                                            |
-| `hfvrp`    | PyVRP/Instances, Pessoa 2018, 100 inst.                    | 25, one per size stratum  | PyVRP published                         | Mixed fleet: vehicle types with own capacity, fixed and per-km cost |
-| `mtvrptwr` | PyVRP/Instances, Yang 2023/24, 171 inst.                   | 30, five per class × size | PyVRP published (most proven optimal)   | Multi-trip: reloading at the depot, release times                   |
-| `mdvrptw`  | PyVRP/Instances, Vidal 2013 (PR11–PR24), 28 inst.          | 10, one per stratum       | PyVRP published                         | Several depots + time windows                                       |
-| `solomon`  | CVRPLib, Solomon VRPTW, 56 inst., n 100                    | 12, two per class         | proven optimum (all)                    | Time windows                                                        |
-| `hg200`    | CVRPLib, Homberger–Gehring, 60 inst., n 200                | 12, two per class         | proven optimum (all)                    | Time windows, larger                                                |
-| `dimacs`   | CVRPLib, DIMACS 2021 ORTEC + Loggi                         | the 6 with n ≤ 500        | challenge best-knowns                   | Real delivery data (ORTEC is Dutch grocery)                         |
+| Group      | Source                                                     | Default sample                                     | Compared against                        | Why it matters for Zelo                                             |
+| ---------- | ---------------------------------------------------------- | -------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------- |
+| `cvrp`     | PyVRP/Instances, X set (Uchoa 2017), 100 inst., n 100–1000 | 25, one per size stratum                           | PyVRP published + CVRPLib bound/optimum | Baseline routing quality                                            |
+| `hfvrp`    | PyVRP/Instances, Pessoa 2018, 100 inst.                    | 25, one per size stratum                           | PyVRP published                         | Mixed fleet: vehicle types with own capacity, fixed and per-km cost |
+| `mtvrptwr` | PyVRP/Instances, Yang 2023/24, 171 inst.                   | 30, five per class × size                          | PyVRP published (most proven optimal)   | Multi-trip: reloading at the depot, release times                   |
+| `mdvrptw`  | PyVRP/Instances, Vidal 2013 (PR11–PR24), 28 inst.          | none: opt-in with `--groups mdvrptw --subset full` | PyVRP published                         | Several depots + time windows; Zelo plans from one start depot      |
+| `solomon`  | CVRPLib, Solomon VRPTW, 56 inst., n 100                    | 12, two per class                                  | proven optimum (all)                    | Time windows                                                        |
+| `hg200`    | CVRPLib, Homberger–Gehring, 60 inst., n 200                | 12, two per class                                  | proven optimum (all)                    | Time windows, larger                                                |
+| `dimacs`   | CVRPLib, DIMACS 2021 ORTEC + Loggi                         | the 6 with n ≤ 500                                 | challenge best-knowns                   | Real delivery data (ORTEC is Dutch grocery)                         |
 
 The sample (`sample.ex`) is drawn once with a fixed seed and committed, so runs stay comparable
 over time. Stratifying on size and class makes the sample's mean gap an **unbiased estimate of
@@ -98,12 +98,12 @@ Short-budget runs are still useful for smoke tests and trends.
 
 At the full protocol, on a CPU about twice PyVRP's reference, with 16 cores and one seed:
 
-| Run                         | CPU-hours    | Wall-clock on 16 cores                                                  |
-| --------------------------- | ------------ | ----------------------------------------------------------------------- |
-| Default sample              | ~16          | ~1–1.5 h (the floor is the longest single solve, an MDVRPTW at ~30 min) |
-| Default sample, 4 seeds     | ~64          | ~4–5 h                                                                  |
-| Full sets                   | ~60 per seed | ~4 h per seed                                                           |
-| `--budget-scale 0.1` sample | ~1.6         | ~10 min                                                                 |
+| Run                         | CPU-hours    | Wall-clock on 16 cores                                             |
+| --------------------------- | ------------ | ------------------------------------------------------------------ |
+| Default sample (110 inst.)  | ~12          | ~45 min (the floor is the longest single solve, X-n957 at ~20 min) |
+| Default sample, 4 seeds     | ~46          | ~3 h                                                               |
+| Full sets (incl. MDVRPTW)   | ~65 per seed | ~4 h per seed                                                      |
+| `--budget-scale 0.1` sample | ~1.2         | ~5 min                                                             |
 
 The run prints its own estimate before it starts. The longest solves are started first, so the
 run doesn't end on one long solve while the other cores sit idle.

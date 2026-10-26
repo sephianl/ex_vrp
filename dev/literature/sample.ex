@@ -4,10 +4,12 @@ defmodule ExVrp.Literature.Sample do
   once with a fixed seed and kept here so runs stay comparable over time.
 
   X and HFVRP take one instance from each of 25 size strata, MTVRPTWR five from each class
-  and size, MDVRPTW one from each of ten strata of the PR11–PR24 set, Solomon and
-  Homberger–Gehring two per class, and DIMACS every instance up to 500 clients. Stratifying
-  on size and class makes a group's mean gap on the sample an unbiased estimate of its mean
-  gap on the full set, which is what PyVRP publishes.
+  and size, Solomon and Homberger–Gehring two per class, and DIMACS every instance up to 500
+  clients. Stratifying on size and class makes a group's mean gap on the sample an unbiased
+  estimate of its mean gap on the full set, which is what PyVRP publishes.
+
+  MDVRPTW has no sample: Zelo plans every route from one start depot, and the group was a
+  third of the sample's CPU time. `--groups mdvrptw --subset full` still runs it.
   """
 
   @names %{
@@ -22,12 +24,11 @@ defmodule ExVrp.Literature.Sample do
                  C2_2_06R0.25 C2_2_06R0.5 R201R0.75 R202R0.75 R203R0.75 R204R0.75 R210R0.25 R2_2_02R0.25
                  R2_2_02R0.75 R2_2_04R0.75 R2_2_05R0.25 R2_2_10R0.75 RC201R0.75 RC202R0.25 RC204R0.5
                  RC206R0.25 RC208R0.25 RC2_2_02R0.25 RC2_2_03R0.25 RC2_2_04R0.5 RC2_2_06R0.25 RC2_2_08R0.5),
-    mdvrptw: ~w(PR11B PR12A PR13B PR16A PR18B PR19A PR21A PR23A PR23B PR24A),
     solomon: ~w(C104 C107 C201 C202 R104 R111 R206 R208 RC101 RC103 RC201 RC207),
     hg200: ~w(C1_2_5 C1_2_7 C2_2_10 C2_2_9 R1_2_3 R1_2_4 R2_2_5 R2_2_8 RC1_2_7 RC1_2_9 RC2_2_5 RC2_2_6),
     dimacs: ~w(Loggi-n401-k23 Loggi-n501-k24 ORTEC-n242-k12 ORTEC-n323-k21 ORTEC-n405-k18 ORTEC-n455-k41)
   }
 
   @spec member?(atom(), String.t()) :: boolean()
-  def member?(group, name), do: name in Map.fetch!(@names, group)
+  def member?(group, name), do: name in Map.get(@names, group, [])
 end
