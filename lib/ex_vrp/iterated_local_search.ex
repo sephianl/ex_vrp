@@ -38,13 +38,19 @@ defmodule ExVrp.IteratedLocalSearch do
       worsening moves.
     - `exhaustive_on_best` - Whether to polish each new best with a search that
       does not perturb it first (default: `true`, as PyVRP #988 does).
+    - `restart_budget_share` - Share of the time budget without a new best
+      before the search restarts (default: `0.05`). When the solve has a time
+      limit it replaces `max_no_improvement`, so the escape window is the same
+      at any search speed.
     """
     defstruct max_no_improvement: 800,
               history_size: 500,
-              exhaustive_on_best: true
+              exhaustive_on_best: true,
+              restart_budget_share: 0.05
 
     @type t :: %__MODULE__{
             max_no_improvement: pos_integer(),
+            restart_budget_share: float(),
             history_size: pos_integer(),
             exhaustive_on_best: boolean()
           }
@@ -200,6 +206,7 @@ defmodule ExVrp.IteratedLocalSearch do
       history: RingBuffer.new(params.history_size),
       iteration: 0,
       iters_no_improvement: 0,
+      stall_started_ms: start_time,
       initial_cost: initial_penalised_cost,
       # Use seed for reproducible RNG in local search
       rng_seed: seed,
@@ -255,8 +262,8 @@ defmodule ExVrp.IteratedLocalSearch do
   end
 
   # Restart from best if no improvement for too long
-  defp maybe_restart(%{iters_no_improvement: iters, params: params} = state) do
-    if iters >= params.max_no_improvement do
+  defp maybe_restart(state) do
+    if restart_due?(state) do
       # On restart: if the best is infeasible, rebuild a fresh initial
       # solution with a different seed. This gives the solver a completely
       # new starting point instead of cycling from the same infeasible state.
@@ -279,12 +286,22 @@ defmodule ExVrp.IteratedLocalSearch do
           current_cost: restart_cost,
           history: RingBuffer.clear(state.history),
           iters_no_improvement: 0,
+          stall_started_ms: System.monotonic_time(:millisecond),
           stats: Map.update!(state.stats, :restarts, &(&1 + 1))
       }
     else
       state
     end
   end
+
+  defp restart_due?(%{max_runtime_ms: max_runtime_ms, params: params} = state) when is_number(max_runtime_ms) do
+    System.monotonic_time(:millisecond) - state.stall_started_ms >= params.restart_budget_share * max_runtime_ms
+  end
+
+  defp restart_due?(%{iters_no_improvement: iters, params: params}), do: iters >= params.max_no_improvement
+
+  defp stall_started_ms(0 = _iters_no_improvement, _state), do: System.monotonic_time(:millisecond)
+  defp stall_started_ms(_iters_no_improvement, state), do: state.stall_started_ms
 
   # Apply local search to generate candidate
   defp search_step(state) do
@@ -341,6 +358,7 @@ defmodule ExVrp.IteratedLocalSearch do
         best_penalised_cost: new_best_penalised,
         history: new_history,
         iters_no_improvement: new_iters_no_improvement,
+        stall_started_ms: stall_started_ms(new_iters_no_improvement, state),
         stats: new_stats
     }
   end
