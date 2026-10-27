@@ -476,8 +476,10 @@ template <ClockQuantity Quantity> void Route::updateStretches()
     }
 }
 
-void Route::updateDurationSpans()
+void Route::updateDurationSpans() const
 {
+    durSpansStale_ = false;
+
     auto const &mat = data.durationMatrix(profile());
     auto const size = nodes.size();
 
@@ -495,7 +497,7 @@ void Route::updateDurationSpans()
         spans.resize(size - 2 * half + 1);
         for (size_t idx = 0; idx != spans.size(); ++idx)
             spans[idx] = DurationSegment::merge(
-                mat(visits[idx + half - 1], visits[idx + half]),
+                mat(locAt<true>(idx + half - 1), locAt<true>(idx + half)),
                 halves[idx],
                 halves[idx + half]);
     }
@@ -503,6 +505,9 @@ void Route::updateDurationSpans()
 
 ex_vrp::DurationSegment Route::durationOver(size_t start, size_t end) const
 {
+    if (durSpansStale_)
+        updateDurationSpans();
+
     auto const &mat = data.durationMatrix(profile());
     auto const spanAt = [&](size_t idx, size_t width) -> DurationSegment const &
     {
@@ -520,7 +525,9 @@ ex_vrp::DurationSegment Route::durationOver(size_t start, size_t end) const
     {
         width = std::bit_floor(remaining);
         merged = DurationSegment::merge(
-            mat(visits[pos - 1], visits[pos]), merged, spanAt(pos, width));
+            mat(locAt<true>(pos - 1), locAt<true>(pos)),
+            merged,
+            spanAt(pos, width));
         pos += width;
         remaining -= width;
     }
@@ -542,6 +549,27 @@ Route::SegmentBetween::durationWithBreaks(size_t profile,
     auto const swapBreaks
         = otherType.breakDuration != route_.vehicleType_.breakDuration
           || otherType.restDuration != route_.vehicleType_.restDuration;
+
+    // Edges up to the first non-break node are skipped, as in distance(): the
+    // Proposal fold travels into the segment's first() before its leading
+    // breaks. That order is timing-neutral, since a break has no window.
+    auto const firstReal = route_.nextReal_[start];
+
+    // From the first real node on, the fold below is what the route's spans
+    // hold, as long as the breaks keep this route's durations.
+    if (profile == route_.profile() && !swapBreaks && firstReal < end
+        && end - firstReal >= MIN_SPANNED_NODES)
+    {
+        auto lead = route_.durAt[start];
+        for (size_t step = start; step != firstReal; ++step)
+            lead = DurationSegment::merge(0, lead, route_.durAt[step + 1]);
+
+        auto const into
+            = mat(route_.locs_[firstReal], route_.locs_[firstReal + 1]);
+        return DurationSegment::merge(
+            into, lead, route_.durationOver(firstReal + 1, end));
+    }
+
     DurationSegment const breakDS(
         otherType.breakDuration, 0, 0, std::numeric_limits<Duration>::max(), 0);
     DurationSegment const restDS(
@@ -557,11 +585,6 @@ Route::SegmentBetween::durationWithBreaks(size_t profile,
     };
 
     auto durSegment = at(start);
-
-    // Edges up to the first non-break node are skipped, as in distance(): the
-    // Proposal fold travels into the segment's first() before its leading
-    // breaks. That order is timing-neutral, since a break has no window.
-    auto const firstReal = route_.nextReal_[start];
 
     for (size_t step = start; step != end; ++step)
     {
@@ -720,7 +743,7 @@ void Route::update()
         }
     }
 
-    updateDurationSpans();
+    durSpansStale_ = true;
 
     auto const &durations = data.durationMatrix(profile());
 

@@ -604,10 +604,13 @@ private:
 
     // The duration of nodes [start, end] on this route's own profile, merged
     // from durSpans_: what folding them node by node gives, in at most a
-    // logarithmic number of merges.
+    // logarithmic number of merges. Breaks travel as locAt() places them.
     [[nodiscard]] DurationSegment durationOver(size_t start, size_t end) const;
 
-    void updateDurationSpans();
+    // Below this many nodes, folding is as cheap as combining spans.
+    static constexpr size_t MIN_SPANNED_NODES = 8;
+
+    void updateDurationSpans() const;
 
     // Folds the clocks over nodes [start, end] from scratch, for another
     // profile or vehicle type, or for checking the prefix structures.
@@ -735,8 +738,11 @@ private:
     // durSpans_[k][idx] merges the 2^(k + 1) nodes from idx onwards on this
     // route's own profile. Most segments an operator builds are a node or two,
     // but the few long ones, the middle of an intra-route move, would
-    // otherwise take most of the folding work.
-    std::vector<std::vector<DurationSegment>> durSpans_;
+    // otherwise take most of the folding work. They are built on the first
+    // lookup after an update, so a route no long segment reads, or an
+    // instance that never prices duration, does not pay for them.
+    mutable std::vector<std::vector<DurationSegment>> durSpans_;
+    mutable bool durSpansStale_ = true;
 
     // Break lookups and clocks follow every member a move evaluation reads,
     // so on routes without breaks they stay off the cache lines it touches.
@@ -1664,9 +1670,10 @@ DurationSegment Route::SegmentBetween::duration(size_t profile,
     if (WithBreaks && route_.hasBreaks_)
         return durationWithBreaks(profile, vehicleType);
 
-    // Below this many nodes, folding is as cheap as combining spans.
-    static constexpr size_t MIN_SPANNED_NODES = 8;
-    if (profile == route_.profile() && end - start + 1 >= MIN_SPANNED_NODES)
+    // On a route with breaks this fold travels to the breaks' own locations,
+    // which the spans do not.
+    if (!route_.hasBreaks_ && profile == route_.profile()
+        && end - start + 1 >= MIN_SPANNED_NODES)
         return route_.durationOver(start, end);
 
     auto durSegment = route_.durAt[start];
