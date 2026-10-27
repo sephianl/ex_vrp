@@ -149,7 +149,8 @@ defmodule ExVrp do
   - `ExVrp.Route` - Per-route queries (distance, duration, load, timing)
   - `ExVrp.StoppingCriteria` - Stopping conditions (iterations, runtime, improvement)
   - `ExVrp.PenaltyManager` - Dynamic penalty adjustment
-  - `ExVrp.Native` - Low-level C++ NIF bindings (via Fine)
+
+  The search itself runs in PyVRP's C++ core, reached through NIFs.
   """
 
   alias ExVrp.IteratedLocalSearch.Result

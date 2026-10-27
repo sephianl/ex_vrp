@@ -11,6 +11,7 @@ defmodule ExVrp.Solver do
   alias ExVrp.Model
   alias ExVrp.Native
   alias ExVrp.PenaltyManager
+  alias ExVrp.Solution
   alias ExVrp.StoppingCriteria
   alias ExVrp.WarmStart
 
@@ -25,7 +26,7 @@ defmodule ExVrp.Solver do
           penalty_params: PenaltyManager.Params.t(),
           ils_params: IteratedLocalSearch.Params.t(),
           on_progress: (map() -> any()) | nil,
-          initial_routes: [Native.warm_start_visits()] | nil,
+          initial_routes: [Solution.warm_start_visits()] | nil,
           log_label: String.t() | nil
         ]
 

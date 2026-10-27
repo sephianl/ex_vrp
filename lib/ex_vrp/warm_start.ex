@@ -2,6 +2,7 @@ defmodule ExVrp.WarmStart do
   @moduledoc false
 
   alias ExVrp.Native
+  alias ExVrp.Solution
 
   @type solution_trip :: %{start_depot: non_neg_integer(), clients: [non_neg_integer()]}
 
@@ -41,8 +42,8 @@ defmodule ExVrp.WarmStart do
   from `pool`, or an error when the markers outnumber it. Anything malformed passes through for
   the NIF to reject.
   """
-  @spec place_breaks([{non_neg_integer(), Native.warm_start_visits()}], [non_neg_integer()]) ::
-          {:ok, [{non_neg_integer(), Native.warm_start_visits()}]} | {:error, String.t()}
+  @spec place_breaks([{non_neg_integer(), Solution.warm_start_visits()}], [non_neg_integer()]) ::
+          {:ok, [{non_neg_integer(), Solution.warm_start_visits()}]} | {:error, String.t()}
   def place_breaks(routes, pool) do
     routes
     |> Enum.sum_by(fn {_vehicle_type, visits} -> count_markers(visits) end)
@@ -92,7 +93,7 @@ defmodule ExVrp.WarmStart do
   `{:trips, [...]}` with the first trip leaving from the start depot (`reload_depot: nil`) and each
   later one from the depot it reloaded at.
   """
-  @spec from_trips([solution_trip(), ...]) :: Native.warm_start_visits()
+  @spec from_trips([solution_trip(), ...]) :: Solution.warm_start_visits()
   def from_trips([%{clients: clients}]), do: clients
 
   def from_trips([first | reloads]) do

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.19.0
+
+### Removed
+
+- **`ExVrp.MinimiseFleet`.** A port of PyVRP's `minimise_fleet` that nothing called, and that
+  rejected models with several vehicle types or optional clients. To prefer fewer vehicles, give
+  the vehicle type a `fixed_cost`.
+- **`ExVrp.NotImplementedError` and `ExVrp.ValidationError`.** Neither was ever raised: a model
+  that fails `Model.validate/1` comes back as `{:error, messages}`, which `ExVrp.solve!/2` raises
+  as `ExVrp.SolveError`.
+
+### Changed
+
+- **`ExVrp.Native` is out of the docs.** It still holds the NIFs the other modules call. The
+  warm-start types moved with the API that uses them, to `ExVrp.Solution.warm_start_visits()`;
+  `ExVrp.Native.warm_start_visits()` stays as a loose stand-in, so specs naming it still compile.
+- **`ExVrp.SolveError` lists validation messages one per line**, rather than inspecting the list.
+- **Docs.** `ExVrp.Route`'s accessors say what they measure and how they are priced, and
+  `ExVrp.Solution.route_*/2` points at them. `PenaltyManager.Params` and
+  `IteratedLocalSearch.Params` document their fields. `ExVrp.Neighbourhood` says how it relates
+  to the neighbourhood the solver builds in C++. Every published module has a group, and the
+  benchmark mix tasks are no longer published.
+
 ## 0.18.1
 
 ### Changed

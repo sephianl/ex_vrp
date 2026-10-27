@@ -132,7 +132,9 @@ defmodule ExVrp.Route do
   end
 
   @doc """
-  Returns the excess distance of this route.
+  Returns the distance past the vehicle type's limits: the whole route past
+  `:max_distance` plus each trip past `:max_distance_per_trip`. Both are priced
+  at the same rate, so a route can breach either, both or neither.
   """
   @spec excess_distance(t()) :: non_neg_integer()
   def excess_distance(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -152,7 +154,10 @@ defmodule ExVrp.Route do
   end
 
   @doc """
-  Returns the overtime of this route.
+  Returns the overtime of this route, each unit priced at the vehicle type's
+  `:unit_overtime_cost` on top of its `:unit_duration_cost`: the time `end_time/1`
+  runs past `:overtime_start` when the vehicle type sets one, else the time
+  `duration/1` runs past `:shift_duration`.
   """
   @spec overtime(t()) :: non_neg_integer()
   def overtime(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -196,7 +201,7 @@ defmodule ExVrp.Route do
   # ---------------------------------------------------------------------------
 
   @doc """
-  Returns the distance cost of this route.
+  Returns `distance/1` priced at the vehicle type's `:unit_distance_cost`.
   """
   @spec distance_cost(t()) :: non_neg_integer()
   def distance_cost(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -204,7 +209,8 @@ defmodule ExVrp.Route do
   end
 
   @doc """
-  Returns the duration cost of this route.
+  Returns `duration/1` priced at the vehicle type's `:unit_duration_cost`, plus
+  `overtime/1` priced at its `:unit_overtime_cost`.
   """
   @spec duration_cost(t()) :: non_neg_integer()
   def duration_cost(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -216,7 +222,9 @@ defmodule ExVrp.Route do
   # ---------------------------------------------------------------------------
 
   @doc """
-  Returns the start time of this route.
+  Returns the earliest time this route can leave its depot with the least
+  duration and time warp. Leaving earlier only adds waiting; leaving up to
+  `slack/1` later changes nothing.
   """
   @spec start_time(t()) :: non_neg_integer()
   def start_time(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -236,7 +244,8 @@ defmodule ExVrp.Route do
   end
 
   @doc """
-  Returns the slack time of this route.
+  Returns how long departure can be put off past `start_time/1` without adding
+  duration or time warp.
   """
   @spec slack(t()) :: non_neg_integer()
   def slack(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -244,7 +253,7 @@ defmodule ExVrp.Route do
   end
 
   @doc """
-  Returns the service duration of this route.
+  Returns the total time spent serving clients on this route.
   """
   @spec service_duration(t()) :: non_neg_integer()
   def service_duration(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -252,7 +261,8 @@ defmodule ExVrp.Route do
   end
 
   @doc """
-  Returns the travel duration of this route.
+  Returns the total time spent driving on this route, from the duration matrix
+  of the vehicle type's profile.
   """
   @spec travel_duration(t()) :: non_neg_integer()
   def travel_duration(%__MODULE__{solution_ref: ref, route_idx: idx}) do
@@ -283,7 +293,7 @@ defmodule ExVrp.Route do
   end
 
   @doc """
-  Returns the prizes collected on this route.
+  Returns the sum of the `:prize` of every client this route visits.
   """
   @spec prizes(t()) :: non_neg_integer()
   def prizes(%__MODULE__{solution_ref: ref, route_idx: idx}) do

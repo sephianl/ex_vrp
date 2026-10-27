@@ -74,7 +74,7 @@ reproduce that cancel.
 | Soft zone cost             | `Model.set_penalties/2` per (profile, location)                          | objective (penalty channel)                            |
 | Hard zone ban              | `Model.set_forbidden/2` per profile                                      | pruned in search                                       |
 | Keep client on its vehicle | `Model.set_vehicle_locks/2` per location → vehicle type                  | objective (penalty channel)                            |
-| Fewer vehicles             | `MinimiseFleet.minimise/3` — single vehicle type, no optional clients    | outer binary search                                    |
+| Fewer vehicles             | VehicleType `fixed_cost`, charged once per vehicle used                  | objective                                              |
 
 Locations carry **no coordinates**: distance matrices (one per profile) are mandatory;
 `Model.set_euclidean_matrices/2` derives them explicitly in location order (depots first).
