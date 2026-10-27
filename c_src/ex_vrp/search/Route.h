@@ -635,6 +635,13 @@ private:
                                             size_t profile,
                                             BreakLimits limits) const;
 
+    // Continues `clocks`, which end at the non-break node `pos`, over nodes
+    // (pos, end] on this route's own profile and vehicle type: what foldOn()
+    // gives, merging only at the reset legs and adding the stretches between
+    // them from the prefix structures.
+    [[nodiscard]] inline BreakClocks
+    walkClocksBetween(BreakClocks clocks, size_t pos, size_t end) const;
+
     // Continues `clocks`, which end at the non-break node `pos`, to the end
     // depot over this route's own profile and vehicle type: through each reset
     // leg until both stretches match this route's, then from the prefix
@@ -1921,7 +1928,60 @@ BreakClocks Route::extendFold(BreakClocks const &clocks,
     auto arrival = nodeClocks(firstReal);
     arrival.addLeadRun(firstReal - start);
     auto const joined = BreakClocks::merge(clocks, edge, arrival, limits);
+
+    // The prefix structures hold this route's own profile and limits, and
+    // exist only under its break rule.
+    auto const ownLimits = vehicleType_.breakLimits();
+    if (profile == this->profile() && vehicleType_.hasBreakRule()
+        && limits.drive == ownLimits.drive && limits.work == ownLimits.work)
+        return walkClocksBetween(joined, firstReal, end);
+
     return foldOn(joined, firstReal, end, profile, limits);
+}
+
+BreakClocks
+Route::walkClocksBetween(BreakClocks clocks, size_t pos, size_t end) const
+{
+    auto const limits = vehicleType_.breakLimits();
+    auto const &drive = clockPrefix<ClockQuantity::Drive>();
+    auto const &work = clockPrefix<ClockQuantity::Work>();
+    auto const numResets = this->numResets();
+
+    auto const extend = [](DriveClock &clock, Duration quantity)
+    {
+        clock.tail += quantity;
+        if (clock.resets == 0)
+            clock.head += quantity;
+    };
+
+    auto r = stretchOf_[pos] + 1;
+    for (; r <= numResets && resetBounds_[r] <= end; ++r)
+    {
+        // As in walkClocksAfter(): the leg leaves the non-break node before
+        // its breaks, and its travel is the last edge.
+        auto const idx = resetBounds_[r];
+        auto const legStart = idx - legBreaks_[r] - 1;
+        auto const arrival = nodeClocks(idx);
+        auto const edge
+            = drive.cum[idx] - drive.cum[idx - 1] - arrival.drive.head;
+
+        extend(clocks.drive, drive.cum[legStart] - drive.cum[pos]);
+        extend(clocks.work, work.cum[legStart] - work.cum[pos]);
+        clocks.addTrailRun(legBreaks_[r]);
+        clocks = BreakClocks::merge(clocks, edge, arrival, limits);
+        pos = idx;
+    }
+
+    // The next reset leg ends past the segment, so the segment ends inside
+    // it: on its real nodes, or on breaks waiting for the leg's travel.
+    auto const lastReal
+        = legBreaks_[r] > 0 ? std::min(end, resetBounds_[r] - legBreaks_[r] - 1)
+                            : end;
+
+    extend(clocks.drive, drive.cum[lastReal] - drive.cum[pos]);
+    extend(clocks.work, work.cum[lastReal] - work.cum[pos]);
+    clocks.addTrailRun(end - lastReal);
+    return clocks;
 }
 
 BreakClocks Route::foldOn(BreakClocks clocks,
