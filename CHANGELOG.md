@@ -44,7 +44,8 @@
   `ExVrp.Native.warm_start_visits()` stays as a loose stand-in, so specs naming it still compile.
 - **`ExVrp.SolveError` lists validation messages one per line**, rather than inspecting the list.
 - **Docs.** `ExVrp.Route`'s accessors say what they measure and how they are priced, and
-  `ExVrp.Solution.route_*/2` points at them. `PenaltyManager.Params` and
+  `ExVrp.Solution.route_*/2` points at them. `Solution.cost/2` says what the objective sums and
+  where its evaluator comes from, and that `cost/1` is only the distance. `PenaltyManager.Params` and
   `IteratedLocalSearch.Params` document their fields. `ExVrp.Neighbourhood` says how it relates
   to the neighbourhood the solver builds in C++. Every published module has a group, and the
   benchmark mix tasks are no longer published.

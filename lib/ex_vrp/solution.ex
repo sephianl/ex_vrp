@@ -116,10 +116,17 @@ defmodule ExVrp.Solution do
   def duration(%__MODULE__{duration: duration}), do: duration
 
   @doc """
-  Returns the total cost of the solution.
+  Returns the solution's objective, or its distance when called without an evaluator.
 
-  When called with a cost evaluator, uses that evaluator.
-  When called without, uses the distance as the cost (default unit_distance_cost=1).
+  `cost/2` prices the solution the way the solver ranks it: distance, duration and overtime cost,
+  fixed vehicle cost, reload cost and `penalty_cost/1`, plus the prize of every client it leaves
+  unvisited. It is `:infinity` for an infeasible solution. Build the evaluator with
+  `ExVrp.PenaltyManager.init_from/2` and `ExVrp.PenaltyManager.cost_evaluator/1`; the penalties
+  it carries only matter to `penalised_cost/2`.
+
+  `cost/1` is only the distance, so it equals the objective only on a model where distance is all
+  that is priced, at a `:unit_distance_cost` of 1. `ExVrp.IteratedLocalSearch.Result.cost/1` gives
+  the objective of a solve's best solution without an evaluator.
   """
   @spec cost(t()) :: non_neg_integer()
   @spec cost(t(), reference()) :: non_neg_integer() | :infinity
@@ -130,7 +137,9 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the penalised cost of the solution given a cost evaluator.
+  Returns `cost/2` plus the evaluator's penalties on excess load, time warp and excess distance,
+  so it is finite for an infeasible solution too. This is what the search compares; see
+  `cost/2` for building the evaluator.
   """
   @spec penalised_cost(t(), reference()) :: non_neg_integer()
   def penalised_cost(%__MODULE__{solution_ref: solution_ref}, cost_evaluator) do
