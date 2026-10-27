@@ -88,6 +88,21 @@ defmodule ExVrp.Solution do
             is_complete: true,
             stats: nil
 
+  @typedoc """
+  One vehicle's warm-start visits, as `warm_start/1` returns them and `:initial_routes` takes
+  them: a flat client list (a single trip), or its trips, where the first trip's `reload_depot` is
+  `nil` and each later trip names the reload depot it starts from. A `:break` among the clients is
+  a break taken there.
+  """
+  @type warm_start_visits ::
+          [warm_start_client()]
+          | {:trips, [%{reload_depot: non_neg_integer() | nil, clients: [warm_start_client()]}]}
+
+  @typedoc """
+  A client index, or `:break` for a break taken at that point of the route.
+  """
+  @type warm_start_client :: non_neg_integer() | :break
+
   @doc """
   Returns the total distance of the solution.
   """
@@ -207,7 +222,7 @@ defmodule ExVrp.Solution do
 
   """
   @spec warm_start(t()) ::
-          {:ok, [Native.warm_start_visits()]}
+          {:ok, [warm_start_visits()]}
           | {:error, {:vehicle_type_has_several_routes, non_neg_integer()}}
   def warm_start(%__MODULE__{solution_ref: ref, problem_data: problem_data}) do
     breaks = problem_data |> Native.problem_data_break_clients() |> MapSet.new()
@@ -452,7 +467,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the distance of a specific route in the solution.
+  `ExVrp.Route.distance/1` of the route at `route_idx`.
   """
   @spec route_distance(t(), non_neg_integer()) :: non_neg_integer()
   def route_distance(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -460,7 +475,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the duration of a specific route in the solution.
+  `ExVrp.Route.duration/1` of the route at `route_idx`.
   """
   @spec route_duration(t(), non_neg_integer()) :: non_neg_integer()
   def route_duration(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -468,7 +483,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the delivery load of a specific route in the solution.
+  `ExVrp.Route.delivery/1` of the route at `route_idx`.
   """
   @spec route_delivery(t(), non_neg_integer()) :: [non_neg_integer()]
   def route_delivery(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -476,7 +491,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the pickup load of a specific route in the solution.
+  `ExVrp.Route.pickup/1` of the route at `route_idx`.
   """
   @spec route_pickup(t(), non_neg_integer()) :: [non_neg_integer()]
   def route_pickup(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -484,7 +499,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Checks if a specific route in the solution is feasible.
+  `ExVrp.Route.feasible?/1` of the route at `route_idx`.
   """
   @spec route_feasible?(t(), non_neg_integer()) :: boolean()
   def route_feasible?(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -492,7 +507,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the excess load of a specific route (per dimension).
+  `ExVrp.Route.excess_load/1` of the route at `route_idx`.
   """
   @spec route_excess_load(t(), non_neg_integer()) :: [non_neg_integer()]
   def route_excess_load(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -500,7 +515,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the time warp of a specific route.
+  `ExVrp.Route.time_warp/1` of the route at `route_idx`.
   """
   @spec route_time_warp(t(), non_neg_integer()) :: non_neg_integer()
   def route_time_warp(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -508,7 +523,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the excess distance of a specific route.
+  `ExVrp.Route.excess_distance/1` of the route at `route_idx`.
   """
   @spec route_excess_distance(t(), non_neg_integer()) :: non_neg_integer()
   def route_excess_distance(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -516,7 +531,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the overtime of a specific route.
+  `ExVrp.Route.overtime/1` of the route at `route_idx`.
   """
   @spec route_overtime(t(), non_neg_integer()) :: non_neg_integer()
   def route_overtime(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -524,7 +539,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the travel past `:max_drive` of a specific route.
+  `ExVrp.Route.drive_excess/1` of the route at `route_idx`.
   """
   @spec route_drive_excess(t(), non_neg_integer()) :: non_neg_integer()
   def route_drive_excess(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -532,7 +547,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Checks if a specific route has excess load.
+  `ExVrp.Route.has_excess_load?/1` of the route at `route_idx`.
   """
   @spec route_has_excess_load?(t(), non_neg_integer()) :: boolean()
   def route_has_excess_load?(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -540,7 +555,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Checks if a specific route has time warp.
+  `ExVrp.Route.has_time_warp?/1` of the route at `route_idx`.
   """
   @spec route_has_time_warp?(t(), non_neg_integer()) :: boolean()
   def route_has_time_warp?(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -548,7 +563,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Checks if a specific route has excess distance.
+  `ExVrp.Route.has_excess_distance?/1` of the route at `route_idx`.
   """
   @spec route_has_excess_distance?(t(), non_neg_integer()) :: boolean()
   def route_has_excess_distance?(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -556,7 +571,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the vehicle type of a specific route.
+  `ExVrp.Route.vehicle_type/1` of the route at `route_idx`.
   """
   @spec route_vehicle_type(t(), non_neg_integer()) :: non_neg_integer()
   def route_vehicle_type(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -564,7 +579,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the start depot of a specific route.
+  `ExVrp.Route.start_depot/1` of the route at `route_idx`.
   """
   @spec route_start_depot(t(), non_neg_integer()) :: non_neg_integer()
   def route_start_depot(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -572,7 +587,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the end depot of a specific route.
+  `ExVrp.Route.end_depot/1` of the route at `route_idx`.
   """
   @spec route_end_depot(t(), non_neg_integer()) :: non_neg_integer()
   def route_end_depot(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -580,7 +595,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the number of trips in a specific route.
+  `ExVrp.Route.num_trips/1` of the route at `route_idx`.
   """
   @spec route_num_trips(t(), non_neg_integer()) :: non_neg_integer()
   def route_num_trips(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -588,7 +603,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the start time of a specific route.
+  `ExVrp.Route.start_time/1` of the route at `route_idx`.
   """
   @spec route_start_time(t(), non_neg_integer()) :: non_neg_integer()
   def route_start_time(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -596,7 +611,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the end time of a specific route.
+  `ExVrp.Route.end_time/1` of the route at `route_idx`.
   """
   @spec route_end_time(t(), non_neg_integer()) :: non_neg_integer()
   def route_end_time(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -604,7 +619,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the slack time of a specific route.
+  `ExVrp.Route.slack/1` of the route at `route_idx`.
   """
   @spec route_slack(t(), non_neg_integer()) :: non_neg_integer()
   def route_slack(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -612,7 +627,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the service duration of a specific route.
+  `ExVrp.Route.service_duration/1` of the route at `route_idx`.
   """
   @spec route_service_duration(t(), non_neg_integer()) :: non_neg_integer()
   def route_service_duration(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -620,7 +635,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the travel duration of a specific route.
+  `ExVrp.Route.travel_duration/1` of the route at `route_idx`.
   """
   @spec route_travel_duration(t(), non_neg_integer()) :: non_neg_integer()
   def route_travel_duration(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -628,7 +643,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the wait duration of a specific route.
+  `ExVrp.Route.wait_duration/1` of the route at `route_idx`.
   """
   @spec route_wait_duration(t(), non_neg_integer()) :: non_neg_integer()
   def route_wait_duration(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -636,7 +651,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the distance cost of a specific route.
+  `ExVrp.Route.distance_cost/1` of the route at `route_idx`.
   """
   @spec route_distance_cost(t(), non_neg_integer()) :: non_neg_integer()
   def route_distance_cost(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -644,7 +659,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the duration cost of a specific route.
+  `ExVrp.Route.duration_cost/1` of the route at `route_idx`.
   """
   @spec route_duration_cost(t(), non_neg_integer()) :: non_neg_integer()
   def route_duration_cost(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -652,7 +667,8 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the reload cost of a specific route.
+  Returns what the route at `route_idx` pays for its reloads: the `:reload_cost` of the depot
+  each later trip starts from.
   """
   @spec route_reload_cost(t(), non_neg_integer()) :: non_neg_integer()
   def route_reload_cost(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -660,7 +676,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the prizes collected on a specific route.
+  `ExVrp.Route.prizes/1` of the route at `route_idx`.
   """
   @spec route_prizes(t(), non_neg_integer()) :: non_neg_integer()
   def route_prizes(%__MODULE__{solution_ref: solution_ref}, route_idx) do
@@ -668,7 +684,7 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
-  Returns the visits (client indices) of a specific route.
+  `ExVrp.Route.visits/1` of the route at `route_idx`.
   """
   @spec route_visits(t(), non_neg_integer()) :: [non_neg_integer()]
   def route_visits(%__MODULE__{solution_ref: solution_ref}, route_idx) do

@@ -1,10 +1,5 @@
 defmodule ExVrp.Native do
-  @moduledoc """
-  Low-level NIF bindings to PyVRP C++ core.
-
-  This module provides direct bindings to the C++ implementation.
-  Users should prefer the high-level API in `ExVrp` and `ExVrp.Model`.
-  """
+  @moduledoc false
 
   @typedoc """
   Opaque accepted-input type for `create_problem_data/1`.
@@ -15,15 +10,13 @@ defmodule ExVrp.Native do
   @type model_input :: struct()
 
   @typedoc """
-  One vehicle's warm-start visits: a flat client list (a single trip), or its trips, where the
-  first trip's `reload_depot` is `nil` and each later trip names the reload depot it starts from.
-  A `:break` among the clients is a break taken there.
-  """
-  @type warm_start_visits ::
-          [warm_start_client()]
-          | {:trips, [%{reload_depot: non_neg_integer() | nil, clients: [warm_start_client()]}]}
+  Opaque accepted-input type for one vehicle's visits in
+  `create_solution_from_routes_with_types/2`.
 
-  @type warm_start_client :: non_neg_integer() | :break
+  Declared locally to avoid a `ExVrp.Native -> ExVrp.Solution` edge; callers
+  pass `t:ExVrp.Solution.warm_start_visits/0` in practice.
+  """
+  @type warm_start_visits :: list() | {:trips, list()}
 
   # NIF stubs call :erlang.nif_error/1 which Dialyzer infers as no_return().
   # The @nifs attribute generates nif_start primops in Core Erlang, but Dialyzer's

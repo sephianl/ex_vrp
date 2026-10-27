@@ -1,49 +1,26 @@
-defmodule ExVrp.NotImplementedError do
-  @moduledoc """
-  Raised when a NIF function is not yet implemented.
-
-  This error is temporary during development and will be removed
-  once all C++ bindings are complete.
-  """
-
-  defexception [:function]
-
-  @impl Exception
-  def message(%{function: function}) do
-    "NIF function #{function} is not yet implemented. " <>
-      "See README.md for implementation status."
-  end
-end
-
 defmodule ExVrp.SolveError do
   @moduledoc """
-  Raised when the solver fails to find a solution.
+  Raised by `ExVrp.solve!/2` when `ExVrp.solve/2` returns `{:error, reason}`.
+
+  That happens when the model cannot be solved at all, not when no feasible
+  solution turns up: an infeasible model still returns `{:ok, result}`, with
+  `result.best` infeasible and its `cost` `:infinity`. In practice `reason` is
+  the list of messages `ExVrp.Model.validate/1` rejected the model with, and the
+  message lists one per line.
   """
 
   defexception [:reason]
 
   @impl Exception
+  def message(%{reason: [message | _rest] = messages}) when is_binary(message) do
+    IO.iodata_to_binary(["Solver failed:\n", Enum.map_intersperse(messages, "\n", &["  - ", &1])])
+  end
+
   def message(%{reason: reason}) when is_binary(reason) do
     "Solver failed: #{reason}"
   end
 
   def message(%{reason: reason}) do
     "Solver failed: #{inspect(reason)}"
-  end
-end
-
-defmodule ExVrp.ValidationError do
-  @moduledoc """
-  Raised when model validation fails.
-  """
-
-  defexception [:errors]
-
-  @impl Exception
-  def message(%{errors: errors}) do
-    IO.iodata_to_binary([
-      "Model validation failed:\n",
-      Enum.map_intersperse(errors, "\n", &["  - ", &1])
-    ])
   end
 end

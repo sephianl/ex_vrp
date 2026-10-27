@@ -1,14 +1,23 @@
 defmodule ExVrp.Neighbourhood do
   @moduledoc """
-  Computes granular neighbourhood for local search.
+  Computes the granular neighbourhood: for each client, the clients the local
+  search tries moves against.
 
-  Uses Nx for efficient tensor operations, directly porting PyVRP's
-  compute_neighbours algorithm from pyvrp/search/neighbourhood.py.
+  A port of PyVRP's `compute_neighbours` (`pyvrp/search/neighbourhood.py`) in
+  Nx, for inspecting or tuning a neighbourhood from Elixir. The solver does not
+  call it: it builds the same neighbourhood in C++ when it creates its local
+  search, always with the `ExVrp.NeighbourhoodParams` defaults. With those
+  defaults the two pick the same neighbours, up to which of several clients at
+  exactly the same proximity makes the cut and in what order they are listed.
+
+  Proximity is the cheapest edge cost over the vehicle types, minus the prize of
+  the client moved to, plus weighted lower bounds on the wait time and time warp
+  of visiting the two clients back to back.
 
   ## Example
 
       # Get neighbours for a problem
-      {:ok, problem_data} = ExVrp.Native.create_problem_data(model)
+      {:ok, problem_data} = ExVrp.Model.to_problem_data(model)
       params = ExVrp.NeighbourhoodParams.new(num_neighbours: 40)
       neighbours = ExVrp.Neighbourhood.compute_neighbours(problem_data, params)
 

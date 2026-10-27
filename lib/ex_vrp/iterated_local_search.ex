@@ -22,19 +22,25 @@ defmodule ExVrp.IteratedLocalSearch do
 
   defmodule Params do
     @moduledoc """
-    Parameters for Iterated Local Search.
+    Parameters for Iterated Local Search; pass one as `ExVrp.solve/2`'s
+    `:ils_params`.
+
+    - `max_no_improvement` - Iterations without a new best before the search
+      restarts from the best solution, or from a fresh one while none is
+      feasible yet (default: `800`). Upstream PyVRP uses `150_000`, which assumes
+      runs of millions of iterations. A 2-minute solve of about 150 locations
+      runs about 10_000, so a value that high never restarts and a stalled
+      search burns the rest of its budget. On a 153-order instance, 800 restarts
+      3–6 times per start and raises total iterations by about 29%.
+    - `history_size` - The length of the late acceptance history (default:
+      `500`). A candidate is accepted when it beats the current solution or the
+      one at the back of the history, so a longer history accepts more
+      worsening moves.
+    - `exhaustive_on_best` - Whether to polish each new best with a search that
+      does not perturb it first (default: `true`, as PyVRP #988 does).
     """
     defstruct max_no_improvement: 800,
-              # Iterations without improvement before restarting from the best.
-              # Upstream PyVRP uses 150_000, which assumes runs of millions of
-              # iterations; a 2-minute solve of ~150 locations runs about 10_000,
-              # so anything in that range makes the restart unreachable and a
-              # stalled chain simply burns its remaining budget. Measured on a
-              # 153-order instance: 800 fires 3-6 restarts per start, raises total
-              # iterations ~29%, and turns a 40% idle tail into search.
-              # Size of the late acceptance history buffer
               history_size: 500,
-              # Polish each new best with a non-perturbing search (PyVRP #988)
               exhaustive_on_best: true
 
     @type t :: %__MODULE__{

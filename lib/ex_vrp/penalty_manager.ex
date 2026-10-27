@@ -12,7 +12,24 @@ defmodule ExVrp.PenaltyManager do
 
   defmodule Params do
     @moduledoc """
-    Parameters for penalty management.
+    How the penalties on infeasibility adapt during a solve; pass one as
+    `ExVrp.solve/2`'s `:penalty_params`.
+
+    The search may pass through infeasible solutions, paying a penalty per unit
+    of excess load, time warp and excess distance. Each of those has its own
+    penalty, which the manager steers towards a share of feasible solutions:
+
+    - `solutions_between_updates` - How many registered solutions each update
+      looks back over (default: `100`)
+    - `target_feasible` - The share of those that should be feasible in that
+      dimension (default: `0.65`)
+    - `feas_tolerance` - How far the share may stray from the target before the
+      penalty moves (default: `0.05`)
+    - `penalty_increase` - Factor applied when too few were feasible
+      (default: `1.25`)
+    - `penalty_decrease` - Factor applied when too many were (default: `0.85`)
+    - `min_penalty`, `max_penalty` - The range every penalty is clamped to
+      (defaults: `0.1` and `100_000.0`)
     """
     defstruct solutions_between_updates: 100,
               penalty_increase: 1.25,
