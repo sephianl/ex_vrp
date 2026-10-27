@@ -247,28 +247,46 @@ bool Solution::insert(Route::Node *U,
         }
     }
 
+    for (auto &route : routes)
+    {
+        if (route.empty() || UAfter->route() == &route
+            || !isCompatibleRoute(&route) || !isReachable(&route))
+            continue;
+
+        auto const cost = insertCost(U, route[0], data_, costEvaluator);
+        if (cost < bestCost)
+        {
+            bestCost = cost;
+            UAfter = route[0];
+        }
+    }
+
+    // Then empty routes, as upstream: the first usable one of each vehicle
+    // type, in the shuffled type order, stopping at the first improvement.
+    // Taking the cheapest over all types instead always opens the type that is
+    // cheapest for this one client, so the larger vehicles of a heterogeneous
+    // fleet never come into use.
+    auto const usableEmpty = [&](Route const &route)
+    {
+        return route.empty() && isCompatibleRoute(&route)
+               && isReachable(&route);
+    };
+
     for (auto const &[vehType, offset] : searchSpace.vehTypeOrder())
     {
         auto const begin = routes.begin() + offset;
         auto const end = begin + data_.vehicleType(vehType).numAvailable;
+        auto const empty = std::find_if(begin, end, usableEmpty);
 
-        for (auto it = begin; it != end; ++it)
+        if (empty == end)
+            continue;
+
+        auto const cost = insertCost(U, (*empty)[0], data_, costEvaluator);
+        if (cost < bestCost)
         {
-            if (!isCompatibleRoute(&*it) || !isReachable(&*it))
-                continue;
-
-            if (!it->empty() && UAfter->route() == &*it)
-                continue;
-
-            auto const cost = insertCost(U, (*it)[0], data_, costEvaluator);
-            if (cost < bestCost)
-            {
-                bestCost = cost;
-                UAfter = (*it)[0];
-
-                if (it->empty())
-                    break;
-            }
+            bestCost = cost;
+            UAfter = (*empty)[0];
+            break;
         }
     }
 
