@@ -1,5 +1,6 @@
 #include "Route.h"
 
+#include <bit>
 #include <cmath>
 #include <numbers>
 #include <ostream>
@@ -475,6 +476,58 @@ template <ClockQuantity Quantity> void Route::updateStretches()
     }
 }
 
+void Route::updateDurationSpans()
+{
+    auto const &mat = data.durationMatrix(profile());
+    auto const size = nodes.size();
+
+    size_t levels = 0;
+    while ((size_t{2} << levels) <= size)
+        ++levels;
+
+    durSpans_.resize(levels);
+    for (size_t level = 0; level != levels; ++level)
+    {
+        auto const half = size_t{1} << level;
+        auto const &halves = level == 0 ? durAt : durSpans_[level - 1];
+        auto &spans = durSpans_[level];
+
+        spans.resize(size - 2 * half + 1);
+        for (size_t idx = 0; idx != spans.size(); ++idx)
+            spans[idx] = DurationSegment::merge(
+                mat(visits[idx + half - 1], visits[idx + half]),
+                halves[idx],
+                halves[idx + half]);
+    }
+}
+
+ex_vrp::DurationSegment Route::durationOver(size_t start, size_t end) const
+{
+    auto const &mat = data.durationMatrix(profile());
+    auto const spanAt = [&](size_t idx, size_t width) -> DurationSegment const &
+    {
+        auto const level = std::bit_width(width) - 1;
+        return level == 0 ? durAt[idx] : durSpans_[level - 1][idx];
+    };
+
+    auto remaining = end - start + 1;
+    auto width = std::bit_floor(remaining);
+    auto merged = spanAt(start, width);
+    auto pos = start + width;
+    remaining -= width;
+
+    while (remaining != 0)
+    {
+        width = std::bit_floor(remaining);
+        merged = DurationSegment::merge(
+            mat(visits[pos - 1], visits[pos]), merged, spanAt(pos, width));
+        pos += width;
+        remaining -= width;
+    }
+
+    return merged;
+}
+
 ex_vrp::DurationSegment
 Route::SegmentBetween::durationWithBreaks(size_t profile,
                                           size_t vehicleType) const
@@ -666,6 +719,8 @@ void Route::update()
                                          0);
         }
     }
+
+    updateDurationSpans();
 
     auto const &durations = data.durationMatrix(profile());
 

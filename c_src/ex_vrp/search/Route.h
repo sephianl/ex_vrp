@@ -602,6 +602,13 @@ private:
     // A real node of this route, as both clocks count it.
     [[nodiscard]] inline BreakClocks nodeClocks(size_t idx) const;
 
+    // The duration of nodes [start, end] on this route's own profile, merged
+    // from durSpans_: what folding them node by node gives, in at most a
+    // logarithmic number of merges.
+    [[nodiscard]] DurationSegment durationOver(size_t start, size_t end) const;
+
+    void updateDurationSpans();
+
     // Folds the clocks over nodes [start, end] from scratch, for another
     // profile or vehicle type, or for checking the prefix structures.
     [[nodiscard]] inline BreakClocks foldClocks(size_t start,
@@ -724,6 +731,12 @@ private:
     std::vector<DurationSegment> durAt;      // Duration data at each node
     std::vector<DurationSegment> durAfter;   // Dur of node -> end (incl.)
     std::vector<DurationSegment> durBefore;  // Dur of start -> node (incl.)
+
+    // durSpans_[k][idx] merges the 2^(k + 1) nodes from idx onwards on this
+    // route's own profile. Most segments an operator builds are a node or two,
+    // but the few long ones, the middle of an intra-route move, would
+    // otherwise take most of the folding work.
+    std::vector<std::vector<DurationSegment>> durSpans_;
 
     // Break lookups and clocks follow every member a move evaluation reads,
     // so on routes without breaks they stay off the cache lines it touches.
@@ -1650,6 +1663,11 @@ DurationSegment Route::SegmentBetween::duration(size_t profile,
 
     if (WithBreaks && route_.hasBreaks_)
         return durationWithBreaks(profile, vehicleType);
+
+    // Below this many nodes, folding is as cheap as combining spans.
+    static constexpr size_t MIN_SPANNED_NODES = 8;
+    if (profile == route_.profile() && end - start + 1 >= MIN_SPANNED_NODES)
+        return route_.durationOver(start, end);
 
     auto durSegment = route_.durAt[start];
     for (size_t step = start; step != end; ++step)
