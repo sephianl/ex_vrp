@@ -436,6 +436,12 @@ bool LocalSearch::wouldMoveViolateForbidden(NodeOperator const &nodeOp,
     if (!data.hasForbiddenLocations())
         return false;
 
+    // Routes whose clients may all cross to each other's profile cannot violate
+    // anything, whichever nodes the operator moves. The routes cache that
+    // answer, which spares walking both tails on every SwapTails evaluation.
+    if (mayExchangeClients(U->route(), V->route()))
+        return false;
+
     if (nodeOp.affectsEntireTail())
         return wouldTailSwapViolateForbidden(U, V);
 
