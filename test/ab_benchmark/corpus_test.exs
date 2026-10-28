@@ -16,7 +16,18 @@ defmodule ExVrp.ABBenchmark.CorpusTest do
   test "every entry has the required fields populated" do
     for e <- Corpus.entries() do
       assert is_binary(e.id)
-      assert e.variant in [:cvrp, :vrptw, :pcvrptw, :mtvrptwr, :production, :production_breaks]
+
+      assert e.variant in [
+               :cvrp,
+               :vrptw,
+               :pcvrptw,
+               :mtvrptwr,
+               :pdptw,
+               :production,
+               :production_breaks,
+               :production_shipments
+             ]
+
       assert e.kind in [:vrplib, :etf]
       assert is_binary(e.path)
     end
@@ -44,8 +55,32 @@ defmodule ExVrp.ABBenchmark.CorpusTest do
     assert Model.validate(model) == :ok
   end
 
+  test "every production instance also runs with shipments, from the same snapshot" do
+    entries = Corpus.entries()
+    production = for %{variant: :production} = e <- entries, into: %{}, do: {e.path, e.id}
+    with_shipments = for %{variant: :production_shipments} = e <- entries, into: %{}, do: {e.path, e.id}
+
+    assert Map.keys(with_shipments) == Map.keys(production)
+    assert Enum.all?(with_shipments, fn {path, "prodship_" <> name} -> production[path] == "prod_" <> name end)
+  end
+
+  test "a shipment twin loads with valid shipments, each delivery's load moved to its pickup" do
+    entry = Enum.find(Corpus.entries(), &(&1.id == "prodship_clients_125"))
+    %Instance{model: model} = Loader.load(entry)
+    %Instance{model: original} = Loader.load(%{entry | variant: :production})
+
+    assert model.shipments != []
+    assert Model.validate(model) == :ok
+
+    for %{delivery: delivery, amount: amount} <- model.shipments do
+      client = delivery - length(model.depots)
+      assert Enum.at(original.clients, client).delivery == amount
+      assert Enum.all?(Enum.at(model.clients, client).delivery, &(&1 == 0))
+    end
+  end
+
   test "every literature file referenced by the corpus exists on disk" do
-    for e <- Corpus.entries(), e.variant not in [:production, :production_breaks] do
+    for e <- Corpus.entries(), e.variant not in [:production, :production_breaks, :production_shipments] do
       assert File.exists?(e.path), "missing corpus file: #{e.path}"
     end
   end
@@ -61,5 +96,6 @@ defmodule ExVrp.ABBenchmark.CorpusTest do
     variants = Corpus.entries() |> Enum.map(& &1.variant) |> Enum.uniq()
     assert :pcvrptw in variants
     assert :mtvrptwr in variants
+    assert :pdptw in variants
   end
 end

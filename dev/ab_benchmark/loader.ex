@@ -18,14 +18,19 @@ defmodule ExVrp.ABBenchmark.Loader do
 
   A `:production_breaks` entry is its production snapshot with the same limits
   between breaks on every vehicle type. The snapshots' durations are seconds.
+  A `:production_shipments` entry is its snapshot with some clients paired into
+  shipments: each pair's delivery takes its load from the pickup rather than
+  the depot.
   """
 
   alias ExVrp.ABBenchmark.Corpus
   alias ExVrp.ABBenchmark.Instance
+  alias ExVrp.Model
   alias ExVrp.PenaltyManager
   alias ExVrp.Read
 
   @break_limits [break_duration: 1_800, max_drive_between_breaks: 14_400, max_work_between_breaks: 18_000]
+  @shipment_every 10
 
   @spec load(Corpus.Entry.t()) :: Instance.t()
   def load(%Corpus.Entry{kind: :vrplib, path: path, round_func: rf}) do
@@ -38,11 +43,43 @@ defmodule ExVrp.ABBenchmark.Loader do
     |> Map.update!(:model, &with_break_limits/1)
   end
 
+  def load(%Corpus.Entry{kind: :etf, variant: :production_shipments, path: path}) do
+    path
+    |> load_etf()
+    |> Map.update!(:model, &with_shipments/1)
+  end
+
   def load(%Corpus.Entry{kind: :etf, path: path}), do: load_etf(path)
 
   defp with_break_limits(model) do
     Map.update!(model, :vehicle_types, fn vehicle_types -> Enum.map(vehicle_types, &struct!(&1, @break_limits)) end)
   end
+
+  # Every tenth client picks up the next one's delivery: that client's load now
+  # travels from the first to the second instead of from the depot. Pairs that
+  # a client group, or a required delivery after an optional pickup, would make
+  # invalid are left as they are.
+  defp with_shipments(%{clients: clients} = model) do
+    pairs =
+      0..(length(clients) - 2)//@shipment_every
+      |> Enum.map(&{&1, &1 + 1})
+      |> Enum.filter(fn {pickup, delivery} -> pairable?(Enum.at(clients, pickup), Enum.at(clients, delivery)) end)
+
+    Enum.reduce(pairs, model, fn {pickup, delivery}, acc ->
+      amount = Enum.at(acc.clients, delivery).delivery
+
+      acc
+      |> Map.update!(:clients, &List.update_at(&1, delivery, fn client -> %{client | delivery: zeros(amount)} end))
+      |> Model.add_shipment(pickup, delivery, amount)
+    end)
+  end
+
+  defp pairable?(%{group: nil, is_break: false} = pickup, %{group: nil, is_break: false} = delivery),
+    do: pickup.required or not delivery.required
+
+  defp pairable?(_pickup, _delivery), do: false
+
+  defp zeros(amount), do: Enum.map(amount, fn _dim -> 0 end)
 
   defp load_etf(path) do
     path
@@ -56,9 +93,9 @@ defmodule ExVrp.ABBenchmark.Loader do
     %Instance{model: migrate_model(model), penalty_params: restruct(penalty_params)}
   end
 
-  defp to_instance(%{__struct__: ExVrp.Model} = model), do: %Instance{model: migrate_model(model)}
+  defp to_instance(%{__struct__: Model} = model), do: %Instance{model: migrate_model(model)}
 
-  defp migrate_model(%{__struct__: ExVrp.Model} = model) do
+  defp migrate_model(%{__struct__: Model} = model) do
     model
     |> restruct()
     |> Map.update!(:vehicle_types, fn vts -> Enum.map(vts, &restruct/1) end)

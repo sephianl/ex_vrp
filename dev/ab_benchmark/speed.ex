@@ -48,7 +48,9 @@ defmodule ExVrp.ABBenchmark.Speed do
     {"c201", 600},
     {"pc_RC1_10_4", 200},
     {"mtr_R204R0.25", 400},
-    {"pc_R1_10_4", 200}
+    {"pc_R1_10_4", 200},
+    {"prodship_clients_125", 150},
+    {"pdp_lrc206", 400}
   ]
 
   @interpreter_erlang_nix Path.expand("interpreter_erlang.nix", __DIR__)
