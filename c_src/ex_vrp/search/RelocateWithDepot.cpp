@@ -204,6 +204,15 @@ ex_vrp::Cost RelocateWithDepot::evaluate(Route::Node *U,
     return move_.cost;
 }
 
+bool RelocateWithDepot::keepsShipments(Route::Node *U, Route::Node *V) const
+{
+    // The new depot after V must not land between a pickup and its delivery,
+    // and a relocated U must not leave the other half of its shipment behind.
+    return !V->route()->carriesShipmentAfter(V->idx())
+           && (move_.type == MoveType::IN_PLACE
+               || U->route()->isShipmentClosed(U->idx(), U->idx()));
+}
+
 void RelocateWithDepot::apply(Route::Node *U, Route::Node *V) const
 {
     stats_.numApplications++;

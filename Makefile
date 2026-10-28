@@ -90,6 +90,7 @@ PYVRP_SEARCH_SRC = \
 	c_src/ex_vrp/search/BreakRepair.cpp \
 	c_src/ex_vrp/search/LocalSearch.cpp \
 	c_src/ex_vrp/search/PerturbationManager.cpp \
+	c_src/ex_vrp/search/RelocateShipment.cpp \
 	c_src/ex_vrp/search/RelocateWithDepot.cpp \
 	c_src/ex_vrp/search/Route.cpp \
 	c_src/ex_vrp/search/SearchSpace.cpp \

@@ -77,6 +77,15 @@ public:
     // Construct from load attributes of the given client and dimension.
     LoadSegment(ProblemData::Client const &client, size_t dimension);
 
+    // Construct from the given client location's load in the given dimension,
+    // its shipment's included. A shipment's amount is a pickup at its pickup
+    // and a negative pickup at its delivery: Vidal's merge stays exact for
+    // either sign, and carries the amount from one to the other. A pickup
+    // whose delivery is not on the trip carries it to the trip's depot.
+    inline LoadSegment(ProblemData const &data,
+                       size_t client,
+                       size_t dimension);
+
     // Construct from initial load attributes of the given vehicle type and
     // dimension.
     LoadSegment(ProblemData::VehicleType const &vehicleType, size_t dimension);
@@ -116,6 +125,17 @@ Load LoadSegment::excessLoad(Load capacity) const
 LoadSegment LoadSegment::finalise(Load capacity) const
 {
     return {0, 0, 0, excessLoad(capacity)};
+}
+
+LoadSegment::LoadSegment(ProblemData const &data,
+                         size_t client,
+                         size_t dimension)
+{
+    ProblemData::Client const &clientData = data.location(client);
+    delivery_ = clientData.delivery[dimension];
+    pickup_
+        = clientData.pickup[dimension] + data.shipmentLoad(client, dimension);
+    load_ = std::max<Load>(delivery_, pickup_);
 }
 
 LoadSegment::LoadSegment(Load delivery, Load pickup, Load load, Load excessLoad)

@@ -93,7 +93,69 @@ Cost inplaceCost(Route::Node *U,
                  CostEvaluator const &costEvaluator);
 
 /**
- * Evaluates removing U from its current route. The evaluation is exact.
+ * Evaluates inserting U after V while removing W from V's route, to make room
+ * for U. The evaluation is exact.
+ *
+ * Parameters
+ * ----------
+ * U
+ *     Node to insert. Must not be in a route.
+ * V
+ *     Node to insert U after. Must be in a route.
+ * W
+ *     Client to remove, on V's route and not V itself.
+ * data
+ *     Problem data instance.
+ * cost_evaluator
+ *     Cost evaluator to use.
+ *
+ * Returns
+ * -------
+ * int
+ *     Exact delta cost of inserting U after V and removing W.
+ */
+Cost insertEjectingCost(Route::Node *U,
+                        Route::Node *V,
+                        Route::Node *W,
+                        ProblemData const &data,
+                        CostEvaluator const &costEvaluator);
+
+/**
+ * Evaluates inserting a shipment's pickup directly after V and its delivery
+ * directly after W, both in V's route. W is V, for the delivery to follow the
+ * pickup at once, or a later node in V's trip. The evaluation is exact, and
+ * includes both prizes.
+ *
+ * Parameters
+ * ----------
+ * pickup
+ *     Pickup node to insert; its partner is the delivery. Neither may be in a
+ *     route.
+ * V
+ *     Node to insert the pickup after. Must be in a route.
+ * W
+ *     Node to insert the delivery after: V, or a later node of V's trip.
+ * data
+ *     Problem data instance.
+ * cost_evaluator
+ *     Cost evaluator to use.
+ */
+Cost insertShipmentCost(Route::Node *pickup,
+                        Route::Node *V,
+                        Route::Node *W,
+                        ProblemData const &data,
+                        CostEvaluator const &costEvaluator);
+
+/**
+ * Whether U is a shipment pickup whose delivery is on a route. Removing U
+ * then removes the delivery too: it may not be visited without its pickup.
+ */
+bool carriesRoutedDelivery(Route::Node *U, ProblemData const &data);
+
+/**
+ * Evaluates removing U from its current route. The evaluation is exact. A
+ * pickup whose delivery is routed is removed together with that delivery
+ * (see carriesRoutedDelivery).
  *
  * Parameters
  * ----------

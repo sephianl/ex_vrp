@@ -11,6 +11,7 @@
 #include <array>
 #include <cassert>
 #include <concepts>
+#include <cstdint>
 #include <iosfwd>
 #include <utility>
 
@@ -211,9 +212,12 @@ public:
         Distance tripExcessDistance() const;
 
         /**
-         * Returns the total location penalty of the proposed route.
+         * Returns the total location penalty of the proposed route. A sum of
+         * a few prefix lookups, forced inline with its fold: with the shipment
+         * operators pricing it too, GCC moved it out of line, at about 1% of
+         * every evaluation.
          */
-        Cost penalty() const;
+        [[gnu::always_inline]] inline Cost penalty() const;
 
         /**
          * Returns the (duration cost, time warp) attributes of the proposed
@@ -253,13 +257,31 @@ public:
     {
         friend class Route;
 
-        size_t loc_;    // Location represented by this node
-        size_t idx_;    // Position in the route
-        size_t trip_;   // Trip index.
-        Route *route_;  // Indicates membership of a route, if any
+        // idx_ and trip_ are 32 bits, which no route outgrows, so that with
+        // partner_ a node still takes 32 bytes: Solution::nodes is indexed by
+        // location on every hot path, and a 40-byte stride costs a multiply.
+        size_t loc_;     // Location represented by this node
+        uint32_t idx_;   // Position in the route
+        uint32_t trip_;  // Trip index.
+        Route *route_;   // Indicates membership of a route, if any
+
+        // The other half of this node's shipment, set once by
+        // search::Solution; nullptr for a node outside any shipment.
+        Node *partner_ = nullptr;
 
     public:
         Node(size_t loc);
+
+        /**
+         * Returns the other half of this node's shipment, or ``nullptr`` if
+         * the node is in no shipment.
+         */
+        [[nodiscard]] inline Node *partner() const;
+
+        /**
+         * Pairs this node with the other half of its shipment.
+         */
+        void pairWith(Node *partner);
 
         /**
          * Returns the location represented by this node.
@@ -752,6 +774,18 @@ private:
     // - need: need[r] is the breaks those same stretches lack.
     std::array<ClockPrefix, 2> clocks_;  // indexed by ClockQuantity
 
+    // openShipments_[idx] counts the shipments on board between nodes idx and
+    // idx + 1: picked up at or before idx and delivered after it on this
+    // route. Built only when the problem has shipments.
+    std::vector<size_t> openShipments_;
+
+    void updateOpenShipments();
+
+    [[nodiscard]] bool isShipmentClosedSlow(size_t first, size_t last) const;
+
+    [[nodiscard]] bool
+    keepsShipmentOrderSlow(size_t first, size_t last, size_t after) const;
+
 #ifndef NDEBUG
     // When debug assertions are enabled, we use this flag to check whether
     // the statistics are still in sync with the route's nodes list. Statistics
@@ -1046,6 +1080,30 @@ public:
     [[nodiscard]] inline size_t numBreaks() const;
 
     /**
+     * Whether goods of a shipment are on board between the node at ``idx`` and
+     * the next one: its pickup is at or before ``idx``, its delivery after.
+     * Cutting the route there, by a reload depot or a tail swap, would split
+     * the shipment.
+     */
+    [[nodiscard]] inline bool carriesShipmentAfter(size_t idx) const;
+
+    /**
+     * Whether nodes ``[first, last]`` can move together without splitting a
+     * shipment: every node in it whose partner is on a route has that partner
+     * in it too. Always true without shipments.
+     */
+    [[nodiscard]] inline bool isShipmentClosed(size_t first, size_t last) const;
+
+    /**
+     * Whether nodes ``[first, last]`` can move to directly after the node at
+     * ``after``, on this route and trip, with every pickup still before its
+     * delivery. Halves whose partner moves along always are. Always true
+     * without shipments.
+     */
+    [[nodiscard]] inline bool
+    keepsShipmentOrder(size_t first, size_t last, size_t after) const;
+
+    /**
      * Returns the number of start, end, and reload depots in this route.
      */
     [[nodiscard]] inline size_t numDepots() const;
@@ -1121,6 +1179,14 @@ public:
     void remove(size_t idx);
 
     /**
+     * Removes the node at ``idx``, and with it the delivery of its shipment if
+     * the node is a pickup whose delivery is on this route: a delivery is
+     * never visited without its pickup. Use this rather than remove() for any
+     * client that may be a pickup.
+     */
+    void removeWithDependents(size_t idx);
+
+    /**
      * Swaps the given nodes.
      */
     static void swap(Node *first, Node *second);
@@ -1169,6 +1235,8 @@ inline Route::Node const *n(Route::Node const *node)
 }
 
 size_t Route::Node::client() const { return loc_; }
+
+Route::Node *Route::Node::partner() const { return partner_; }
 
 size_t Route::Node::idx() const { return idx_; }
 
@@ -1988,6 +2056,22 @@ size_t Route::numClients() const { return size() - numDepots() - numBreaks_; }
 
 size_t Route::numBreaks() const { return numBreaks_; }
 
+bool Route::carriesShipmentAfter(size_t idx) const
+{
+    assert(!dirty);
+    return data.hasShipments() && openShipments_[idx] > 0;
+}
+
+bool Route::isShipmentClosed(size_t first, size_t last) const
+{
+    return !data.hasShipments() || isShipmentClosedSlow(first, last);
+}
+
+bool Route::keepsShipmentOrder(size_t first, size_t last, size_t after) const
+{
+    return !data.hasShipments() || keepsShipmentOrderSlow(first, last, after);
+}
+
 size_t Route::numDepots() const { return depots_.size(); }
 
 size_t Route::numTrips() const { return depots_.size() - 1; }
@@ -2224,7 +2308,7 @@ Cost Route::Proposal<Segments...>::penalty() const
 
     // Penalties and locks are node-additive, so unlike distance there is no
     // cross-edge term between consecutive segments and this is a plain fold.
-    auto const fn = [&](auto &&...segments)
+    auto const fn = [&](auto &&...segments) __attribute__((always_inline))
     { return (segments.penalty(profile, vehicleType) + ...); };
 
     return std::apply(fn, segments_);

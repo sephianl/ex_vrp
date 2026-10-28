@@ -129,6 +129,13 @@ ex_vrp::Cost SwapTails::evaluate(Route::Node *U,
     return deltaCost;
 }
 
+bool SwapTails::keepsShipments(Route::Node *U, Route::Node *V) const
+{
+    // Neither cut may separate a pickup from its delivery.
+    return !U->route()->carriesShipmentAfter(U->idx())
+           && !V->route()->carriesShipmentAfter(V->idx());
+}
+
 void SwapTails::apply(Route::Node *U, Route::Node *V) const
 {
     stats_.numApplications++;

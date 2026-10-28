@@ -12,8 +12,8 @@ Route::Node::Node(size_t loc) : loc_(loc), idx_(0), trip_(0), route_(nullptr) {}
 
 void Route::Node::assign(Route *route, size_t idx, size_t trip)
 {
-    idx_ = idx;
-    trip_ = trip;
+    idx_ = static_cast<uint32_t>(idx);
+    trip_ = static_cast<uint32_t>(trip);
     route_ = route;
 }
 
@@ -23,6 +23,8 @@ void Route::Node::unassign()
     trip_ = 0;
     route_ = nullptr;
 }
+
+void Route::Node::pairWith(Node *partner) { partner_ = partner; }
 
 Route::Iterator::Iterator(std::vector<Node *> const &nodes, size_t idx)
     : nodes_(&nodes), idx_(idx)
@@ -145,13 +147,26 @@ void Route::insert(size_t idx, Node *node)
 
     for (size_t after = idx; after != nodes.size(); ++after)
     {
-        nodes[after]->idx_ = after;
+        nodes[after]->idx_ = static_cast<uint32_t>(after);
         if (isDepot)  // then we need to bump each following trip index
             nodes[after]->trip_++;
     }
 }
 
 void Route::push_back(Node *node) { insert(nodes.size() - 1, node); }
+
+void Route::removeWithDependents(size_t idx)
+{
+    auto const *partner = nodes[idx]->partner();
+    if (partner && partner->route() == this
+        && data.isShipmentPickup(nodes[idx]->client()))
+    {
+        assert(partner->idx() > idx);
+        remove(partner->idx());
+    }
+
+    remove(idx);
+}
 
 void Route::remove(size_t idx)
 {
@@ -176,7 +191,7 @@ void Route::remove(size_t idx)
     nodes.erase(nodes.begin() + idx);  // remove dangling pointer
     for (auto after = idx; after != nodes.size(); ++after)
     {
-        nodes[after]->idx_ = after;
+        nodes[after]->idx_ = static_cast<uint32_t>(after);
         if (isDepot)  // then we need to decrease each following trip index
             nodes[after]->trip_--;
     }
@@ -242,6 +257,64 @@ bool Route::durationCostApplies(ProblemData const &data,
         || vehicleType.maxDrive != unbounded
         || vehicleType.hasBreakRule();
     // clang-format on
+}
+
+void Route::updateOpenShipments()
+{
+    openShipments_.resize(nodes.size());
+
+    size_t open = 0;
+    for (size_t idx = 0; idx != nodes.size(); ++idx)
+    {
+        auto const *partner = nodes[idx]->partner();
+        if (partner && partner->route() == this)
+        {
+            if (data.isShipmentPickup(nodes[idx]->client()))
+                open++;
+            else
+                open--;
+        }
+
+        openShipments_[idx] = open;
+    }
+}
+
+bool Route::isShipmentClosedSlow(size_t first, size_t last) const
+{
+    for (size_t idx = first; idx <= last; ++idx)
+    {
+        auto const *partner = nodes[idx]->partner();
+        if (!partner || !partner->route())
+            continue;
+
+        if (partner->route() != this || partner->idx() < first
+            || partner->idx() > last)
+            return false;
+    }
+
+    return true;
+}
+
+bool Route::keepsShipmentOrderSlow(size_t first,
+                                   size_t last,
+                                   size_t after) const
+{
+    for (size_t idx = first; idx <= last; ++idx)
+    {
+        auto const *partner = nodes[idx]->partner();
+        if (!partner || partner->route() != this)
+            continue;
+
+        auto const at = partner->idx();
+        if (first <= at && at <= last)
+            continue;
+
+        auto const isPickup = data.isShipmentPickup(nodes[idx]->client());
+        if (isPickup ? after >= at : after < at)
+            return false;
+    }
+
+    return true;
 }
 
 void Route::updateBreakLookups()
@@ -485,6 +558,9 @@ void Route::update()
     if (data.hasBreaks())
         updateBreakLookups();
 
+    if (data.hasShipments())
+        updateOpenShipments();
+
     // Distance.
     auto const &distMat = data.distanceMatrix(profile());
 
@@ -645,10 +721,9 @@ void Route::update()
         loadAt[dim][nodes.size() - 1] = {};
 
         for (size_t idx = 1; idx != nodes.size() - 1; ++idx)
-            loadAt[dim][idx]
-                = nodes[idx]->isReloadDepot()
-                      ? LoadSegment{}
-                      : LoadSegment{data.location(visits[idx]), dim};
+            loadAt[dim][idx] = nodes[idx]->isReloadDepot()
+                                   ? LoadSegment{}
+                                   : LoadSegment{data, visits[idx], dim};
 
         loadBefore[dim].resize(nodes.size());
         loadBefore[dim][0] = loadAt[dim][0];

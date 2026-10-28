@@ -117,6 +117,7 @@ defmodule ExVrp.Native do
     solution_penalty_cost: 1,
     solution_lock_cost: 1,
     solution_num_forbidden_visits: 1,
+    solution_num_pickups_without_delivery: 1,
     # search::Route NIFs
     create_search_route_nif: 3,
     search_route_idx_nif: 1,
@@ -652,6 +653,7 @@ defmodule ExVrp.Native do
     - `:exchange33` / `:swap33` - Exchange 3 nodes for 3
     - `:swap_tails` - Swap route tails
     - `:relocate_with_depot` - Relocate with depot reload (multi-trip)
+    - `:relocate_shipment` - Move a shipment's pickup and delivery to another route
 
   - `:route_operators` - List of route operator names:
     - `:swap_routes` - Swap entire routes
@@ -1008,6 +1010,12 @@ defmodule ExVrp.Native do
   """
   @spec solution_num_forbidden_visits(reference()) :: non_neg_integer()
   def solution_num_forbidden_visits(_solution), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Gets the number of shipments whose pickup is visited but not their delivery.
+  """
+  @spec solution_num_pickups_without_delivery(reference()) :: non_neg_integer()
+  def solution_num_pickups_without_delivery(_solution), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
   # search::Route NIFs (low-level search route manipulation)

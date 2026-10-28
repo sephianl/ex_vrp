@@ -522,6 +522,19 @@ bool LocalSearch::wouldViolateSameVehicle(Route::Node const *U,
     return false;
 }
 
+bool LocalSearch::wouldPartnerViolateSameVehicle(Route::Node const *U,
+                                                 Route::Node const *V) const
+{
+    auto const *uPartner = U->partner();
+    if (uPartner && uPartner->route() == U->route()
+        && wouldViolateSameVehicle(uPartner, V->route()))
+        return true;
+
+    auto const *vPartner = V->partner();
+    return vPartner && vPartner->route() == V->route()
+           && wouldViolateSameVehicle(vPartner, U->route());
+}
+
 bool LocalSearch::applyNodeOps(Route::Node *U,
                                Route::Node *V,
                                CostEvaluator const &costEvaluator)
@@ -546,6 +559,9 @@ bool LocalSearch::applyNodeOps(Route::Node *U,
             return false;
         if (!nV->isEndDepot() && !nV->isDepot()
             && wouldViolateSameVehicle(nV, rU))
+            return false;
+
+        if (data.hasShipments() && wouldPartnerViolateSameVehicle(U, V))
             return false;
     }
 
@@ -572,6 +588,11 @@ bool LocalSearch::applyNodeOps(Route::Node *U,
                 && wouldTailSwapSplitSVG(U, V))
                 continue;
 
+            // Asked only here, of improving moves, so that every other
+            // evaluation pays nothing for shipments.
+            if (data.hasShipments() && !nodeOp->keepsShipments(U, V))
+                continue;
+
             [[maybe_unused]] auto const costBefore
                 = costEvaluator.penalisedCost(*rU)
                   + Cost(rU != rV) * costEvaluator.penalisedCost(*rV);
@@ -595,6 +616,8 @@ bool LocalSearch::applyNodeOps(Route::Node *U,
             assert(rU->hasForbiddenWindows()
                    || (rU != rV && rV->hasForbiddenWindows())
                    || costAfter == costBefore + deltaCost);
+
+            assert(shipmentsIntact());
 
             return true;
         }
@@ -671,8 +694,10 @@ void LocalSearch::applyDepotRemovalMove(Route::Node *U,
 void LocalSearch::applySameVehicleRepair(Route::Node *U,
                                          CostEvaluator const &costEvaluator)
 {
+    // U moves alone, so it may not leave the other half of its shipment.
     auto const &groups = clientToSameVehicleGroups_[U->client()];
-    if (groups.empty() || !U->route())
+    if (groups.empty() || !U->route()
+        || !U->route()->isShipmentClosed(U->idx(), U->idx()))
         return;
 
     for (auto const groupIdx : groups)
@@ -840,15 +865,20 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
 
     // Don't remove U if it would violate same-vehicle constraints, or if
     // U is zone-restricted to very few vehicles (removing would likely leave
-    // it unassigned since reinsertion options are severely limited).
+    // it unassigned since reinsertion options are severely limited). A
+    // pickup takes its routed delivery along, so that must pass too.
+    auto *dependent = carriesRoutedDelivery(U, data) ? U->partner() : nullptr;
     if (!wouldViolateSameVehicle(U, nullptr) && !isHardToPlace(U)
+        && !(dependent
+             && (wouldViolateSameVehicle(dependent, nullptr)
+                 || isHardToPlace(dependent)))
         && removeCost(U, data, costEvaluator) < 0)  // remove if improving
     {
         searchSpace_.markPromising(U);
         auto *route = U->route();
         auto const &vt = data.vehicleType(route->vehicleType());
 
-        route->remove(U->idx());
+        route->removeWithDependents(U->idx());
         update(route, route);
 
         // When a route has forbidden windows, the DS-based delta
@@ -873,6 +903,13 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
         return;
     }
 
+    // A delivery may only take a place after its pickup, on the pickup's trip.
+    if (data.hasShipments() && data.isShipmentDelivery(U->client()))
+    {
+        insertAfterPickupEjecting(U, costEvaluator);
+        return;
+    }
+
     // If neighbourhood-based insertion failed, try replacing another optional
     // client with U if that would be improving.
     for (auto const vClient : searchSpace_.neighboursOf(U->client()))
@@ -887,9 +924,11 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
 
         // Check same-vehicle constraint for V before removing it. U takes
         // V's place on V's route, so U must be allowed to go there — this is
-        // an insertion, and it does not pass through Solution::insert.
+        // an insertion, and it does not pass through Solution::insert. V goes
+        // alone, so a pickup with its delivery on board may not.
         if (!vData.required && !wouldViolateSameVehicle(V, nullptr)
             && !wouldViolateForbidden(U, route)
+            && !carriesRoutedDelivery(V, data)
             && inplaceCost(U, V, data, costEvaluator) < 0)
         {
             searchSpace_.markPromising(V);
@@ -901,6 +940,67 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
             return;
         }
     }
+}
+
+void LocalSearch::insertAfterPickupEjecting(Route::Node *U,
+                                            CostEvaluator const &costEvaluator)
+{
+    auto *pickup = U->partner();
+    auto *route = pickup->route();
+    if (!route || wouldViolateForbidden(U, route))
+        return;
+
+    // U goes where it is cheapest after its pickup, on the pickup's trip.
+    Route::Node *after = pickup;
+    auto afterCost = insertCost(U, pickup, data, costEvaluator);
+    for (auto *V = n(pickup); !V->isDepot(); V = n(V))
+        if (auto const cost = insertCost(U, V, data, costEvaluator);
+            cost < afterCost)
+        {
+            afterCost = cost;
+            after = V;
+        }
+
+    // A full route takes U in only by giving up another client, anywhere on
+    // it: the one whose removal together with U's insertion improves most.
+    Route::Node *eject = nullptr;
+    Cost bestCost = 0;
+    for (auto *W = n((*route)[0]); !W->isEndDepot(); W = n(W))
+    {
+        if (W->isDepot() || W == pickup || W == after)
+            continue;
+
+        ProblemData::Client const &wData = data.location(W->client());
+        if (wData.required || wData.isBreak || carriesRoutedDelivery(W, data)
+            || wouldViolateSameVehicle(W, nullptr))
+            continue;
+
+        auto const cost = insertEjectingCost(U, after, W, data, costEvaluator);
+        if (cost < bestCost)
+        {
+            bestCost = cost;
+            eject = W;
+        }
+    }
+
+    if (!eject)
+        return;
+
+    // The later position first, so the earlier one keeps its index.
+    searchSpace_.markPromising(eject);
+    if (eject->idx() > after->idx())
+    {
+        route->remove(eject->idx());
+        route->insert(after->idx() + 1, U);
+    }
+    else
+    {
+        route->insert(after->idx() + 1, U);
+        route->remove(eject->idx());
+    }
+
+    update(route, route);
+    searchSpace_.markPromising(U);
 }
 
 void LocalSearch::applyGroupMoves(Route::Node *U,
@@ -1030,13 +1130,12 @@ void LocalSearch::insertConstrainedFirst(CostEvaluator const &costEvaluator)
             if (totalService > availableTime)
                 continue;
 
-            // Insert all group members on this route (before end depot)
+            // Insert all group members on this route (before end depot). A
+            // delivery is left to Solution::insert, which places it after its
+            // pickup on the pickup's trip, or brings the pickup along.
             for (auto const client : group)
-            {
-                auto *U = &solution_.nodes[client];
-                auto const insertIdx = route.size() - 1;
-                route.insert(insertIdx, U);
-            }
+                if (!data.isShipmentDelivery(client))
+                    route.insert(route.size() - 1, &solution_.nodes[client]);
             route.update();
             break;
         }
@@ -1137,6 +1236,7 @@ void LocalSearch::repairForbiddenWindowRoutes(
 
         Duration now = vehType.twEarly;
         std::vector<size_t> lateClients;
+        size_t firstLateIdx = route.size() - 1;
 
         for (size_t idx = 0; idx < route.size(); ++idx)
         {
@@ -1158,12 +1258,17 @@ void LocalSearch::repairForbiddenWindowRoutes(
             auto const serviceEnd = now + wait + cl.serviceDuration;
 
             if (serviceEnd > fStart)
+            {
+                firstLateIdx = std::min(firstLateIdx, idx);
                 lateClients.push_back(node->client());
+            }
 
             now = serviceEnd;
         }
 
-        if (lateClients.empty())
+        // The late clients move to a new trip, so cutting before the first
+        // of them must not separate a pickup from its delivery.
+        if (lateClients.empty() || route.carriesShipmentAfter(firstLateIdx - 1))
             continue;
 
         // Remove late clients (in reverse order to keep indices valid).
@@ -1242,6 +1347,7 @@ void LocalSearch::improveWithMultiTrip(
     // first.  New trips are appended at the route end, so inserting in
     // time order avoids "can't arrive in time" rejections.
     std::vector<size_t> candidates;
+    auto const hasShipments = data.hasShipments();
     for (auto client = data.numDepots(); client != data.numLocations();
          ++client)
     {
@@ -1252,6 +1358,12 @@ void LocalSearch::improveWithMultiTrip(
         if (cd.prize > 0 && !cd.isBreak)
             candidates.push_back(client);
     }
+
+    // A trip of its own would hold a delivery without its pickup.
+    if (hasShipments)
+        std::erase_if(candidates,
+                      [&](size_t client)
+                      { return data.isShipmentDelivery(client); });
 
     std::sort(candidates.begin(),
               candidates.end(),
@@ -1630,7 +1742,7 @@ void LocalSearch::stripForbiddenWindowViolations()
         {
             auto *U = &solution_.nodes[*it];
             if (U->route() == &route)
-                route.remove(U->idx());
+                route.removeWithDependents(U->idx());
         }
 
         // Clean up orphaned reload depots (depot with no clients after it
@@ -1755,7 +1867,7 @@ void LocalSearch::stripInfeasibleForbiddenWindowClients()
                 auto *U = &solution_.nodes[worstClient];
                 if (U->route() == &route)
                 {
-                    route.remove(U->idx());
+                    route.removeWithDependents(U->idx());
                     route.update();
                     changed = true;
                 }
@@ -1785,6 +1897,24 @@ void LocalSearch::stripInfeasibleForbiddenWindowClients()
 
         route.update();
     }
+}
+
+bool LocalSearch::shipmentsIntact() const
+{
+    for (auto const &shipment : data.shipments())
+    {
+        auto const &pickup = solution_.nodes[shipment.pickup];
+        auto const &delivery = solution_.nodes[shipment.delivery];
+
+        if (!delivery.route())
+            continue;
+
+        if (pickup.route() != delivery.route() || pickup.idx() >= delivery.idx()
+            || pickup.trip() != delivery.trip())
+            return false;
+    }
+
+    return true;
 }
 
 void LocalSearch::update(Route *U, Route *V)

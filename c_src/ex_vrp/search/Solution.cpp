@@ -16,6 +16,12 @@ Solution::Solution(ProblemData const &data) : data_(data)
     for (size_t loc = 0; loc != data.numLocations(); ++loc)
         nodes.emplace_back(loc);
 
+    for (auto const &shipment : data.shipments())
+    {
+        nodes[shipment.pickup].pairWith(&nodes[shipment.delivery]);
+        nodes[shipment.delivery].pairWith(&nodes[shipment.pickup]);
+    }
+
     routes.reserve(data.numVehicles());
     size_t rIdx = 0;
     for (size_t vehType = 0; vehType != data.numVehicleTypes(); ++vehType)
@@ -144,45 +150,29 @@ bool Solution::insert(Route::Node *U,
     // Breaks are placed by BreakRepair.
     assert(!data_.isBreak(U->client()));
 
-    Route *requiredRoute = nullptr;
-    char const *requiredVehicleName = nullptr;
+    if (data_.hasShipments() && data_.isShipmentDelivery(U->client()))
+        return insertDelivery(U, searchSpace, costEvaluator, required);
 
-    for (size_t groupIdx = 0; groupIdx != data_.numSameVehicleGroups();
-         ++groupIdx)
+    // A pickup inserted alone leaves its delivery only the slack after it on
+    // that route, which a full route rarely has. So the pair goes in together
+    // when that improves, and the pickup alone only otherwise. A pair that
+    // must be inserted goes in together without the second look.
+    if (data_.hasShipments() && data_.isShipmentPickup(U->client())
+        && !U->partner()->route())
     {
-        auto const &group = data_.sameVehicleGroup(groupIdx);
+        ProblemData::Client const &deliveryData
+            = data_.location(U->partner()->client());
+        if (required && deliveryData.required)
+            return insertShipment(U, searchSpace, costEvaluator, true);
 
-        bool uInGroup = false;
-        for (auto const client : group)
-        {
-            if (client == U->client())
-            {
-                uInGroup = true;
-                break;
-            }
-        }
-
-        if (!uInGroup)
-            continue;
-
-        for (auto const otherClient : group)
-        {
-            if (otherClient == U->client())
-                continue;
-
-            auto *otherNode = &nodes[otherClient];
-            if (otherNode->route())
-            {
-                requiredRoute = otherNode->route();
-                requiredVehicleName
-                    = data_.vehicleType(requiredRoute->vehicleType()).name;
-                break;
-            }
-        }
-
-        if (requiredRoute)
-            break;
+        if (insertShipment(U, searchSpace, costEvaluator, false))
+            return true;
     }
+
+    Route *requiredRoute = sameVehicleRoute(U->client());
+    char const *requiredVehicleName
+        = requiredRoute ? data_.vehicleType(requiredRoute->vehicleType()).name
+                        : nullptr;
 
     auto isCompatibleRoute = [&](Route const *route) -> bool
     {
@@ -534,7 +524,8 @@ bool Solution::insert(Route::Node *U,
         auto *route = UAfter->route();
         auto const &vehType = data_.vehicleType(route->vehicleType());
 
-        if (wouldExceedCapacity && canUseMultiTrip)
+        if (wouldExceedCapacity && canUseMultiTrip
+            && !route->carriesShipmentAfter(UAfter->idx()))
         {
             auto const insertIdx = UAfter->idx() + 1;
             Route::Node depot = {vehType.reloadDepots[0]};
@@ -549,4 +540,153 @@ bool Solution::insert(Route::Node *U,
     }
 
     return false;
+}
+
+ex_vrp::search::Route *Solution::sameVehicleRoute(size_t client)
+{
+    for (auto const &group : data_.sameVehicleGroups())
+    {
+        if (std::find(group.begin(), group.end(), client) == group.end())
+            continue;
+
+        for (auto const other : group)
+            if (other != client && nodes[other].route())
+                return nodes[other].route();
+    }
+
+    return nullptr;
+}
+
+bool Solution::mayJoinStrictly(size_t client, Route const *route)
+{
+    if (data_.hasForbiddenLocations())
+    {
+        auto const profile = data_.vehicleType(route->vehicleType()).profile;
+        if (!data_.isAllowed(profile, client))
+            return false;
+    }
+
+    auto const *required = sameVehicleRoute(client);
+    return !required || required == route;
+}
+
+bool Solution::insertDelivery(Route::Node *delivery,
+                              SearchSpace const &searchSpace,
+                              CostEvaluator const &costEvaluator,
+                              bool required)
+{
+    auto *pickup = delivery->partner();
+    if (!pickup->route())
+        return insertShipment(pickup, searchSpace, costEvaluator, required);
+
+    auto *route = pickup->route();
+    if (!mayJoinStrictly(delivery->client(), route))
+        return false;
+
+    Route::Node *after = pickup;
+    auto bestCost = insertCost(delivery, pickup, data_, costEvaluator);
+    for (auto *W = n(pickup); !W->isDepot(); W = n(W))
+    {
+        auto const cost = insertCost(delivery, W, data_, costEvaluator);
+        if (cost < bestCost)
+        {
+            bestCost = cost;
+            after = W;
+        }
+    }
+
+    if (!required && bestCost >= 0)
+        return false;
+
+    route->insert(after->idx() + 1, delivery);
+    return true;
+}
+
+bool Solution::insertShipment(Route::Node *pickup,
+                              SearchSpace const &searchSpace,
+                              CostEvaluator const &costEvaluator,
+                              bool required)
+{
+    auto *delivery = pickup->partner();
+
+    Route::Node *bestV = nullptr;
+    Route::Node *bestW = nullptr;
+    auto bestCost = std::numeric_limits<Cost>::max();
+
+    // The delivery goes directly after the pickup, or after one of its own
+    // neighbours: the granular neighbourhood every other insertion keeps to.
+    auto const &deliveryNeighbours
+        = searchSpace.neighboursOf(delivery->client());
+    auto const deliveryMayFollow
+        = [&](Route::Node const *V, Route::Node const *W)
+    {
+        return W == V
+               || std::find(deliveryNeighbours.begin(),
+                            deliveryNeighbours.end(),
+                            W->client())
+                      != deliveryNeighbours.end();
+    };
+
+    auto const tryAfter = [&](Route::Node *V)
+    {
+        auto *route = V->route();
+        if (!mayJoinStrictly(pickup->client(), route)
+            || !mayJoinStrictly(delivery->client(), route))
+            return;
+
+        for (auto *W = V;; W = n(W))
+        {
+            if (deliveryMayFollow(V, W))
+                if (auto const cost
+                    = insertShipmentCost(pickup, V, W, data_, costEvaluator);
+                    cost < bestCost)
+                {
+                    bestCost = cost;
+                    bestV = V;
+                    bestW = W;
+                }
+
+            if (n(W)->isDepot())
+                break;
+        }
+    };
+
+    for (auto const client : {pickup->client(), delivery->client()})
+        for (auto const neighbour : searchSpace.neighboursOf(client))
+        {
+            auto *V = &nodes[neighbour];
+            if (!V->route())
+                continue;
+
+            tryAfter(V);
+            tryAfter(p(V));
+        }
+
+    for (auto const &[vehType, offset] : searchSpace.vehTypeOrder())
+    {
+        auto const begin = routes.begin() + offset;
+        auto const end = begin + data_.vehicleType(vehType).numAvailable;
+        auto const empty = std::find_if(
+            begin, end, [](Route const &route) { return route.empty(); });
+
+        if (empty != end)
+            tryAfter((*empty)[0]);
+    }
+
+    if (!bestV && required)
+        for (auto &route : routes)
+            if (mayJoinStrictly(pickup->client(), &route)
+                && mayJoinStrictly(delivery->client(), &route))
+            {
+                bestV = bestW = route[0];
+                break;
+            }
+
+    if (!bestV || (!required && bestCost >= 0))
+        return false;
+
+    auto *route = bestV->route();
+    route->insert(bestW->idx() + 1, delivery);
+    route->insert(bestV->idx() + 1, pickup);
+    return true;
 }

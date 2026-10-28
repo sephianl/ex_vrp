@@ -88,6 +88,7 @@ class ProblemData
 {
     // Validates the consistency of the constructed instance.
     void validate() const;
+    void validateShipments() const;
 
 public:
     /**
@@ -361,6 +362,35 @@ public:
 
         void addClient(size_t client);
         void clear();
+    };
+
+    /**
+     * Shipment(pickup: int, delivery: int, amount: list[int] = [])
+     *
+     * Goods collected at one client and dropped off at another. Both are
+     * ordinary clients, each with its own time window, service duration and
+     * prize; the shipment only ties them together. The delivery may be visited
+     * only after its pickup, on the same route and the same trip. The pickup
+     * may be visited alone, in which case its goods ride back to the depot.
+     *
+     * Parameters
+     * ----------
+     * pickup
+     *     Location index of the client where the goods are collected.
+     * delivery
+     *     Location index of the client where the goods are dropped off.
+     * amount
+     *     Load the goods take up, per load dimension, from pickup to delivery.
+     */
+    struct Shipment
+    {
+        size_t const pickup;
+        size_t const delivery;
+        std::vector<Load> const amount;
+
+        Shipment(size_t pickup, size_t delivery, std::vector<Load> amount = {});
+
+        bool operator==(Shipment const &other) const = default;
     };
 
     /**
@@ -806,7 +836,8 @@ private:
     std::vector<VehicleType> const vehicleTypes_;  // Vehicle type information
     std::vector<ClientGroup> const groups_;        // Client groups
     std::vector<SameVehicleGroup> const
-        sameVehicleGroups_;  // Same-vehicle groups
+        sameVehicleGroups_;                  // Same-vehicle groups
+    std::vector<Shipment> const shipments_;  // Pickup and delivery pairs
 
     // Per-profile, per-location cost in micro-euros, added to the objective
     // once for each visited location. Zone penalties live here rather than in
@@ -844,6 +875,17 @@ private:
     // Whether isBreak_ holds any break. Every move evaluation asks, through
     // search::Route::Proposal, so problems without breaks skip counting them.
     bool const hasBreaks_;
+
+    static constexpr size_t NO_SHIPMENT = std::numeric_limits<size_t>::max();
+
+    // The shipment each location belongs to, or NO_SHIPMENT, packed like
+    // isBreak_: search asks per node, and only when hasShipments().
+    std::vector<size_t> const shipmentOf_;
+
+    // Signed shipment load per location and load dimension, row-major: the
+    // amount at a pickup, minus the amount at a delivery. Empty without
+    // shipments. See LoadSegment's client constructor.
+    std::vector<Load> const shipmentLoads_;
 
     // The load dimensions some client or vehicle type puts load in, ascending.
     // Load is zero along every route in any other dimension, so it can never
@@ -885,6 +927,11 @@ public:
      */
     [[nodiscard]] std::vector<SameVehicleGroup> const &
     sameVehicleGroups() const;
+
+    /**
+     * Returns a list of all shipments in the problem instance.
+     */
+    [[nodiscard]] std::vector<Shipment> const &shipments() const;
 
     /**
      * Returns a list of all vehicle types in the problem instance.
@@ -934,6 +981,11 @@ public:
      *     Group index whose information to retrieve.
      */
     [[nodiscard]] SameVehicleGroup const &sameVehicleGroup(size_t group) const;
+
+    /**
+     * Returns the shipment at the given index.
+     */
+    [[nodiscard]] Shipment const &shipment(size_t shipment) const;
 
     /**
      * Returns vehicle type data for the given vehicle type.
@@ -1039,6 +1091,35 @@ public:
     [[nodiscard]] inline bool hasBreaks() const;
 
     /**
+     * Whether the instance has any shipments. Without them every shipment
+     * check is vacuous, so search skips them wholesale.
+     */
+    [[nodiscard]] inline bool hasShipments() const;
+
+    /**
+     * Whether the given location is the pickup of a shipment.
+     */
+    [[nodiscard]] inline bool isShipmentPickup(size_t location) const;
+
+    /**
+     * Whether the given location is the delivery of a shipment.
+     */
+    [[nodiscard]] inline bool isShipmentDelivery(size_t location) const;
+
+    /**
+     * The other half of the given location's shipment: the delivery of a
+     * pickup, the pickup of a delivery. The location must be in a shipment.
+     */
+    [[nodiscard]] inline size_t shipmentPartner(size_t location) const;
+
+    /**
+     * Load the given location's shipment adds in the given dimension: its
+     * amount at a pickup, minus its amount at a delivery, zero elsewhere.
+     */
+    [[nodiscard]] inline Load shipmentLoad(size_t location,
+                                           size_t dimension) const;
+
+    /**
      * Whether any location is forbidden on any profile. When false,
      * :meth:`~is_allowed` is true everywhere and reachability filtering can be
      * skipped wholesale.
@@ -1071,6 +1152,11 @@ public:
      * Number of same-vehicle groups in this problem instance.
      */
     [[nodiscard]] size_t numSameVehicleGroups() const;
+
+    /**
+     * Number of shipments in this problem instance.
+     */
+    [[nodiscard]] size_t numShipments() const;
 
     /**
      * Number of locations in this problem instance, that is, the number of
@@ -1115,7 +1201,8 @@ public:
                 std::vector<std::vector<Cost>> penalties = {},
                 std::vector<DynamicBitset> allowed = {},
                 std::vector<std::optional<VehicleLock>> locks = {},
-                std::vector<Profile> profiles = {});
+                std::vector<Profile> profiles = {},
+                std::vector<Shipment> shipments = {});
 
     ProblemData() = delete;
     ProblemData(ProblemData const &) = delete;
@@ -1199,6 +1286,39 @@ Duration ProblemData::pauseDuration(VehicleType const &vehicleType,
 }
 
 bool ProblemData::hasBreaks() const { return hasBreaks_; }
+
+bool ProblemData::hasShipments() const { return !shipments_.empty(); }
+
+bool ProblemData::isShipmentPickup(size_t location) const
+{
+    assert(location < shipmentOf_.size());
+    auto const shipment = shipmentOf_[location];
+    return shipment != NO_SHIPMENT && shipments_[shipment].pickup == location;
+}
+
+bool ProblemData::isShipmentDelivery(size_t location) const
+{
+    assert(location < shipmentOf_.size());
+    auto const shipment = shipmentOf_[location];
+    return shipment != NO_SHIPMENT && shipments_[shipment].delivery == location;
+}
+
+size_t ProblemData::shipmentPartner(size_t location) const
+{
+    assert(location < shipmentOf_.size());
+    assert(shipmentOf_[location] != NO_SHIPMENT);
+    auto const &shipment = shipments_[shipmentOf_[location]];
+    return shipment.pickup == location ? shipment.delivery : shipment.pickup;
+}
+
+Load ProblemData::shipmentLoad(size_t location, size_t dimension) const
+{
+    if (shipmentLoads_.empty())
+        return 0;
+
+    assert(location * numLoadDimensions_ + dimension < shipmentLoads_.size());
+    return shipmentLoads_[location * numLoadDimensions_ + dimension];
+}
 
 std::vector<size_t> const &ProblemData::loadedDimensions() const
 {

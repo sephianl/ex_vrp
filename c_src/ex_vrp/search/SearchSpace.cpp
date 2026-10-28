@@ -89,6 +89,11 @@ void SearchSpace::markPromising(Route::Node const *node)
 
     if (!node->isEndDepot() && !n(node)->isDepot())
         markPromising(n(node)->client());
+
+    // A shipment moves as a pair, so a change to one half is news to both.
+    auto const *partner = node->partner();
+    if (partner && partner->route())
+        markPromising(partner->client());
 }
 
 void SearchSpace::markAllPromising() { promising_.set(); }

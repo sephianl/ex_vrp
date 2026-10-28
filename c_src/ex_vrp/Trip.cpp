@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cassert>
 #include <fstream>
+#include <sstream>
 
 using ex_vrp::Coordinate;
 using ex_vrp::Cost;
@@ -29,6 +30,29 @@ bool canEndAt(ProblemData::VehicleType const &vehType, size_t depot)
     auto const &reloads = vehType.reloadDepots;
     return depot == vehType.endDepot
            || std::find(reloads.begin(), reloads.end(), depot) != reloads.end();
+}
+
+// Throws unless every shipment delivery on the trip follows its pickup there.
+// A pickup alone is fine: its goods ride back to the depot.
+void validateShipments(ProblemData const &data, Trip::Visits const &visits)
+{
+    if (!data.hasShipments())
+        return;
+
+    for (auto it = visits.begin(); it != visits.end(); ++it)
+    {
+        if (!data.isShipmentDelivery(*it))
+            continue;
+
+        auto const pickup = data.shipmentPartner(*it);
+        if (std::find(visits.begin(), it, pickup) == it)
+        {
+            std::ostringstream msg;
+            msg << "Shipment delivery " << *it << " is not preceded by its "
+                << "pickup " << pickup << " on the same trip.";
+            throw std::invalid_argument(msg.str());
+        }
+    }
 }
 }  // namespace
 
@@ -62,6 +86,8 @@ Trip::Trip(ProblemData const &data,
             throw std::invalid_argument(msg.str());
         }
 
+    validateShipments(data, visits_);
+
     auto const &distances = data.distanceMatrix(vehData.profile);
     auto const &durations = data.durationMatrix(vehData.profile);
 
@@ -92,10 +118,7 @@ Trip::Trip(ProblemData const &data,
     {
         LoadSegment segment;
         for (auto const client : visits_)
-        {
-            ProblemData::Client const &clientData = data.location(client);
-            segment = LoadSegment::merge(segment, {clientData, dim});
-        }
+            segment = LoadSegment::merge(segment, {data, client, dim});
 
         delivery_[dim] = segment.delivery();
         pickup_[dim] = segment.pickup();

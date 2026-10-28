@@ -64,6 +64,8 @@ public:
 
     void apply(Route::Node *U, Route::Node *V) const override;
 
+    bool keepsShipments(Route::Node *U, Route::Node *V) const override;
+
     // Only U relocates; V stays put and merely marks the insertion point.
     size_t spanV() const override { return 0; }
 };

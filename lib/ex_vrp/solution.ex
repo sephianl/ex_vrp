@@ -382,6 +382,17 @@ defmodule ExVrp.Solution do
   end
 
   @doc """
+  Returns how many shipments (see `ExVrp.Shipment`) have their pickup visited
+  but not their delivery: goods collected and brought back to the depot rather
+  than dropped off. The delivery is then in `unassigned/1`, like any client
+  left unplanned.
+  """
+  @spec num_pickups_without_delivery(t()) :: non_neg_integer()
+  def num_pickups_without_delivery(%__MODULE__{solution_ref: solution_ref}) do
+    Native.solution_num_pickups_without_delivery(solution_ref)
+  end
+
+  @doc """
   Returns the total distance cost of the solution.
   """
   @spec distance_cost(t()) :: non_neg_integer()

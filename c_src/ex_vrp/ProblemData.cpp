@@ -141,10 +141,59 @@ bool putsLoadIn(std::vector<ex_vrp::Load> const &loads, size_t dimension)
     return dimension < loads.size() && loads[dimension] != 0;
 }
 
+// Built before validate() runs, so a shipment naming a location that does not
+// exist is skipped here and reported there. A location in two shipments keeps
+// the last; validate() reports that too.
+std::vector<size_t>
+shipmentOfLocation(size_t numLocations,
+                   std::vector<ProblemData::Shipment> const &shipments)
+{
+    std::vector<size_t> shipmentOf(numLocations,
+                                   std::numeric_limits<size_t>::max());
+
+    for (size_t idx = 0; idx != shipments.size(); ++idx)
+        for (auto const location :
+             {shipments[idx].pickup, shipments[idx].delivery})
+            if (location < numLocations)
+                shipmentOf[location] = idx;
+
+    return shipmentOf;
+}
+
+std::vector<ex_vrp::Load>
+signedShipmentLoads(size_t numLocations,
+                    size_t numLoadDimensions,
+                    std::vector<ProblemData::Shipment> const &shipments)
+{
+    if (shipments.empty())
+        return {};
+
+    std::vector<ex_vrp::Load> loads(numLocations * numLoadDimensions, 0);
+    for (auto const &shipment : shipments)
+    {
+        if (shipment.pickup >= numLocations
+            || shipment.delivery >= numLocations)
+            continue;
+
+        auto const numDims
+            = std::min(numLoadDimensions, shipment.amount.size());
+        for (size_t dim = 0; dim != numDims; ++dim)
+        {
+            loads[shipment.pickup * numLoadDimensions + dim]
+                += shipment.amount[dim];
+            loads[shipment.delivery * numLoadDimensions + dim]
+                -= shipment.amount[dim];
+        }
+    }
+
+    return loads;
+}
+
 std::vector<size_t>
 dimensionsWithLoad(size_t numLoadDimensions,
                    std::vector<ProblemData::Client> const &clients,
-                   std::vector<ProblemData::VehicleType> const &vehicleTypes)
+                   std::vector<ProblemData::VehicleType> const &vehicleTypes,
+                   std::vector<ProblemData::Shipment> const &shipments)
 {
     auto const isLoaded = [&](size_t dimension)
     {
@@ -159,7 +208,12 @@ dimensionsWithLoad(size_t numLoadDimensions,
                    vehicleTypes.begin(),
                    vehicleTypes.end(),
                    [&](auto const &type)
-                   { return putsLoadIn(type.initialLoad, dimension); });
+                   { return putsLoadIn(type.initialLoad, dimension); })
+               || std::any_of(
+                   shipments.begin(),
+                   shipments.end(),
+                   [&](auto const &shipment)
+                   { return putsLoadIn(shipment.amount, dimension); });
     };
 
     std::vector<size_t> dimensions;
@@ -425,6 +479,19 @@ void ProblemData::SameVehicleGroup::addClient(size_t client)
 }
 
 void ProblemData::SameVehicleGroup::clear() { clients_.clear(); }
+
+ProblemData::Shipment::Shipment(size_t pickup,
+                                size_t delivery,
+                                std::vector<Load> amount)
+    : pickup(pickup), delivery(delivery), amount(std::move(amount))
+{
+    if (pickup == delivery)
+        throw std::invalid_argument(
+            "Shipment pickup and delivery must differ.");
+
+    if (std::any_of(this->amount.begin(), this->amount.end(), isNegative<Load>))
+        throw std::invalid_argument("Shipment amounts must be >= 0.");
+}
 
 ProblemData::Depot::Depot(Duration twEarly,
                           Duration twLate,
@@ -763,6 +830,11 @@ ProblemData::sameVehicleGroups() const
     return sameVehicleGroups_;
 }
 
+std::vector<ProblemData::Shipment> const &ProblemData::shipments() const
+{
+    return shipments_;
+}
+
 std::vector<ProblemData::VehicleType> const &ProblemData::vehicleTypes() const
 {
     return vehicleTypes_;
@@ -796,6 +868,12 @@ ProblemData::sameVehicleGroup(size_t group) const
     return sameVehicleGroups_[group];
 }
 
+ProblemData::Shipment const &ProblemData::shipment(size_t shipment) const
+{
+    assert(shipment < shipments_.size());
+    return shipments_[shipment];
+}
+
 ProblemData::VehicleType const &
 ProblemData::vehicleType(size_t vehicleType) const
 {
@@ -814,6 +892,8 @@ size_t ProblemData::numSameVehicleGroups() const
     return sameVehicleGroups_.size();
 }
 
+size_t ProblemData::numShipments() const { return shipments_.size(); }
+
 size_t ProblemData::numLocations() const { return numDepots() + numClients(); }
 
 size_t ProblemData::numVehicleTypes() const { return vehicleTypes_.size(); }
@@ -823,6 +903,43 @@ size_t ProblemData::numVehicles() const { return numVehicles_; }
 size_t ProblemData::numProfiles() const { return profiles_.size(); }
 
 size_t ProblemData::numLoadDimensions() const { return numLoadDimensions_; }
+
+void ProblemData::validateShipments() const
+{
+    for (size_t idx = 0; idx != numShipments(); ++idx)
+    {
+        auto const &shipment = shipments_[idx];
+
+        for (auto const loc : {shipment.pickup, shipment.delivery})
+        {
+            if (loc < numDepots() || loc >= numLocations())
+                throw std::out_of_range("Shipment references invalid client.");
+
+            if (shipmentOf_[loc] != idx)
+                throw std::invalid_argument(
+                    "Client is in more than one shipment.");
+
+            ProblemData::Client const &client = location(loc);
+            if (client.isBreak)
+                throw std::invalid_argument(
+                    "Break clients cannot be in a shipment.");
+
+            if (client.group && groups_[*client.group].mutuallyExclusive)
+                throw std::invalid_argument(
+                    "Shipment client in mutually exclusive group.");
+        }
+
+        if (shipment.amount.size() != numLoadDimensions_)
+            throw std::invalid_argument(
+                "Shipment has inconsistent amount size.");
+
+        ProblemData::Client const &pickup = location(shipment.pickup);
+        ProblemData::Client const &delivery = location(shipment.delivery);
+        if (delivery.required && !pickup.required)
+            throw std::invalid_argument(
+                "Shipment with required delivery needs a required pickup.");
+    }
+}
 
 void ProblemData::validate() const
 {
@@ -910,6 +1027,8 @@ void ProblemData::validate() const
             }
         }
     }
+
+    validateShipments();
 
     // Vehicle type checks.
     if (vehicleTypes_.empty())
@@ -1067,7 +1186,8 @@ ProblemData::ProblemData(std::vector<Client> clients,
                          std::vector<std::vector<Cost>> penalties,
                          std::vector<DynamicBitset> allowed,
                          std::vector<std::optional<VehicleLock>> locks,
-                         std::vector<Profile> profiles)
+                         std::vector<Profile> profiles,
+                         std::vector<Shipment> shipments)
     : dists_(std::move(distMats)),
       durs_(std::move(durMats)),
       profiles_(normaliseProfiles(std::move(profiles), dists_.size())),
@@ -1078,6 +1198,7 @@ ProblemData::ProblemData(std::vector<Client> clients,
       vehicleTypes_(std::move(vehicleTypes)),
       groups_(std::move(groups)),
       sameVehicleGroups_(std::move(sameVehicleGroups)),
+      shipments_(std::move(shipments)),
       penalties_(normalisePenalties(std::move(penalties),
                                     profiles_.size(),
                                     clients_.size() + depots_.size())),
@@ -1114,8 +1235,12 @@ ProblemData::ProblemData(std::vector<Client> clients,
       isRest_(clientFlags(depots_.size(), clients_, &Client::isRest)),
       hasBreaks_(std::find(isBreak_.begin(), isBreak_.end(), true)
                  != isBreak_.end()),
-      loadedDimensions_(
-          dimensionsWithLoad(numLoadDimensions_, clients_, vehicleTypes_))
+      shipmentOf_(
+          shipmentOfLocation(depots_.size() + clients_.size(), shipments_)),
+      shipmentLoads_(signedShipmentLoads(
+          depots_.size() + clients_.size(), numLoadDimensions_, shipments_)),
+      loadedDimensions_(dimensionsWithLoad(
+          numLoadDimensions_, clients_, vehicleTypes_, shipments_))
 {
     validate();
 }

@@ -15,6 +15,7 @@
 #include "ex_vrp/search/Exchange.h"
 #include "ex_vrp/search/LocalSearch.h"
 #include "ex_vrp/search/PerturbationManager.h"
+#include "ex_vrp/search/RelocateShipment.h"
 #include "ex_vrp/search/RelocateWithDepot.h"
 #include "ex_vrp/search/SwapRoutes.h"
 #include "ex_vrp/search/SwapTails.h"
@@ -323,6 +324,7 @@ struct LocalSearchResource
     std::unique_ptr<search::Exchange<2, 2>> exchange22;
     std::unique_ptr<search::SwapTails> swapTails;
     std::unique_ptr<search::RelocateWithDepot> relocateDepot;
+    std::unique_ptr<search::RelocateShipment> relocateShipment;
     std::unique_ptr<search::SwapRoutes> swapRoutes;
 
     // The local search object (must be last - uses references to above)
@@ -365,6 +367,13 @@ struct LocalSearchResource
         {
             relocateDepot = std::make_unique<search::RelocateWithDepot>(data);
             ls->addNodeOperator(*relocateDepot);
+        }
+
+        if (search::supports<search::RelocateShipment>(data))
+        {
+            relocateShipment = std::make_unique<search::RelocateShipment>(
+                data, ls->neighbours());
+            ls->addNodeOperator(*relocateShipment);
         }
 
         // SwapStar used to go here. It was measured on the full benchmark
@@ -1343,6 +1352,31 @@ decode_same_vehicle_group([[maybe_unused]] ErlNifEnv *env, ERL_NIF_TERM term)
     return ProblemData::SameVehicleGroup(clients, name);
 }
 
+// Decode a Shipment from an Elixir %ExVrp.Shipment{} map
+ProblemData::Shipment decode_shipment(ErlNifEnv *env, ERL_NIF_TERM term)
+{
+    auto const pickup = get_map_uint(env, term, "pickup");
+    auto const delivery = get_map_uint(env, term, "delivery");
+
+    ERL_NIF_TERM amount_term;
+    ERL_NIF_TERM key = enif_make_atom(env, "amount");
+    if (!enif_get_map_value(env, term, key, &amount_term))
+        throw std::invalid_argument("Shipment missing amount field");
+
+    std::vector<Load> amount;
+    ERL_NIF_TERM head, tail = amount_term;
+    while (enif_get_list_cell(env, tail, &head, &tail))
+    {
+        int64_t value;
+        if (!nif_get_int64(env, head, &value))
+            throw std::invalid_argument("Shipment amount must be integers");
+
+        amount.push_back(Load(value));
+    }
+
+    return ProblemData::Shipment(pickup, delivery, std::move(amount));
+}
+
 // -----------------------------------------------------------------------------
 // NIF Functions
 // -----------------------------------------------------------------------------
@@ -1424,6 +1458,12 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
     key = enif_make_atom(env, "forbidden");
     bool has_forbidden
         = enif_get_map_value(env, model_term, key, &forbidden_term);
+
+    // Get shipments (optional)
+    ERL_NIF_TERM shipments_term;
+    key = enif_make_atom(env, "shipments");
+    bool has_shipments
+        = enif_get_map_value(env, model_term, key, &shipments_term);
 
     // Decode depots
     std::vector<ProblemData::Depot> depots;
@@ -1552,6 +1592,14 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
         }
     }
 
+    std::vector<ProblemData::Shipment> shipments;
+    if (has_shipments)
+    {
+        tail = shipments_term;
+        while (enif_get_list_cell(env, tail, &head, &tail))
+            shipments.push_back(decode_shipment(env, head));
+    }
+
     std::vector<ProblemData::Profile> profiles;
     if (has_profiles)
         profiles = decode_profiles(env, profiles_term, num_locations);
@@ -1676,7 +1724,8 @@ create_problem_data([[maybe_unused]] ErlNifEnv *env, fine::Term model_term)
                                         std::move(penalties),
                                         std::move(allowed),
                                         std::move(locks),
-                                        std::move(profiles));
+                                        std::move(profiles),
+                                        std::move(shipments));
 
     return fine::Ok(fine::make_resource<ProblemDataResource>(problem_data));
 }
@@ -2960,6 +3009,27 @@ int64_t solution_num_forbidden_visits(
 
 FINE_NIF(solution_num_forbidden_visits, 0);
 
+/**
+ * Get the number of shipments whose pickup is visited but not their delivery.
+ */
+int64_t solution_num_pickups_without_delivery(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SolutionResource> solution_resource)
+{
+    auto const &neighbours = solution_resource->solution.neighbours();
+    auto const &shipments = solution_resource->problemData->shipments();
+
+    return std::count_if(shipments.begin(),
+                         shipments.end(),
+                         [&](auto const &shipment)
+                         {
+                             return neighbours[shipment.pickup].has_value()
+                                    && !neighbours[shipment.delivery];
+                         });
+}
+
+FINE_NIF(solution_num_pickups_without_delivery, 0);
+
 // -----------------------------------------------------------------------------
 // CostEvaluator
 // -----------------------------------------------------------------------------
@@ -4152,6 +4222,15 @@ local_search_nif([[maybe_unused]] ErlNifEnv *env,
         ls.addNodeOperator(*relocateDepot);
     }
 
+    std::unique_ptr<ex_vrp::search::RelocateShipment> relocateShipment;
+    if (ex_vrp::search::supports<ex_vrp::search::RelocateShipment>(
+            problem_data))
+    {
+        relocateShipment = std::make_unique<ex_vrp::search::RelocateShipment>(
+            problem_data, ls.neighbours());
+        ls.addNodeOperator(*relocateShipment);
+    }
+
     // Note: PyVRP's default ROUTE_OPERATORS is empty
 
     // Create RNG and shuffle (like Python's __call__ does)
@@ -4238,6 +4317,15 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_search_only_nif(
         relocateDepot
             = std::make_unique<ex_vrp::search::RelocateWithDepot>(problem_data);
         ls.addNodeOperator(*relocateDepot);
+    }
+
+    std::unique_ptr<ex_vrp::search::RelocateShipment> relocateShipment;
+    if (ex_vrp::search::supports<ex_vrp::search::RelocateShipment>(
+            problem_data))
+    {
+        relocateShipment = std::make_unique<ex_vrp::search::RelocateShipment>(
+            problem_data, ls.neighbours());
+        ls.addNodeOperator(*relocateShipment);
     }
 
     // Note: PyVRP's default ROUTE_OPERATORS is empty - don't add
@@ -4369,6 +4457,8 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
     std::vector<std::unique_ptr<ex_vrp::search::SwapTails>> swap_tails_ops;
     std::vector<std::unique_ptr<ex_vrp::search::RelocateWithDepot>>
         relocate_depot_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::RelocateShipment>>
+        relocate_shipment_ops;
     std::vector<std::unique_ptr<ex_vrp::search::SwapRoutes>> swap_routes_ops;
 
     // Add specified node operators
@@ -4440,6 +4530,13 @@ fine::Ok<fine::ResourcePtr<SolutionResource>> local_search_with_operators_nif(
                 std::make_unique<ex_vrp::search::RelocateWithDepot>(
                     problem_data));
             ls.addNodeOperator(*relocate_depot_ops.back());
+        }
+        else if (op_name == "relocate_shipment")
+        {
+            relocate_shipment_ops.push_back(
+                std::make_unique<ex_vrp::search::RelocateShipment>(
+                    problem_data, ls.neighbours()));
+            ls.addNodeOperator(*relocate_shipment_ops.back());
         }
     }
 
@@ -4570,6 +4667,8 @@ fine::Term local_search_stats_nif(
     std::vector<std::unique_ptr<ex_vrp::search::SwapTails>> swap_tails_ops;
     std::vector<std::unique_ptr<ex_vrp::search::RelocateWithDepot>>
         relocate_depot_ops;
+    std::vector<std::unique_ptr<ex_vrp::search::RelocateShipment>>
+        relocate_shipment_ops;
     std::vector<std::unique_ptr<ex_vrp::search::SwapRoutes>> swap_routes_ops;
 
     for (const auto &op_name : node_ops)
@@ -4662,6 +4761,15 @@ fine::Term local_search_stats_nif(
             ls.addNodeOperator(*relocate_depot_ops.back());
             node_operator_ptrs.push_back(
                 {op_name, relocate_depot_ops.back().get()});
+        }
+        else if (op_name == "relocate_shipment")
+        {
+            relocate_shipment_ops.push_back(
+                std::make_unique<ex_vrp::search::RelocateShipment>(
+                    problem_data, ls.neighbours()));
+            ls.addNodeOperator(*relocate_shipment_ops.back());
+            node_operator_ptrs.push_back(
+                {op_name, relocate_shipment_ops.back().get()});
         }
     }
 
