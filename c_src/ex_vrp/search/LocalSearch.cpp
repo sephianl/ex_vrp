@@ -961,13 +961,15 @@ void LocalSearch::insertAfterPickupEjecting(Route::Node *U,
             after = V;
         }
 
-    // A full route takes U in only by giving up another client, anywhere on
-    // it: the one whose removal together with U's insertion improves most.
+    // A full trip takes U in only by giving up another of its clients: the
+    // one whose removal together with U's insertion improves most. Only the
+    // pickup's trip, as a segment between the two may not cross a reload.
     Route::Node *eject = nullptr;
     Cost bestCost = 0;
     for (auto *W = n((*route)[0]); !W->isEndDepot(); W = n(W))
     {
-        if (W->isDepot() || W == pickup || W == after)
+        if (W->isDepot() || W == pickup || W == after
+            || W->trip() != pickup->trip())
             continue;
 
         ProblemData::Client const &wData = data.location(W->client());
