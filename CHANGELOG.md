@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Shipments: pick up at one client, deliver at another.** `Model.add_shipment/4` ties two
+  clients into an `ExVrp.Shipment` with an `amount` per load dimension. The delivery is only ever
+  visited after its pickup, on the same route and the same trip; breaks and rests may sit between
+  them, a reload depot may not. The goods take up capacity from the pickup to the delivery. Each
+  half keeps its own time window, service duration, prize and `required` flag, and a pickup may be
+  visited without its delivery, carrying the goods back to the depot:
+  `Solution.num_pickups_without_delivery/1` counts those. A required delivery needs a required
+  pickup.
+- **How the search keeps pairs together.** A moved segment must hold both halves of a shipment or
+  neither; within a route a half may also move alone, as long as the pickup stays first. No tail
+  swap or new reload depot cuts between a pickup and its delivery. Removing a pickup removes its
+  delivery, and inserting a delivery whose pickup is unplanned inserts the pair at the best pair of
+  positions. A new operator, `RelocateShipment`, moves a pair to another route.
+- **Shipments on a full day.** An unplanned pickup goes in together with its delivery when that
+  improves, rather than alone. An unplanned delivery whose pickup is planned may take its place by
+  pushing out the optional client on that route whose removal makes room best. A client may also
+  take the place of a shipment half the way it takes any optional client's, unless that would
+  strand a delivery. A delivery is tried directly after its pickup or after one of its own
+  neighbours, as every other insertion keeps to the granular neighbourhood. A shipment iteration on
+  `prodship_clients_125` takes 17% fewer instructions. At a fixed 2000 iterations the large
+  shipment days cost 3–4% less; under the A/B's time budgets no objective moves beyond noise, and
+  the Li & Lim instances stay at their best-known solutions.
+- **VRPLIB `PICKUP_AND_DELIVERY_SECTION`.** `ExVrp.Read` reads PDPTW instances (Li & Lim, LKH-3
+  format) into shipments.
+
 ## 0.18.1
 
 ### Changed
