@@ -1,5 +1,6 @@
 #include "Route.h"
 
+#include <bit>
 #include <cmath>
 #include <numbers>
 #include <ostream>
@@ -12,8 +13,8 @@ Route::Node::Node(size_t loc) : loc_(loc), idx_(0), trip_(0), route_(nullptr) {}
 
 void Route::Node::assign(Route *route, size_t idx, size_t trip)
 {
-    idx_ = idx;
-    trip_ = trip;
+    idx_ = static_cast<uint32_t>(idx);
+    trip_ = static_cast<uint32_t>(trip);
     route_ = route;
 }
 
@@ -23,6 +24,8 @@ void Route::Node::unassign()
     trip_ = 0;
     route_ = nullptr;
 }
+
+void Route::Node::pairWith(Node *partner) { partner_ = partner; }
 
 Route::Iterator::Iterator(std::vector<Node *> const &nodes, size_t idx)
     : nodes_(&nodes), idx_(idx)
@@ -145,13 +148,26 @@ void Route::insert(size_t idx, Node *node)
 
     for (size_t after = idx; after != nodes.size(); ++after)
     {
-        nodes[after]->idx_ = after;
+        nodes[after]->idx_ = static_cast<uint32_t>(after);
         if (isDepot)  // then we need to bump each following trip index
             nodes[after]->trip_++;
     }
 }
 
 void Route::push_back(Node *node) { insert(nodes.size() - 1, node); }
+
+void Route::removeWithDependents(size_t idx)
+{
+    auto const *partner = nodes[idx]->partner();
+    if (partner && partner->route() == this
+        && data.isShipmentPickup(nodes[idx]->client()))
+    {
+        assert(partner->idx() > idx);
+        remove(partner->idx());
+    }
+
+    remove(idx);
+}
 
 void Route::remove(size_t idx)
 {
@@ -176,7 +192,7 @@ void Route::remove(size_t idx)
     nodes.erase(nodes.begin() + idx);  // remove dangling pointer
     for (auto after = idx; after != nodes.size(); ++after)
     {
-        nodes[after]->idx_ = after;
+        nodes[after]->idx_ = static_cast<uint32_t>(after);
         if (isDepot)  // then we need to decrease each following trip index
             nodes[after]->trip_--;
     }
@@ -242,6 +258,64 @@ bool Route::durationCostApplies(ProblemData const &data,
         || vehicleType.maxDrive != unbounded
         || vehicleType.hasBreakRule();
     // clang-format on
+}
+
+void Route::updateOpenShipments()
+{
+    openShipments_.resize(nodes.size());
+
+    size_t open = 0;
+    for (size_t idx = 0; idx != nodes.size(); ++idx)
+    {
+        auto const *partner = nodes[idx]->partner();
+        if (partner && partner->route() == this)
+        {
+            if (data.isShipmentPickup(nodes[idx]->client()))
+                open++;
+            else
+                open--;
+        }
+
+        openShipments_[idx] = open;
+    }
+}
+
+bool Route::isShipmentClosedSlow(size_t first, size_t last) const
+{
+    for (size_t idx = first; idx <= last; ++idx)
+    {
+        auto const *partner = nodes[idx]->partner();
+        if (!partner || !partner->route())
+            continue;
+
+        if (partner->route() != this || partner->idx() < first
+            || partner->idx() > last)
+            return false;
+    }
+
+    return true;
+}
+
+bool Route::keepsShipmentOrderSlow(size_t first,
+                                   size_t last,
+                                   size_t after) const
+{
+    for (size_t idx = first; idx <= last; ++idx)
+    {
+        auto const *partner = nodes[idx]->partner();
+        if (!partner || partner->route() != this)
+            continue;
+
+        auto const at = partner->idx();
+        if (first <= at && at <= last)
+            continue;
+
+        auto const isPickup = data.isShipmentPickup(nodes[idx]->client());
+        if (isPickup ? after >= at : after < at)
+            return false;
+    }
+
+    return true;
 }
 
 void Route::updateBreakLookups()
@@ -402,6 +476,65 @@ template <ClockQuantity Quantity> void Route::updateStretches()
     }
 }
 
+void Route::updateDurationSpans() const
+{
+    durSpansStale_ = false;
+
+    auto const &mat = data.durationMatrix(profile());
+    auto const size = nodes.size();
+
+    size_t levels = 0;
+    while ((size_t{2} << levels) <= size)
+        ++levels;
+
+    durSpans_.resize(levels);
+    for (size_t level = 0; level != levels; ++level)
+    {
+        auto const half = size_t{1} << level;
+        auto const &halves = level == 0 ? durAt : durSpans_[level - 1];
+        auto &spans = durSpans_[level];
+
+        spans.resize(size - 2 * half + 1);
+        for (size_t idx = 0; idx != spans.size(); ++idx)
+            spans[idx] = DurationSegment::merge(
+                mat(locAt<true>(idx + half - 1), locAt<true>(idx + half)),
+                halves[idx],
+                halves[idx + half]);
+    }
+}
+
+ex_vrp::DurationSegment Route::durationOver(size_t start, size_t end) const
+{
+    if (durSpansStale_)
+        updateDurationSpans();
+
+    auto const &mat = data.durationMatrix(profile());
+    auto const spanAt = [&](size_t idx, size_t width) -> DurationSegment const &
+    {
+        auto const level = std::bit_width(width) - 1;
+        return level == 0 ? durAt[idx] : durSpans_[level - 1][idx];
+    };
+
+    auto remaining = end - start + 1;
+    auto width = std::bit_floor(remaining);
+    auto merged = spanAt(start, width);
+    auto pos = start + width;
+    remaining -= width;
+
+    while (remaining != 0)
+    {
+        width = std::bit_floor(remaining);
+        merged = DurationSegment::merge(
+            mat(locAt<true>(pos - 1), locAt<true>(pos)),
+            merged,
+            spanAt(pos, width));
+        pos += width;
+        remaining -= width;
+    }
+
+    return merged;
+}
+
 ex_vrp::DurationSegment
 Route::SegmentBetween::durationWithBreaks(size_t profile,
                                           size_t vehicleType) const
@@ -416,6 +549,27 @@ Route::SegmentBetween::durationWithBreaks(size_t profile,
     auto const swapBreaks
         = otherType.breakDuration != route_.vehicleType_.breakDuration
           || otherType.restDuration != route_.vehicleType_.restDuration;
+
+    // Edges up to the first non-break node are skipped, as in distance(): the
+    // Proposal fold travels into the segment's first() before its leading
+    // breaks. That order is timing-neutral, since a break has no window.
+    auto const firstReal = route_.nextReal_[start];
+
+    // From the first real node on, the fold below is what the route's spans
+    // hold, as long as the breaks keep this route's durations.
+    if (profile == route_.profile() && !swapBreaks && firstReal < end
+        && end - firstReal >= MIN_SPANNED_NODES)
+    {
+        auto lead = route_.durAt[start];
+        for (size_t step = start; step != firstReal; ++step)
+            lead = DurationSegment::merge(0, lead, route_.durAt[step + 1]);
+
+        auto const into
+            = mat(route_.locs_[firstReal], route_.locs_[firstReal + 1]);
+        return DurationSegment::merge(
+            into, lead, route_.durationOver(firstReal + 1, end));
+    }
+
     DurationSegment const breakDS(
         otherType.breakDuration, 0, 0, std::numeric_limits<Duration>::max(), 0);
     DurationSegment const restDS(
@@ -431,11 +585,6 @@ Route::SegmentBetween::durationWithBreaks(size_t profile,
     };
 
     auto durSegment = at(start);
-
-    // Edges up to the first non-break node are skipped, as in distance(): the
-    // Proposal fold travels into the segment's first() before its leading
-    // breaks. That order is timing-neutral, since a break has no window.
-    auto const firstReal = route_.nextReal_[start];
 
     for (size_t step = start; step != end; ++step)
     {
@@ -484,6 +633,9 @@ void Route::update()
     hasBreaks_ = numBreaks_ > 0;
     if (data.hasBreaks())
         updateBreakLookups();
+
+    if (data.hasShipments())
+        updateOpenShipments();
 
     // Distance.
     auto const &distMat = data.distanceMatrix(profile());
@@ -591,6 +743,8 @@ void Route::update()
         }
     }
 
+    durSpansStale_ = true;
+
     auto const &durations = data.durationMatrix(profile());
 
     durBefore.resize(nodes.size());
@@ -645,10 +799,9 @@ void Route::update()
         loadAt[dim][nodes.size() - 1] = {};
 
         for (size_t idx = 1; idx != nodes.size() - 1; ++idx)
-            loadAt[dim][idx]
-                = nodes[idx]->isReloadDepot()
-                      ? LoadSegment{}
-                      : LoadSegment{data.location(visits[idx]), dim};
+            loadAt[dim][idx] = nodes[idx]->isReloadDepot()
+                                   ? LoadSegment{}
+                                   : LoadSegment{data, visits[idx], dim};
 
         loadBefore[dim].resize(nodes.size());
         loadBefore[dim][0] = loadAt[dim][0];

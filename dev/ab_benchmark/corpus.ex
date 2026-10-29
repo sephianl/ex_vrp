@@ -9,6 +9,10 @@ defmodule ExVrp.ABBenchmark.Corpus do
   The CI A/B builds the base solver under this harness; a base from before
   breaks has no break fields, so it declares no twins, and the comparison
   leaves them out instead of scoring them infeasible.
+
+  Shipments work the same way: the Li & Lim `:pdptw` instances and every
+  production instance's `:production_shipments` twin, whose loader pairs some
+  of its clients into shipments, exist only on a base that has shipments.
   """
 
   defmodule Entry do
@@ -48,9 +52,20 @@ defmodule ExVrp.ABBenchmark.Corpus do
     {"mtr_C201R0.5", "C201R0.5.vrp", :mtvrptwr, :dimacs}
   ]
 
+  @pdptw [
+    {"pdp_lrc206", "lrc206.vrp", :pdptw, :exact},
+    {"pdp_lr1_2_1", "lr1_2_1.vrp", :pdptw, :exact}
+  ]
+
   @spec entries() :: [Entry.t()]
   def entries do
-    literature_entries() ++ curated_entries() ++ production_entries() ++ production_break_entries(breaks_supported?())
+    shipments? = shipments_supported?()
+
+    literature_entries() ++
+      curated_entries() ++
+      pdptw_entries(shipments?) ++
+      production_entries() ++
+      production_break_entries(breaks_supported?()) ++ production_shipment_entries(shipments?)
   end
 
   @spec bks(String.t()) :: number() | nil
@@ -95,4 +110,22 @@ defmodule ExVrp.ABBenchmark.Corpus do
   end
 
   defp breaks_supported?, do: ExVrp.VehicleType |> struct() |> Map.has_key?(:break_duration)
+
+  defp pdptw_entries(false = _shipments_supported), do: []
+
+  defp pdptw_entries(true = _shipments_supported) do
+    for {id, file, variant, rf} <- @pdptw do
+      %Entry{id: id, variant: variant, kind: :vrplib, path: Path.join(@curated_dir, file), round_func: rf}
+    end
+  end
+
+  defp production_shipment_entries(false = _shipments_supported), do: []
+
+  defp production_shipment_entries(true = _shipments_supported) do
+    Enum.map(production_entries(), fn %Entry{id: "prod_" <> name} = entry ->
+      %{entry | id: "prodship_" <> name, variant: :production_shipments}
+    end)
+  end
+
+  defp shipments_supported?, do: ExVrp.Model |> struct() |> Map.has_key?(:shipments)
 end

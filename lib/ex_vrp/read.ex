@@ -155,22 +155,11 @@ defmodule ExVrp.Read do
 
   # Parse section data based on section type
   defp parse_section_data(:edge_weight, lines) do
-    # Parse matrix data (can be multi-row)
-    flat =
-      Enum.flat_map(lines, fn line ->
-        line
-        |> String.split()
-        |> Enum.map(&parse_number/1)
-      end)
-
-    size = trunc(:math.sqrt(length(flat)))
-
-    if size * size == length(flat) do
-      Enum.chunk_every(flat, size)
-    else
-      # Handle non-square (triangular, etc.) - for now assume square
-      [flat]
-    end
+    Enum.flat_map(lines, fn line ->
+      line
+      |> String.split()
+      |> Enum.map(&parse_number/1)
+    end)
   end
 
   defp parse_section_data(:node_coord, lines) do
@@ -221,6 +210,19 @@ defmodule ExVrp.Read do
       vehicle_idx = hd(parts)
       depots = tl(parts)
       {vehicle_idx, depots}
+    end)
+  end
+
+  # PICKUP_AND_DELIVERY_SECTION (LKH-3): node demand tw_early tw_late service
+  # pickup delivery. A pickup names its delivery and a delivery its pickup;
+  # the other is 0, as both are on the depot's row. Rows are read by position,
+  # as upstream does: some files number the depot's row 0.
+  defp parse_section_data(:pickup_and_delivery, lines) do
+    lines
+    |> Enum.with_index(1)
+    |> Enum.map(fn {line, idx} ->
+      [_node, demand, early, late, service, pickup, delivery] = line |> String.split() |> Enum.map(&parse_number/1)
+      {idx, %{demand: demand, tw: {early, late}, service: service, pickup: pickup, delivery: delivery}}
     end)
   end
 
@@ -316,7 +318,10 @@ defmodule ExVrp.Read do
       client_to_group: build_client_to_group_map(instance)
     }
 
-    model = add_clients(model, depot_indices, dimension, client_data)
+    model =
+      model
+      |> add_clients(depot_indices, dimension, client_data)
+      |> add_shipments(instance, num_depots, round_fn)
 
     vehicle_info = collect_vehicle_info(instance, num_clients, num_depots, dimension, depot_indices, round_fn)
     model = add_vehicle_types(model, vehicle_info, time_windows, depot_indices)
@@ -380,6 +385,18 @@ defmodule ExVrp.Read do
         required: prize == 0 and group_idx == nil,
         group: group_idx
       )
+    end)
+  end
+
+  # Each pickup row names its delivery; that pair is a shipment of the pickup's
+  # demand. Depots come first, so a node's client index is its location less
+  # the number of depots.
+  defp add_shipments(model, instance, num_depots, round_fn) do
+    instance
+    |> Map.get(:pickup_and_delivery, [])
+    |> Enum.filter(fn {_idx, row} -> row.delivery > 0 end)
+    |> Enum.reduce(model, fn {idx, row}, acc ->
+      Model.add_shipment(acc, idx - 1 - num_depots, row.delivery - 1 - num_depots, [round_fn.(row.demand)])
     end)
   end
 
@@ -569,9 +586,11 @@ defmodule ExVrp.Read do
   end
 
   defp build_distance_matrix("EXPLICIT", instance, _coords, dimension, round_fn) do
+    format = instance |> Map.get(:edge_weight_format, "FULL_MATRIX") |> to_string() |> String.upcase()
+
     instance
     |> Map.get(:edge_weight, [])
-    |> parse_edge_weights(dimension)
+    |> expand_edge_weights(format, dimension)
     |> apply_rounding(round_fn)
   end
 
@@ -587,8 +606,44 @@ defmodule ExVrp.Read do
     raise ArgumentError, "Unsupported edge weight type: #{other}"
   end
 
-  defp parse_edge_weights([[_head | _tail] | _rest] = matrix, _dimension), do: matrix
-  defp parse_edge_weights(flat_list, dimension), do: Enum.chunk_every(flat_list, dimension)
+  @triangular_edge_weight_formats ["LOWER_ROW", "LOWER_DIAG_ROW", "UPPER_ROW", "UPPER_DIAG_ROW"]
+
+  defp expand_edge_weights(weights, "FULL_MATRIX", dimension), do: Enum.chunk_every(weights, dimension)
+
+  defp expand_edge_weights(weights, format, dimension) when format in @triangular_edge_weight_formats do
+    rows =
+      weights
+      |> split_into_rows(triangle_row_lengths(format, dimension))
+      |> Enum.map(&List.to_tuple/1)
+      |> List.to_tuple()
+
+    for i <- 0..(dimension - 1) do
+      for j <- 0..(dimension - 1), do: triangle_weight(format, rows, i, j)
+    end
+  end
+
+  defp expand_edge_weights(_weights, format, _dimension) do
+    raise ArgumentError, "Unsupported edge weight format: #{format}"
+  end
+
+  defp triangle_row_lengths("LOWER_ROW", dimension), do: Enum.map(0..(dimension - 1), & &1)
+  defp triangle_row_lengths("LOWER_DIAG_ROW", dimension), do: Enum.map(0..(dimension - 1), &(&1 + 1))
+  defp triangle_row_lengths("UPPER_ROW", dimension), do: Enum.map(0..(dimension - 1), &(dimension - 1 - &1))
+  defp triangle_row_lengths("UPPER_DIAG_ROW", dimension), do: Enum.map(0..(dimension - 1), &(dimension - &1))
+
+  defp split_into_rows(weights, row_lengths) do
+    {rows, _rest} = Enum.map_reduce(row_lengths, weights, &Enum.split(&2, &1))
+    rows
+  end
+
+  defp triangle_weight(format, _rows, i, i) when format in ["LOWER_ROW", "UPPER_ROW"], do: 0
+
+  defp triangle_weight(format, rows, i, j) when format in ["LOWER_ROW", "LOWER_DIAG_ROW"] do
+    rows |> elem(max(i, j)) |> elem(min(i, j))
+  end
+
+  defp triangle_weight("UPPER_ROW", rows, i, j), do: rows |> elem(min(i, j)) |> elem(abs(i - j) - 1)
+  defp triangle_weight("UPPER_DIAG_ROW", rows, i, j), do: rows |> elem(min(i, j)) |> elem(abs(i - j))
 
   defp apply_rounding(matrix, round_fn) do
     Enum.map(matrix, fn row -> Enum.map(row, round_fn) end)
@@ -602,16 +657,14 @@ defmodule ExVrp.Read do
 
   # Build time windows map
   defp build_time_windows(instance, round_fn) do
-    case Map.get(instance, :time_window) do
-      nil ->
-        %{}
-
-      windows ->
-        Map.new(windows, fn {idx, {early, late}} ->
-          {idx - 1, {round_fn.(early), round_fn.(late)}}
-        end)
-    end
+    instance
+    |> raw_time_windows()
+    |> Map.new(fn {idx, {early, late}} -> {idx - 1, {round_fn.(early), round_fn.(late)}} end)
   end
+
+  defp raw_time_windows(%{time_window: windows}), do: windows
+  defp raw_time_windows(%{pickup_and_delivery: rows}), do: Enum.map(rows, fn {idx, row} -> {idx, row.tw} end)
+  defp raw_time_windows(_instance), do: []
 
   # Build demands map (location_idx -> [demand values])
   defp build_demands(instance, round_fn) do
@@ -642,6 +695,11 @@ defmodule ExVrp.Read do
   end
 
   # Build service times map
+  defp build_service_times(%{pickup_and_delivery: rows} = instance, _dimension, round_fn)
+       when not is_map_key(instance, :service_time) do
+    Map.new(rows, fn {idx, row} -> {idx - 1, round_fn.(row.service)} end)
+  end
+
   defp build_service_times(instance, dimension, round_fn) do
     case Map.get(instance, :service_time) do
       nil ->

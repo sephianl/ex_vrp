@@ -190,6 +190,9 @@ Solution::Solution(ProblemData const &data, RandomNumberGenerator &rng)
         if (clientData.isBreak)  // placed by local search, never at random
             continue;
 
+        if (data.isShipmentDelivery(idx))  // follows its pickup, see below
+            continue;
+
         if (clientData.required || rng.rand() < 0.5)
             clients.push_back(idx);
     }
@@ -211,6 +214,20 @@ Solution::Solution(ProblemData const &data, RandomNumberGenerator &rng)
     std::vector<std::vector<Client>> routes(numRoutes);
     for (size_t idx = 0; idx != numClients; ++idx)
         routes[idx / perRoute].push_back(clients[idx]);
+
+    // A delivery goes at the end of its pickup's route, so after it, on the
+    // route's only trip.
+    for (auto &route : routes)
+        for (size_t idx = 0, size = route.size(); idx != size; ++idx)
+        {
+            if (!data.isShipmentPickup(route[idx]))
+                continue;
+
+            auto const delivery = data.shipmentPartner(route[idx]);
+            ProblemData::Client const &deliveryData = data.location(delivery);
+            if (deliveryData.required || rng.rand() < 0.5)
+                route.push_back(delivery);
+        }
 
     std::vector<size_t> vehTypes;
     vehTypes.reserve(data.numVehicles());

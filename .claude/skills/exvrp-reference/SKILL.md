@@ -74,7 +74,8 @@ reproduce that cancel.
 | Soft zone cost             | `Model.set_penalties/2` per (profile, location)                          | objective (penalty channel)                            |
 | Hard zone ban              | `Model.set_forbidden/2` per profile                                      | pruned in search                                       |
 | Keep client on its vehicle | `Model.set_vehicle_locks/2` per location → vehicle type                  | objective (penalty channel)                            |
-| Fewer vehicles             | `MinimiseFleet.minimise/3` — single vehicle type, no optional clients    | outer binary search                                    |
+| Fewer vehicles             | VehicleType `fixed_cost`, charged once per vehicle used                  | objective                                              |
+| Pickup then delivery       | `Model.add_shipment/4` ties two clients                                  | structure (moves that break it are never made)         |
 
 Locations carry **no coordinates**: distance matrices (one per profile) are mandatory;
 `Model.set_euclidean_matrices/2` derives them explicitly in location order (depots first).
@@ -147,6 +148,40 @@ and node operators — subtly, `Exchange<2,*>` carries `n(U)` and `SwapTails` wh
 gate reads `spanU()`/`spanV()`/`affectsEntireTail()`. **Any new move operator must be gated.**
 `Solution.num_forbidden_visits/1` is the backstop; it is deliberately not part of `feasible?/1`
 (no penalty gradient, so the search could not repair it).
+
+### Shipments (`add_shipment/4`)
+
+Two ordinary clients plus a pairing (`ProblemData::Shipment`), not upstream's separate index
+space: every client-keyed feature (penalties, locks, forbidden, same-vehicle groups, neighbours)
+applies to each half unchanged. The invariant: **a routed delivery has its pickup earlier on the
+same route and trip**. A pickup alone is valid; its goods ride back to the depot.
+
+- **Load needs no new segment type.** `ProblemData::shipmentLoad` is +amount at the pickup and
+  −amount at the delivery, added to the client's pickup by the `LoadSegment(data, client, dim)`
+  constructor, which every client segment goes through. Vidal's merge is exact for a negative
+  pickup. It is why a shipment cannot cross a reload: `finalise` drops the amount on board.
+- **Search side.** Each `Route::Node` of a half knows its `partner()` (set by `search::Solution`).
+  `Route::isShipmentClosed` (a moved segment takes both halves or neither),
+  `Route::keepsShipmentOrder` (a same-route relocate keeps the pickup first: that is how a half
+  moves alone) and `Route::carriesShipmentAfter` (no tail swap or reload depot cuts a pair) gate
+  `Exchange`, `SwapTails`, `RelocateWithDepot` and the multi-trip passes. Removal goes through
+  `Route::removeWithDependents`, and `removeCost` prices a pickup with its delivery.
+  `search::Solution::insert` inserts a delivery after its pickup, or the pair together; an
+  unrouted pickup whose delivery is unrouted too tries the pair first (`insertShipment`) and goes
+  alone only if that does not improve. `RelocateShipment` moves a pair across routes. Both try the
+  delivery directly after the pickup or after one of the delivery's own granular neighbours, not
+  at every later position: the full scan cost ~30% of a production iteration.
+- **Full days.** On an oversubscribed prize-collecting day nothing inserts profitably at a local
+  optimum, and a delivery can only go after its pickup on that pickup's route, so it loses to
+  clients that fit anywhere. `LocalSearch::insertAfterPickupEjecting` lets an unrouted delivery in
+  at its cheapest place after its pickup by ejecting the optional client on that route whose
+  removal makes room best (`insertEjectingCost`). `inplaceCost` prices a shipment half like any
+  client, except a delivery away from its pickup's trip or a pickup with its delivery on board.
+  `prodship_seed_410081_hang` is the instance that shows it (8 → 10–13 of 57 deliveries).
+- **Any new move operator must keep pairs together**, like the forbidden-location gate above.
+  Debug builds assert `LocalSearch::shipmentsIntact` after every applied move.
+- **Crossing a reload is the follow-up** (ZELO-4290): drop-and-reload at a depot, priced as a
+  depot delivery on the delivery's trip.
 
 ### Validation
 
@@ -228,6 +263,7 @@ Most test files are named for what they cover. The non-obvious ones:
 | `same_vehicle_group_pricing_test.exs`               | What a split group costs the search                   |
 | `penalty_channel_test.exs`, `vehicle_lock_test.exs` | Channel terms: validation, solution cost, move deltas |
 | `is_allowed_test.exs`                               | Forbidden-location pruning and operator gating        |
+| `shipment_property_test.exs`                        | Shipment precedence and load, from first principles   |
 | `oscillation_prevention_test.exs`                   | Prize-collecting insert/remove oscillation            |
 | `primitives_test.exs`, `pyvrp_api_test.exs`         | Exact parity with PyVRP's own tests/API               |
 | `production_benchmark_test.exs`                     | Real-planning corpus (tagged; excluded by default)    |
@@ -247,3 +283,14 @@ Benchmark caveats:
   more than 1% more. Valgrind cannot run the BEAM JIT, so solves run on the interpreter-only Erlang
   of `dev/ab_benchmark/interpreter_erlang.nix`. Iterations within a wall-clock budget are not a
   speed measure: unchanged code swung −8%…+22% per instance on hosted runners.
+- Literature quality is `dev/literature/` behind `mix bench.lit.fetch`/`bench.lit.run`/`bench.lit.report`:
+  gaps on PyVRP/Instances (X, HFVRP, MTVRPTWR, MDVRPTW) and CVRPLib (Solomon, Homberger–Gehring
+  200, DIMACS ORTEC/Loggi). PyVRP is compared through its *published* per-version averages
+  (`BenchmarkGroup` holds them), not by running it, so a run must follow PyVRP's protocol:
+  one core per solve, its per-group budgets scaled by the machine's single-thread PassMark, and
+  budget scale 1; anything else the report flags as not comparable. The default `Sample` is a
+  stratified subset whose mean estimates the full-set mean; the report carries its standard error
+  into the verdict. Fetch evaluates every `.sol` through our own cost function and fails on any
+  mismatch, which is what makes the gaps trustworthy across the sources' different scalings.
+  Seeds `1..K` at one start each equal `num_starts: K` (independent starts, best kept), so the
+  report's best-of-K is the multi-start result. The fetched data is gitignored; fetch recreates it.

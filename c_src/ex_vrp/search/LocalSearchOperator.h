@@ -82,6 +82,19 @@ public:
     virtual bool affectsEntireTail() const { return false; }
 
     /**
+     * Returns whether applying the move last evaluated for U and V keeps every
+     * routed shipment delivery after its pickup on one trip. LocalSearch asks
+     * only about improving moves on problems with shipments, so that no other
+     * evaluation pays for the check. Operators that cannot split a shipment
+     * keep the default.
+     */
+    virtual bool keepsShipments([[maybe_unused]] Arg *U,
+                                [[maybe_unused]] Arg *V) const
+    {
+        return true;
+    }
+
+    /**
      * Number of consecutive nodes this operator moves off U's route, starting
      * at U itself. Zero means U's route keeps all its nodes. LocalSearch uses
      * this to know which nodes cross to the other route, and thus which ones

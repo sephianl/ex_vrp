@@ -14,11 +14,8 @@ defmodule ExVrp.ABBenchmark.Runner do
   """
 
   alias ExVrp.ABBenchmark.Corpus
-  alias ExVrp.ABBenchmark.Instance
   alias ExVrp.ABBenchmark.Loader
-  alias ExVrp.PenaltyManager
-  alias ExVrp.Solution
-  alias ExVrp.StoppingCriteria
+  alias ExVrp.ABBenchmark.Solve
 
   require Logger
 
@@ -92,7 +89,7 @@ defmodule ExVrp.ABBenchmark.Runner do
   defp solve_seeds(instance, seeds, budget_s) do
     seeds
     |> Task.async_stream(
-      fn seed -> {seed, solve_once(instance, budget_s, seed)} end,
+      fn seed -> {seed, Solve.solve(instance, budget_s, seed, nil)} end,
       max_concurrency: length(seeds),
       timeout: round(budget_s * 1000) + 60_000,
       on_timeout: :kill_task,
@@ -104,69 +101,20 @@ defmodule ExVrp.ABBenchmark.Runner do
   end
 
   defp stream_result({:ok, {seed, data}}), do: {seed, data}
-  defp stream_result({:exit, _reason}), do: {:__timeout__, infeasible_record(0)}
+  defp stream_result({:exit, _reason}), do: {:__timeout__, Solve.infeasible_record(0)}
 
   defp ensure_all_seeds(map, seeds) do
     present = map |> Map.keys() |> Enum.reject(&(&1 == "__timeout__"))
     missing = seeds |> Enum.map(&to_string/1) |> Enum.reject(&(&1 in present))
 
-    timeouts = for s <- missing, into: %{}, do: {s, infeasible_record(0)}
+    timeouts = for s <- missing, into: %{}, do: {s, Solve.infeasible_record(0)}
 
     map
     |> Map.delete("__timeout__")
     |> Map.merge(timeouts)
   end
 
-  @dialyzer {:nowarn_function, solve_once: 3}
-  defp solve_once(%Instance{model: model, penalty_params: penalty_params}, budget_s, seed) do
-    {elapsed_us, outcome} =
-      :timer.tc(fn ->
-        try do
-          {:ok, result} =
-            ExVrp.solve(model,
-              stop: StoppingCriteria.max_runtime(budget_s),
-              seed: seed,
-              num_starts: 1,
-              penalty_params: penalty_params
-            )
-
-          {:ok, result}
-        rescue
-          e in [ArgumentError, RuntimeError, MatchError, ErlangError] ->
-            {:error, Exception.message(e)}
-        end
-      end)
-
-    case outcome do
-      {:ok, result} ->
-        best = result.best
-
-        %{
-          "objective" => feasible_objective(best),
-          "distance" => best.distance,
-          "feasible" => best.is_feasible,
-          "num_clients" => best.num_clients,
-          "time_ms" => div(elapsed_us, 1000),
-          "iterations" => Map.get(result, :num_iterations, 0)
-        }
-
-      {:error, _msg} ->
-        infeasible_record(div(elapsed_us, 1000))
-    end
-  end
-
-  defp feasible_objective(%{is_feasible: false}), do: nil
-
-  defp feasible_objective(solution) do
-    pm = PenaltyManager.init_from(solution.problem_data)
-    {:ok, cost_evaluator} = PenaltyManager.max_cost_evaluator(pm)
-    Solution.cost(solution, cost_evaluator)
-  end
-
-  defp failed_seeds(seeds), do: for(s <- seeds, into: %{}, do: {to_string(s), infeasible_record(0)})
-
-  defp infeasible_record(time_ms),
-    do: %{"objective" => nil, "feasible" => false, "time_ms" => time_ms, "iterations" => 0}
+  defp failed_seeds(seeds), do: for(s <- seeds, into: %{}, do: {to_string(s), Solve.infeasible_record(0)})
 
   defp instance_record(entry, seed_results) do
     feasible_objs = for {_s, m} <- seed_results, m["feasible"], do: m["objective"]

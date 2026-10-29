@@ -1,7 +1,7 @@
 defmodule ExVrp.MixProject do
   use Mix.Project
 
-  @version "0.18.1"
+  @version "0.19.0"
   @github_url "https://github.com/sephianl/ex_vrp"
 
   def project do
@@ -43,7 +43,7 @@ defmodule ExVrp.MixProject do
 
       # Dialyzer
       dialyzer: [
-        plt_add_apps: [:mix]
+        plt_add_apps: [:mix, :inets, :ssl, :public_key]
       ],
       aliases: aliases()
     ]
@@ -149,6 +149,7 @@ defmodule ExVrp.MixProject do
       source_url: @github_url,
       source_ref: "v#{@version}",
       filter_modules: &published?/2,
+      skip_undefined_reference_warnings_on: ["CHANGELOG.md"],
       groups_for_modules: [
         "Problem Definition": [
           ExVrp.Model,
@@ -156,7 +157,10 @@ defmodule ExVrp.MixProject do
           ExVrp.Depot,
           ExVrp.VehicleType,
           ExVrp.ClientGroup,
-          ExVrp.SameVehicleGroup
+          ExVrp.SameVehicleGroup,
+          ExVrp.Shipment,
+          ExVrp.Matrix,
+          ExVrp.Read
         ],
         Solving: [
           ExVrp.Solver,
@@ -164,19 +168,37 @@ defmodule ExVrp.MixProject do
           ExVrp.PenaltyManager,
           ExVrp.PenaltyManager.Params,
           ExVrp.IteratedLocalSearch,
-          ExVrp.IteratedLocalSearch.Params
+          ExVrp.IteratedLocalSearch.Params,
+          ExVrp.PerturbationManager,
+          ExVrp.Neighbourhood,
+          ExVrp.NeighbourhoodParams
         ],
         Results: [
           ExVrp.Solution,
           ExVrp.Route,
+          ExVrp.Trip,
           ExVrp.ScheduledVisit,
-          ExVrp.IteratedLocalSearch.Result
+          ExVrp.IteratedLocalSearch.Result,
+          ExVrp.Statistics,
+          ExVrp.SolveError
+        ],
+        "Building Blocks": [
+          ExVrp.Breaks,
+          ExVrp.DurationSegment,
+          ExVrp.LoadSegment,
+          ExVrp.DynamicBitset,
+          ExVrp.RingBuffer,
+          ExVrp.RNG
         ]
       ]
     ]
   end
 
   defp published?(module, _metadata) do
-    not String.starts_with?(inspect(module), "ExVrp.ABBenchmark")
+    not String.starts_with?(inspect(module), [
+      "ExVrp.ABBenchmark",
+      "ExVrp.Literature",
+      "Mix.Tasks.Bench"
+    ])
   end
 end

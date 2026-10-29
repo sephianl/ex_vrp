@@ -11,6 +11,7 @@
 #include <array>
 #include <cassert>
 #include <concepts>
+#include <cstdint>
 #include <iosfwd>
 #include <utility>
 
@@ -211,9 +212,12 @@ public:
         Distance tripExcessDistance() const;
 
         /**
-         * Returns the total location penalty of the proposed route.
+         * Returns the total location penalty of the proposed route. A sum of
+         * a few prefix lookups, forced inline with its fold: with the shipment
+         * operators pricing it too, GCC moved it out of line, at about 1% of
+         * every evaluation.
          */
-        Cost penalty() const;
+        [[gnu::always_inline]] inline Cost penalty() const;
 
         /**
          * Returns the (duration cost, time warp) attributes of the proposed
@@ -253,13 +257,31 @@ public:
     {
         friend class Route;
 
-        size_t loc_;    // Location represented by this node
-        size_t idx_;    // Position in the route
-        size_t trip_;   // Trip index.
-        Route *route_;  // Indicates membership of a route, if any
+        // idx_ and trip_ are 32 bits, which no route outgrows, so that with
+        // partner_ a node still takes 32 bytes: Solution::nodes is indexed by
+        // location on every hot path, and a 40-byte stride costs a multiply.
+        size_t loc_;     // Location represented by this node
+        uint32_t idx_;   // Position in the route
+        uint32_t trip_;  // Trip index.
+        Route *route_;   // Indicates membership of a route, if any
+
+        // The other half of this node's shipment, set once by
+        // search::Solution; nullptr for a node outside any shipment.
+        Node *partner_ = nullptr;
 
     public:
         Node(size_t loc);
+
+        /**
+         * Returns the other half of this node's shipment, or ``nullptr`` if
+         * the node is in no shipment.
+         */
+        [[nodiscard]] inline Node *partner() const;
+
+        /**
+         * Pairs this node with the other half of its shipment.
+         */
+        void pairWith(Node *partner);
 
         /**
          * Returns the location represented by this node.
@@ -580,6 +602,16 @@ private:
     // A real node of this route, as both clocks count it.
     [[nodiscard]] inline BreakClocks nodeClocks(size_t idx) const;
 
+    // The duration of nodes [start, end] on this route's own profile, merged
+    // from durSpans_: what folding them node by node gives, in at most a
+    // logarithmic number of merges. Breaks travel as locAt() places them.
+    [[nodiscard]] DurationSegment durationOver(size_t start, size_t end) const;
+
+    // Below this many nodes, folding is as cheap as combining spans.
+    static constexpr size_t MIN_SPANNED_NODES = 8;
+
+    void updateDurationSpans() const;
+
     // Folds the clocks over nodes [start, end] from scratch, for another
     // profile or vehicle type, or for checking the prefix structures.
     [[nodiscard]] inline BreakClocks foldClocks(size_t start,
@@ -602,6 +634,13 @@ private:
                                             size_t end,
                                             size_t profile,
                                             BreakLimits limits) const;
+
+    // Continues `clocks`, which end at the non-break node `pos`, over nodes
+    // (pos, end] on this route's own profile and vehicle type: what foldOn()
+    // gives, merging only at the reset legs and adding the stretches between
+    // them from the prefix structures.
+    [[nodiscard]] inline BreakClocks
+    walkClocksBetween(BreakClocks clocks, size_t pos, size_t end) const;
 
     // Continues `clocks`, which end at the non-break node `pos`, to the end
     // depot over this route's own profile and vehicle type: through each reset
@@ -703,6 +742,15 @@ private:
     std::vector<DurationSegment> durAfter;   // Dur of node -> end (incl.)
     std::vector<DurationSegment> durBefore;  // Dur of start -> node (incl.)
 
+    // durSpans_[k][idx] merges the 2^(k + 1) nodes from idx onwards on this
+    // route's own profile. Most segments an operator builds are a node or two,
+    // but the few long ones, the middle of an intra-route move, would
+    // otherwise take most of the folding work. They are built on the first
+    // lookup after an update, so a route no long segment reads, or an
+    // instance that never prices duration, does not pay for them.
+    mutable std::vector<std::vector<DurationSegment>> durSpans_;
+    mutable bool durSpansStale_ = true;
+
     // Break lookups and clocks follow every member a move evaluation reads,
     // so on routes without breaks they stay off the cache lines it touches.
 
@@ -751,6 +799,18 @@ private:
     //   [1, r).
     // - need: need[r] is the breaks those same stretches lack.
     std::array<ClockPrefix, 2> clocks_;  // indexed by ClockQuantity
+
+    // openShipments_[idx] counts the shipments on board between nodes idx and
+    // idx + 1: picked up at or before idx and delivered after it on this
+    // route. Built only when the problem has shipments.
+    std::vector<size_t> openShipments_;
+
+    void updateOpenShipments();
+
+    [[nodiscard]] bool isShipmentClosedSlow(size_t first, size_t last) const;
+
+    [[nodiscard]] bool
+    keepsShipmentOrderSlow(size_t first, size_t last, size_t after) const;
 
 #ifndef NDEBUG
     // When debug assertions are enabled, we use this flag to check whether
@@ -1046,6 +1106,30 @@ public:
     [[nodiscard]] inline size_t numBreaks() const;
 
     /**
+     * Whether goods of a shipment are on board between the node at ``idx`` and
+     * the next one: its pickup is at or before ``idx``, its delivery after.
+     * Cutting the route there, by a reload depot or a tail swap, would split
+     * the shipment.
+     */
+    [[nodiscard]] inline bool carriesShipmentAfter(size_t idx) const;
+
+    /**
+     * Whether nodes ``[first, last]`` can move together without splitting a
+     * shipment: every node in it whose partner is on a route has that partner
+     * in it too. Always true without shipments.
+     */
+    [[nodiscard]] inline bool isShipmentClosed(size_t first, size_t last) const;
+
+    /**
+     * Whether nodes ``[first, last]`` can move to directly after the node at
+     * ``after``, on this route and trip, with every pickup still before its
+     * delivery. Halves whose partner moves along always are. Always true
+     * without shipments.
+     */
+    [[nodiscard]] inline bool
+    keepsShipmentOrder(size_t first, size_t last, size_t after) const;
+
+    /**
      * Returns the number of start, end, and reload depots in this route.
      */
     [[nodiscard]] inline size_t numDepots() const;
@@ -1121,6 +1205,14 @@ public:
     void remove(size_t idx);
 
     /**
+     * Removes the node at ``idx``, and with it the delivery of its shipment if
+     * the node is a pickup whose delivery is on this route: a delivery is
+     * never visited without its pickup. Use this rather than remove() for any
+     * client that may be a pickup.
+     */
+    void removeWithDependents(size_t idx);
+
+    /**
      * Swaps the given nodes.
      */
     static void swap(Node *first, Node *second);
@@ -1169,6 +1261,8 @@ inline Route::Node const *n(Route::Node const *node)
 }
 
 size_t Route::Node::client() const { return loc_; }
+
+Route::Node *Route::Node::partner() const { return partner_; }
 
 size_t Route::Node::idx() const { return idx_; }
 
@@ -1583,6 +1677,12 @@ DurationSegment Route::SegmentBetween::duration(size_t profile,
     if (WithBreaks && route_.hasBreaks_)
         return durationWithBreaks(profile, vehicleType);
 
+    // On a route with breaks this fold travels to the breaks' own locations,
+    // which the spans do not.
+    if (!route_.hasBreaks_ && profile == route_.profile()
+        && end - start + 1 >= MIN_SPANNED_NODES)
+        return route_.durationOver(start, end);
+
     auto durSegment = route_.durAt[start];
     for (size_t step = start; step != end; ++step)
         durSegment = DurationSegment::merge(
@@ -1828,7 +1928,60 @@ BreakClocks Route::extendFold(BreakClocks const &clocks,
     auto arrival = nodeClocks(firstReal);
     arrival.addLeadRun(firstReal - start);
     auto const joined = BreakClocks::merge(clocks, edge, arrival, limits);
+
+    // The prefix structures hold this route's own profile and limits, and
+    // exist only under its break rule.
+    auto const ownLimits = vehicleType_.breakLimits();
+    if (profile == this->profile() && vehicleType_.hasBreakRule()
+        && limits.drive == ownLimits.drive && limits.work == ownLimits.work)
+        return walkClocksBetween(joined, firstReal, end);
+
     return foldOn(joined, firstReal, end, profile, limits);
+}
+
+BreakClocks
+Route::walkClocksBetween(BreakClocks clocks, size_t pos, size_t end) const
+{
+    auto const limits = vehicleType_.breakLimits();
+    auto const &drive = clockPrefix<ClockQuantity::Drive>();
+    auto const &work = clockPrefix<ClockQuantity::Work>();
+    auto const numResets = this->numResets();
+
+    auto const extend = [](DriveClock &clock, Duration quantity)
+    {
+        clock.tail += quantity;
+        if (clock.resets == 0)
+            clock.head += quantity;
+    };
+
+    auto r = stretchOf_[pos] + 1;
+    for (; r <= numResets && resetBounds_[r] <= end; ++r)
+    {
+        // As in walkClocksAfter(): the leg leaves the non-break node before
+        // its breaks, and its travel is the last edge.
+        auto const idx = resetBounds_[r];
+        auto const legStart = idx - legBreaks_[r] - 1;
+        auto const arrival = nodeClocks(idx);
+        auto const edge
+            = drive.cum[idx] - drive.cum[idx - 1] - arrival.drive.head;
+
+        extend(clocks.drive, drive.cum[legStart] - drive.cum[pos]);
+        extend(clocks.work, work.cum[legStart] - work.cum[pos]);
+        clocks.addTrailRun(legBreaks_[r]);
+        clocks = BreakClocks::merge(clocks, edge, arrival, limits);
+        pos = idx;
+    }
+
+    // The next reset leg ends past the segment, so the segment ends inside
+    // it: on its real nodes, or on breaks waiting for the leg's travel.
+    auto const lastReal
+        = legBreaks_[r] > 0 ? std::min(end, resetBounds_[r] - legBreaks_[r] - 1)
+                            : end;
+
+    extend(clocks.drive, drive.cum[lastReal] - drive.cum[pos]);
+    extend(clocks.work, work.cum[lastReal] - work.cum[pos]);
+    clocks.addTrailRun(end - lastReal);
+    return clocks;
 }
 
 BreakClocks Route::foldOn(BreakClocks clocks,
@@ -1987,6 +2140,22 @@ size_t Route::size() const { return nodes.size(); }
 size_t Route::numClients() const { return size() - numDepots() - numBreaks_; }
 
 size_t Route::numBreaks() const { return numBreaks_; }
+
+bool Route::carriesShipmentAfter(size_t idx) const
+{
+    assert(!dirty);
+    return data.hasShipments() && openShipments_[idx] > 0;
+}
+
+bool Route::isShipmentClosed(size_t first, size_t last) const
+{
+    return !data.hasShipments() || isShipmentClosedSlow(first, last);
+}
+
+bool Route::keepsShipmentOrder(size_t first, size_t last, size_t after) const
+{
+    return !data.hasShipments() || keepsShipmentOrderSlow(first, last, after);
+}
 
 size_t Route::numDepots() const { return depots_.size(); }
 
@@ -2224,7 +2393,7 @@ Cost Route::Proposal<Segments...>::penalty() const
 
     // Penalties and locks are node-additive, so unlike distance there is no
     // cross-edge term between consecutive segments and this is a plain fold.
-    auto const fn = [&](auto &&...segments)
+    auto const fn = [&](auto &&...segments) __attribute__((always_inline))
     { return (segments.penalty(profile, vehicleType) + ...); };
 
     return std::apply(fn, segments_);

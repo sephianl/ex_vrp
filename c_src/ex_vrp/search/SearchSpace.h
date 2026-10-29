@@ -80,8 +80,9 @@ public:
     /**
      * Convenient overload for route nodes. Since this is typically used during
      * insert and removals, this method marks the given node and its direct
-     * client neighbours as promising. The node must currently be in a route.
-     * Does not mark depots.
+     * client neighbours as promising, and the other half of its shipment, if
+     * that is routed. The node must currently be in a route. Does not mark
+     * depots.
      */
     void markPromising(Route::Node const *node);
 

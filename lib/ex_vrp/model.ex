@@ -68,6 +68,17 @@ defmodule ExVrp.Model do
       [c1, c2] = model.clients
       model = ExVrp.Model.add_same_vehicle_group(model, [c1, c2])
 
+  ## Shipments
+
+  Pick goods up at one client and drop them off at another, later on the same
+  trip (see `ExVrp.Shipment`):
+
+      model =
+        model
+        |> ExVrp.Model.add_client(tw_early: 0, tw_late: 3_600)
+        |> ExVrp.Model.add_client(tw_early: 7_200, tw_late: 10_800)
+        |> ExVrp.Model.add_shipment(0, 1, [25])
+
   ## Validation
 
   Models are validated automatically before solving. You can also validate
@@ -86,6 +97,7 @@ defmodule ExVrp.Model do
   alias ExVrp.Depot
   alias ExVrp.Matrix
   alias ExVrp.SameVehicleGroup
+  alias ExVrp.Shipment
   alias ExVrp.VehicleType
 
   @type profile :: %{
@@ -99,6 +111,7 @@ defmodule ExVrp.Model do
           vehicle_types: [VehicleType.t()],
           client_groups: [ClientGroup.t()],
           same_vehicle_groups: [SameVehicleGroup.t()],
+          shipments: [Shipment.t()],
           distance_matrices: [Matrix.t()],
           duration_matrices: [Matrix.t()],
           profiles: [profile()],
@@ -112,6 +125,7 @@ defmodule ExVrp.Model do
             vehicle_types: [],
             client_groups: [],
             same_vehicle_groups: [],
+            shipments: [],
             distance_matrices: [],
             duration_matrices: [],
             profiles: [],
@@ -237,7 +251,13 @@ defmodule ExVrp.Model do
   """
   @spec add_depot(t(), keyword()) :: t()
   def add_depot(
-        %__MODULE__{depots: depots, clients: clients, client_groups: groups, same_vehicle_groups: svg} = model,
+        %__MODULE__{
+          depots: depots,
+          clients: clients,
+          client_groups: groups,
+          same_vehicle_groups: svg,
+          shipments: shipments
+        } = model,
         opts
       ) do
     depot = Depot.new(opts)
@@ -258,7 +278,9 @@ defmodule ExVrp.Model do
         %{group | clients: new_clients}
       end)
 
-    %{model | depots: new_depots, client_groups: new_groups, same_vehicle_groups: new_svg}
+    new_shipments = Enum.map(shipments, &%{&1 | pickup: &1.pickup + 1, delivery: &1.delivery + 1})
+
+    %{model | depots: new_depots, client_groups: new_groups, same_vehicle_groups: new_svg, shipments: new_shipments}
   end
 
   defp recalculate_group_indices(groups, clients, num_depots) do
@@ -375,6 +397,44 @@ defmodule ExVrp.Model do
 
     group = %SameVehicleGroup{clients: client_indices, name: name}
     %{model | same_vehicle_groups: model.same_vehicle_groups ++ [group]}
+  end
+
+  @doc """
+  Ties two clients into a shipment: goods collected at `pickup` and dropped
+  off at `delivery`, taking up `amount` (one entry per load dimension) in
+  between. See `ExVrp.Shipment` for what the solver guarantees.
+
+  `pickup` and `delivery` are `Client` structs or zero-based client indices,
+  as for `add_same_vehicle_group/3`, and the same advice holds: prefer
+  indices. Each keeps its own prize and `required` flag; a required delivery
+  needs a required pickup.
+
+  ## Example
+
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_client(tw_late: 3_600)
+        |> Model.add_client(tw_early: 7_200)
+        |> Model.add_vehicle_type(num_available: 1, capacity: [100])
+        |> Model.add_shipment(0, 1, [25])
+
+  ## Raises
+
+  - `ArgumentError` if a client given as a struct is not in the model
+  """
+  @spec add_shipment(
+          t(),
+          Client.t() | non_neg_integer(),
+          Client.t() | non_neg_integer(),
+          [non_neg_integer()]
+        ) :: t()
+  def add_shipment(%__MODULE__{} = model, pickup, delivery, amount) do
+    num_depots = length(model.depots)
+    [pickup_idx, delivery_idx] = resolve_group_indices([pickup, delivery], model.clients)
+
+    shipment = %Shipment{pickup: num_depots + pickup_idx, delivery: num_depots + delivery_idx, amount: amount}
+    %{model | shipments: model.shipments ++ [shipment]}
   end
 
   defp resolve_group_indices([first | _rest_of_clients] = clients, _model_clients) when is_integer(first), do: clients
@@ -646,6 +706,7 @@ defmodule ExVrp.Model do
       |> validate_profiles(model)
       |> validate_client_groups(model)
       |> validate_same_vehicle_groups(model)
+      |> Shipment.validate(model)
       |> validate_penalties(model)
       |> validate_vehicle_locks(model)
       |> validate_forbidden(model)

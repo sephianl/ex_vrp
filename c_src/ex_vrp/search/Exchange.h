@@ -52,6 +52,11 @@ public:
 
     void apply(Route::Node *U, Route::Node *V) const override;
 
+    // Within a route, a relocated segment may leave its partners behind as
+    // long as every pickup stays first: that is how a pickup or delivery
+    // moves on its own. Otherwise moved segments take both halves along.
+    bool keepsShipments(Route::Node *U, Route::Node *V) const override;
+
     size_t spanU() const override { return N; }
 
     size_t spanV() const override { return M; }
@@ -84,6 +89,25 @@ bool Exchange<N, M>::adjacent(Route::Node *U, Route::Node *V) const
 {
     return U->route() == V->route()
            && (U->idx() + N == V->idx() || V->idx() + M == U->idx());
+}
+
+template <size_t N, size_t M>
+bool Exchange<N, M>::keepsShipments(Route::Node *U, Route::Node *V) const
+{
+    auto const *uRoute = U->route();
+    auto const uLast = U->idx() + N - 1;
+
+    if constexpr (M == 0)
+        if (uRoute == V->route())
+            return uRoute->keepsShipmentOrder(U->idx(), uLast, V->idx());
+
+    if (!uRoute->isShipmentClosed(U->idx(), uLast))
+        return false;
+
+    if constexpr (M > 0)
+        return V->route()->isShipmentClosed(V->idx(), V->idx() + M - 1);
+
+    return true;
 }
 
 template <size_t N, size_t M>

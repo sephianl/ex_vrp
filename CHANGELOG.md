@@ -1,5 +1,73 @@
 # Changelog
 
+## 0.19.0
+
+### Added
+
+- **Shipments: pick up at one client, deliver at another.** `Model.add_shipment/4` ties two
+  clients into an `ExVrp.Shipment` with an `amount` per load dimension. The delivery is only ever
+  visited after its pickup, on the same route and the same trip; breaks and rests may sit between
+  them, a reload depot may not. The goods take up capacity from the pickup to the delivery. Each
+  half keeps its own time window, service duration, prize and `required` flag, and a pickup may be
+  visited without its delivery, carrying the goods back to the depot:
+  `Solution.num_pickups_without_delivery/1` counts those. A required delivery needs a required
+  pickup.
+- **How the search keeps pairs together.** A moved segment must hold both halves of a shipment or
+  neither; within a route a half may also move alone, as long as the pickup stays first. No tail
+  swap or new reload depot cuts between a pickup and its delivery. Removing a pickup removes its
+  delivery, and inserting a delivery whose pickup is unplanned inserts the pair at the best pair of
+  positions. A new operator, `RelocateShipment`, moves a pair to another route.
+- **Shipments on a full day.** An unplanned pickup goes in together with its delivery when that
+  improves, rather than alone. An unplanned delivery whose pickup is planned may take its place by
+  pushing out the optional client on that route whose removal makes room best. A client may also
+  take the place of a shipment half the way it takes any optional client's, unless that would
+  strand a delivery. A delivery is tried directly after its pickup or after one of its own
+  neighbours, as every other insertion keeps to the granular neighbourhood. A shipment iteration on
+  `prodship_clients_125` takes 17% fewer instructions. At a fixed 2000 iterations the large
+  shipment days cost 3–4% less; under the A/B's time budgets no objective moves beyond noise, and
+  the Li & Lim instances stay at their best-known solutions.
+- **VRPLIB `PICKUP_AND_DELIVERY_SECTION`.** `ExVrp.Read` reads PDPTW instances (Li & Lim, LKH-3
+  format) into shipments.
+
+### Changed
+
+- **Faster duration and break checks on long segments.** A segment of eight nodes or more on its
+  route's own profile merges its durations from per-route spans of 2^k nodes, built on first use,
+  instead of node by node, with or without breaks. Break clocks over a middle segment are added
+  from reset leg to reset leg, as the route's tail already was. The forbidden-location walk is
+  skipped when both routes may take each other's clients. All of it gives the same solutions:
+  byte-for-byte checks against the node-by-node folds over the test suite and millions of
+  production lookups found no difference. Per iteration, `prodbrk_clients_125` runs 4.7% fewer
+  instructions and `prod_clients_125` 1.1% fewer.
+- **`ExVrp.Native` is out of the docs.** It still holds the NIFs the other modules call. The
+  warm-start types moved with the API that uses them, to `ExVrp.Solution.warm_start_visits()`;
+  `ExVrp.Native.warm_start_visits()` stays as a loose stand-in, so specs naming it still compile.
+- **`ExVrp.SolveError` lists validation messages one per line**, rather than inspecting the list.
+- **Docs.** `ExVrp.Route`'s accessors say what they measure and how they are priced, and
+  `ExVrp.Solution.route_*/2` points at them. `Solution.cost/2` says what the objective sums and
+  where its evaluator comes from, and that `cost/1` is only the distance. `PenaltyManager.Params` and
+  `IteratedLocalSearch.Params` document their fields. `ExVrp.Neighbourhood` says how it relates
+  to the neighbourhood the solver builds in C++. Every published module has a group, and the
+  benchmark mix tasks are no longer published.
+
+### Removed
+
+- **`ExVrp.MinimiseFleet`.** A port of PyVRP's `minimise_fleet` that nothing called, and that
+  rejected models with several vehicle types or optional clients. To prefer fewer vehicles, give
+  the vehicle type a `fixed_cost`.
+- **`ExVrp.NotImplementedError` and `ExVrp.ValidationError`.** Neither was ever raised: a model
+  that fails `Model.validate/1` comes back as `{:error, messages}`, which `ExVrp.solve!/2` raises
+  as `ExVrp.SolveError`.
+
+### Fixed
+
+- **New routes open on larger vehicle types.** Inserting into an empty route priced every
+  vehicle and took the cheapest, which on a mixed fleet is the smallest type, so the search never
+  brought larger vehicles into use: X204-FSMD ended 37% above its best known solution. As
+  upstream does, empty routes are now tried one per type, in shuffled type order, stopping at the
+  first improvement. X204-FSMD, X233-FSMD and X670-FSMF drop to about 2% at 20 seconds. This
+  changes the search path on every instance, not only mixed fleets.
+
 ## 0.18.1
 
 ### Changed

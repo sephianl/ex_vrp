@@ -71,7 +71,7 @@ public:
 
     LoadSegment load(size_t dimension) const
     {
-        return {data.location(client), dimension};
+        return {data, client, dimension};
     }
 };
 

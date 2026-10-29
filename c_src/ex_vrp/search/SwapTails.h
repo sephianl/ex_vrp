@@ -29,6 +29,8 @@ public:
     void apply(Route::Node *U, Route::Node *V) const override;
 
     bool affectsEntireTail() const override { return true; }
+
+    bool keepsShipments(Route::Node *U, Route::Node *V) const override;
 };
 
 template <> bool supports<SwapTails>(ProblemData const &data);

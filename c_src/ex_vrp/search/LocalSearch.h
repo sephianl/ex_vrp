@@ -76,12 +76,24 @@ class LocalSearch
     void applyOptionalClientMoves(Route::Node *U,
                                   CostEvaluator const &costEvaluator);
 
+    // Inserts the unrouted delivery U at its cheapest place after its pickup,
+    // removing the optional client on that route whose removal makes this
+    // improve the most.
+    void insertAfterPickupEjecting(Route::Node *U,
+                                   CostEvaluator const &costEvaluator);
+
     // Tests moves involving clients in client groups.
     void applyGroupMoves(Route::Node *U, CostEvaluator const &costEvaluator);
 
     // Checks if moving U to targetRoute would violate same-vehicle constraints.
     bool wouldViolateSameVehicle(Route::Node const *U,
                                  Route const *targetRoute) const;
+
+    // Checks if the other half of U's or V's shipment, which a move between
+    // their routes may carry along, would violate same-vehicle constraints.
+    [[gnu::noinline]] bool
+    wouldPartnerViolateSameVehicle(Route::Node const *U,
+                                   Route::Node const *V) const;
 
     // Checks if U is forbidden from targetRoute.
     bool wouldViolateForbidden(Route::Node const *U,
@@ -123,6 +135,10 @@ class LocalSearch
 
     // Updates solution state after an improving local search move.
     void update(Route *U, Route *V);
+
+    // Whether every routed shipment delivery follows its pickup on the same
+    // route and trip. For debug assertions after each applied move.
+    bool shipmentsIntact() const;
 
     // Performs search on the currently loaded solution.
     void search(CostEvaluator const &costEvaluator);

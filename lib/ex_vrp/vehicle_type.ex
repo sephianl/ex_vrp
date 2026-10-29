@@ -251,7 +251,10 @@ defmodule ExVrp.VehicleType do
     forbidden_windows: [{500, 600}]`.
   - `:start_depot` - Index of starting depot (default: `0`)
   - `:end_depot` - Index of ending depot (default: `0`)
-  - `:fixed_cost` - Fixed cost for using this vehicle (default: `0`)
+  - `:fixed_cost` - Charged once for each vehicle of this type that drives a route,
+    however many trips that route makes; an unused vehicle costs nothing (default: `0`).
+    This is how to ask for fewer vehicles: the solver opens another one only when it saves
+    more distance and duration cost than this
   - `:shift_duration` - Nominal maximum duration of the **whole route**, and the
     baseline duration-based overtime is measured against (default: `:infinity`).
     Elapsed, not worked — see the scope table above

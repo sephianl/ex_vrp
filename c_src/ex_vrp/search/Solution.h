@@ -31,6 +31,27 @@ class Solution
 {
     ProblemData const &data_;
 
+    // Route of a routed client that shares a same-vehicle group with client,
+    // if any: the route client must then join.
+    Route *sameVehicleRoute(size_t client);
+
+    // Whether client may join route: reachable on its profile, and on the
+    // route its same-vehicle group requires, if any.
+    bool mayJoinStrictly(size_t client, Route const *route);
+
+    // insert() for a shipment delivery. Its pickup is either routed, and the
+    // delivery goes after it on its trip, or it is inserted together with the
+    // pickup at the best pair of positions.
+    bool insertDelivery(Route::Node *delivery,
+                        SearchSpace const &searchSpace,
+                        CostEvaluator const &costEvaluator,
+                        bool required);
+
+    bool insertShipment(Route::Node *pickup,
+                        SearchSpace const &searchSpace,
+                        CostEvaluator const &costEvaluator,
+                        bool required);
+
 public:
     std::vector<Route::Node> nodes;  // size numLocations()
     std::vector<Route> routes;       // size numVehicles(), ordered by type
@@ -46,7 +67,8 @@ public:
     // Inserts the given node into the solution - either in its neighbourhood,
     // or in an empty route, if improving or required. Returns true if the node
     // was successfully inserted, false otherwise. Updating the search space and
-    // inserted route is left to the calling code.
+    // inserted route is left to the calling code. A shipment delivery whose
+    // pickup is not routed brings the pickup along; mark both promising.
     bool insert(Route::Node *node,
                 SearchSpace const &searchSpace,
                 CostEvaluator const &costEvaluator,

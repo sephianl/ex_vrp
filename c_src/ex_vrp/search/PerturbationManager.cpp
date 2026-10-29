@@ -67,7 +67,7 @@ void PerturbationManager::perturb(Solution &solution,
         if (route && action == PerturbType::REMOVE)
         {
             searchSpace.markPromising(node);
-            route->remove(node->idx());
+            route->removeWithDependents(node->idx());
             route->update();
         }
         // Insert if node is not in a route and we are currently inserting.

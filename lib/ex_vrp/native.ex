@@ -1,10 +1,5 @@
 defmodule ExVrp.Native do
-  @moduledoc """
-  Low-level NIF bindings to PyVRP C++ core.
-
-  This module provides direct bindings to the C++ implementation.
-  Users should prefer the high-level API in `ExVrp` and `ExVrp.Model`.
-  """
+  @moduledoc false
 
   @typedoc """
   Opaque accepted-input type for `create_problem_data/1`.
@@ -15,15 +10,13 @@ defmodule ExVrp.Native do
   @type model_input :: struct()
 
   @typedoc """
-  One vehicle's warm-start visits: a flat client list (a single trip), or its trips, where the
-  first trip's `reload_depot` is `nil` and each later trip names the reload depot it starts from.
-  A `:break` among the clients is a break taken there.
-  """
-  @type warm_start_visits ::
-          [warm_start_client()]
-          | {:trips, [%{reload_depot: non_neg_integer() | nil, clients: [warm_start_client()]}]}
+  Opaque accepted-input type for one vehicle's visits in
+  `create_solution_from_routes_with_types/2`.
 
-  @type warm_start_client :: non_neg_integer() | :break
+  Declared locally to avoid a `ExVrp.Native -> ExVrp.Solution` edge; callers
+  pass `t:ExVrp.Solution.warm_start_visits/0` in practice.
+  """
+  @type warm_start_visits :: list() | {:trips, list()}
 
   # NIF stubs call :erlang.nif_error/1 which Dialyzer infers as no_return().
   # The @nifs attribute generates nif_start primops in Core Erlang, but Dialyzer's
@@ -117,6 +110,7 @@ defmodule ExVrp.Native do
     solution_penalty_cost: 1,
     solution_lock_cost: 1,
     solution_num_forbidden_visits: 1,
+    solution_num_pickups_without_delivery: 1,
     # search::Route NIFs
     create_search_route_nif: 3,
     search_route_idx_nif: 1,
@@ -652,6 +646,7 @@ defmodule ExVrp.Native do
     - `:exchange33` / `:swap33` - Exchange 3 nodes for 3
     - `:swap_tails` - Swap route tails
     - `:relocate_with_depot` - Relocate with depot reload (multi-trip)
+    - `:relocate_shipment` - Move a shipment's pickup and delivery to another route
 
   - `:route_operators` - List of route operator names:
     - `:swap_routes` - Swap entire routes
@@ -1008,6 +1003,12 @@ defmodule ExVrp.Native do
   """
   @spec solution_num_forbidden_visits(reference()) :: non_neg_integer()
   def solution_num_forbidden_visits(_solution), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Gets the number of shipments whose pickup is visited but not their delivery.
+  """
+  @spec solution_num_pickups_without_delivery(reference()) :: non_neg_integer()
+  def solution_num_pickups_without_delivery(_solution), do: :erlang.nif_error(:nif_not_loaded)
 
   # ---------------------------------------------------------------------------
   # search::Route NIFs (low-level search route manipulation)
