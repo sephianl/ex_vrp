@@ -29,6 +29,26 @@
 - **VRPLIB `PICKUP_AND_DELIVERY_SECTION`.** `ExVrp.Read` reads PDPTW instances (Li & Lim, LKH-3
   format) into shipments.
 
+### Changed
+
+- **Faster duration and break checks on long segments.** A segment of eight nodes or more on its
+  route's own profile merges its durations from per-route spans of 2^k nodes, built on first use,
+  instead of node by node, with or without breaks. Break clocks over a middle segment are added
+  from reset leg to reset leg, as the route's tail already was. The forbidden-location walk is
+  skipped when both routes may take each other's clients. All of it gives the same solutions:
+  byte-for-byte checks against the node-by-node folds over the test suite and millions of
+  production lookups found no difference. Per iteration, `prodbrk_clients_125` runs 4.7% fewer
+  instructions and `prod_clients_125` 1.1% fewer.
+
+### Fixed
+
+- **New routes open on larger vehicle types.** Inserting into an empty route priced every
+  vehicle and took the cheapest, which on a mixed fleet is the smallest type, so the search never
+  brought larger vehicles into use: X204-FSMD ended 37% above its best known solution. As
+  upstream does, empty routes are now tried one per type, in shuffled type order, stopping at the
+  first improvement. X204-FSMD, X233-FSMD and X670-FSMF drop to about 2% at 20 seconds. This
+  changes the search path on every instance, not only mixed fleets.
+
 ## 0.18.1
 
 ### Changed
