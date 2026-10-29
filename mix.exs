@@ -195,6 +195,10 @@ defmodule ExVrp.MixProject do
   end
 
   defp published?(module, _metadata) do
-    not String.starts_with?(inspect(module), ["ExVrp.ABBenchmark", "Mix.Tasks.Bench"])
+    not String.starts_with?(inspect(module), [
+      "ExVrp.ABBenchmark",
+      "ExVrp.Literature",
+      "Mix.Tasks.Bench"
+    ])
   end
 end
