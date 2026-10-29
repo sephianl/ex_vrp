@@ -31,6 +31,11 @@ defmodule ExVrp.ABBenchmark.Speed do
   A solve runs under a thirty-minute time limit, so one that runs away fails
   with its instance named instead of silently holding the job until the CI timeout; and
   every finished instance is logged, so a slow job shows how far it got.
+
+  An instance the ref's `ExVrp.ABBenchmark.Corpus` leaves out, such as a shipment
+  instance on a base without shipments, is skipped and logged. The comparison takes
+  its instances from the baseline, so one only the candidate measures is not compared,
+  and one only the baseline measures fails as missing.
   """
 
   alias ExVrp.ABBenchmark.Corpus
@@ -73,6 +78,7 @@ defmodule ExVrp.ABBenchmark.Speed do
       "commit" => commit,
       "instances" =>
         corpus
+        |> Enum.filter(&in_this_refs_corpus?/1)
         |> Task.async_stream(fn {id, iterations} -> {id, measure(interpreter_erl, id, iterations)} end,
           max_concurrency: System.schedulers_online(),
           timeout: :infinity,
@@ -221,6 +227,15 @@ defmodule ExVrp.ABBenchmark.Speed do
       {:error, reason} -> raise SpeedMeasurementError, instance: id, reason: reason
     end
   end
+
+  defp in_this_refs_corpus?({id, _iterations}), do: id |> corpus_entry() |> listed_in_this_refs_corpus(id)
+
+  defp listed_in_this_refs_corpus(nil, id) do
+    Logger.warning("[speed] #{id}: skipped, this ref's corpus does not have it")
+    false
+  end
+
+  defp listed_in_this_refs_corpus(%Corpus.Entry{}, _id), do: true
 
   defp corpus_entry(id), do: Enum.find(Corpus.entries(), &(&1.id == id))
 end
