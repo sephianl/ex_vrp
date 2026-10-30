@@ -70,6 +70,27 @@ defmodule ExVrp.PenaltyManagerTest do
     end
   end
 
+  describe "for_initial_solution/2" do
+    test "keeps the penalties when the search starts feasible" do
+      pm = PenaltyManager.new([100.0], 50.0, 75.0, %PenaltyManager.Params{max_penalty: 1.0e9})
+
+      assert PenaltyManager.for_initial_solution(pm, true) == pm
+    end
+
+    test "starts the time-warp penalty sixty times stricter when the search starts infeasible" do
+      pm = PenaltyManager.new([100.0], 50.0, 75.0, %PenaltyManager.Params{max_penalty: 1.0e9})
+
+      assert %PenaltyManager{tw_penalty: 3000.0, load_penalties: [100.0], dist_penalty: 75.0} =
+               PenaltyManager.for_initial_solution(pm, false)
+    end
+
+    test "keeps the stricter start within the penalty bounds" do
+      pm = PenaltyManager.new([100.0], 50.0, 75.0, %PenaltyManager.Params{max_penalty: 1000.0})
+
+      assert %PenaltyManager{tw_penalty: 1000.0} = PenaltyManager.for_initial_solution(pm, false)
+    end
+  end
+
   describe "penalties/1" do
     test "returns current penalties as tuple" do
       pm = PenaltyManager.new([100.0, 200.0], 50.0, 75.0)

@@ -124,6 +124,27 @@ defmodule ExVrp.PenaltyManager do
     new(init_load, init_tw, init_dist, params)
   end
 
+  # How much stricter the time-warp penalty starts when the initial solution is
+  # already infeasible: the `init_from/2` start lets a client's prize buy an hour
+  # of time warp, this lets it buy a minute.
+  @infeasible_start_factor 60.0
+
+  @doc """
+  Adjusts the starting penalties to the initial solution's feasibility.
+
+  A search that starts feasible keeps the `init_from/2` penalties. One that starts
+  infeasible starts the time-warp penalty #{trunc(@infeasible_start_factor)}x
+  stricter: at `init_from/2`'s value a prize-collecting search keeps buying
+  clients with time warp from there, and the 1.25x-per-update adaptation needs
+  over a thousand iterations to undo it. Tightening only on an infeasible start
+  leaves the searches that already begin feasible exactly as they were.
+  """
+  @spec for_initial_solution(t(), boolean()) :: t()
+  def for_initial_solution(%__MODULE__{} = pm, true = _feasible?), do: pm
+
+  def for_initial_solution(%__MODULE__{tw_penalty: tw_penalty, params: params} = pm, false = _feasible?),
+    do: %{pm | tw_penalty: clip_penalty(tw_penalty * @infeasible_start_factor, params)}
+
   @doc """
   Returns the current penalties as a tuple.
   """

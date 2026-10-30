@@ -389,6 +389,9 @@ defmodule ExVrp.Solver do
     {origin, initial_solution} =
       build_initial_solution(problem_data, local_search, penalty_manager, opts, solve_start)
 
+    penalty_manager =
+      PenaltyManager.for_initial_solution(penalty_manager, Native.solution_is_feasible(initial_solution))
+
     {local_search, penalty_manager, origin, initial_solution}
   end
 
