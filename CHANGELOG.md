@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.19.1
+
+### Fixed
+
+- **A search that starts late catches up on time warp.** When a whole penalty update window
+  registers no feasible solution, the penalty now rises four steps at once (×2.44 with the
+  default `penalty_increase` of 1.25) instead of one. `PenaltyManager.init_from/2` can start the
+  time-warp penalty so low that one client's prize pays for an hour of lateness, so a
+  prize-collecting search that started from a late solution kept trading lateness for prizes for
+  about 1,500 iterations before one step per window caught up. A production day with 30 shipments
+  now reaches a feasible solution within 500 iterations, where it found none in 1,000. Searches
+  that do find feasible solutions update exactly as before.
+
 ## 0.19.0
 
 ### Added
