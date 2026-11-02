@@ -4004,7 +4004,6 @@ build_neighbours(ProblemData const &data,
     std::vector<double> early(numLocs, 0.0);
     std::vector<double> late(numLocs, 0.0);
     std::vector<double> service(numLocs, 0.0);
-    std::vector<double> prize(numLocs, 0.0);
 
     auto const &clients = data.clients();
     for (size_t c = 0; c < numClients; ++c)
@@ -4013,19 +4012,20 @@ build_neighbours(ProblemData const &data,
         early[loc] = static_cast<double>(clients[c].twEarly.get());
         late[loc] = static_cast<double>(clients[c].twLate.get());
         service[loc] = static_cast<double>(clients[c].serviceDuration.get());
-        prize[loc] = static_cast<double>(clients[c].prize.get());
     }
 
-    // Step 5: Add time window penalties and subtract prizes
+    // Step 5: Add time window penalties. Unlike PyVRP, prizes are left out:
+    // a prize is a property of j alone, so within one prize class it shifts
+    // every candidate equally, while across classes a gap far above any edge
+    // cost (Zelo's zone-restricted clients carry 3.3x the prize of the rest,
+    // a gap of ~8e9 against ~1e8 edges) pushes every high-prize client into
+    // every neighbour list, wherever it is.
     // min_wait[i][j] = early[j] - minDuration[i][j] - service[i] - late[i]
     // min_tw[i][j] = early[i] + service[i] + minDuration[i][j] - late[j]
     for (size_t i = 0; i < numLocs; ++i)
     {
         for (size_t j = 0; j < numLocs; ++j)
         {
-            // Subtract prize for visiting j
-            edgeCosts[i][j] -= prize[j];
-
             // Wait time penalty (arriving too early at j)
             double minWait
                 = early[j] - minDuration[i][j] - service[i] - late[i];
