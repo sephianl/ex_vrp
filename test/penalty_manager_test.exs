@@ -173,6 +173,37 @@ defmodule ExVrp.PenaltyManagerTest do
     end
   end
 
+  describe "an update window without a single feasible solution" do
+    test "raises the penalties four steps at once" do
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [10])
+        |> Model.add_client(delivery: [50])
+        |> Model.set_euclidean_matrices([{0, 0}, {10, 0}])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+      {:ok, overloaded} = Native.create_random_solution(problem_data, seed: 42)
+      refute Native.solution_is_feasible(overloaded)
+
+      params = %PenaltyManager.Params{
+        solutions_between_updates: 3,
+        penalty_increase: 2.0,
+        target_feasible: 0.5,
+        max_penalty: 1.0e9
+      }
+
+      pm =
+        [100.0]
+        |> PenaltyManager.new(100.0, 100.0, params)
+        |> PenaltyManager.register(overloaded)
+        |> PenaltyManager.register(overloaded)
+        |> PenaltyManager.register(overloaded)
+
+      assert pm.tw_penalty == 1600.0
+    end
+  end
+
   describe "penalty updates" do
     test "does not update penalties before sufficient registrations" do
       model =

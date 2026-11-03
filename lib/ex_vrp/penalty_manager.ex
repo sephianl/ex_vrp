@@ -229,6 +229,14 @@ defmodule ExVrp.PenaltyManager do
     }
   end
 
+  # How many increase steps one update takes when not a single registered
+  # solution was feasible. One step a window is slow to climb out of a penalty
+  # far too low, and a window without a feasible solution says it is: a
+  # prize-collecting search that started at a too-low time-warp penalty sat at
+  # zero feasible solutions for over a thousand iterations before one step a
+  # window caught up.
+  @steps_when_none_feasible 4
+
   defp compute_new_penalty(current_penalty, feas_list, params) do
     if Enum.empty?(feas_list) do
       current_penalty
@@ -238,6 +246,10 @@ defmodule ExVrp.PenaltyManager do
 
       new_penalty =
         cond do
+          feas_count == 0 and params.target_feasible > params.feas_tolerance ->
+            # None feasible - catch up several steps at once
+            current_penalty * :math.pow(params.penalty_increase, @steps_when_none_feasible)
+
           feas_rate < params.target_feasible - params.feas_tolerance ->
             # Too few feasible - increase penalty
             current_penalty * params.penalty_increase
