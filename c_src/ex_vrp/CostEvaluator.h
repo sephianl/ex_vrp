@@ -250,7 +250,8 @@ Cost CostEvaluator::excessLoadPenalties(
 
     Cost cost = 0;
     for (size_t dim = 0; dim != loadPenalties_.size(); ++dim)
-        cost += loadPenalties_[dim] * excessLoads[dim].get();
+        if (excessLoads[dim] != 0)  // mostly none, and 0 * penalty is 0
+            cost += loadPenalties_[dim] * excessLoads[dim].get();
 
     return cost;
 }
@@ -263,7 +264,8 @@ Cost CostEvaluator::excessLoadPenalties(
 
     Cost cost = 0;
     for (auto const dim : dimensions)
-        cost += loadPenalties_[dim] * excessLoads[dim].get();
+        if (excessLoads[dim] != 0)  // mostly none, and 0 * penalty is 0
+            cost += loadPenalties_[dim] * excessLoads[dim].get();
 
     return cost;
 }
@@ -274,11 +276,20 @@ Cost CostEvaluator::loadPenalty(Load load,
 {
     assert(dimension < loadPenalties_.size());
     auto const excessLoad = std::max<Load>(load - capacity, 0);
+
+    // Penalties are finite, so no excess costs exactly nothing; skipping the
+    // multiplication and its conversion on the common case changes no result.
+    if (excessLoad == 0)
+        return 0;
+
     return static_cast<Cost>(excessLoad.get() * loadPenalties_[dimension]);
 }
 
 Cost CostEvaluator::twPenalty([[maybe_unused]] Duration timeWarp) const
 {
+    if (timeWarp == 0)  // as in loadPenalty
+        return 0;
+
     return static_cast<Cost>(timeWarp.get() * twPenalty_);
 }
 
@@ -290,6 +301,9 @@ Cost CostEvaluator::distPenalty(Distance distance, Distance maxDistance) const
 
 Cost CostEvaluator::excessDistPenalty(Distance excessDistance) const
 {
+    if (excessDistance == 0)  // as in loadPenalty
+        return 0;
+
     return static_cast<Cost>(excessDistance.get() * distPenalty_);
 }
 
