@@ -50,6 +50,18 @@ class LocalSearch
     // Maps each client to the same-vehicle groups it belongs to.
     std::vector<std::vector<size_t>> clientToSameVehicleGroups_;
 
+    // Whether each location is in some same-vehicle group: one byte to read
+    // where wouldViolateSameVehicle() is a call and a vector header, for the
+    // node pairs whose clients are in none, which is nearly all of them.
+    std::vector<char> inSameVehicleGroup_;
+
+    [[nodiscard, gnu::always_inline]] inline bool
+    mayViolateSameVehicle(Route::Node const *U, Route const *target) const
+    {
+        return inSameVehicleGroup_[U->client()]
+               && wouldViolateSameVehicle(U, target);
+    }
+
     size_t numUpdates_ = 0;         // modification counter
     bool searchCompleted_ = false;  // No further improving move found?
 

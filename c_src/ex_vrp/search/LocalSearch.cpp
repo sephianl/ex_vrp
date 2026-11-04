@@ -584,16 +584,12 @@ bool LocalSearch::applyNodeOps(Route::Node *U,
     // but the impact is negligible.
     if (rU != rV)
     {
-        if (wouldViolateSameVehicle(U, rV) || wouldViolateSameVehicle(V, rU))
+        if (mayViolateSameVehicle(U, rV) || mayViolateSameVehicle(V, rU))
             return false;
 
-        auto const *nU = n(U);
-        auto const *nV = n(V);
-        if (!nU->isEndDepot() && !nU->isDepot()
-            && wouldViolateSameVehicle(nU, rV))
-            return false;
-        if (!nV->isEndDepot() && !nV->isDepot()
-            && wouldViolateSameVehicle(nV, rU))
+        // A depot is in no same-vehicle group, so mayViolateSameVehicle()
+        // already answers false for one; n(U) and n(V) need no depot test.
+        if (mayViolateSameVehicle(n(U), rV) || mayViolateSameVehicle(n(V), rU))
             return false;
 
         if (data.hasShipments() && wouldPartnerViolateSameVehicle(U, V))
@@ -2058,7 +2054,8 @@ LocalSearch::LocalSearch(ProblemData const &data,
       lastTestedNodes(data.numLocations()),
       lastTestedRoutes(data.numVehicles()),
       lastUpdated(data.numVehicles()),
-      clientToSameVehicleGroups_(data.numLocations())
+      clientToSameVehicleGroups_(data.numLocations()),
+      inSameVehicleGroup_(data.numLocations(), false)
 {
     lastForbidden_.resize(data.numVehicles() * data.numProfiles());
 
@@ -2067,5 +2064,8 @@ LocalSearch::LocalSearch(ProblemData const &data,
     for (size_t groupIdx = 0; groupIdx != data.numSameVehicleGroups();
          ++groupIdx)
         for (auto const client : data.sameVehicleGroup(groupIdx))
+        {
             clientToSameVehicleGroups_[client].push_back(groupIdx);
+            inSameVehicleGroup_[client] = true;
+        }
 }
