@@ -951,7 +951,7 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
         if (!vData.required && !wouldViolateSameVehicle(V, nullptr)
             && !wouldViolateForbidden(U, route)
             && !carriesRoutedDelivery(V, data)
-            && inplaceCost(U, V, data, costEvaluator) < 0)
+            && inplaceImproves(U, V, data, costEvaluator))
         {
             searchSpace_.markPromising(V);
             auto const idx = V->idx();
@@ -1087,7 +1087,7 @@ void LocalSearch::applyGroupMoves(Route::Node *U,
     // Test swapping U and V, and do so if U is better to have than V.
     auto *V = &solution_.nodes[inSol[range.back()]];
     if (U != V && !wouldViolateForbidden(U, V->route())
-        && inplaceCost(U, V, data, costEvaluator) < 0)
+        && inplaceImproves(U, V, data, costEvaluator))
     {
         auto *route = V->route();
         auto const idx = V->idx();

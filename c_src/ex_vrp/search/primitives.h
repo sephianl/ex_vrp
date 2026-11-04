@@ -108,6 +108,16 @@ Cost inplaceCost(Route::Node *U,
                  CostEvaluator const &costEvaluator);
 
 /**
+ * Whether ``inplaceCost(U, V, data, cost_evaluator) < 0``. Only the sign is
+ * asked for, so a swap that a lower bound on its duration already rules out
+ * stops before its duration is folded.
+ */
+bool inplaceImproves(Route::Node *U,
+                     Route::Node *V,
+                     ProblemData const &data,
+                     CostEvaluator const &costEvaluator);
+
+/**
  * Evaluates inserting U after V while removing W from V's route, to make room
  * for U. The evaluation is exact.
  *
