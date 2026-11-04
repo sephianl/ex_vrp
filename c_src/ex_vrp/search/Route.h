@@ -518,6 +518,11 @@ private:
     // the problem and the vehicle type, so it is worked out once.
     bool const hasDurationCost_;
 
+    // hasDurationBound(), asked by every move that bounds its duration cost
+    // from below before folding it. Without a unit duration cost that bound
+    // is always zero, so it is not worth working out.
+    bool const hasDurationBound_;
+
     // Whether the vehicle type limits drive or work between breaks, for the
     // same reason: Proposal::duration() asks on every evaluation.
     bool const hasBreakRule_;
@@ -990,6 +995,14 @@ public:
      * via the objective or via penalised constraints. False otherwise.
      */
     [[nodiscard]] inline bool hasDurationCost() const;
+
+    /**
+     * Returns true if this route's duration costs something per unit, so that
+     * a lower bound on a proposal's duration gives a non-zero lower bound on
+     * its duration cost. False otherwise, for example when duration only
+     * matters through time windows.
+     */
+    [[nodiscard]] inline bool hasDurationBound() const;
 
     /**
      * Whether the route visits a reload depot, as of the last update().
@@ -1891,6 +1904,8 @@ Cost Route::unitDurationCost() const { return vehicleType_.unitDurationCost; }
 Cost Route::unitOvertimeCost() const { return vehicleType_.unitOvertimeCost; }
 
 bool Route::hasDurationCost() const { return hasDurationCost_; }
+
+bool Route::hasDurationBound() const { return hasDurationBound_; }
 
 bool Route::hasReloads() const { return hasReloads_; }
 

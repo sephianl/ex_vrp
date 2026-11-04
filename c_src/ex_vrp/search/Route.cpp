@@ -69,6 +69,7 @@ Route::Route(ProblemData const &data, size_t idx, size_t vehicleType)
       vehicleType_(data.vehicleType(vehicleType)),
       idx_(idx),
       hasDurationCost_(durationCostApplies(data, vehicleType_)),
+      hasDurationBound_(hasDurationCost_ && vehicleType_.unitDurationCost > 0),
       hasBreakRule_(vehicleType_.hasBreakRule()),
       reloadCost_(0),
       transferableProfiles_(data.numProfiles()),

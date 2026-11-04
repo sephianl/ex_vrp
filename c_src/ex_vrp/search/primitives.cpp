@@ -55,7 +55,7 @@ bool ex_vrp::search::insertCostBelow(Route::Node *U,
     // service and U's own: waiting and depot service only add to it. As for
     // relocates, the bound does not hold with breaks or reloads.
     Cost durationBound = 0;
-    if (route->hasDurationCost() && !data.hasBreaks() && !route->hasReloads())
+    if (route->hasDurationBound() && !data.hasBreaks() && !route->hasReloads())
     {
         auto const &dur = data.durationMatrix(route->profile());
         auto const from = V->client();
@@ -327,7 +327,7 @@ bool ex_vrp::search::inplaceImproves(Route::Node *U,
     // duration. As for relocates, the bound does not hold with breaks or
     // reloads.
     Cost durationBound = 0;
-    if (route->hasDurationCost() && !data.hasBreaks() && !route->hasReloads())
+    if (route->hasDurationBound() && !data.hasBreaks() && !route->hasReloads())
     {
         auto const &dur = data.durationMatrix(route->profile());
         auto const prev = (*route)[V->idx() - 1]->client();

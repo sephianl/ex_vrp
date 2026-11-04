@@ -57,7 +57,7 @@ ex_vrp::Cost tailSwapDurationBound(ex_vrp::ProblemData const &data,
     auto const last = from->size() - 2;  // the tail's last client, if any
 
     // A route left without clients proposes nothing, and costs nothing.
-    if (!to->hasDurationCost() || (cut->idx() == 0 && first > last))
+    if (!to->hasDurationBound() || (cut->idx() == 0 && first > last))
         return 0;
 
     auto const &dur = data.durationMatrix(to->profile());

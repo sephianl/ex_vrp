@@ -176,7 +176,7 @@ Cost Exchange<N, M>::relocateDurationBound(Route::Node *U, Route::Node *V) const
     Cost bound = 0;
 
     // A route left without clients proposes nothing, and costs nothing.
-    if (uRoute->hasDurationCost() && uRoute->numClients() != N)
+    if (uRoute->hasDurationBound() && uRoute->numClients() != N)
     {
         auto const travel = uRoute->travel() - uDur(before, U->client())
                             - uInner - uDur(last->client(), after)
@@ -185,7 +185,7 @@ Cost Exchange<N, M>::relocateDurationBound(Route::Node *U, Route::Node *V) const
         bound += uRoute->unitDurationCost() * static_cast<Cost>(duration);
     }
 
-    if (vRoute->hasDurationCost())
+    if (vRoute->hasDurationBound())
     {
         auto const next = n(V)->client();
         auto const travel = vRoute->travel() - vDur(V->client(), next)
@@ -203,7 +203,7 @@ Cost Exchange<N, M>::inRouteRelocateDurationBound(Route::Node *U,
                                                   Route::Node *V) const
 {
     auto const *route = U->route();
-    if (!route->hasDurationCost())
+    if (!route->hasDurationBound())
         return 0;
 
     auto const &dur = data.durationMatrix(route->profile());
@@ -232,7 +232,7 @@ Cost Exchange<N, M>::swapDurationBound(Route::Node *U, Route::Node *V) const
                                    Route::Node *in,
                                    size_t inSize) -> Cost
     {
-        if (!to->hasDurationCost())
+        if (!to->hasDurationBound())
             return 0;
 
         auto const &dur = data.durationMatrix(to->profile());
@@ -282,7 +282,7 @@ Cost Exchange<N, M>::inRouteSwapDurationBound(Route::Node *U,
                                               Route::Node *V) const
 {
     auto const *route = U->route();
-    if (!route->hasDurationCost())
+    if (!route->hasDurationBound())
         return 0;
 
     // The earlier segment and the later one, whichever of U's and V's each is.
