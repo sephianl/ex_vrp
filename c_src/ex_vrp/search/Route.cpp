@@ -1,5 +1,6 @@
 #include "Route.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <numbers>
@@ -1071,6 +1072,12 @@ void Route::update()
     auto const overtimeDS = vehicleType_.overtime(summary.endTime, durationDS);
     durationCostDS_ = unitDurationCost() * static_cast<Cost>(durationDS)
                       + unitOvertimeCost() * static_cast<Cost>(overtimeDS);
+
+    deltaBaseCost_ = distanceCost_ + penaltyCost_ + durationCostDS_;
+    hasDeltaExcess_ = excessDistance_ != 0 || timeWarpDS_ != 0
+                      || std::any_of(excessLoad_.begin(),
+                                     excessLoad_.end(),
+                                     [](Load excess) { return excess != 0; });
 
     // Calculate reload cost from all reload depots (excludes start/end depots)
     reloadCost_ = 0;

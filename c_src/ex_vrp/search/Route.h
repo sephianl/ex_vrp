@@ -550,6 +550,13 @@ private:
     Cost durationCostDS_;
     Duration timeWarpDS_;
 
+    // What delta evaluation takes off for this route when it carries no
+    // excess load, distance or (DS-only) time warp: then every infeasibility
+    // penalty is zero, whatever the penalties are, and only these three
+    // objective terms remain.
+    Cost deltaBaseCost_ = 0;
+    bool hasDeltaExcess_ = false;
+
     std::vector<Node> depots_;  // start, end, and reload depots (in that order)
 
     // Break nodes on this route, kept as nodes come and go, like depots_, so
@@ -1130,6 +1137,18 @@ public:
      *         evaluation in local search.
      */
     [[nodiscard]] inline Duration timeWarpDS() const;
+
+    /**
+     * @return Distance, penalty and DS-only duration cost together: what delta
+     *         evaluation takes off for this route when it has no excess.
+     */
+    [[nodiscard]] inline Cost deltaBaseCost() const;
+
+    /**
+     * @return Whether this route carries excess load, excess distance or
+     *         DS-only time warp, so that delta evaluation must price them.
+     */
+    [[nodiscard]] inline bool hasDeltaExcess() const;
 
     /**
      * @return The routing profile of the vehicle servicing this route.
@@ -2199,6 +2218,18 @@ Duration Route::timeWarpDS() const
 {
     assert(!dirty);
     return timeWarpDS_;
+}
+
+Cost Route::deltaBaseCost() const
+{
+    assert(!dirty);
+    return deltaBaseCost_;
+}
+
+bool Route::hasDeltaExcess() const
+{
+    assert(!dirty);
+    return hasDeltaExcess_;
 }
 
 size_t Route::profile() const { return vehicleType_.profile; }

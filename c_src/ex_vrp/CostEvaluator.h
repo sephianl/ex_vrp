@@ -232,7 +232,37 @@ private:
     // does, the bound joins `out`, so the caller still reads a delta that is
     // not improving.
     [[nodiscard]] static inline bool ruledOut(Cost &out, Cost durationBound);
+
+    // Takes a non-empty route's current cost off `out`, as delta evaluation
+    // sees it. A route without excess has every penalty at zero, so its cost
+    // is the sum the route keeps, one subtraction instead of six terms.
+    template <bool skipLoad, typename Route>
+    inline void subtractRouteCost(Cost &out, Route const *route) const;
 };
+
+template <bool skipLoad, typename Route>
+void CostEvaluator::subtractRouteCost(Cost &out, Route const *route) const
+{
+    if (!route->hasDeltaExcess())
+    {
+        out -= route->deltaBaseCost();
+        return;
+    }
+
+    out -= route->distanceCost();
+    out -= route->penaltyCost();
+    out -= excessDistPenalty(route->excessDistance());
+
+    if constexpr (!skipLoad)
+        out -= excessLoadPenalties(route->excessLoad(),
+                                   route->loadedDimensions());
+
+    // Use DS-only values: proposal.duration() returns DurationSegment values
+    // without forbidden window awareness, so the subtracted route cost must
+    // also be DS-only to keep the delta consistent.
+    out -= route->durationCostDS();
+    out -= twPenalty(route->timeWarpDS());
+}
 
 bool CostEvaluator::ruledOut(Cost &out, Cost durationBound)
 {
@@ -363,21 +393,7 @@ bool CostEvaluator::deltaCost(Cost &out,
 {
     auto const *route = proposal.route();
     if (!route->empty())
-    {
-        out -= route->distanceCost();
-        out -= route->penaltyCost();
-        out -= excessDistPenalty(route->excessDistance());
-
-        if constexpr (!skipLoad)
-            out -= excessLoadPenalties(route->excessLoad(),
-                                       route->loadedDimensions());
-
-        // Use DS-only values: proposal.duration() returns DurationSegment
-        // values without forbidden window awareness, so the subtracted
-        // route cost must also be DS-only to keep the delta consistent.
-        out -= route->durationCostDS();
-        out -= twPenalty(route->timeWarpDS());
-    }
+        subtractRouteCost<skipLoad>(out, route);
 
     if (route->hasDistanceCost())
     {
@@ -435,33 +451,11 @@ bool CostEvaluator::deltaCost(Cost &out,
 {
     auto const *uRoute = uProposal.route();
     if (!uRoute->empty())
-    {
-        out -= uRoute->distanceCost();
-        out -= uRoute->penaltyCost();
-        out -= excessDistPenalty(uRoute->excessDistance());
-
-        if constexpr (!skipLoad)
-            out -= excessLoadPenalties(uRoute->excessLoad(),
-                                       uRoute->loadedDimensions());
-
-        out -= uRoute->durationCostDS();
-        out -= twPenalty(uRoute->timeWarpDS());
-    }
+        subtractRouteCost<skipLoad>(out, uRoute);
 
     auto const *vRoute = vProposal.route();
     if (!vRoute->empty())
-    {
-        out -= vRoute->distanceCost();
-        out -= vRoute->penaltyCost();
-        out -= excessDistPenalty(vRoute->excessDistance());
-
-        if constexpr (!skipLoad)
-            out -= excessLoadPenalties(vRoute->excessLoad(),
-                                       vRoute->loadedDimensions());
-
-        out -= vRoute->durationCostDS();
-        out -= twPenalty(vRoute->timeWarpDS());
-    }
+        subtractRouteCost<skipLoad>(out, vRoute);
 
     if (uRoute->hasDistanceCost())
     {
