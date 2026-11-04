@@ -560,6 +560,12 @@ private:
     // asking the node, which every load and duration proposal does per segment.
     bool hasReloads_ = false;
 
+    // Travel time over every edge of the route, and the service time of its
+    // clients, as of the last update(). Waiting, breaks and depot service only
+    // add to a route's duration, so the two together bound it from below.
+    Duration travel_ = 0;
+    Duration clientService_ = 0;
+
     std::vector<Node *> nodes;   // Nodes in this route, including depots
     std::vector<size_t> visits;  // Locations in this route, incl. depots
 
@@ -979,6 +985,22 @@ public:
      * via the objective or via penalised constraints. False otherwise.
      */
     [[nodiscard]] inline bool hasDurationCost() const;
+
+    /**
+     * Whether the route visits a reload depot, as of the last update().
+     */
+    [[nodiscard]] inline bool hasReloads() const;
+
+    /**
+     * Travel time over every edge of the route, in its profile's duration
+     * matrix, as of the last update().
+     */
+    [[nodiscard]] inline Duration travel() const;
+
+    /**
+     * Total service time of the route's clients, as of the last update().
+     */
+    [[nodiscard]] inline Duration clientService() const;
 
     /**
      * @return The (soft) maximum shift duration that the vehicle servicing this
@@ -1852,6 +1874,12 @@ Cost Route::unitDurationCost() const { return vehicleType_.unitDurationCost; }
 Cost Route::unitOvertimeCost() const { return vehicleType_.unitOvertimeCost; }
 
 bool Route::hasDurationCost() const { return hasDurationCost_; }
+
+bool Route::hasReloads() const { return hasReloads_; }
+
+Duration Route::travel() const { return travel_; }
+
+Duration Route::clientService() const { return clientService_; }
 
 Duration Route::shiftDuration() const { return vehicleType_.shiftDuration; }
 

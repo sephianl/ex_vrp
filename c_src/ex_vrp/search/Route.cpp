@@ -650,6 +650,22 @@ void Route::update()
         cumDist[idx] = cumDist[idx - 1] + distMat(from, to);
     }
 
+    // Travel and client service, which together bound the duration of any
+    // proposal built from this route's edges from below.
+    auto const &durMat = data.durationMatrix(profile());
+
+    travel_ = 0;
+    clientService_ = 0;
+    for (size_t idx = 1; idx != nodes.size(); ++idx)
+        travel_ += durMat(locAt<true>(idx - 1), locAt<true>(idx));
+
+    for (auto const *node : nodes)
+        if (node->client() >= data.numDepots() && !data.isBreak(node->client()))
+        {
+            ProblemData::Client const &client = data.location(node->client());
+            clientService_ += client.serviceDuration;
+        }
+
     // Trip boundaries, and each trip's excess over the per-trip distance cap.
     // A reload depot both ends one trip and starts the next, so it appears
     // once here, as the bound the two trips share.

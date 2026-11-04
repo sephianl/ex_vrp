@@ -35,6 +35,21 @@ template <size_t N, size_t M> class Exchange : public NodeOperator
     // Tests if the segments of U and V are adjacent in the same route
     bool adjacent(Route::Node *U, Route::Node *V) const;
 
+    // Whether a relocate between these routes can be bounded from below on
+    // duration: a route's duration is at least its travel plus its clients'
+    // service only while no break or reload depot adds to it in a way this
+    // bound does not track.
+    bool boundsRelocate(Route const *uRoute, Route const *vRoute) const;
+
+    // Lower bound on the duration cost of the two proposals of relocating U's
+    // segment after V in another route: each proposal's travel and client
+    // service, from its route's totals and the edges the move cuts and adds.
+    Cost relocateDurationBound(Route::Node *U, Route::Node *V) const;
+
+    // The same bound for a relocate within U's route, where service does not
+    // change and only the edges around U's segment and V do.
+    Cost inRouteRelocateDurationBound(Route::Node *U, Route::Node *V) const;
+
     // Special case that's applied when M == 0
     Cost evalRelocateMove(Route::Node *U,
                           Route::Node *V,
@@ -111,6 +126,90 @@ bool Exchange<N, M>::keepsShipments(Route::Node *U, Route::Node *V) const
 }
 
 template <size_t N, size_t M>
+bool Exchange<N, M>::boundsRelocate(Route const *uRoute,
+                                    Route const *vRoute) const
+{
+    return !data.hasBreaks() && !uRoute->hasReloads() && !vRoute->hasReloads();
+}
+
+template <size_t N, size_t M>
+Cost Exchange<N, M>::relocateDurationBound(Route::Node *U, Route::Node *V) const
+{
+    auto const *uRoute = U->route();
+    auto const *vRoute = V->route();
+    auto const &uDur = data.durationMatrix(uRoute->profile());
+    auto const &vDur = data.durationMatrix(vRoute->profile());
+
+    auto const first = U->idx();
+    auto const *last = (*uRoute)[first + N - 1];
+    auto const before = p(U)->client();
+    auto const after = n(last)->client();
+
+    Duration service = 0;
+    Duration uInner = 0;
+    Duration vInner = 0;
+    for (size_t idx = first; idx != first + N; ++idx)
+    {
+        auto const loc = (*uRoute)[idx]->client();
+        ProblemData::Client const &client = data.location(loc);
+        service += client.serviceDuration;
+
+        if (idx != first)
+        {
+            auto const prev = (*uRoute)[idx - 1]->client();
+            uInner += uDur(prev, loc);
+            vInner += vDur(prev, loc);
+        }
+    }
+
+    Cost bound = 0;
+
+    // A route left without clients proposes nothing, and costs nothing.
+    if (uRoute->hasDurationCost() && uRoute->numClients() != N)
+    {
+        auto const travel = uRoute->travel() - uDur(before, U->client())
+                            - uInner - uDur(last->client(), after)
+                            + uDur(before, after);
+        auto const duration = travel + uRoute->clientService() - service;
+        bound += uRoute->unitDurationCost() * static_cast<Cost>(duration);
+    }
+
+    if (vRoute->hasDurationCost())
+    {
+        auto const next = n(V)->client();
+        auto const travel = vRoute->travel() - vDur(V->client(), next)
+                            + vDur(V->client(), U->client()) + vInner
+                            + vDur(last->client(), next);
+        auto const duration = travel + vRoute->clientService() + service;
+        bound += vRoute->unitDurationCost() * static_cast<Cost>(duration);
+    }
+
+    return bound;
+}
+
+template <size_t N, size_t M>
+Cost Exchange<N, M>::inRouteRelocateDurationBound(Route::Node *U,
+                                                  Route::Node *V) const
+{
+    auto const *route = U->route();
+    if (!route->hasDurationCost())
+        return 0;
+
+    auto const &dur = data.durationMatrix(route->profile());
+    auto const *last = (*route)[U->idx() + N - 1];
+    auto const before = p(U)->client();
+    auto const after = n(last)->client();
+    auto const next = n(V)->client();
+
+    auto const travel = route->travel() - dur(before, U->client())
+                        - dur(last->client(), after) + dur(before, after)
+                        - dur(V->client(), next) + dur(V->client(), U->client())
+                        + dur(last->client(), next);
+    auto const duration = travel + route->clientService();
+    return route->unitDurationCost() * static_cast<Cost>(duration);
+}
+
+template <size_t N, size_t M>
 Cost Exchange<N, M>::evalRelocateMove(Route::Node *U,
                                       Route::Node *V,
                                       CostEvaluator const &costEvaluator) const
@@ -142,11 +241,16 @@ Cost Exchange<N, M>::evalRelocateMove(Route::Node *U,
                               uRoute->between(U->idx(), U->idx() + N - 1),
                               vRoute->after(V->idx() + 1));
 
-        costEvaluator.deltaCost(deltaCost, uProposal, vProposal);
+        auto const bound
+            = boundsRelocate(uRoute, vRoute) ? relocateDurationBound(U, V) : 0;
+        costEvaluator.deltaCost(deltaCost, uProposal, vProposal, bound);
     }
     else  // within same route
     {
         auto *route = U->route();
+        auto const bound = boundsRelocate(route, route)
+                               ? inRouteRelocateDurationBound(U, V)
+                               : 0;
 
         if (U->idx() < V->idx())
             costEvaluator.deltaCost(
@@ -154,14 +258,16 @@ Cost Exchange<N, M>::evalRelocateMove(Route::Node *U,
                 Route::Proposal(route->before(U->idx() - 1),
                                 route->between(U->idx() + N, V->idx()),
                                 route->between(U->idx(), U->idx() + N - 1),
-                                route->after(V->idx() + 1)));
+                                route->after(V->idx() + 1)),
+                bound);
         else
             costEvaluator.deltaCost(
                 deltaCost,
                 Route::Proposal(route->before(V->idx()),
                                 route->between(U->idx(), U->idx() + N - 1),
                                 route->between(V->idx() + 1, U->idx() - 1),
-                                route->after(U->idx() + N)));
+                                route->after(U->idx() + N)),
+                bound);
     }
 
     return deltaCost;
