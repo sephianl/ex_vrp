@@ -821,8 +821,10 @@ void Route::update()
 
     updateClocks();
 
-    // Load.
-    for (size_t dim = 0; dim != data.numLoadDimensions(); ++dim)
+    // Load. A dimension nothing loads holds only empty segments, so its load
+    // and excess stay at the zero they start at, and nothing reads its
+    // segments: delta evaluation asks only about loaded dimensions.
+    for (auto const dim : loadedDimensions_)
     {
         auto const capacity = vehicleType_.capacity[dim];
 
