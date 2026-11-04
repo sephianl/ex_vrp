@@ -844,6 +844,10 @@ private:
     // the distance matrix, which frees that channel to carry real metres.
     std::vector<std::vector<Cost>> const penalties_;
 
+    // For each profile, the first profile whose penalties are the same; see
+    // samePenalties().
+    std::vector<size_t> const penaltyClass_;
+
     // Per-location vehicle lock: visiting a locked location on any vehicle
     // type other than the locked one costs the lock's price. Node-additive
     // like penalties_, but keyed by vehicle type rather than profile. Empty
@@ -1051,6 +1055,13 @@ public:
     [[nodiscard]] inline Cost penalty(size_t profile, size_t location) const;
 
     /**
+     * Whether the two profiles charge every location the same penalty. Routing
+     * profiles that differ only in a depot row usually do, so a segment moved
+     * between them keeps its penalty.
+     */
+    [[nodiscard]] inline bool samePenalties(size_t profile, size_t other) const;
+
+    /**
      * Price charged for visiting ``location`` on ``vehicleType``: the lock's
      * price when the location is locked to another vehicle type, else zero.
      */
@@ -1237,6 +1248,12 @@ std::vector<Cost> const &ProblemData::penalties(size_t profile) const
 {
     assert(profile < penalties_.size());
     return penalties_[profile];
+}
+
+bool ProblemData::samePenalties(size_t profile, size_t other) const
+{
+    assert(profile < penaltyClass_.size() && other < penaltyClass_.size());
+    return penaltyClass_[profile] == penaltyClass_[other];
 }
 
 Cost ProblemData::penalty(size_t profile, size_t location) const

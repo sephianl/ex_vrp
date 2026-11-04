@@ -1705,7 +1705,13 @@ Cost Route::SegmentBetween::penalty(size_t profile, size_t vehicleType) const
     auto const lockChanges
         = route_.data.hasVehicleLocks() && vehicleType != route_.vehicleType();
 
-    if (profile != route_.profile() || lockChanges)
+    // Profiles that differ only in a depot row charge the same penalties, so
+    // the prefix sums still hold across them.
+    auto const penaltiesChange
+        = profile != route_.profile()
+          && !route_.data.samePenalties(profile, route_.profile());
+
+    if (penaltiesChange || lockChanges)
     {
         auto const &pen = route_.data.penalties(profile);
         Cost penalty = 0;
