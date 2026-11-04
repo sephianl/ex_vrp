@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.19.3
+
+### Performance
+
+- **Less work per local-search iteration, with identical results.** Three changes cut the
+  instructions per iteration by 11–14% on the production corpus (−14.3% on a tight 629-client
+  day, −14.1% on the 593-client day) and leave every solve unchanged: the same iterations, routes,
+  distance, duration and clients served on 37 instances × 2 seeds at a fixed iteration count.
+  - A route records whether it holds a reload depot, so its segments stop asking every node
+    whether it is one when none is there. Most of the gain; instances that do reload are unchanged.
+  - The forbidden-visit check for a pair of nodes is worked out once and shared by every node
+    operator, instead of once per operator. Matters on days with zone restrictions (−2 to −4%).
+  - A route's excess load is summed over only the dimensions some client, shipment or vehicle
+    loads; proposals already priced load that way.
+
+  At production's 284 s on the 629-client day this is 16% more iterations: 9 of 10 seeds end
+  cheaper and none dearer.
+
 ## 0.19.2
 
 ### Changed
