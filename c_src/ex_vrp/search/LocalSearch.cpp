@@ -395,9 +395,9 @@ bool LocalSearch::wouldViolateForbidden(Route::Node const *U,
     return !data.isAllowed(profile, U->client());
 }
 
-bool LocalSearch::wouldSegmentViolateForbidden(Route::Node const *U,
-                                               size_t span,
-                                               Route const *targetRoute) const
+size_t LocalSearch::firstForbidden(Route::Node const *U,
+                                   size_t span,
+                                   Route const *targetRoute) const
 {
     auto const *route = U->route();
     assert(route && targetRoute);
@@ -405,9 +405,24 @@ bool LocalSearch::wouldSegmentViolateForbidden(Route::Node const *U,
     auto const last = std::min(U->idx() + span, route->size());
     for (size_t idx = U->idx(); idx != last; ++idx)
         if (wouldViolateForbidden((*route)[idx], targetRoute))
-            return true;
+            return idx - U->idx();
 
-    return false;
+    return span;
+}
+
+LocalSearch::ForbiddenReach
+LocalSearch::forbiddenReach(Route::Node const *U, Route::Node const *V) const
+{
+    // Routes whose clients may all cross to each other's profile cannot violate
+    // anything, whichever nodes the operator moves. The routes cache that
+    // answer, which spares walking both tails on every SwapTails evaluation.
+    if (!data.hasForbiddenLocations()
+        || mayExchangeClients(U->route(), V->route()))
+        return {true, 0, 0};
+
+    return {false,
+            firstForbidden(U, maxNodeOpSpan_, V->route()),
+            firstForbidden(V, maxNodeOpSpan_, U->route())};
 }
 
 bool LocalSearch::wouldTailSwapViolateForbidden(Route::Node const *U,
@@ -431,22 +446,18 @@ bool LocalSearch::wouldTailSwapViolateForbidden(Route::Node const *U,
 
 bool LocalSearch::wouldMoveViolateForbidden(NodeOperator const &nodeOp,
                                             Route::Node const *U,
-                                            Route::Node const *V) const
+                                            Route::Node const *V,
+                                            ForbiddenReach const &reach) const
 {
-    if (!data.hasForbiddenLocations())
-        return false;
-
-    // Routes whose clients may all cross to each other's profile cannot violate
-    // anything, whichever nodes the operator moves. The routes cache that
-    // answer, which spares walking both tails on every SwapTails evaluation.
-    if (mayExchangeClients(U->route(), V->route()))
+    if (reach.unrestricted)
         return false;
 
     if (nodeOp.affectsEntireTail())
         return wouldTailSwapViolateForbidden(U, V);
 
-    return wouldSegmentViolateForbidden(U, nodeOp.spanU(), V->route())
-           || wouldSegmentViolateForbidden(V, nodeOp.spanV(), U->route());
+    assert(nodeOp.spanU() <= maxNodeOpSpan_
+           && nodeOp.spanV() <= maxNodeOpSpan_);
+    return reach.uFree < nodeOp.spanU() || reach.vFree < nodeOp.spanV();
 }
 
 bool LocalSearch::mayExchangeClients(Route const *U, Route const *V) const
@@ -571,6 +582,11 @@ bool LocalSearch::applyNodeOps(Route::Node *U,
             return false;
     }
 
+    // Which of each side's clients may cross is a property of the pair, so it
+    // is worked out once here and then read by every operator below.
+    auto const reach
+        = rU != rV ? forbiddenReach(U, V) : ForbiddenReach{true, 0, 0};
+
     for (auto *nodeOp : nodeOps)
     {
         // Reachability is checked per operator rather than once for the pair,
@@ -581,7 +597,7 @@ bool LocalSearch::applyNodeOps(Route::Node *U,
         // distance channel carrying real distances, nothing stops it but this.
         // A barred operator is skipped rather than abandoning the pair, since
         // another operator may move a subset that is perfectly allowed.
-        if (rU != rV && wouldMoveViolateForbidden(*nodeOp, U, V))
+        if (wouldMoveViolateForbidden(*nodeOp, U, V, reach))
             continue;
 
         auto const deltaCost = nodeOp->evaluate(U, V, costEvaluator);
@@ -1966,6 +1982,7 @@ void LocalSearch::loadSolution(ex_vrp::Solution const &solution)
 void LocalSearch::addNodeOperator(NodeOperator &op)
 {
     nodeOps.emplace_back(&op);
+    maxNodeOpSpan_ = std::max({maxNodeOpSpan_, op.spanU(), op.spanV()});
 }
 
 void LocalSearch::addRouteOperator(RouteOperator &op)
