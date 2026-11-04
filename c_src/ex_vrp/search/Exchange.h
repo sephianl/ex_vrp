@@ -399,15 +399,22 @@ Cost Exchange<N, M>::evalSwapMove(Route::Node *U,
                               uRoute->between(U->idx(), U->idx() + N - 1),
                               vRoute->after(V->idx() + M));
 
+        // Asked about the flags first: a problem without duration costs, such
+        // as a CVRP, never has a floor, and should not pay for asking.
         auto const bound
-            = boundsRelocate(uRoute, vRoute) ? swapDurationBound(U, V) : 0;
+            = (uRoute->hasDurationBound() || vRoute->hasDurationBound())
+                      && boundsRelocate(uRoute, vRoute)
+                  ? swapDurationBound(U, V)
+                  : 0;
         costEvaluator.deltaCost(deltaCost, uProposal, vProposal, bound);
     }
     else  // within same route
     {
         auto const *route = U->route();
         auto const bound
-            = boundsRelocate(route, route) ? inRouteSwapDurationBound(U, V) : 0;
+            = route->hasDurationBound() && boundsRelocate(route, route)
+                  ? inRouteSwapDurationBound(U, V)
+                  : 0;
 
         if (U->idx() < V->idx())
             costEvaluator.deltaCost(

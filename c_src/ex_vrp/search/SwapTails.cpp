@@ -133,7 +133,9 @@ ex_vrp::Cost SwapTails::evaluate(Route::Node *U,
     // A floor on both proposals' duration, as for Exchange's moves: off with
     // breaks or reloads, which add to a duration in ways it does not track.
     auto const bound
-        = !data.hasBreaks() && !uRoute->hasReloads() && !vRoute->hasReloads()
+        = (uRoute->hasDurationBound() || vRoute->hasDurationBound())
+                  && !data.hasBreaks() && !uRoute->hasReloads()
+                  && !vRoute->hasReloads()
               ? tailSwapDurationBound(data, U, V)
                     + tailSwapDurationBound(data, V, U)
               : 0;
