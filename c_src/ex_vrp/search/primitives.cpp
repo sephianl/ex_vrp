@@ -28,6 +28,59 @@ ex_vrp::Cost ex_vrp::search::insertCost(Route::Node *U,
     return deltaCost;
 }
 
+bool ex_vrp::search::insertCostBelow(Route::Node *U,
+                                     Route::Node *V,
+                                     ProblemData const &data,
+                                     CostEvaluator const &costEvaluator,
+                                     Cost bound,
+                                     Cost &cost)
+{
+    if (!V->route() || U->isDepot())
+    {
+        cost = 0;  // as insertCost
+        return cost < bound;
+    }
+
+    auto *route = V->route();
+    ProblemData::Client const &client = data.location(U->client());
+
+    // Measured from the bound, so the evaluator's shortcuts, which stop once
+    // the delta can no longer go below zero, stop once it can no longer go
+    // below the bound. Only an evaluation that runs to the end is exact.
+    Cost deltaCost = Cost(route->empty()) * route->fixedVehicleCost()
+                     - client.prize - bound;
+
+    // The proposal's duration is at least the route's travel with V's
+    // outgoing edge replaced by the two through U, plus the route's client
+    // service and U's own: waiting and depot service only add to it. As for
+    // relocates, the bound does not hold with breaks or reloads.
+    Cost durationBound = 0;
+    if (route->hasDurationCost() && !data.hasBreaks() && !route->hasReloads())
+    {
+        auto const &dur = data.durationMatrix(route->profile());
+        auto const from = V->client();
+        auto const to = (*route)[V->idx() + 1]->client();
+        auto const travel = route->travel() - dur(from, to)
+                            + dur(from, U->client()) + dur(U->client(), to);
+        auto const duration
+            = travel + route->clientService() + client.serviceDuration;
+        durationBound = route->unitDurationCost() * static_cast<Cost>(duration);
+    }
+
+    auto const exact = costEvaluator.deltaCost(
+        deltaCost,
+        Route::Proposal(route->before(V->idx()),
+                        ClientSegment(data, U->client()),
+                        route->after(V->idx() + 1)),
+        durationBound);
+
+    if (!exact || deltaCost >= 0)
+        return false;
+
+    cost = deltaCost + bound;
+    return true;
+}
+
 ex_vrp::Cost ex_vrp::search::insertTripCost(Route::Node *U,
                                             Route const *route,
                                             size_t depot,

@@ -239,8 +239,10 @@ bool Solution::insert(Route::Node *U,
             || !isReachable(V->route()))
             continue;
 
-        auto const cost = insertCost(U, V, data_, costEvaluator);
-        if (cost < bestCost)
+        // bestCost is a real cost from here on, so the bounded check decides
+        // the same `cost < bestCost` as an exact insertCost would.
+        if (Cost cost;
+            insertCostBelow(U, V, data_, costEvaluator, bestCost, cost))
         {
             bestCost = cost;
             UAfter = V;
@@ -253,8 +255,8 @@ bool Solution::insert(Route::Node *U,
             || !isCompatibleRoute(&route) || !isReachable(&route))
             continue;
 
-        auto const cost = insertCost(U, route[0], data_, costEvaluator);
-        if (cost < bestCost)
+        if (Cost cost;
+            insertCostBelow(U, route[0], data_, costEvaluator, bestCost, cost))
         {
             bestCost = cost;
             UAfter = route[0];
@@ -281,8 +283,8 @@ bool Solution::insert(Route::Node *U,
         if (empty == end)
             continue;
 
-        auto const cost = insertCost(U, (*empty)[0], data_, costEvaluator);
-        if (cost < bestCost)
+        if (Cost cost; insertCostBelow(
+                U, (*empty)[0], data_, costEvaluator, bestCost, cost))
         {
             bestCost = cost;
             UAfter = (*empty)[0];

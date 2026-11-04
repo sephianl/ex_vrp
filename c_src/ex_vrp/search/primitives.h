@@ -36,6 +36,21 @@ Cost insertCost(Route::Node *U,
                 CostEvaluator const &costEvaluator);
 
 /**
+ * Whether inserting U after V costs strictly less than ``bound``, and if so,
+ * writes that exact cost to ``cost``. A candidate that cannot beat the bound
+ * is ruled out on a lower bound, before its load and duration are folded, so
+ * a search for the cheapest of many positions pays the full evaluation only
+ * for the positions that improve on the best so far. ``bound`` must be a real
+ * cost, not ``std::numeric_limits<Cost>::max()``.
+ */
+bool insertCostBelow(Route::Node *U,
+                     Route::Node *V,
+                     ProblemData const &data,
+                     CostEvaluator const &costEvaluator,
+                     Cost bound,
+                     Cost &cost);
+
+/**
  * Evaluates the delta cost of opening a new trip in the given route: a reload
  * depot inserted at idx, and U directly after it. The evaluation is exact.
  *
