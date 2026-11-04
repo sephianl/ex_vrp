@@ -55,6 +55,12 @@ template <size_t N, size_t M> class Exchange : public NodeOperator
     // segment's travel and service for the other's, in its own profile.
     Cost swapDurationBound(Route::Node *U, Route::Node *V) const;
 
+    // The same bound for a swap within U's route. Adjacent segments are not
+    // swapped, so a stretch of the route always lies between them; service
+    // and every segment's inner edges stay, and only the four edges at their
+    // ends change.
+    Cost inRouteSwapDurationBound(Route::Node *U, Route::Node *V) const;
+
     // Special case that's applied when M == 0
     Cost evalRelocateMove(Route::Node *U,
                           Route::Node *V,
@@ -267,6 +273,39 @@ Cost Exchange<N, M>::swapDurationBound(Route::Node *U, Route::Node *V) const
 }
 
 template <size_t N, size_t M>
+Cost Exchange<N, M>::inRouteSwapDurationBound(Route::Node *U,
+                                              Route::Node *V) const
+{
+    auto const *route = U->route();
+    if (!route->hasDurationCost())
+        return 0;
+
+    // The earlier segment and the later one, whichever of U's and V's each is.
+    auto const uFirst = U->idx() < V->idx();
+    auto *first = uFirst ? U : V;
+    auto *second = uFirst ? V : U;
+    auto const firstSize = uFirst ? N : M;
+    auto const secondSize = uFirst ? M : N;
+
+    auto const &dur = data.durationMatrix(route->profile());
+    auto const firstEnd = (*route)[first->idx() + firstSize - 1]->client();
+    auto const secondEnd = (*route)[second->idx() + secondSize - 1]->client();
+    auto const before = p(first)->client();
+    auto const after = (*route)[second->idx() + secondSize]->client();
+    auto const midStart = (*route)[first->idx() + firstSize]->client();
+    auto const midEnd = p(second)->client();
+
+    auto const travel = route->travel() - dur(before, first->client())
+                        - dur(firstEnd, midStart)
+                        - dur(midEnd, second->client()) - dur(secondEnd, after)
+                        + dur(before, second->client())
+                        + dur(secondEnd, midStart)
+                        + dur(midEnd, first->client()) + dur(firstEnd, after);
+    auto const duration = travel + route->clientService();
+    return route->unitDurationCost() * static_cast<Cost>(duration);
+}
+
+template <size_t N, size_t M>
 Cost Exchange<N, M>::evalRelocateMove(Route::Node *U,
                                       Route::Node *V,
                                       CostEvaluator const &costEvaluator) const
@@ -362,6 +401,8 @@ Cost Exchange<N, M>::evalSwapMove(Route::Node *U,
     else  // within same route
     {
         auto const *route = U->route();
+        auto const bound
+            = boundsRelocate(route, route) ? inRouteSwapDurationBound(U, V) : 0;
 
         if (U->idx() < V->idx())
             costEvaluator.deltaCost(
@@ -370,7 +411,8 @@ Cost Exchange<N, M>::evalSwapMove(Route::Node *U,
                                 route->between(V->idx(), V->idx() + M - 1),
                                 route->between(U->idx() + N, V->idx() - 1),
                                 route->between(U->idx(), U->idx() + N - 1),
-                                route->after(V->idx() + M)));
+                                route->after(V->idx() + M)),
+                bound);
         else
             costEvaluator.deltaCost(
                 deltaCost,
@@ -378,7 +420,8 @@ Cost Exchange<N, M>::evalSwapMove(Route::Node *U,
                                 route->between(U->idx(), U->idx() + N - 1),
                                 route->between(V->idx() + M, U->idx() - 1),
                                 route->between(V->idx(), V->idx() + M - 1),
-                                route->after(U->idx() + N)));
+                                route->after(U->idx() + N)),
+                bound);
     }
 
     return deltaCost;
