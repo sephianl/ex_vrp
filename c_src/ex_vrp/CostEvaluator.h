@@ -95,6 +95,15 @@ class CostEvaluator
     [[nodiscard]] inline Cost
     excessLoadPenalties(std::vector<Load> const &excessLoads) const;
 
+    /**
+     * The same sum over only the given dimensions. A dimension nothing loads
+     * has no excess, so summing ``ProblemData::loadedDimensions()`` gives the
+     * same cost as summing them all.
+     */
+    [[nodiscard]] inline Cost
+    excessLoadPenalties(std::vector<Load> const &excessLoads,
+                        std::vector<size_t> const &dimensions) const;
+
 public:
     CostEvaluator(std::vector<double> loadPenalties,
                   double twPenalty,
@@ -218,6 +227,19 @@ Cost CostEvaluator::excessLoadPenalties(
     return cost;
 }
 
+Cost CostEvaluator::excessLoadPenalties(
+    std::vector<Load> const &excessLoads,
+    std::vector<size_t> const &dimensions) const
+{
+    assert(excessLoads.size() == loadPenalties_.size());
+
+    Cost cost = 0;
+    for (auto const dim : dimensions)
+        cost += loadPenalties_[dim] * excessLoads[dim].get();
+
+    return cost;
+}
+
 Cost CostEvaluator::loadPenalty(Load load,
                                 Load capacity,
                                 size_t dimension) const
@@ -303,7 +325,8 @@ bool CostEvaluator::deltaCost(Cost &out, T<Args...> const &proposal) const
         out -= excessDistPenalty(route->excessDistance());
 
         if constexpr (!skipLoad)
-            out -= excessLoadPenalties(route->excessLoad());
+            out -= excessLoadPenalties(route->excessLoad(),
+                                       route->loadedDimensions());
 
         // Use DS-only values: proposal.duration() returns DurationSegment
         // values without forbidden window awareness, so the subtracted
@@ -367,7 +390,8 @@ bool CostEvaluator::deltaCost(Cost &out,
         out -= excessDistPenalty(uRoute->excessDistance());
 
         if constexpr (!skipLoad)
-            out -= excessLoadPenalties(uRoute->excessLoad());
+            out -= excessLoadPenalties(uRoute->excessLoad(),
+                                       uRoute->loadedDimensions());
 
         out -= uRoute->durationCostDS();
         out -= twPenalty(uRoute->timeWarpDS());
@@ -381,7 +405,8 @@ bool CostEvaluator::deltaCost(Cost &out,
         out -= excessDistPenalty(vRoute->excessDistance());
 
         if constexpr (!skipLoad)
-            out -= excessLoadPenalties(vRoute->excessLoad());
+            out -= excessLoadPenalties(vRoute->excessLoad(),
+                                       vRoute->loadedDimensions());
 
         out -= vRoute->durationCostDS();
         out -= twPenalty(vRoute->timeWarpDS());
