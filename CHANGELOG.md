@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.19.2
 
 ### Changed
 
@@ -13,7 +13,10 @@
   wait and time-warp terms, in the solver and in `ExVrp.Neighbourhood` alike. Over 8 seeds at a
   fixed budget, the three large production days with mixed prizes each improved on every seed
   (−2.7%, −3.3% and −5.7% objective, one to two fewer routes, same clients served); days with a
-  single prize class are unchanged.
+  single prize class are unchanged. On a tight 629-client day planned without overtime, where 38
+  zone-restricted clients held a median 38 of every client's 60 slots and only 38% of a client's
+  true nearest neighbours made its list, the median objective over 5 seeds at production's 284 s
+  fell 26%: 11 more clients served and about 850 km less driving, in half the iterations.
 
 ## 0.19.1
 
