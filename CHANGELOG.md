@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+
+- **Less bookkeeping around each evaluation, with identical results.** Every solve is unchanged
+  (the same 74 identity solves); instructions per iteration fall 11.0% on the 629-client
+  production day, 10.7% on the 593-client day, 5–9% on the smaller production and literature
+  instances, and 2.2% with breaks.
+  - A route keeps its distance, penalty and DS-only duration cost as one sum, and whether it
+    carries any excess. Delta evaluation then takes a route without excess off in one subtraction,
+    since every infeasibility penalty is zero on it.
+  - A route builds its load segments only for the dimensions something loads; the others hold
+    only empty segments and nothing reads them.
+  - Whether a tail behind a node holds a client the other route's profile forbids is answered from
+    the last such client's index, cached per route and profile until the route next changes,
+    instead of walking both tails for every tail swap offered.
+
 ## 0.19.3
 
 ### Performance
