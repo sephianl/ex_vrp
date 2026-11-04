@@ -230,6 +230,7 @@ Two traps:
 | Restart `max_no_improvement` | **800**     | 150_000        | 150_000          | Ours (`c169cd0`): upstream's assumes millions of iterations; 153-order instance: 3–6 restarts/start, +29% iterations |
 | `exhaustive_on_best`         | on          | post-fork #988 | present          | Ported; short-budget A/B slightly negative — validate at prod budgets                                                |
 | LAHC history                 | 500         | 300            | 300              | Minor                                                                                                                |
+| Prize in neighbour proximity | **dropped** | subtracted     | subtracted       | Ours (0.19.2): a prize gap far above edge costs put every high-prize client in every list; −2.7–5.7% on mixed days   |
 
 Local feature patches in the vendored core (not upstream lag): same-vehicle groups, forbidden
 windows, reload/multi-trip pricing, depot-service removal, penalty channel, forbidden locations,
@@ -285,7 +286,7 @@ Benchmark caveats:
   speed measure: unchanged code swung −8%…+22% per instance on hosted runners.
 - Literature quality is `dev/literature/` behind `mix bench.lit.fetch`/`bench.lit.run`/`bench.lit.report`:
   gaps on PyVRP/Instances (X, HFVRP, MTVRPTWR, MDVRPTW) and CVRPLib (Solomon, Homberger–Gehring
-  200, DIMACS ORTEC/Loggi). PyVRP is compared through its *published* per-version averages
+  200, DIMACS ORTEC/Loggi). PyVRP is compared through its _published_ per-version averages
   (`BenchmarkGroup` holds them), not by running it, so a run must follow PyVRP's protocol:
   one core per solve, its per-group budgets scaled by the machine's single-thread PassMark, and
   budget scale 1; anything else the report flags as not comparable. The default `Sample` is a
