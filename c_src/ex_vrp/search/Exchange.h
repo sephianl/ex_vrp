@@ -241,29 +241,34 @@ Cost Exchange<N, M>::swapDurationBound(Route::Node *U, Route::Node *V) const
         auto const before = p(out)->client();
         auto const after = n(outLast)->client();
 
-        Duration travel = to->travel() - dur(before, out->client())
-                          - dur(outLast->client(), after)
-                          + dur(before, in->client())
-                          + dur(inLast->client(), after);
-        Duration service = to->clientService();
+        // Both segments' service, and the outgoing one's inner travel, from
+        // the routes' prefix sums. The incoming segment's inner travel is
+        // read the same way when the two routes share a profile; otherwise
+        // it is summed edge by edge in `to`'s.
+        auto const outFirst = out->idx();
+        auto const outEnd = outFirst + outSize - 1;
+        auto const inFirst = in->idx();
+        auto const inEnd = inFirst + inSize - 1;
 
-        for (size_t idx = out->idx(); idx != out->idx() + outSize; ++idx)
-        {
-            auto const loc = (*to)[idx]->client();
-            ProblemData::Client const &client = data.location(loc);
-            service -= client.serviceDuration;
-            if (idx != out->idx())
-                travel -= dur((*to)[idx - 1]->client(), loc);
-        }
+        Duration inInner = 0;
+        if (from->profile() == to->profile())
+            inInner = from->travelTo(inEnd) - from->travelTo(inFirst);
+        else
+            for (size_t idx = inFirst + 1; idx <= inEnd; ++idx)
+                inInner
+                    += dur((*from)[idx - 1]->client(), (*from)[idx]->client());
 
-        for (size_t idx = in->idx(); idx != in->idx() + inSize; ++idx)
-        {
-            auto const loc = (*from)[idx]->client();
-            ProblemData::Client const &client = data.location(loc);
-            service += client.serviceDuration;
-            if (idx != in->idx())
-                travel += dur((*from)[idx - 1]->client(), loc);
-        }
+        Duration const travel
+            = to->travel() - dur(before, out->client())
+              - (to->travelTo(outEnd) - to->travelTo(outFirst))
+              - dur(outLast->client(), after) + dur(before, in->client())
+              + inInner + dur(inLast->client(), after);
+
+        Duration const service = to->clientService()
+                                 - (to->clientServiceTo(outEnd)
+                                    - to->clientServiceTo(outFirst - 1))
+                                 + (from->clientServiceTo(inEnd)
+                                    - from->clientServiceTo(inFirst - 1));
 
         return to->unitDurationCost() * static_cast<Cost>(travel + service);
     };
