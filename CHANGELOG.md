@@ -26,6 +26,16 @@
   depots. A further 17–21% fewer instructions per iteration on the large production days
   (−16.6% on 629 clients, −20.7% on 593) and 18% more iterations at 284 s on the 629-client day,
   where 9 of 10 seeds end cheaper and none dearer.
+- **The same floor for swaps, tail swaps and insertions.** Routes keep their travel and service
+  time as prefix sums, so a swap between routes, a swap within a route (only the four edges at the
+  segments' ends change) and a tail swap price their least possible duration without walking the
+  segments, and skip the duration fold when that already rules them out. Inserting an unplanned
+  client keeps the best position so far as a bound, and the optional-client pass only asks
+  whether a swap improves. Floors are only worked out where duration carries a unit cost. Load,
+  time-warp and distance penalties skip the multiply when the excess is zero, and profiles with
+  identical penalties are grouped once. Every solve is unchanged (the same 74 identity solves);
+  instructions per iteration fall a further 31–40% on the production days (−38.1% on 629
+  clients, −40.1% on 593) and 2–5% on the literature instances. With breaks the floors stay off.
 
 ## 0.19.2
 
