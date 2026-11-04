@@ -17,6 +17,15 @@
 
   At production's 284 s on the 629-client day this is 16% more iterations: 9 of 10 seeds end
   cheaper and none dearer.
+- **Relocates are ruled out on their least possible duration first.** A route's duration is at
+  least its travel plus its clients' service time, since waiting is never negative. Each route
+  now keeps those totals, and a relocate prices the exact new travel from the edges it cuts and
+  adds; when that floor alone already rules the move out, the full duration fold is skipped. The
+  bound is sound and a ruled-out move still reads as non-improving, so every solve is unchanged
+  (the same 74 identity solves). It is off for problems with breaks and for routes with reload
+  depots. A further 17–21% fewer instructions per iteration on the large production days
+  (−16.6% on 629 clients, −20.7% on 593) and 18% more iterations at 284 s on the 629-client day,
+  where 9 of 10 seeds end cheaper and none dearer.
 
 ## 0.19.2
 
