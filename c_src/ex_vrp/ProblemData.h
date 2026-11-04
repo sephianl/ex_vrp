@@ -8,6 +8,7 @@
 #include "Measure.h"
 
 #include <cassert>
+#include <cstdint>
 #include <iosfwd>
 #include <limits>
 #include <optional>
@@ -865,6 +866,12 @@ private:
     // predicate existed.
     bool const hasForbidden_;
 
+    // allowed_ transposed: bit p of a location's word is set when profile p
+    // may visit it. Built only when something is forbidden and there are at
+    // most 64 profiles, so that a route can tell which profiles take all its
+    // clients with one AND per client; empty otherwise.
+    std::vector<uint64_t> const allowedProfiles_;
+
     size_t const numVehicles_;
     size_t const numLoadDimensions_;
     bool const hasTimeWindows_;
@@ -1138,6 +1145,14 @@ public:
     [[nodiscard]] inline bool hasForbiddenLocations() const;
 
     /**
+     * Per location, the profiles that may visit it as a bit mask (bit ``p``
+     * for profile ``p``). Empty when nothing is forbidden or there are more
+     * than 64 profiles; ask :meth:`~is_allowed` then.
+     */
+    [[nodiscard]] inline std::vector<uint64_t> const &
+    allowedProfileMasks() const;
+
+    /**
      * Determines whether any of the :meth:`~clients` or :meth:`~depots` in this
      * instance have nonstandard time windows, or if any :meth:`~vehicle_types`
      * have nonstandard shift time windows or latest start constraints.
@@ -1343,6 +1358,11 @@ std::vector<size_t> const &ProblemData::loadedDimensions() const
 }
 
 bool ProblemData::hasForbiddenLocations() const { return hasForbidden_; }
+
+std::vector<uint64_t> const &ProblemData::allowedProfileMasks() const
+{
+    return allowedProfiles_;
+}
 
 bool ProblemData::hasTimeWindows() const { return hasTimeWindows_; }
 }  // namespace ex_vrp

@@ -726,7 +726,18 @@ void Route::update()
     // for the price of one word.
     transferableProfiles_.set();
 
-    if (data.hasForbiddenLocations())
+    if (auto const &masks = data.allowedProfileMasks(); !masks.empty())
+    {
+        // One AND per client instead of one test per client and profile.
+        auto common = ~uint64_t{0};
+        for (auto const *node : *this)
+            common &= masks[node->client()];
+
+        for (size_t p = 0; p != data.numProfiles(); ++p)
+            if (!((common >> p) & 1))
+                transferableProfiles_[p] = false;
+    }
+    else if (data.hasForbiddenLocations())
         for (size_t p = 0; p != data.numProfiles(); ++p)
             for (auto const *node : *this)
                 if (!data.isAllowed(p, node->client()))

@@ -103,6 +103,24 @@ normaliseAllowed(std::vector<ex_vrp::DynamicBitset> allowed,
     return std::vector<ex_vrp::DynamicBitset>(numProfiles, all);
 }
 
+// See ProblemData::allowedProfiles_.
+std::vector<uint64_t>
+transposeAllowed(std::vector<ex_vrp::DynamicBitset> const &allowed,
+                 bool hasForbidden,
+                 size_t numLocations)
+{
+    if (!hasForbidden || allowed.size() > 64)
+        return {};
+
+    std::vector<uint64_t> masks(numLocations, 0);
+    for (size_t profile = 0; profile != allowed.size(); ++profile)
+        for (size_t loc = 0; loc != numLocations; ++loc)
+            if (loc < allowed[profile].size() && allowed[profile][loc])
+                masks[loc] |= uint64_t{1} << profile;
+
+    return masks;
+}
+
 // An empty profiles argument means one profile per matrix pair, replacing no
 // row: what every model meant before profiles could share matrices.
 std::vector<ProblemData::Profile>
@@ -1233,6 +1251,8 @@ ProblemData::ProblemData(std::vector<Client> clients,
                                 allowed_.end(),
                                 [](DynamicBitset const &set)
                                 { return !set.all(); })),
+      allowedProfiles_(transposeAllowed(
+          allowed_, hasForbidden_, clients_.size() + depots_.size())),
       numVehicles_(std::accumulate(vehicleTypes_.begin(),
                                    vehicleTypes_.end(),
                                    0,
