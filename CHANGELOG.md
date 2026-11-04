@@ -16,6 +16,16 @@
   - Whether a tail behind a node holds a client the other route's profile forbids is answered from
     the last such client's index, cached per route and profile until the route next changes,
     instead of walking both tails for every tail swap offered.
+- **Cheaper checks per node pair and per route update, with identical results.** Every solve is
+  unchanged (the same 74 identity solves); on top of the above, instructions per iteration fall
+  4.0% on the 629-client day, 3.9% on the 593-client day, 2–4% on the smaller production and
+  literature instances, and 0.9% with breaks.
+  - Whether a client is in any same-vehicle group is one byte per location, read before the
+    same-vehicle check, which was a call and a vector load up to four times per node pair to find
+    nothing for nearly every client.
+  - With at most 64 profiles and something forbidden, each location also keeps the profiles that
+    may visit it as one word, so a route works out which profiles could take all its clients with
+    one AND per client instead of a test per client and profile.
 
 ## 0.19.3
 
