@@ -654,17 +654,27 @@ void Route::update()
     // proposal built from this route's edges from below.
     auto const &durMat = data.durationMatrix(profile());
 
+    // Kept as prefix sums too, for proposals that keep only a route's head.
+    travelTo_.resize(nodes.size());
+    serviceTo_.resize(nodes.size());
+
     travel_ = 0;
     clientService_ = 0;
-    for (size_t idx = 1; idx != nodes.size(); ++idx)
-        travel_ += durMat(locAt<true>(idx - 1), locAt<true>(idx));
+    for (size_t idx = 0; idx != nodes.size(); ++idx)
+    {
+        if (idx != 0)
+            travel_ += durMat(locAt<true>(idx - 1), locAt<true>(idx));
 
-    for (auto const *node : nodes)
-        if (node->client() >= data.numDepots() && !data.isBreak(node->client()))
+        auto const loc = nodes[idx]->client();
+        if (loc >= data.numDepots() && !data.isBreak(loc))
         {
-            ProblemData::Client const &client = data.location(node->client());
+            ProblemData::Client const &client = data.location(loc);
             clientService_ += client.serviceDuration;
         }
+
+        travelTo_[idx] = travel_;
+        serviceTo_[idx] = clientService_;
+    }
 
     // Trip boundaries, and each trip's excess over the per-trip distance cap.
     // A reload depot both ends one trip and starts the next, so it appears

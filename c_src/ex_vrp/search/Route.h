@@ -566,6 +566,11 @@ private:
     Duration travel_ = 0;
     Duration clientService_ = 0;
 
+    // The same two up to and including each node: travel over the edges into
+    // nodes 1..idx, and service of the clients among nodes 0..idx.
+    std::vector<Duration> travelTo_;
+    std::vector<Duration> serviceTo_;
+
     std::vector<Node *> nodes;   // Nodes in this route, including depots
     std::vector<size_t> visits;  // Locations in this route, incl. depots
 
@@ -1001,6 +1006,18 @@ public:
      * Total service time of the route's clients, as of the last update().
      */
     [[nodiscard]] inline Duration clientService() const;
+
+    /**
+     * Travel over the route's edges up to the node at idx, as of the last
+     * update().
+     */
+    [[nodiscard]] inline Duration travelTo(size_t idx) const;
+
+    /**
+     * Service time of the route's clients up to and including the node at
+     * idx, as of the last update().
+     */
+    [[nodiscard]] inline Duration clientServiceTo(size_t idx) const;
 
     /**
      * @return The (soft) maximum shift duration that the vehicle servicing this
@@ -1880,6 +1897,10 @@ bool Route::hasReloads() const { return hasReloads_; }
 Duration Route::travel() const { return travel_; }
 
 Duration Route::clientService() const { return clientService_; }
+
+Duration Route::travelTo(size_t idx) const { return travelTo_[idx]; }
+
+Duration Route::clientServiceTo(size_t idx) const { return serviceTo_[idx]; }
 
 Duration Route::shiftDuration() const { return vehicleType_.shiftDuration; }
 
