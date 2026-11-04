@@ -10,9 +10,12 @@ defmodule ExVrp.Neighbourhood do
   defaults the two pick the same neighbours, up to which of several clients at
   exactly the same proximity makes the cut and in what order they are listed.
 
-  Proximity is the cheapest edge cost over the vehicle types, minus the prize of
-  the client moved to, plus weighted lower bounds on the wait time and time warp
-  of visiting the two clients back to back.
+  Proximity is the cheapest edge cost over the vehicle types plus weighted lower
+  bounds on the wait time and time warp of visiting the two clients back to back.
+  Unlike PyVRP it does not subtract the prize of the client moved to: a prize
+  belongs to that client alone, so it never reorders clients of one prize class,
+  and across classes a gap far above any edge cost puts every high-prize client
+  in every neighbourhood, wherever it is.
 
   ## Example
 
@@ -104,10 +107,9 @@ defmodule ExVrp.Neighbourhood do
   end
 
   defp compute_proximity(problem_data, clients, params, num_locs, num_depots) do
-    # Build vectors for time windows, service, prizes
-    # PyVRP: early, late, service, prize are vectors of size num_locations
+    # Build vectors for time windows and service durations, of size num_locations,
     # with depots having 0 values and clients having their actual values
-    {early, late, service, prize} = build_location_vectors(clients, num_locs, num_depots)
+    {early, late, service} = build_location_vectors(clients, num_locs, num_depots)
 
     # Get distance/duration matrices for all profiles
     num_profiles = Native.problem_data_num_profiles_nif(problem_data)
@@ -144,9 +146,8 @@ defmodule ExVrp.Neighbourhood do
     min_tw = compute_min_time_warp(early, min_duration, service, late)
 
     # Assemble proximity matrix:
-    # proximity = edge_costs - prizes + weight_wait * max(min_wait, 0) + weight_tw * max(min_tw, 0)
+    # proximity = edge_costs + weight_wait * max(min_wait, 0) + weight_tw * max(min_tw, 0)
     edge_costs
-    |> Nx.subtract(Nx.new_axis(prize, 0))
     |> Nx.add(Nx.multiply(params.weight_wait_time, Nx.max(min_wait, 0)))
     |> Nx.add(Nx.multiply(params.weight_time_warp, Nx.max(min_tw, 0)))
   end
@@ -156,19 +157,16 @@ defmodule ExVrp.Neighbourhood do
     early = Nx.broadcast(0.0, {num_locs})
     late = Nx.broadcast(0.0, {num_locs})
     service = Nx.broadcast(0.0, {num_locs})
-    prize = Nx.broadcast(0.0, {num_locs})
 
     # Build lists for client values
     client_early = Enum.map(clients, fn {tw_early, _tw_late, _svc, _prz, _is_break} -> tw_early end)
     client_late = Enum.map(clients, fn {_tw_early, tw_late, _svc, _prz, _is_break} -> tw_late end)
     client_service = Enum.map(clients, fn {_tw_early, _tw_late, svc, _prz, _is_break} -> svc end)
-    client_prize = Enum.map(clients, fn {_tw_early, _tw_late, _svc, prz, _is_break} -> prz end)
 
     # Create client tensors
     client_early_t = Nx.tensor(client_early, type: :f64)
     client_late_t = Nx.tensor(client_late, type: :f64)
     client_service_t = Nx.tensor(client_service, type: :f64)
-    client_prize_t = Nx.tensor(client_prize, type: :f64)
 
     # Put client values at indices [num_depots, num_locs)
     indices = Nx.tensor(Enum.to_list(num_depots..(num_locs - 1)))
@@ -176,9 +174,8 @@ defmodule ExVrp.Neighbourhood do
     early = Nx.indexed_put(early, Nx.new_axis(indices, 1), client_early_t)
     late = Nx.indexed_put(late, Nx.new_axis(indices, 1), client_late_t)
     service = Nx.indexed_put(service, Nx.new_axis(indices, 1), client_service_t)
-    prize = Nx.indexed_put(prize, Nx.new_axis(indices, 1), client_prize_t)
 
-    {early, late, service, prize}
+    {early, late, service}
   end
 
   defp compute_min_edge_costs(distances, durations, vehicle_types) do

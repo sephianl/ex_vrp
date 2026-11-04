@@ -157,26 +157,19 @@ defmodule ExVrp.NeighbourhoodTest do
       end
     end
 
-    test "proximity with prizes" do
-      {:ok, problem_data} = create_prize_problem()
+    test "a far client's high prize does not make it anyone's neighbour" do
+      {:ok, problem_data} = create_far_prize_problem()
+      far = 71
 
-      params =
-        NeighbourhoodParams.new(
-          weight_wait_time: 0.0,
-          weight_time_warp: 0.0,
-          num_neighbours: 2
-        )
+      first_client_neighbours = fn neighbours -> Enum.at(neighbours, 1) end
 
-      neighbours = Neighbourhood.compute_neighbours(problem_data, params)
+      elixir = Neighbourhood.compute_neighbours(problem_data, %NeighbourhoodParams{})
+      solver = ExVrp.Native.build_neighbours_nif(problem_data)
 
-      # Client 1 (index 1) has high prize, client 2 (index 2) has low prize
-      # Both are at same distance from client 3, but client 1 should be preferred
-      # Check that client 1 appears more often in neighbourhoods
-      count_1 = Enum.count(neighbours, fn nbrs -> 1 in nbrs end)
-      count_2 = Enum.count(neighbours, fn nbrs -> 2 in nbrs end)
-
-      assert count_1 >= count_2,
-             "High-prize client should be in more neighbourhoods"
+      assert first_client_neighbours.(elixir) == Enum.to_list(2..61)
+      assert Enum.sort(first_client_neighbours.(solver)) == Enum.to_list(2..61)
+      refute Enum.any?(elixir, &(far in &1))
+      refute Enum.any?(solver, &(far in &1))
     end
 
     test "multiple routing profiles" do
@@ -258,18 +251,18 @@ defmodule ExVrp.NeighbourhoodTest do
     |> Model.to_problem_data()
   end
 
-  defp create_prize_problem do
-    # 3 clients: one with high prize, one with low prize, one to test from
-    Model.new()
-    |> Model.add_depot([])
-    # High prize
-    |> Model.add_client(delivery: [10], prize: 100)
-    # Low prize (same dist)
-    |> Model.add_client(delivery: [10], prize: 1)
-    # Test client
-    |> Model.add_client(delivery: [10])
+  defp create_far_prize_problem do
+    # 70 clients one apart on a line and one far away with a prize far above any edge cost:
+    # more clients than the 60 neighbours the solver keeps, so its lists have to choose.
+    near =
+      Enum.reduce(1..70, Model.add_depot(Model.new(), []), fn _client, model ->
+        Model.add_client(model, delivery: [1], prize: 1)
+      end)
+
+    near
+    |> Model.add_client(delivery: [1], prize: 1_000_000_000)
     |> Model.add_vehicle_type(num_available: 1, capacity: [100])
-    |> Model.set_euclidean_matrices([{0, 0}, {10, 0}, {10, 1}, {20, 0}])
+    |> Model.set_euclidean_matrices([{0, 0} | Enum.map(1..70, &{&1, 0})] ++ [{100_000, 0}])
     |> Model.to_problem_data()
   end
 
