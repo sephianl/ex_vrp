@@ -433,15 +433,33 @@ bool LocalSearch::wouldTailSwapViolateForbidden(Route::Node const *U,
 
     // U and V themselves stay put under a tail swap; it is everything behind
     // them that crosses over.
-    for (auto const *node = n(U); !node->isEndDepot(); node = n(node))
-        if (wouldViolateForbidden(node, rV))
-            return true;
+    auto const uProfile = data.vehicleType(rU->vehicleType()).profile;
+    auto const vProfile = data.vehicleType(rV->vehicleType()).profile;
 
-    for (auto const *node = n(V); !node->isEndDepot(); node = n(node))
-        if (wouldViolateForbidden(node, rU))
-            return true;
+    return lastForbiddenIdx(rU, vProfile) > U->idx()
+           || lastForbiddenIdx(rV, uProfile) > V->idx();
+}
 
-    return false;
+size_t LocalSearch::lastForbiddenIdx(Route const *route, size_t profile) const
+{
+    auto &entry = lastForbidden_[route->idx() * data.numProfiles() + profile];
+    if (entry.numUpdates == route->numUpdates())
+        return entry.idx;
+
+    // Walked from the end, so the first forbidden client found is the last.
+    entry.idx = 0;
+    for (auto idx = route->size() - 1; idx != 0; --idx)
+    {
+        auto const *node = (*route)[idx];
+        if (!node->isDepot() && !data.isAllowed(profile, node->client()))
+        {
+            entry.idx = idx;
+            break;
+        }
+    }
+
+    entry.numUpdates = route->numUpdates();
+    return entry.idx;
 }
 
 bool LocalSearch::wouldMoveViolateForbidden(NodeOperator const &nodeOp,
@@ -2042,6 +2060,8 @@ LocalSearch::LocalSearch(ProblemData const &data,
       lastUpdated(data.numVehicles()),
       clientToSameVehicleGroups_(data.numLocations())
 {
+    lastForbidden_.resize(data.numVehicles() * data.numProfiles());
+
     // Build client-to-same-vehicle-groups lookup for efficient constraint
     // checking during local search.
     for (size_t groupIdx = 0; groupIdx != data.numSameVehicleGroups();

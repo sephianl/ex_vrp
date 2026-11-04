@@ -628,6 +628,8 @@ Route::DurationSummary Route::summariseWithBreaks(DurationSegment ds,
 
 void Route::update()
 {
+    ++numUpdates_;
+
     visits.clear();
     for (auto const *node : nodes)
         visits.emplace_back(node->client());

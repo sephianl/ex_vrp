@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <functional>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -128,6 +129,21 @@ class LocalSearch
     // a route whose profile forbids it.
     bool wouldTailSwapViolateForbidden(Route::Node const *U,
                                        Route::Node const *V) const;
+
+    // The last index on route of a client that profile forbids, or 0 when
+    // there is none. A tail behind index idx crosses a forbidden client
+    // exactly when this is above idx. Cached per route and profile until the
+    // route next updates, since tail swaps ask it for every pair.
+    size_t lastForbiddenIdx(Route const *route, size_t profile) const;
+
+    struct LastForbidden
+    {
+        size_t numUpdates = std::numeric_limits<size_t>::max();
+        size_t idx = 0;
+    };
+
+    // Indexed by route index times the number of profiles plus the profile.
+    mutable std::vector<LastForbidden> lastForbidden_;
 
     // Checks whether applying nodeOp to the pair (U, V) would land a client on
     // a route whose profile forbids it. Dispatches on the operator's own

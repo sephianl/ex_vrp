@@ -557,6 +557,10 @@ private:
     Cost deltaBaseCost_ = 0;
     bool hasDeltaExcess_ = false;
 
+    // How many times update() has run, so a cache of something derived from
+    // the route's visits can tell whether it is still current.
+    size_t numUpdates_ = 0;
+
     std::vector<Node> depots_;  // start, end, and reload depots (in that order)
 
     // Break nodes on this route, kept as nodes come and go, like depots_, so
@@ -1149,6 +1153,12 @@ public:
      *         DS-only time warp, so that delta evaluation must price them.
      */
     [[nodiscard]] inline bool hasDeltaExcess() const;
+
+    /**
+     * @return How many times this route has been updated. Changes whenever
+     *         its visits may have.
+     */
+    [[nodiscard]] inline size_t numUpdates() const;
 
     /**
      * @return The routing profile of the vehicle servicing this route.
@@ -2231,6 +2241,8 @@ bool Route::hasDeltaExcess() const
     assert(!dirty);
     return hasDeltaExcess_;
 }
+
+size_t Route::numUpdates() const { return numUpdates_; }
 
 size_t Route::profile() const { return vehicleType_.profile; }
 
