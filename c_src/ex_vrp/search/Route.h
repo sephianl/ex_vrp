@@ -555,6 +555,11 @@ private:
     // visits and nextReal_ the identity, so the segments skip both lookups.
     bool hasBreaks_ = false;
 
+    // Whether the last update() saw a reload depot. Without one no node of the
+    // route can be one, so the segments answer their reload questions without
+    // asking the node, which every load and duration proposal does per segment.
+    bool hasReloads_ = false;
+
     std::vector<Node *> nodes;   // Nodes in this route, including depots
     std::vector<size_t> visits;  // Locations in this route, incl. depots
 
@@ -1522,7 +1527,7 @@ size_t Route::SegmentBefore::numBreaks() const
 bool Route::SegmentBefore::startsAtReloadDepot() const { return false; }
 bool Route::SegmentBefore::endsAtReloadDepot() const
 {
-    return route_.nodes[end]->isReloadDepot();
+    return route_.hasReloads_ && route_.nodes[end]->isReloadDepot();
 }
 
 Route const *Route::SegmentAfter::route() const { return &route_; }
@@ -1553,7 +1558,7 @@ size_t Route::SegmentAfter::numBreaks() const
 
 bool Route::SegmentAfter::startsAtReloadDepot() const
 {
-    return route_.nodes[start]->isReloadDepot();
+    return route_.hasReloads_ && route_.nodes[start]->isReloadDepot();
 }
 bool Route::SegmentAfter::endsAtReloadDepot() const { return false; }
 
@@ -1589,11 +1594,11 @@ size_t Route::SegmentBetween::numBreaks() const
 
 bool Route::SegmentBetween::startsAtReloadDepot() const
 {
-    return route_.nodes[start]->isReloadDepot();
+    return route_.hasReloads_ && route_.nodes[start]->isReloadDepot();
 }
 bool Route::SegmentBetween::endsAtReloadDepot() const
 {
-    return route_.nodes[end]->isReloadDepot();
+    return route_.hasReloads_ && route_.nodes[end]->isReloadDepot();
 }
 
 template <bool WithBreaks>

@@ -660,6 +660,10 @@ void Route::update()
             tripBounds_.push_back(idx);
     tripBounds_.push_back(nodes.size() - 1);
 
+    // The start and end depots are never reload depots, so every reload depot
+    // on the route is a bound between them.
+    hasReloads_ = tripBounds_.size() > 2;
+
     tripExcess_.resize(tripBounds_.size());
     tripExcess_[0] = 0;
     for (size_t trip = 0; trip + 1 != tripBounds_.size(); ++trip)
