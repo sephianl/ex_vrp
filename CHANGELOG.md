@@ -2,6 +2,16 @@
 
 ## 0.19.3
 
+### Added
+
+- **Weak starts of a parallel solve can continue from the leader.** With
+  `rescue_weak_starts: [at: [0.33, 0.66], behind: 0.05]`, each start of a `num_starts` solve
+  publishes its best to a shared board, and at each listed fraction of the budget a start more than
+  `behind` worse than the leader, or still infeasible, takes the leader's best as its current
+  solution while keeping its own seed, penalties and best. Off by default, and with it off every
+  solve is unchanged. On a tight 629-client production day at 284 s with 15 starts, the best of the
+  starts fell 0.1–1.9% across three repetitions and the median start from 111.5e9 to 105.1e9.
+
 ### Performance
 
 - **Less bookkeeping around each evaluation, with identical results.** Every solve is unchanged
