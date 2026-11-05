@@ -312,7 +312,6 @@ defmodule ExVrp.Solver do
   end
 
   defp elite_board(nil, _schedule, _start_index, _max_runtime_ms), do: nil
-  defp elite_board(_table, _schedule, _start_index, nil), do: nil
 
   defp elite_board(table, schedule, start_index, max_runtime_ms) do
     EliteBoard.for_start(
