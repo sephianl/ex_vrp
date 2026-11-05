@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.19.4
+## 0.19.3
 
 ### Performance
 
@@ -26,11 +26,6 @@
   - With at most 64 profiles and something forbidden, each location also keeps the profiles that
     may visit it as one word, so a route works out which profiles could take all its clients with
     one AND per client instead of a test per client and profile.
-
-## 0.19.3
-
-### Performance
-
 - **Less work per local-search iteration, with identical results.** Three changes cut the
   instructions per iteration by 11–14% on the production corpus (−14.3% on a tight 629-client
   day, −14.1% on the 593-client day) and leave every solve unchanged: the same iterations, routes,
