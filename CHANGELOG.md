@@ -1,5 +1,78 @@
 # Changelog
 
+## 0.19.3
+
+### Added
+
+- **Weak starts of a parallel solve continue from the leader.** Each start of a `num_starts > 1`
+  solve with a runtime limit publishes its best to a shared board, and at each fraction in
+  `rescue_weak_starts` a start more than `behind` worse than the leader, or still infeasible, takes
+  the leader's best as its current solution while keeping its own seed, penalties and best. On by
+  default as `[at: [0.33, 0.66], behind: 0.05]`, so multi-start solves with a runtime now return
+  different (never measurably worse) results; `rescue_weak_starts: nil` restores independent
+  starts. Single starts and solves without a runtime limit are unchanged. On a tight 629-client
+  production day at 284 s with 15 starts, the worst start rose from about 136e9 to 106e9 and the
+  median start from about 109e9 to 105e9, with the best start equal or up to 1.9% better; on the
+  593- and 125-client production days every start already ends within 5% of the leader, so it
+  never triggers and their results are identical.
+
+### Performance
+
+- **Less bookkeeping around each evaluation, with identical results.** Every solve is unchanged
+  (the same 74 identity solves); instructions per iteration fall 11.0% on the 629-client
+  production day, 10.7% on the 593-client day, 5–9% on the smaller production and literature
+  instances, and 2.2% with breaks.
+  - A route keeps its distance, penalty and DS-only duration cost as one sum, and whether it
+    carries any excess. Delta evaluation then takes a route without excess off in one subtraction,
+    since every infeasibility penalty is zero on it.
+  - A route builds its load segments only for the dimensions something loads; the others hold
+    only empty segments and nothing reads them.
+  - Whether a tail behind a node holds a client the other route's profile forbids is answered from
+    the last such client's index, cached per route and profile until the route next changes,
+    instead of walking both tails for every tail swap offered.
+- **Cheaper checks per node pair and per route update, with identical results.** Every solve is
+  unchanged (the same 74 identity solves); on top of the above, instructions per iteration fall
+  4.0% on the 629-client day, 3.9% on the 593-client day, 2–4% on the smaller production and
+  literature instances, and 0.9% with breaks.
+  - Whether a client is in any same-vehicle group is one byte per location, read before the
+    same-vehicle check, which was a call and a vector load up to four times per node pair to find
+    nothing for nearly every client.
+  - With at most 64 profiles and something forbidden, each location also keeps the profiles that
+    may visit it as one word, so a route works out which profiles could take all its clients with
+    one AND per client instead of a test per client and profile.
+- **Less work per local-search iteration, with identical results.** Three changes cut the
+  instructions per iteration by 11–14% on the production corpus (−14.3% on a tight 629-client
+  day, −14.1% on the 593-client day) and leave every solve unchanged: the same iterations, routes,
+  distance, duration and clients served on 37 instances × 2 seeds at a fixed iteration count.
+  - A route records whether it holds a reload depot, so its segments stop asking every node
+    whether it is one when none is there. Most of the gain; instances that do reload are unchanged.
+  - The forbidden-visit check for a pair of nodes is worked out once and shared by every node
+    operator, instead of once per operator. Matters on days with zone restrictions (−2 to −4%).
+  - A route's excess load is summed over only the dimensions some client, shipment or vehicle
+    loads; proposals already priced load that way.
+
+  At production's 284 s on the 629-client day this is 16% more iterations: 9 of 10 seeds end
+  cheaper and none dearer.
+- **Relocates are ruled out on their least possible duration first.** A route's duration is at
+  least its travel plus its clients' service time, since waiting is never negative. Each route
+  now keeps those totals, and a relocate prices the exact new travel from the edges it cuts and
+  adds; when that floor alone already rules the move out, the full duration fold is skipped. The
+  bound is sound and a ruled-out move still reads as non-improving, so every solve is unchanged
+  (the same 74 identity solves). It is off for problems with breaks and for routes with reload
+  depots. A further 17–21% fewer instructions per iteration on the large production days
+  (−16.6% on 629 clients, −20.7% on 593) and 18% more iterations at 284 s on the 629-client day,
+  where 9 of 10 seeds end cheaper and none dearer.
+- **The same floor for swaps, tail swaps and insertions.** Routes keep their travel and service
+  time as prefix sums, so a swap between routes, a swap within a route (only the four edges at the
+  segments' ends change) and a tail swap price their least possible duration without walking the
+  segments, and skip the duration fold when that already rules them out. Inserting an unplanned
+  client keeps the best position so far as a bound, and the optional-client pass only asks
+  whether a swap improves. Floors are only worked out where duration carries a unit cost. Load,
+  time-warp and distance penalties skip the multiply when the excess is zero, and profiles with
+  identical penalties are grouped once. Every solve is unchanged (the same 74 identity solves);
+  instructions per iteration fall a further 31–40% on the production days (−38.1% on 629
+  clients, −40.1% on 593) and 2–5% on the literature instances. With breaks the floors stay off.
+
 ## 0.19.2
 
 ### Changed

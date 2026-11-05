@@ -95,6 +95,15 @@ class CostEvaluator
     [[nodiscard]] inline Cost
     excessLoadPenalties(std::vector<Load> const &excessLoads) const;
 
+    /**
+     * The same sum over only the given dimensions. A dimension nothing loads
+     * has no excess, so summing ``ProblemData::loadedDimensions()`` gives the
+     * same cost as summing them all.
+     */
+    [[nodiscard]] inline Cost
+    excessLoadPenalties(std::vector<Load> const &excessLoads,
+                        std::vector<size_t> const &dimensions) const;
+
 public:
     CostEvaluator(std::vector<double> loadPenalties,
                   double twPenalty,
@@ -177,13 +186,22 @@ public:
      * move. Optionally, several aspects of the evaluation may be skipped.
      *
      * The return value indicates whether the evaluation was exact or not.
+     *
+     * ``durationBound`` is a lower bound on the proposal's duration cost that
+     * the caller worked out cheaply. The shortcuts count it before the
+     * duration is folded, so a move whose distance, penalties, load and least
+     * possible duration already rule it out never pays for that fold. It must
+     * never exceed the duration cost the fold would return; zero is always
+     * safe.
      */
     template <bool exact = false,
               bool skipLoad = false,
               typename... Args,
               template <typename...> class T>
         requires(DeltaCostEvaluatable<T<Args...>>)
-    bool deltaCost(Cost &out, T<Args...> const &proposal) const;
+    bool deltaCost(Cost &out,
+                   T<Args...> const &proposal,
+                   Cost durationBound = 0) const;
 
     /**
      * Evaluates the cost delta of the given route proposals, and writes the
@@ -193,6 +211,9 @@ public:
      * move. Optionally, several aspects of the evaluation may be skipped.
      *
      * The return value indicates whether the evaluation was exact or not.
+     *
+     * ``durationBound`` bounds both proposals' duration cost together from
+     * below; see the single-route overload.
      */
     template <bool exact = false,
               bool skipLoad = false,
@@ -203,8 +224,54 @@ public:
                  && DeltaCostEvaluatable<T<vArgs...>>)
     bool deltaCost(Cost &out,
                    T<uArgs...> const &uProposal,
-                   T<vArgs...> const &vProposal) const;
+                   T<vArgs...> const &vProposal,
+                   Cost durationBound = 0) const;
+
+private:
+    // Whether `out` plus the duration bound already rules the move out. When it
+    // does, the bound joins `out`, so the caller still reads a delta that is
+    // not improving.
+    [[nodiscard]] static inline bool ruledOut(Cost &out, Cost durationBound);
+
+    // Takes a non-empty route's current cost off `out`, as delta evaluation
+    // sees it. A route without excess has every penalty at zero, so its cost
+    // is the sum the route keeps, one subtraction instead of six terms.
+    template <bool skipLoad, typename Route>
+    inline void subtractRouteCost(Cost &out, Route const *route) const;
 };
+
+template <bool skipLoad, typename Route>
+void CostEvaluator::subtractRouteCost(Cost &out, Route const *route) const
+{
+    if (!route->hasDeltaExcess())
+    {
+        out -= route->deltaBaseCost();
+        return;
+    }
+
+    out -= route->distanceCost();
+    out -= route->penaltyCost();
+    out -= excessDistPenalty(route->excessDistance());
+
+    if constexpr (!skipLoad)
+        out -= excessLoadPenalties(route->excessLoad(),
+                                   route->loadedDimensions());
+
+    // Use DS-only values: proposal.duration() returns DurationSegment values
+    // without forbidden window awareness, so the subtracted route cost must
+    // also be DS-only to keep the delta consistent.
+    out -= route->durationCostDS();
+    out -= twPenalty(route->timeWarpDS());
+}
+
+bool CostEvaluator::ruledOut(Cost &out, Cost durationBound)
+{
+    if (out + durationBound < 0)
+        return false;
+
+    out += durationBound;
+    return true;
+}
 
 Cost CostEvaluator::excessLoadPenalties(
     std::vector<Load> const &excessLoads) const
@@ -213,7 +280,22 @@ Cost CostEvaluator::excessLoadPenalties(
 
     Cost cost = 0;
     for (size_t dim = 0; dim != loadPenalties_.size(); ++dim)
-        cost += loadPenalties_[dim] * excessLoads[dim].get();
+        if (excessLoads[dim] != 0)  // mostly none, and 0 * penalty is 0
+            cost += loadPenalties_[dim] * excessLoads[dim].get();
+
+    return cost;
+}
+
+Cost CostEvaluator::excessLoadPenalties(
+    std::vector<Load> const &excessLoads,
+    std::vector<size_t> const &dimensions) const
+{
+    assert(excessLoads.size() == loadPenalties_.size());
+
+    Cost cost = 0;
+    for (auto const dim : dimensions)
+        if (excessLoads[dim] != 0)  // mostly none, and 0 * penalty is 0
+            cost += loadPenalties_[dim] * excessLoads[dim].get();
 
     return cost;
 }
@@ -224,11 +306,20 @@ Cost CostEvaluator::loadPenalty(Load load,
 {
     assert(dimension < loadPenalties_.size());
     auto const excessLoad = std::max<Load>(load - capacity, 0);
+
+    // Penalties are finite, so no excess costs exactly nothing; skipping the
+    // multiplication and its conversion on the common case changes no result.
+    if (excessLoad == 0)
+        return 0;
+
     return static_cast<Cost>(excessLoad.get() * loadPenalties_[dimension]);
 }
 
 Cost CostEvaluator::twPenalty([[maybe_unused]] Duration timeWarp) const
 {
+    if (timeWarp == 0)  // as in loadPenalty
+        return 0;
+
     return static_cast<Cost>(timeWarp.get() * twPenalty_);
 }
 
@@ -240,6 +331,9 @@ Cost CostEvaluator::distPenalty(Distance distance, Distance maxDistance) const
 
 Cost CostEvaluator::excessDistPenalty(Distance excessDistance) const
 {
+    if (excessDistance == 0)  // as in loadPenalty
+        return 0;
+
     return static_cast<Cost>(excessDistance.get() * distPenalty_);
 }
 
@@ -293,24 +387,13 @@ template <bool exact,
           typename... Args,
           template <typename...> class T>
     requires(DeltaCostEvaluatable<T<Args...>>)
-bool CostEvaluator::deltaCost(Cost &out, T<Args...> const &proposal) const
+bool CostEvaluator::deltaCost(Cost &out,
+                              T<Args...> const &proposal,
+                              Cost durationBound) const
 {
     auto const *route = proposal.route();
     if (!route->empty())
-    {
-        out -= route->distanceCost();
-        out -= route->penaltyCost();
-        out -= excessDistPenalty(route->excessDistance());
-
-        if constexpr (!skipLoad)
-            out -= excessLoadPenalties(route->excessLoad());
-
-        // Use DS-only values: proposal.duration() returns DurationSegment
-        // values without forbidden window awareness, so the subtracted
-        // route cost must also be DS-only to keep the delta consistent.
-        out -= route->durationCostDS();
-        out -= twPenalty(route->timeWarpDS());
-    }
+        subtractRouteCost<skipLoad>(out, route);
 
     if (route->hasDistanceCost())
     {
@@ -331,12 +414,18 @@ bool CostEvaluator::deltaCost(Cost &out, T<Args...> const &proposal) const
         for (auto const dim : route->loadedDimensions())
         {
             if constexpr (!exact)
-                if (out >= 0)
+                if (ruledOut(out, durationBound))
                     return false;
 
             out += loadPenalty(proposal.excessLoad(dim), 0, dim);
         }
     }
+
+    // Only a bound can rule the move out here: without one, `out` was already
+    // checked above, and only on loaded dimensions.
+    if constexpr (!exact)
+        if (durationBound > 0 && ruledOut(out, durationBound))
+            return false;
 
     if (route->hasDurationCost())
     {
@@ -357,35 +446,16 @@ template <bool exact,
              && DeltaCostEvaluatable<T<vArgs...>>)
 bool CostEvaluator::deltaCost(Cost &out,
                               T<uArgs...> const &uProposal,
-                              T<vArgs...> const &vProposal) const
+                              T<vArgs...> const &vProposal,
+                              Cost durationBound) const
 {
     auto const *uRoute = uProposal.route();
     if (!uRoute->empty())
-    {
-        out -= uRoute->distanceCost();
-        out -= uRoute->penaltyCost();
-        out -= excessDistPenalty(uRoute->excessDistance());
-
-        if constexpr (!skipLoad)
-            out -= excessLoadPenalties(uRoute->excessLoad());
-
-        out -= uRoute->durationCostDS();
-        out -= twPenalty(uRoute->timeWarpDS());
-    }
+        subtractRouteCost<skipLoad>(out, uRoute);
 
     auto const *vRoute = vProposal.route();
     if (!vRoute->empty())
-    {
-        out -= vRoute->distanceCost();
-        out -= vRoute->penaltyCost();
-        out -= excessDistPenalty(vRoute->excessDistance());
-
-        if constexpr (!skipLoad)
-            out -= excessLoadPenalties(vRoute->excessLoad());
-
-        out -= vRoute->durationCostDS();
-        out -= twPenalty(vRoute->timeWarpDS());
-    }
+        subtractRouteCost<skipLoad>(out, vRoute);
 
     if (uRoute->hasDistanceCost())
     {
@@ -410,7 +480,7 @@ bool CostEvaluator::deltaCost(Cost &out,
         for (auto const dim : uRoute->loadedDimensions())
         {
             if constexpr (!exact)
-                if (out >= 0)
+                if (ruledOut(out, durationBound))
                     return false;
 
             out += loadPenalty(uProposal.excessLoad(dim), 0, dim);
@@ -419,7 +489,7 @@ bool CostEvaluator::deltaCost(Cost &out,
         for (auto const dim : vRoute->loadedDimensions())
         {
             if constexpr (!exact)
-                if (out >= 0)
+                if (ruledOut(out, durationBound))
                     return false;
 
             out += loadPenalty(vProposal.excessLoad(dim), 0, dim);
@@ -427,7 +497,7 @@ bool CostEvaluator::deltaCost(Cost &out,
     }
 
     if constexpr (!exact)
-        if (out >= 0)
+        if (ruledOut(out, durationBound))
             return false;
 
     if (uRoute->hasDurationCost())

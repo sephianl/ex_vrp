@@ -7,6 +7,7 @@ defmodule ExVrp.Solver do
   Search with Late Acceptance Hill-Climbing.
   """
 
+  alias ExVrp.EliteBoard
   alias ExVrp.IteratedLocalSearch
   alias ExVrp.Model
   alias ExVrp.Native
@@ -27,7 +28,8 @@ defmodule ExVrp.Solver do
           ils_params: IteratedLocalSearch.Params.t(),
           on_progress: (map() -> any()) | nil,
           initial_routes: [Solution.warm_start_visits()] | nil,
-          log_label: String.t() | nil
+          log_label: String.t() | nil,
+          rescue_weak_starts: [at: [float()], behind: float()] | nil
         ]
 
   @default_opts [
@@ -40,7 +42,8 @@ defmodule ExVrp.Solver do
     ils_params: nil,
     on_progress: nil,
     initial_routes: nil,
-    log_label: nil
+    log_label: nil,
+    rescue_weak_starts: [at: [0.33, 0.66], behind: 0.05]
   ]
 
   @repair_budget_share 0.25
@@ -72,6 +75,11 @@ defmodule ExVrp.Solver do
     Use `:auto` to pick based on available cores (`div(schedulers_online, 2)`).
   - `:penalty_params` - PenaltyManager.Params for penalty adjustment
   - `:ils_params` - IteratedLocalSearch.Params for ILS behavior
+  - `:rescue_weak_starts` - For `num_starts > 1` with a runtime limit:
+    `[at: fractions, behind: share]`. At each fraction of the runtime, a start whose best is more
+    than `share` worse than the leading start's (or still infeasible) continues from the leader's
+    best; see `ExVrp.EliteBoard`. Default `[at: [0.33, 0.66], behind: 0.05]`; `nil` leaves every
+    start independent. A single start, or a solve without a runtime limit, is never affected.
   - `:on_progress` - Optional callback function receiving progress maps during ILS iterations (time-gated at ~1s intervals). When `num_starts > 1`, progress maps include `:seed_idx` and `:seed` fields.
   - `:log_label` - Optional string folded into this solve's log lines, e.g.
     `log_label: "relaxed_15"` yields `[exvrp relaxed_15 start 2] ILS completed in ...`.
@@ -270,6 +278,8 @@ defmodule ExVrp.Solver do
   defp format_label(log_label, start_index), do: "[exvrp #{log_label} start #{start_index}] "
 
   defp solve_parallel(problem_data, base_seed, num_starts, opts, solve_start) do
+    elite_table = elite_table(opts[:rescue_weak_starts])
+
     tasks =
       for idx <- 0..(num_starts - 1) do
         seed = base_seed + idx
@@ -278,6 +288,7 @@ defmodule ExVrp.Solver do
           opts
           |> augment_progress_callback(idx, seed)
           |> Keyword.put(:start_index, idx)
+          |> Keyword.put(:elite_table, elite_table)
 
         Task.async(fn ->
           solve_single(problem_data, seed, task_opts, solve_start)
@@ -286,8 +297,31 @@ defmodule ExVrp.Solver do
 
     timeout = task_timeout(opts)
     results = Task.await_many(tasks, timeout)
+    drop_elite_table(elite_table)
 
     pick_best_result(results, num_starts, solve_start, opts)
+  end
+
+  defp elite_table(nil), do: nil
+  defp elite_table(_schedule), do: EliteBoard.new_table()
+
+  defp drop_elite_table(nil), do: :ok
+  defp drop_elite_table(table), do: :ets.delete(table)
+
+  defp elite_board(opts, max_runtime_ms) do
+    elite_board(opts[:elite_table], opts[:rescue_weak_starts], opts[:start_index], max_runtime_ms)
+  end
+
+  defp elite_board(nil, _schedule, _start_index, _max_runtime_ms), do: nil
+
+  defp elite_board(table, schedule, start_index, max_runtime_ms) do
+    EliteBoard.for_start(
+      table,
+      start_index,
+      Keyword.fetch!(schedule, :at),
+      Keyword.fetch!(schedule, :behind),
+      max_runtime_ms
+    )
   end
 
   defp pick_best_result(results, num_starts, solve_start, opts) do
@@ -759,7 +793,10 @@ defmodule ExVrp.Solver do
       if max_runtime_ms do
         setup_elapsed = System.monotonic_time(:millisecond) - solve_start
         remaining_ms = max(max_runtime_ms - setup_elapsed, 0)
-        Keyword.put(ils_opts, :max_runtime_ms, remaining_ms)
+
+        ils_opts
+        |> Keyword.put(:max_runtime_ms, remaining_ms)
+        |> Keyword.put(:elite, elite_board(opts, remaining_ms))
       else
         ils_opts
       end

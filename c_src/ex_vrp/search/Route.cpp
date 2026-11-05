@@ -1,5 +1,6 @@
 #include "Route.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <numbers>
@@ -69,6 +70,7 @@ Route::Route(ProblemData const &data, size_t idx, size_t vehicleType)
       vehicleType_(data.vehicleType(vehicleType)),
       idx_(idx),
       hasDurationCost_(durationCostApplies(data, vehicleType_)),
+      hasDurationBound_(hasDurationCost_ && vehicleType_.unitDurationCost > 0),
       hasBreakRule_(vehicleType_.hasBreakRule()),
       reloadCost_(0),
       transferableProfiles_(data.numProfiles()),
@@ -626,6 +628,8 @@ Route::DurationSummary Route::summariseWithBreaks(DurationSegment ds,
 
 void Route::update()
 {
+    ++numUpdates_;
+
     visits.clear();
     for (auto const *node : nodes)
         visits.emplace_back(node->client());
@@ -650,6 +654,32 @@ void Route::update()
         cumDist[idx] = cumDist[idx - 1] + distMat(from, to);
     }
 
+    // Travel and client service, which together bound the duration of any
+    // proposal built from this route's edges from below.
+    auto const &durMat = data.durationMatrix(profile());
+
+    // Kept as prefix sums too, for proposals that keep only a route's head.
+    travelTo_.resize(nodes.size());
+    serviceTo_.resize(nodes.size());
+
+    travel_ = 0;
+    clientService_ = 0;
+    for (size_t idx = 0; idx != nodes.size(); ++idx)
+    {
+        if (idx != 0)
+            travel_ += durMat(locAt<true>(idx - 1), locAt<true>(idx));
+
+        auto const loc = nodes[idx]->client();
+        if (loc >= data.numDepots() && !data.isBreak(loc))
+        {
+            ProblemData::Client const &client = data.location(loc);
+            clientService_ += client.serviceDuration;
+        }
+
+        travelTo_[idx] = travel_;
+        serviceTo_[idx] = clientService_;
+    }
+
     // Trip boundaries, and each trip's excess over the per-trip distance cap.
     // A reload depot both ends one trip and starts the next, so it appears
     // once here, as the bound the two trips share.
@@ -659,6 +689,10 @@ void Route::update()
         if (nodes[idx]->isReloadDepot())
             tripBounds_.push_back(idx);
     tripBounds_.push_back(nodes.size() - 1);
+
+    // The start and end depots are never reload depots, so every reload depot
+    // on the route is a bound between them.
+    hasReloads_ = tripBounds_.size() > 2;
 
     tripExcess_.resize(tripBounds_.size());
     tripExcess_[0] = 0;
@@ -692,7 +726,18 @@ void Route::update()
     // for the price of one word.
     transferableProfiles_.set();
 
-    if (data.hasForbiddenLocations())
+    if (auto const &masks = data.allowedProfileMasks(); !masks.empty())
+    {
+        // One AND per client instead of one test per client and profile.
+        auto common = ~uint64_t{0};
+        for (auto const *node : *this)
+            common &= masks[node->client()];
+
+        for (size_t p = 0; p != data.numProfiles(); ++p)
+            if (!((common >> p) & 1))
+                transferableProfiles_[p] = false;
+    }
+    else if (data.hasForbiddenLocations())
         for (size_t p = 0; p != data.numProfiles(); ++p)
             for (auto const *node : *this)
                 if (!data.isAllowed(p, node->client()))
@@ -789,8 +834,10 @@ void Route::update()
 
     updateClocks();
 
-    // Load.
-    for (size_t dim = 0; dim != data.numLoadDimensions(); ++dim)
+    // Load. A dimension nothing loads holds only empty segments, so its load
+    // and excess stay at the zero they start at, and nothing reads its
+    // segments: delta evaluation asks only about loaded dimensions.
+    for (auto const dim : loadedDimensions_)
     {
         auto const capacity = vehicleType_.capacity[dim];
 
@@ -1040,6 +1087,12 @@ void Route::update()
     auto const overtimeDS = vehicleType_.overtime(summary.endTime, durationDS);
     durationCostDS_ = unitDurationCost() * static_cast<Cost>(durationDS)
                       + unitOvertimeCost() * static_cast<Cost>(overtimeDS);
+
+    deltaBaseCost_ = distanceCost_ + penaltyCost_ + durationCostDS_;
+    hasDeltaExcess_ = excessDistance_ != 0 || timeWarpDS_ != 0
+                      || std::any_of(excessLoad_.begin(),
+                                     excessLoad_.end(),
+                                     [](Load excess) { return excess != 0; });
 
     // Calculate reload cost from all reload depots (excludes start/end depots)
     reloadCost_ = 0;

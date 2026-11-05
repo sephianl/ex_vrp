@@ -8,6 +8,7 @@
 #include "Measure.h"
 
 #include <cassert>
+#include <cstdint>
 #include <iosfwd>
 #include <limits>
 #include <optional>
@@ -844,6 +845,10 @@ private:
     // the distance matrix, which frees that channel to carry real metres.
     std::vector<std::vector<Cost>> const penalties_;
 
+    // For each profile, the first profile whose penalties are the same; see
+    // samePenalties().
+    std::vector<size_t> const penaltyClass_;
+
     // Per-location vehicle lock: visiting a locked location on any vehicle
     // type other than the locked one costs the lock's price. Node-additive
     // like penalties_, but keyed by vehicle type rather than profile. Empty
@@ -860,6 +865,12 @@ private:
     // model that never forbids anything behaves exactly as it did before the
     // predicate existed.
     bool const hasForbidden_;
+
+    // allowed_ transposed: bit p of a location's word is set when profile p
+    // may visit it. Built only when something is forbidden and there are at
+    // most 64 profiles, so that a route can tell which profiles take all its
+    // clients with one AND per client; empty otherwise.
+    std::vector<uint64_t> const allowedProfiles_;
 
     size_t const numVehicles_;
     size_t const numLoadDimensions_;
@@ -1051,6 +1062,13 @@ public:
     [[nodiscard]] inline Cost penalty(size_t profile, size_t location) const;
 
     /**
+     * Whether the two profiles charge every location the same penalty. Routing
+     * profiles that differ only in a depot row usually do, so a segment moved
+     * between them keeps its penalty.
+     */
+    [[nodiscard]] inline bool samePenalties(size_t profile, size_t other) const;
+
+    /**
      * Price charged for visiting ``location`` on ``vehicleType``: the lock's
      * price when the location is locked to another vehicle type, else zero.
      */
@@ -1125,6 +1143,14 @@ public:
      * skipped wholesale.
      */
     [[nodiscard]] inline bool hasForbiddenLocations() const;
+
+    /**
+     * Per location, the profiles that may visit it as a bit mask (bit ``p``
+     * for profile ``p``). Empty when nothing is forbidden or there are more
+     * than 64 profiles; ask :meth:`~is_allowed` then.
+     */
+    [[nodiscard]] inline std::vector<uint64_t> const &
+    allowedProfileMasks() const;
 
     /**
      * Determines whether any of the :meth:`~clients` or :meth:`~depots` in this
@@ -1239,6 +1265,12 @@ std::vector<Cost> const &ProblemData::penalties(size_t profile) const
     return penalties_[profile];
 }
 
+bool ProblemData::samePenalties(size_t profile, size_t other) const
+{
+    assert(profile < penaltyClass_.size() && other < penaltyClass_.size());
+    return penaltyClass_[profile] == penaltyClass_[other];
+}
+
 Cost ProblemData::penalty(size_t profile, size_t location) const
 {
     assert(profile < penalties_.size());
@@ -1326,6 +1358,11 @@ std::vector<size_t> const &ProblemData::loadedDimensions() const
 }
 
 bool ProblemData::hasForbiddenLocations() const { return hasForbidden_; }
+
+std::vector<uint64_t> const &ProblemData::allowedProfileMasks() const
+{
+    return allowedProfiles_;
+}
 
 bool ProblemData::hasTimeWindows() const { return hasTimeWindows_; }
 }  // namespace ex_vrp

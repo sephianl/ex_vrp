@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <functional>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -39,12 +40,27 @@ class LocalSearch
     std::vector<NodeOperator *> nodeOps;
     std::vector<RouteOperator *> routeOps;
 
+    // The longest span, on either side, that any node operator moves.
+    size_t maxNodeOpSpan_ = 0;
+
     std::vector<int> lastTestedNodes;   // tracks node operator evaluation
     std::vector<int> lastTestedRoutes;  // tracks route operator evaluation
     std::vector<int> lastUpdated;       // tracks when routes were last modified
 
     // Maps each client to the same-vehicle groups it belongs to.
     std::vector<std::vector<size_t>> clientToSameVehicleGroups_;
+
+    // Whether each location is in some same-vehicle group: one byte to read
+    // where wouldViolateSameVehicle() is a call and a vector header, for the
+    // node pairs whose clients are in none, which is nearly all of them.
+    std::vector<char> inSameVehicleGroup_;
+
+    [[nodiscard, gnu::always_inline]] inline bool
+    mayViolateSameVehicle(Route::Node const *U, Route const *target) const
+    {
+        return inSameVehicleGroup_[U->client()]
+               && wouldViolateSameVehicle(U, target);
+    }
 
     size_t numUpdates_ = 0;         // modification counter
     bool searchCompleted_ = false;  // No further improving move found?
@@ -99,23 +115,57 @@ class LocalSearch
     bool wouldViolateForbidden(Route::Node const *U,
                                Route const *targetRoute) const;
 
-    // Checks whether any of the span nodes starting at U is forbidden from
-    // targetRoute. A span of zero means nothing moves, and so never violates.
-    bool wouldSegmentViolateForbidden(Route::Node const *U,
-                                      size_t span,
-                                      Route const *targetRoute) const;
+    // How far each node of a pair on different routes may carry its route's
+    // clients onto the other route before reaching one that route's profile
+    // forbids, answered once for every node operator the pair is offered to.
+    // uFree is the offset from U of the first such client within the longest
+    // span any node operator moves, or that span when there is none; vFree
+    // likewise from V. Unrestricted pairs cannot violate anything.
+    struct ForbiddenReach
+    {
+        bool unrestricted;
+        size_t uFree;
+        size_t vFree;
+    };
+
+    ForbiddenReach forbiddenReach(Route::Node const *U,
+                                  Route::Node const *V) const;
+
+    // The offset from U of the first of the span nodes starting at U that is
+    // forbidden from targetRoute, or span when none is.
+    size_t firstForbidden(Route::Node const *U,
+                          size_t span,
+                          Route const *targetRoute) const;
 
     // Checks whether swapping the tails behind U and V would land a client on
     // a route whose profile forbids it.
     bool wouldTailSwapViolateForbidden(Route::Node const *U,
                                        Route::Node const *V) const;
 
+    // The last index on route of a client that profile forbids, or 0 when
+    // there is none. A tail behind index idx crosses a forbidden client
+    // exactly when this is above idx. Cached per route and profile until the
+    // route next updates, since tail swaps ask it for every pair.
+    size_t lastForbiddenIdx(Route const *route, size_t profile) const;
+
+    struct LastForbidden
+    {
+        size_t numUpdates = std::numeric_limits<size_t>::max();
+        size_t idx = 0;
+    };
+
+    // Indexed by route index times the number of profiles plus the profile.
+    mutable std::vector<LastForbidden> lastForbidden_;
+
     // Checks whether applying nodeOp to the pair (U, V) would land a client on
     // a route whose profile forbids it. Dispatches on the operator's own
-    // account of which nodes it moves, so it is exact rather than merely safe.
+    // account of which nodes it moves, so it is exact rather than merely safe:
+    // an operator moving span nodes from U crosses a forbidden one exactly when
+    // the pair's uFree is below that span.
     bool wouldMoveViolateForbidden(NodeOperator const &nodeOp,
                                    Route::Node const *U,
-                                   Route::Node const *V) const;
+                                   Route::Node const *V,
+                                   ForbiddenReach const &reach) const;
 
     // Checks whether the route operators may exchange clients between these
     // two routes, that is, whether every client on each is allowed on the

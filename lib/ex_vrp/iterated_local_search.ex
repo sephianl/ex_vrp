@@ -14,6 +14,7 @@ defmodule ExVrp.IteratedLocalSearch do
   allows temporary worsening moves to escape local optima.
   """
 
+  alias ExVrp.EliteBoard
   alias ExVrp.Native
   alias ExVrp.PenaltyManager
   alias ExVrp.Solution
@@ -210,7 +211,9 @@ defmodule ExVrp.IteratedLocalSearch do
         restarts: 0
       },
       on_progress: on_progress,
-      last_progress_time: start_time
+      last_progress_time: start_time,
+      elite: Keyword.get(opts, :elite),
+      published_cost: nil
     }
 
     final_state = iterate(state, stop_fn)
@@ -245,8 +248,10 @@ defmodule ExVrp.IteratedLocalSearch do
     else
       state
       |> maybe_restart()
+      |> maybe_follow_leader()
       |> search_step()
       |> accept_step()
+      |> maybe_publish_best()
       |> update_penalty_manager()
       |> Map.update!(:iteration, &(&1 + 1))
       |> maybe_report_progress()
@@ -284,6 +289,46 @@ defmodule ExVrp.IteratedLocalSearch do
     else
       state
     end
+  end
+
+  # A start of a parallel solve given an `EliteBoard` checks, at each checkpoint, whether it has
+  # fallen far enough behind the leading start to continue from the leader's best. Without a
+  # board the search is untouched.
+  defp maybe_follow_leader(%{elite: nil} = state), do: state
+  defp maybe_follow_leader(%{elite: %EliteBoard{checkpoints_ms: []}} = state), do: state
+
+  defp maybe_follow_leader(%{elite: %EliteBoard{checkpoints_ms: [due | later]} = board} = state) do
+    elapsed_ms = System.monotonic_time(:millisecond) - state.start_time
+    follow_at_checkpoint(elapsed_ms >= due, state, %{board | checkpoints_ms: later})
+  end
+
+  defp follow_at_checkpoint(false, state, _board), do: state
+
+  defp follow_at_checkpoint(true, state, board) do
+    board
+    |> EliteBoard.leader_to_follow(state.best_cost)
+    |> follow_leader(%{state | elite: board})
+  end
+
+  defp follow_leader(nil, state), do: state
+
+  defp follow_leader(leader, state) do
+    %{
+      state
+      | current: leader,
+        current_cost: Native.solution_penalised_cost(leader, state.cost_eval),
+        history: RingBuffer.clear(state.history),
+        iters_no_improvement: 0,
+        stats: Map.update(state.stats, :followed_leader, 1, &(&1 + 1))
+    }
+  end
+
+  defp maybe_publish_best(%{elite: nil} = state), do: state
+  defp maybe_publish_best(%{best_cost: cost, published_cost: cost} = state), do: state
+
+  defp maybe_publish_best(%{elite: board, best_cost: cost, best: best} = state) do
+    EliteBoard.publish(board, cost, best)
+    %{state | published_cost: cost}
   end
 
   # Apply local search to generate candidate

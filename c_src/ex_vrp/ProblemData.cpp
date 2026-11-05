@@ -68,6 +68,26 @@ normalisePenalties(std::vector<std::vector<ex_vrp::Cost>> penalties,
         numProfiles, std::vector<ex_vrp::Cost>(numLocations, 0));
 }
 
+// For each profile, the first profile with exactly the same penalties, so
+// that two profiles can be told to share them with one comparison.
+std::vector<size_t>
+penaltyClasses(std::vector<std::vector<ex_vrp::Cost>> const &penalties)
+{
+    std::vector<size_t> classes(penalties.size());
+    for (size_t profile = 0; profile != penalties.size(); ++profile)
+    {
+        classes[profile] = profile;
+        for (size_t other = 0; other != profile; ++other)
+            if (penalties[other] == penalties[profile])
+            {
+                classes[profile] = classes[other];
+                break;
+            }
+    }
+
+    return classes;
+}
+
 // An empty allowed argument means "everything is reachable".
 std::vector<ex_vrp::DynamicBitset>
 normaliseAllowed(std::vector<ex_vrp::DynamicBitset> allowed,
@@ -81,6 +101,24 @@ normaliseAllowed(std::vector<ex_vrp::DynamicBitset> allowed,
     all.set();
 
     return std::vector<ex_vrp::DynamicBitset>(numProfiles, all);
+}
+
+// See ProblemData::allowedProfiles_.
+std::vector<uint64_t>
+transposeAllowed(std::vector<ex_vrp::DynamicBitset> const &allowed,
+                 bool hasForbidden,
+                 size_t numLocations)
+{
+    if (!hasForbidden || allowed.size() > 64)
+        return {};
+
+    std::vector<uint64_t> masks(numLocations, 0);
+    for (size_t profile = 0; profile != allowed.size(); ++profile)
+        for (size_t loc = 0; loc != numLocations; ++loc)
+            if (loc < allowed[profile].size() && allowed[profile][loc])
+                masks[loc] |= uint64_t{1} << profile;
+
+    return masks;
 }
 
 // An empty profiles argument means one profile per matrix pair, replacing no
@@ -1202,6 +1240,7 @@ ProblemData::ProblemData(std::vector<Client> clients,
       penalties_(normalisePenalties(std::move(penalties),
                                     profiles_.size(),
                                     clients_.size() + depots_.size())),
+      penaltyClass_(penaltyClasses(penalties_)),
       locks_(std::move(locks)),
       allowed_(normaliseAllowed(std::move(allowed),
                                 profiles_.size(),
@@ -1212,6 +1251,8 @@ ProblemData::ProblemData(std::vector<Client> clients,
                                 allowed_.end(),
                                 [](DynamicBitset const &set)
                                 { return !set.all(); })),
+      allowedProfiles_(transposeAllowed(
+          allowed_, hasForbidden_, clients_.size() + depots_.size())),
       numVehicles_(std::accumulate(vehicleTypes_.begin(),
                                    vehicleTypes_.end(),
                                    0,

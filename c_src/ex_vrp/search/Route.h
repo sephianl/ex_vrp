@@ -518,6 +518,11 @@ private:
     // the problem and the vehicle type, so it is worked out once.
     bool const hasDurationCost_;
 
+    // hasDurationBound(), asked by every move that bounds its duration cost
+    // from below before folding it. Without a unit duration cost that bound
+    // is always zero, so it is not worth working out.
+    bool const hasDurationBound_;
+
     // Whether the vehicle type limits drive or work between breaks, for the
     // same reason: Proposal::duration() asks on every evaluation.
     bool const hasBreakRule_;
@@ -545,6 +550,17 @@ private:
     Cost durationCostDS_;
     Duration timeWarpDS_;
 
+    // What delta evaluation takes off for this route when it carries no
+    // excess load, distance or (DS-only) time warp: then every infeasibility
+    // penalty is zero, whatever the penalties are, and only these three
+    // objective terms remain.
+    Cost deltaBaseCost_ = 0;
+    bool hasDeltaExcess_ = false;
+
+    // How many times update() has run, so a cache of something derived from
+    // the route's visits can tell whether it is still current.
+    size_t numUpdates_ = 0;
+
     std::vector<Node> depots_;  // start, end, and reload depots (in that order)
 
     // Break nodes on this route, kept as nodes come and go, like depots_, so
@@ -554,6 +570,22 @@ private:
     // Whether the last update() saw a break node. Without one, locs_ is
     // visits and nextReal_ the identity, so the segments skip both lookups.
     bool hasBreaks_ = false;
+
+    // Whether the last update() saw a reload depot. Without one no node of the
+    // route can be one, so the segments answer their reload questions without
+    // asking the node, which every load and duration proposal does per segment.
+    bool hasReloads_ = false;
+
+    // Travel time over every edge of the route, and the service time of its
+    // clients, as of the last update(). Waiting, breaks and depot service only
+    // add to a route's duration, so the two together bound it from below.
+    Duration travel_ = 0;
+    Duration clientService_ = 0;
+
+    // The same two up to and including each node: travel over the edges into
+    // nodes 1..idx, and service of the clients among nodes 0..idx.
+    std::vector<Duration> travelTo_;
+    std::vector<Duration> serviceTo_;
 
     std::vector<Node *> nodes;   // Nodes in this route, including depots
     std::vector<size_t> visits;  // Locations in this route, incl. depots
@@ -976,6 +1008,42 @@ public:
     [[nodiscard]] inline bool hasDurationCost() const;
 
     /**
+     * Returns true if this route's duration costs something per unit, so that
+     * a lower bound on a proposal's duration gives a non-zero lower bound on
+     * its duration cost. False otherwise, for example when duration only
+     * matters through time windows.
+     */
+    [[nodiscard]] inline bool hasDurationBound() const;
+
+    /**
+     * Whether the route visits a reload depot, as of the last update().
+     */
+    [[nodiscard]] inline bool hasReloads() const;
+
+    /**
+     * Travel time over every edge of the route, in its profile's duration
+     * matrix, as of the last update().
+     */
+    [[nodiscard]] inline Duration travel() const;
+
+    /**
+     * Total service time of the route's clients, as of the last update().
+     */
+    [[nodiscard]] inline Duration clientService() const;
+
+    /**
+     * Travel over the route's edges up to the node at idx, as of the last
+     * update().
+     */
+    [[nodiscard]] inline Duration travelTo(size_t idx) const;
+
+    /**
+     * Service time of the route's clients up to and including the node at
+     * idx, as of the last update().
+     */
+    [[nodiscard]] inline Duration clientServiceTo(size_t idx) const;
+
+    /**
      * @return The (soft) maximum shift duration that the vehicle servicing this
      *         route supports. This may optionally be extended with overtime.
      */
@@ -1073,6 +1141,24 @@ public:
      *         evaluation in local search.
      */
     [[nodiscard]] inline Duration timeWarpDS() const;
+
+    /**
+     * @return Distance, penalty and DS-only duration cost together: what delta
+     *         evaluation takes off for this route when it has no excess.
+     */
+    [[nodiscard]] inline Cost deltaBaseCost() const;
+
+    /**
+     * @return Whether this route carries excess load, excess distance or
+     *         DS-only time warp, so that delta evaluation must price them.
+     */
+    [[nodiscard]] inline bool hasDeltaExcess() const;
+
+    /**
+     * @return How many times this route has been updated. Changes whenever
+     *         its visits may have.
+     */
+    [[nodiscard]] inline size_t numUpdates() const;
 
     /**
      * @return The routing profile of the vehicle servicing this route.
@@ -1522,7 +1608,7 @@ size_t Route::SegmentBefore::numBreaks() const
 bool Route::SegmentBefore::startsAtReloadDepot() const { return false; }
 bool Route::SegmentBefore::endsAtReloadDepot() const
 {
-    return route_.nodes[end]->isReloadDepot();
+    return route_.hasReloads_ && route_.nodes[end]->isReloadDepot();
 }
 
 Route const *Route::SegmentAfter::route() const { return &route_; }
@@ -1553,7 +1639,7 @@ size_t Route::SegmentAfter::numBreaks() const
 
 bool Route::SegmentAfter::startsAtReloadDepot() const
 {
-    return route_.nodes[start]->isReloadDepot();
+    return route_.hasReloads_ && route_.nodes[start]->isReloadDepot();
 }
 bool Route::SegmentAfter::endsAtReloadDepot() const { return false; }
 
@@ -1589,11 +1675,11 @@ size_t Route::SegmentBetween::numBreaks() const
 
 bool Route::SegmentBetween::startsAtReloadDepot() const
 {
-    return route_.nodes[start]->isReloadDepot();
+    return route_.hasReloads_ && route_.nodes[start]->isReloadDepot();
 }
 bool Route::SegmentBetween::endsAtReloadDepot() const
 {
-    return route_.nodes[end]->isReloadDepot();
+    return route_.hasReloads_ && route_.nodes[end]->isReloadDepot();
 }
 
 template <bool WithBreaks>
@@ -1648,7 +1734,13 @@ Cost Route::SegmentBetween::penalty(size_t profile, size_t vehicleType) const
     auto const lockChanges
         = route_.data.hasVehicleLocks() && vehicleType != route_.vehicleType();
 
-    if (profile != route_.profile() || lockChanges)
+    // Profiles that differ only in a depot row charge the same penalties, so
+    // the prefix sums still hold across them.
+    auto const penaltiesChange
+        = profile != route_.profile()
+          && !route_.data.samePenalties(profile, route_.profile());
+
+    if (penaltiesChange || lockChanges)
     {
         auto const &pen = route_.data.penalties(profile);
         Cost penalty = 0;
@@ -1847,6 +1939,18 @@ Cost Route::unitDurationCost() const { return vehicleType_.unitDurationCost; }
 Cost Route::unitOvertimeCost() const { return vehicleType_.unitOvertimeCost; }
 
 bool Route::hasDurationCost() const { return hasDurationCost_; }
+
+bool Route::hasDurationBound() const { return hasDurationBound_; }
+
+bool Route::hasReloads() const { return hasReloads_; }
+
+Duration Route::travel() const { return travel_; }
+
+Duration Route::clientService() const { return clientService_; }
+
+Duration Route::travelTo(size_t idx) const { return travelTo_[idx]; }
+
+Duration Route::clientServiceTo(size_t idx) const { return serviceTo_[idx]; }
 
 Duration Route::shiftDuration() const { return vehicleType_.shiftDuration; }
 
@@ -2125,6 +2229,20 @@ Duration Route::timeWarpDS() const
     assert(!dirty);
     return timeWarpDS_;
 }
+
+Cost Route::deltaBaseCost() const
+{
+    assert(!dirty);
+    return deltaBaseCost_;
+}
+
+bool Route::hasDeltaExcess() const
+{
+    assert(!dirty);
+    return hasDeltaExcess_;
+}
+
+size_t Route::numUpdates() const { return numUpdates_; }
 
 size_t Route::profile() const { return vehicleType_.profile; }
 

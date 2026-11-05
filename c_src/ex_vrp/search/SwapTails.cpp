@@ -38,6 +38,49 @@ ex_vrp::Cost fixedCostDelta(ex_vrp::search::Route::Node *node, size_t incoming)
            * (static_cast<ex_vrp::Cost>(after > 0)
               - static_cast<ex_vrp::Cost>(before > 0));
 }
+
+// Lower bound on the duration cost of the proposal that keeps `to`'s nodes up
+// to and including `cut`, then takes `from`'s tail after `tail` (nothing when
+// that is the end depot), and ends at `to`'s end depot: the head's travel and
+// service from `to`'s prefix sums, the tail's in `to`'s own profile, and the
+// edges joining them. Waiting and depot service only add to a duration.
+ex_vrp::Cost tailSwapDurationBound(ex_vrp::ProblemData const &data,
+                                   ex_vrp::search::Route::Node *cut,
+                                   ex_vrp::search::Route::Node *tail)
+{
+    using ex_vrp::Duration;
+    using ex_vrp::ProblemData;
+
+    auto const *to = cut->route();
+    auto const *from = tail->route();
+    auto const first = tail->idx() + 1;
+    auto const last = from->size() - 2;  // the tail's last client, if any
+
+    // A route left without clients proposes nothing, and costs nothing.
+    if (!to->hasDurationBound() || (cut->idx() == 0 && first > last))
+        return 0;
+
+    auto const &dur = data.durationMatrix(to->profile());
+    auto const toEnd = (*to)[to->size() - 1]->client();
+
+    Duration travel = to->travelTo(cut->idx());
+    Duration service = to->clientServiceTo(cut->idx());
+
+    if (first > last)
+        travel += dur(cut->client(), toEnd);
+    else
+    {
+        travel += dur(cut->client(), (*from)[first]->client())
+                  + dur((*from)[last]->client(), toEnd);
+
+        for (auto idx = first + 1; idx <= last; ++idx)
+            travel += dur((*from)[idx - 1]->client(), (*from)[idx]->client());
+
+        service += from->clientService() - from->clientServiceTo(tail->idx());
+    }
+
+    return to->unitDurationCost() * static_cast<ex_vrp::Cost>(travel + service);
+}
 }  // namespace
 
 ex_vrp::Cost SwapTails::evaluate(Route::Node *U,
@@ -87,6 +130,16 @@ ex_vrp::Cost SwapTails::evaluate(Route::Node *U,
         deltaCost += fixedCostDelta(V, clientsAfter(U));
     }
 
+    // A floor on both proposals' duration, as for Exchange's moves: off with
+    // breaks or reloads, which add to a duration in ways it does not track.
+    auto const bound
+        = (uRoute->hasDurationBound() || vRoute->hasDurationBound())
+                  && !data.hasBreaks() && !uRoute->hasReloads()
+                  && !vRoute->hasReloads()
+              ? tailSwapDurationBound(data, U, V)
+                    + tailSwapDurationBound(data, V, U)
+              : 0;
+
     if (!n(U)->isEndDepot() && !n(V)->isEndDepot())
     {
         auto const uProposal
@@ -99,7 +152,7 @@ ex_vrp::Cost SwapTails::evaluate(Route::Node *U,
                               uRoute->between(U->idx() + 1, uRoute->size() - 2),
                               vRoute->at(vRoute->size() - 1));
 
-        costEvaluator.deltaCost(deltaCost, uProposal, vProposal);
+        costEvaluator.deltaCost(deltaCost, uProposal, vProposal, bound);
     }
     else if (!n(U)->isEndDepot() && n(V)->isEndDepot())
     {
@@ -111,7 +164,7 @@ ex_vrp::Cost SwapTails::evaluate(Route::Node *U,
                               uRoute->between(U->idx() + 1, uRoute->size() - 2),
                               vRoute->at(vRoute->size() - 1));
 
-        costEvaluator.deltaCost(deltaCost, uProposal, vProposal);
+        costEvaluator.deltaCost(deltaCost, uProposal, vProposal, bound);
     }
     else if (n(U)->isEndDepot() && !n(V)->isEndDepot())
     {
@@ -123,7 +176,7 @@ ex_vrp::Cost SwapTails::evaluate(Route::Node *U,
         auto const vProposal = Route::Proposal(vRoute->before(V->idx()),
                                                vRoute->at(vRoute->size() - 1));
 
-        costEvaluator.deltaCost(deltaCost, uProposal, vProposal);
+        costEvaluator.deltaCost(deltaCost, uProposal, vProposal, bound);
     }
 
     return deltaCost;
