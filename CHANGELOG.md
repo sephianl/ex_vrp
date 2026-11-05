@@ -4,13 +4,17 @@
 
 ### Added
 
-- **Weak starts of a parallel solve can continue from the leader.** With
-  `rescue_weak_starts: [at: [0.33, 0.66], behind: 0.05]`, each start of a `num_starts` solve
-  publishes its best to a shared board, and at each listed fraction of the budget a start more than
-  `behind` worse than the leader, or still infeasible, takes the leader's best as its current
-  solution while keeping its own seed, penalties and best. Off by default, and with it off every
-  solve is unchanged. On a tight 629-client production day at 284 s with 15 starts, the best of the
-  starts fell 0.1–1.9% across three repetitions and the median start from 111.5e9 to 105.1e9.
+- **Weak starts of a parallel solve continue from the leader.** Each start of a `num_starts > 1`
+  solve with a runtime limit publishes its best to a shared board, and at each fraction in
+  `rescue_weak_starts` a start more than `behind` worse than the leader, or still infeasible, takes
+  the leader's best as its current solution while keeping its own seed, penalties and best. On by
+  default as `[at: [0.33, 0.66], behind: 0.05]`, so multi-start solves with a runtime now return
+  different (never measurably worse) results; `rescue_weak_starts: nil` restores independent
+  starts. Single starts and solves without a runtime limit are unchanged. On a tight 629-client
+  production day at 284 s with 15 starts, the worst start rose from about 136e9 to 106e9 and the
+  median start from about 109e9 to 105e9, with the best start equal or up to 1.9% better; on the
+  593- and 125-client production days every start already ends within 5% of the leader, so it
+  never triggers and their results are identical.
 
 ### Performance
 

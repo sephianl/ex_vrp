@@ -43,7 +43,7 @@ defmodule ExVrp.Solver do
     on_progress: nil,
     initial_routes: nil,
     log_label: nil,
-    rescue_weak_starts: nil
+    rescue_weak_starts: [at: [0.33, 0.66], behind: 0.05]
   ]
 
   @repair_budget_share 0.25
@@ -75,10 +75,11 @@ defmodule ExVrp.Solver do
     Use `:auto` to pick based on available cores (`div(schedulers_online, 2)`).
   - `:penalty_params` - PenaltyManager.Params for penalty adjustment
   - `:ils_params` - IteratedLocalSearch.Params for ILS behavior
-  - `:rescue_weak_starts` - Opt-in, for `num_starts > 1` with a runtime limit:
+  - `:rescue_weak_starts` - For `num_starts > 1` with a runtime limit:
     `[at: fractions, behind: share]`. At each fraction of the runtime, a start whose best is more
     than `share` worse than the leading start's (or still infeasible) continues from the leader's
-    best; see `ExVrp.EliteBoard`. Default `nil` leaves every start independent.
+    best; see `ExVrp.EliteBoard`. Default `[at: [0.33, 0.66], behind: 0.05]`; `nil` leaves every
+    start independent. A single start, or a solve without a runtime limit, is never affected.
   - `:on_progress` - Optional callback function receiving progress maps during ILS iterations (time-gated at ~1s intervals). When `num_starts > 1`, progress maps include `:seed_idx` and `:seed` fields.
   - `:log_label` - Optional string folded into this solve's log lines, e.g.
     `log_label: "relaxed_15"` yields `[exvrp relaxed_15 start 2] ILS completed in ...`.
