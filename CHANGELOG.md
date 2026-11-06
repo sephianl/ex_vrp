@@ -15,13 +15,21 @@
   left past either limit is infeasible; the excess is time warp, reported by
   `ExVrp.Route.duty_excess/1`. The vehicle type's `max_drive` still bounds the whole route.
 - `ExVrp.Route.breaks/1` returns `rest?: true` on a rest.
+- `:initial_routes` takes a `:rest` marker, given one of the model's rest clients as `:break`
+  is a break client, and `ExVrp.Solution.warm_start/1` returns one for each rest. A rest the
+  solver placed used to come back as its pool index, which a changed model gives to another
+  client or a break.
 
 ### Changed
 
 - **Breaking:** `VehicleType.rest_duration` moved into `:duty_rule`:
   `duty_rule: ExVrp.DutyRule.new(rest_duration: 660)` is a rule without limits, under which a rest
   placed by `:initial_routes` stays where it was put, as before.
-- A duty rule with a limit needs a break limit and a positive `rest_duration`.
+- A duty rule with a limit needs a break limit and a positive `rest_duration`. `Model.validate/1`
+  rejects a `:duty_rule` that is not an `ExVrp.DutyRule`, and a `rest_duration` or carry that is
+  not a non-negative integer (`:infinity` used to pass and crash building the pool).
+- Under a duty rule, a vehicle type gets the breaks for each duty period rather than twelve per
+  rest: a vehicle type without a shift no longer pads every matrix with 168 breaks per vehicle.
 - **A rest closes the break clocks where its leg begins**, as the duty periods count it, so all
   of the leg's travel is driven after it and a leg longer than `max_drive_between_breaks` takes a
   break as well. It used to fall where the clock ran out, like a break, so a rest on a long leg

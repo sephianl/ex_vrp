@@ -197,8 +197,9 @@ defmodule ExVrp.Route do
   end
 
   @doc """
-  Returns the duty past the vehicle type's `:max_duty_period` plus the driving past its
-  `:max_duty_drive`, each summed over the duty periods between rests.
+  Returns the duty past the vehicle type's `duty_rule.max_duty` plus the driving past its
+  `duty_rule.max_drive`, each summed over the duty periods between rests (`ExVrp.DutyRule`).
+  The vehicle type's own `:max_drive`, a whole-route cap, counts in `drive_excess/1` instead.
 
   Also counted in `time_warp/1`.
   """

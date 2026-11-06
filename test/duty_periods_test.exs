@@ -158,6 +158,14 @@ defmodule ExVrp.DutyPeriodsTest do
                Route.duration(route([@a, @b, @c])) + @rest_duration
     end
 
+    test "an empty route's carries join no period" do
+      {:ok, data} = [rule: [duty_carry_in: 700, duty_after_end: 100]] |> model() |> Model.to_problem_data()
+      search_route = Native.make_search_route_nif(data, [], 0, 0)
+
+      assert Native.search_route_duration_nif(search_route) == 0
+      assert Native.search_route_time_warp_nif(search_route) == 0
+    end
+
     test "a search route with its rests in place prices them as the stored route does" do
       {:ok, data} = Model.to_problem_data(model())
       search_route = Native.make_search_route_nif(data, [@a, @b, @rest, @c], 0, 0)
@@ -293,6 +301,32 @@ defmodule ExVrp.DutyPeriodsTest do
     end
   end
 
+  describe "pool" do
+    test "a vehicle without a shift gets breaks for each duty period, not the cap for each" do
+      {:ok, data} = Model.to_problem_data(model())
+      breaks_per_period = div(@max_duty_drive + 10_000 - 1, 10_000) + 1
+      periods_per_vehicle = 14 + 1
+
+      assert length(Native.problem_data_break_clients(data)) == 1 + 2 * periods_per_vehicle * breaks_per_period
+    end
+  end
+
+  describe "break repair" do
+    test "a break that pushes a period past max_duty gets the rest that fixes it" do
+      vehicle_opts = [num_available: 1, max_drive_between_breaks: 900, rule: [max_duty: 1100, max_drive: :infinity]]
+      {:ok, data} = vehicle_opts |> model() |> Model.to_problem_data()
+      {:ok, seed} = Native.create_solution_from_routes(data, [[@a, @b, @c]])
+      {:ok, evaluator} = Native.create_cost_evaluator(load_penalties: [0.0], tw_penalty: 1000.0, dist_penalty: 1.0)
+
+      {:ok, ref} = Native.local_search_search_only(seed, data, evaluator)
+      [route] = Solution.routes(%Solution{solution_ref: ref, routes: Native.solution_routes(ref)})
+
+      assert Route.clock_excess(route) == 0
+      assert Route.duty_excess(route) == 0
+      assert Enum.any?(Route.breaks(route), & &1.rest?)
+    end
+  end
+
   describe "solving" do
     @day 1440
 
@@ -368,6 +402,23 @@ defmodule ExVrp.DutyPeriodsTest do
     test "work that does not fit the horizon once rested is infeasible" do
       refute 8 |> ring_model(300, 2) |> solve() |> Solution.feasible?()
     end
+
+    test "a warm start marks each rest :rest, so a changed model resumes it as a rest" do
+      model = ring_model(8, 300, 6)
+      {:ok, [visits]} = model |> solve() |> Solution.warm_start()
+      [vehicle_type] = model.vehicle_types
+      changed = %{model | vehicle_types: [%{vehicle_type | num_available: 2}]}
+
+      {:ok, resumed} =
+        Solver.solve(changed, initial_routes: [visits], stop: StoppingCriteria.max_iterations(0), num_starts: 1)
+
+      [route] = Solution.routes(resumed.best)
+      num_rests = Enum.count(visits, &(&1 == :rest))
+
+      assert num_rests > 0
+      assert Enum.all?(visits, &(&1 in [:break, :rest] or &1 in 1..8))
+      assert Enum.count(Route.breaks(route), & &1.rest?) == num_rests
+    end
   end
 
   describe "validation" do
@@ -388,6 +439,21 @@ defmodule ExVrp.DutyPeriodsTest do
       errors = validation_errors(max_drive_between_breaks: :infinity, break_duration: 0)
 
       assert Enum.any?(errors, &(&1 =~ "needs a positive rest_duration"))
+    end
+
+    test "a rest duration must be an integer" do
+      assert Enum.any?(validation_errors(rule: [rest_duration: :infinity]), &(&1 =~ "rest_duration"))
+
+      assert Enum.any?(
+               validation_errors(shift_duration: 2000, rule: [rest_duration: :infinity]),
+               &(&1 =~ "rest_duration")
+             )
+    end
+
+    test "a duty rule must be an ExVrp.DutyRule" do
+      errors = validation_errors(duty_rule: %{max_duty: @max_duty, rest_duration: @rest_duration})
+
+      assert Enum.any?(errors, &(&1 =~ "must be nil or an ExVrp.DutyRule"))
     end
 
     test "a carry that alone overruns its limit is rejected" do

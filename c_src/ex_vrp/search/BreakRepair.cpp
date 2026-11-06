@@ -242,14 +242,6 @@ bool BreakRepair::insertRest(Route &route,
     return true;
 }
 
-bool BreakRepair::isRedundant(Route const &route, size_t idx) const
-{
-    Route::Proposal const proposal(route.before(idx - 1), route.after(idx + 1));
-
-    return proposal.clockOverrun() <= route.totalClockExcess()
-           && proposal.dutyCost().excess <= route.totalDutyExcess();
-}
-
 bool BreakRepair::stripBreaks(Route &route) const
 {
     bool changed = false;
@@ -281,11 +273,14 @@ bool BreakRepair::removeRedundant(Route &route,
         if (!data.isBreak(client) || (data.isRest(client) && !placesRests))
             continue;
 
-        if (!isRedundant(route, idx))
-            continue;
-
         Route::Proposal const proposal(route.before(idx - 1),
                                        route.after(idx + 1));
+
+        auto const raisesOverrun
+            = proposal.clockOverrun() > route.totalClockExcess()
+              || proposal.dutyCost().excess > route.totalDutyExcess();
+        if (raisesOverrun)
+            continue;
 
         Cost deltaCost = 0;
         costEvaluator.deltaCost<true>(deltaCost, proposal);
@@ -317,18 +312,48 @@ bool BreakRepair::apply(Route &route,
     if (!route.vehicleTypeData().hasBreakRule() || route.empty())
         return stripBreaks(route);
 
+    // Rests go first: they reset the clocks. A break is duty, though, so one
+    // placed after the rests can push a period past its limit, and the passes
+    // repeat until neither places anything. Each insert lowers the true
+    // overrun and takes a rest or break from the finite pool, and nothing is
+    // removed in between, so this terminates.
     bool changed = false;
+    for (;;)
+    {
+        auto const placedRests = placeRests(route, solution, costEvaluator);
+        auto const placedBreaks = placeBreaks(route, solution, costEvaluator);
+        if (!placedRests && !placedBreaks)
+            break;
 
-    // Each insert lowers the true overrun and takes a rest or break from the
-    // finite pool, so this terminates. Rests go first: they reset the clocks.
-    if (route.vehicleTypeData().hasRestRule())
-        while (route.totalDutyExcess() > 0
-               && insertRest(route, solution, costEvaluator))
-            changed = true;
-
-    while (route.totalClockExcess() > 0
-           && insertBreak(route, solution, costEvaluator))
         changed = true;
+    }
 
     return removeRedundant(route, costEvaluator) || changed;
+}
+
+bool BreakRepair::placeRests(Route &route,
+                             Solution &solution,
+                             CostEvaluator const &costEvaluator)
+{
+    if (!route.vehicleTypeData().hasRestRule())
+        return false;
+
+    bool placed = false;
+    while (route.totalDutyExcess() > 0
+           && insertRest(route, solution, costEvaluator))
+        placed = true;
+
+    return placed;
+}
+
+bool BreakRepair::placeBreaks(Route &route,
+                              Solution &solution,
+                              CostEvaluator const &costEvaluator)
+{
+    bool placed = false;
+    while (route.totalClockExcess() > 0
+           && insertBreak(route, solution, costEvaluator))
+        placed = true;
+
+    return placed;
 }

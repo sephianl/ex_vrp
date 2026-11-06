@@ -225,19 +225,14 @@ public:
                                0);
     }
 
-    // A run of breaks is one pause; a run of rests is as many rests, with
-    // empty duty periods between them.
+    // A run of breaks is one pause; a run of rests is one boundary, since
+    // rests with nothing located between them are one (DutySegment::merge).
     DutySegment duty(size_t profile, size_t vehicleType) const
     {
         if (!data.isRest(client))
             return DutySegment::pause(duration(profile, vehicleType));
 
-        auto const limits = data.vehicleType(vehicleType).dutyLimits();
-        auto duty = DutySegment::rest();
-        for (size_t idx = 1; idx != count; ++idx)
-            duty = DutySegment::merge(0, duty, DutySegment::rest(), limits);
-
-        return duty;
+        return DutySegment::rest();
     }
 
     // No location, so the Proposal fold adds trailRun to the leg it sits on.

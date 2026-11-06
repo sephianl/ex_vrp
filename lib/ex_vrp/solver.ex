@@ -104,7 +104,9 @@ defmodule ExVrp.Solver do
     On a vehicle type with limits between breaks, a `:break` among the clients
     is a break taken there, e.g. `[[1, 2, :break, 3]]`. Each marker gets a break
     of its own from the model's pool, and the solve keeps it there unless moving
-    or dropping it pays; breaks the route still lacks are added as usual.
+    or dropping it pays; breaks the route still lacks are added as usual. A
+    `:rest` is a rest taken there, given one of the model's rest clients the
+    same way.
 
     Capacity-overloaded and time-window-violating starts are passed through to
     the solver — these are valid infeasible starting points that the solver can
@@ -112,7 +114,8 @@ defmodule ExVrp.Solver do
     out-of-range vehicle types or client IDs, too many routes for
     `num_available`, a reload depot not in the vehicle type's `reload_depots`,
     more trips than its `max_reloads + 1`, a `:break` on a vehicle type without
-    limits between breaks, more `:break` markers than the pool holds) are logged as warnings and the
+    limits between breaks, more `:break` or `:rest` markers than the model holds breaks or rests)
+    are logged as warnings and the
     solver falls back to a cold (empty) start rather than crashing.
 
   ## Returns
@@ -465,7 +468,7 @@ defmodule ExVrp.Solver do
   end
 
   defp solution_from_typed_routes(problem_data, typed_routes) do
-    with {:ok, placed} <- WarmStart.place_breaks(typed_routes, Native.problem_data_break_clients(problem_data)) do
+    with {:ok, placed} <- WarmStart.place_pauses(typed_routes, WarmStart.pause_pools(problem_data)) do
       Native.create_solution_from_routes_with_types(problem_data, placed)
     end
   rescue
@@ -652,8 +655,7 @@ defmodule ExVrp.Solver do
   defp best_removal({_visits, route_idx}, solution, problem_data) do
     typed = WarmStart.vehicle_type_trips(solution)
 
-    breaks_and_rests =
-      MapSet.new(Native.problem_data_break_clients(problem_data) ++ Native.problem_data_rest_clients(problem_data))
+    breaks_and_rests = problem_data |> WarmStart.pause_pools() |> Map.values() |> List.flatten() |> MapSet.new()
 
     {_vehicle_type, trips} = Enum.at(typed, route_idx)
 

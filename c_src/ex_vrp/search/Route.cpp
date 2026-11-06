@@ -1003,8 +1003,10 @@ void Route::update()
     totalClockExcess_ = clocks.overrun(limits);
     virtualBreaks_ = vehicleType_.hasBreakRule() ? clocks.missing(limits) : 0;
 
-    // Duty overrun likewise, as the rests that would fix it.
-    auto const duty = hasRestRule_
+    // Duty overrun likewise, as the rests that would fix it. An empty route
+    // is not driven, so its carries join no period, as in Proposal::dutyCost()
+    // and ex_vrp::Route::foldDuty().
+    auto const duty = hasRestRule_ && !empty()
                           ? dutyAfter_[0].cost(vehicleType_.dutyLimits())
                           : DutyCost{};
     totalDutyExcess_ = duty.excess;

@@ -80,8 +80,15 @@ class BreakRepair
                     Solution &solution,
                     CostEvaluator const &costEvaluator);
 
-    // Whether removing the pause at idx raises no true overrun.
-    bool isRedundant(Route const &route, size_t idx) const;
+    // Insert rests, then breaks, while each lowers its true overrun. Return
+    // whether they placed any.
+    bool placeRests(Route &route,
+                    Solution &solution,
+                    CostEvaluator const &costEvaluator);
+
+    bool placeBreaks(Route &route,
+                     Solution &solution,
+                     CostEvaluator const &costEvaluator);
 
     bool stripBreaks(Route &route) const;
 

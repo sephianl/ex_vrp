@@ -10,12 +10,17 @@ defmodule ExVrp.Breaks do
 
   Each vehicle gets enough breaks to cover its horizon, plus one: the drive
   clock's horizon is `:max_drive` (else `:shift_duration`), the work clock's is
-  `:shift_duration`, and a vehicle type without one takes the cap, which grows
-  with the duty periods its rests split the route into. Rest clients
-  (`ExVrp.Rests`) follow the breaks.
+  `:shift_duration`. Under a duty rule the rests reset both clocks, so neither
+  needs more than enough for each duty period it can split the route into,
+  plus one each: a period's drive is at most the rule's `:max_drive` (else
+  `:max_duty`), its work `:max_duty`. A clock bounded by neither takes the cap
+  per period. Rest clients (`ExVrp.Rests`) follow the breaks.
   """
 
+  import ExVrp.VehicleTypeCheck, only: [add_invalid: 4, positive_or_infinity?: 1, exceeds?: 2]
+
   alias ExVrp.Client
+  alias ExVrp.DutyRule
   alias ExVrp.Matrix
   alias ExVrp.Model
   alias ExVrp.Rests
@@ -48,17 +53,6 @@ defmodule ExVrp.Breaks do
     append_pauses(model, num_breaks, num_rests)
   end
 
-  defp add_invalid(errors, vehicle_types, invalid?, message) do
-    vehicle_types
-    |> Enum.with_index()
-    |> Enum.filter(fn {vehicle_type, _idx} -> invalid?.(vehicle_type) end)
-    |> Enum.map(fn {_vehicle_type, idx} -> idx end)
-    |> prepend_message(errors, message)
-  end
-
-  defp prepend_message([], errors, _message), do: errors
-  defp prepend_message(indices, errors, message), do: ["#{message} at indices #{inspect(indices)}" | errors]
-
   defp mismatched_duration_message do
     "Vehicle type break_duration must be positive exactly when max_drive_between_breaks or " <>
       "max_work_between_breaks is set"
@@ -77,24 +71,15 @@ defmodule ExVrp.Breaks do
       not positive_or_infinity?(vehicle_type.max_work_between_breaks)
   end
 
-  defp positive_or_infinity?(:infinity), do: true
-  defp positive_or_infinity?(limit), do: is_integer(limit) and limit > 0
-
   defp mismatched_duration?(%VehicleType{break_duration: duration} = vehicle_type) do
-    has_limit?(vehicle_type) != duration > 0
+    VehicleType.break_limits?(vehicle_type) != duration > 0
   end
-
-  defp has_limit?(%VehicleType{max_drive_between_breaks: :infinity, max_work_between_breaks: :infinity}), do: false
-  defp has_limit?(%VehicleType{}), do: true
 
   defp carry_overruns?(%VehicleType{} = vehicle_type) do
     exceeds?(vehicle_type.drive_carry_in, vehicle_type.max_drive_between_breaks) or
       exceeds?(vehicle_type.work_carry_in, vehicle_type.max_work_between_breaks) or
       exceeds?(vehicle_type.work_after_end, vehicle_type.max_work_between_breaks)
   end
-
-  defp exceeds?(carry, limit) when is_integer(limit) and limit > 0, do: carry > limit
-  defp exceeds?(_carry, _infinite_or_rejected_limit), do: false
 
   defp append_pauses(model, 0, 0), do: model
 
@@ -119,21 +104,35 @@ defmodule ExVrp.Breaks do
 
   defp pad_override_row(profile, _pool_size), do: profile
 
-  defp breaks_per_vehicle(%VehicleType{} = vehicle_type) do
-    cap = @max_breaks_per_vehicle * max(Rests.per_vehicle(vehicle_type), 1)
+  defp breaks_per_vehicle(%VehicleType{duty_rule: rule} = vehicle_type) do
+    num_periods = Rests.per_vehicle(vehicle_type) + 1
 
     [
-      {vehicle_type.max_drive_between_breaks, drive_horizon(vehicle_type)},
-      {vehicle_type.max_work_between_breaks, vehicle_type.shift_duration}
+      {vehicle_type.max_drive_between_breaks, drive_horizon(vehicle_type), drive_period(rule)},
+      {vehicle_type.max_work_between_breaks, vehicle_type.shift_duration, work_period(rule)}
     ]
-    |> Enum.reject(fn {limit, _horizon} -> limit == :infinity end)
-    |> Enum.map(fn {limit, horizon} -> breaks_within(horizon, limit, cap) end)
+    |> Enum.reject(fn {limit, _horizon, _period} -> limit == :infinity end)
+    |> Enum.map(fn {limit, horizon, period} ->
+      breaks_within_horizon(horizon, limit, num_periods * breaks_per_period(period, limit))
+    end)
     |> Enum.max(fn -> 0 end)
   end
 
   defp drive_horizon(%VehicleType{max_drive: :infinity, shift_duration: shift}), do: shift
   defp drive_horizon(%VehicleType{max_drive: max_drive}), do: max_drive
 
-  defp breaks_within(:infinity, _limit, cap), do: cap
-  defp breaks_within(horizon, limit, cap), do: min(div(horizon + limit - 1, limit) + 1, cap)
+  defp drive_period(%DutyRule{max_drive: :infinity, max_duty: max_duty}), do: max_duty
+  defp drive_period(%DutyRule{max_drive: max_drive}), do: max_drive
+  defp drive_period(nil), do: :infinity
+
+  defp work_period(%DutyRule{max_duty: max_duty}), do: max_duty
+  defp work_period(nil), do: :infinity
+
+  defp breaks_within_horizon(:infinity, _limit, period_bound), do: period_bound
+  defp breaks_within_horizon(horizon, limit, period_bound), do: min(breaks_within(horizon, limit), period_bound)
+
+  defp breaks_per_period(:infinity, _limit), do: @max_breaks_per_vehicle
+  defp breaks_per_period(period, limit), do: breaks_within(period, limit)
+
+  defp breaks_within(horizon, limit), do: div(horizon + limit - 1, limit) + 1
 end

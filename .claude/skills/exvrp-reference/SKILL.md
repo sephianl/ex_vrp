@@ -160,8 +160,15 @@ appended after the breaks by `ExVrp.Breaks.append_pool/1`.
   `restDuration` each in `summarise()`'s extra; `ex_vrp::Route::dutyExcess()` is time warp.
   `max_drive` stays a whole-route cap beside the per-period one.
 - **Repair:** `BreakRepair::apply` places rests before breaks (a rest resets the clocks): after
-  every located node, cheapest that lowers `totalDutyExcess()`, whatever the delta.
-  `removeRedundant` releases a rest when neither overrun nor cost rises.
+  every located node, cheapest that lowers `totalDutyExcess()`, whatever the delta. A break is
+  duty, so one placed after the rests can overrun a period again: the rest and break passes
+  repeat until neither places anything. `removeRedundant` releases a rest when neither overrun
+  nor cost rises.
+- **Known gap:** the search's duty fold does not count _virtual_ breaks' duration, so it
+  underestimates a period's duty until repair makes the breaks real.
+- **Warm starts:** `Solution.warm_start/1` returns rests as `:rest` markers (the pool's indices
+  shift with the model); `WarmStart.place_pauses/2` gives each one of the model's rest clients,
+  hand-placed ones included.
 - Rest-free models pay a rule check per route update and per break-path proposal only.
 
 ### Forbidden locations (`set_forbidden/2`)

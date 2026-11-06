@@ -853,8 +853,8 @@ defmodule ExVrp.Native do
   def solution_route_work_clock_excess(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
-  Gets duty excess (duty past `:max_duty_period` plus driving past `:max_duty_drive`, over the duty
-  periods between rests) of a specific route.
+  Gets duty excess (duty past `duty_rule.max_duty` plus driving past `duty_rule.max_drive`, over
+  the duty periods between rests) of a specific route.
   """
   @spec solution_route_duty_excess(reference(), non_neg_integer()) :: non_neg_integer()
   def solution_route_duty_excess(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)

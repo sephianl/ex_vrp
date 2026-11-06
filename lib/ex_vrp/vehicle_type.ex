@@ -378,6 +378,11 @@ defmodule ExVrp.VehicleType do
     )
   end
 
+  @doc "Whether the vehicle type limits driving or work between breaks, so its routes take breaks."
+  @spec break_limits?(t()) :: boolean()
+  def break_limits?(%__MODULE__{max_drive_between_breaks: :infinity, max_work_between_breaks: :infinity}), do: false
+  def break_limits?(%__MODULE__{}), do: true
+
   defp resolve_max_duration(opts) do
     defaults = %__MODULE__{num_available: 1, capacity: []}
 
