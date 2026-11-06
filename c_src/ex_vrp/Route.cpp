@@ -555,7 +555,7 @@ ex_vrp::BreakClocks Route::foldClocks(ProblemData const &data) const
     auto const visit = [&](size_t location, Duration work)
     {
         if (data.isBreak(location))
-            clocks.addTrailRun(1);
+            clocks.addTrailRun(1, data.isRest(location));
         else
         {
             clocks = BreakClocks::merge(clocks,

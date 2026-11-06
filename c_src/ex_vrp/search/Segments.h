@@ -246,8 +246,8 @@ public:
                        [[maybe_unused]] BreakLimits limits) const
     {
         BreakClocks clocks;
-        clocks.addLeadRun(count);
-        clocks.addTrailRun(count);
+        clocks.addLeadRun(count, data.isRest(client));
+        clocks.addTrailRun(count, data.isRest(client));
         return clocks;
     }
 

@@ -131,8 +131,10 @@ of the same route coexist, and mixing them up is the trap:
   `VehicleType::restDuration` instead of `breakDuration`, through `ProblemData::pauseDuration`,
   which reads the packed `isRest_` rather than the wide `Client`. Every path that prices a break
   node must go through it, and `SegmentBetween::durationWithBreaks`
-  swaps both durations when evaluating for another vehicle type. A rest closes both clocks like a
-  break. On a vehicle type without a rest rule nothing places or releases one (a warm start's
+  swaps both durations when evaluating for another vehicle type. A rest closes both clocks, but
+  where its leg begins, not where the clock runs out as a break does: the runs carry
+  `leadRest`/`trailRest`, and `BreakPlacement::withRest` puts a rest leg's first pause at 0, so
+  the clocks and `DutySegment` agree the leg is driven after the rest. On a vehicle type without a rest rule nothing places or releases one (a warm start's
   stays), only `stripBreaks` drops it with every break. Covered by `rest_nodes_test.exs`.
 
 ### Duty periods and rests (0.20.0)

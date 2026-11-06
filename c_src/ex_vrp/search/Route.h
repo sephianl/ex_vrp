@@ -866,6 +866,18 @@ private:
     // - stretchOf_: number of reset legs arriving at or before each node.
     std::vector<size_t> resetBounds_;
     std::vector<size_t> legBreaks_;
+    std::vector<bool> legRests_;  // whether each reset leg holds a rest
+
+    // cumRests_[idx] is the number of rests among nodes [0, idx), like
+    // cumBreaks_.
+    std::vector<size_t> cumRests_;
+
+    // Whether nodes [from, to) hold a rest: a leg that does is driven after
+    // it (BreakPlacement::withRest).
+    [[nodiscard]] bool holdsRest(size_t from, size_t to) const
+    {
+        return hasBreaks_ && cumRests_[to] > cumRests_[from];
+    }
     std::vector<size_t> stretchOf_;
 
     // What each clock has counted, both built under a break rule, since a
@@ -1530,7 +1542,7 @@ Route::SegmentAfter::clocks([[maybe_unused]] size_t profile,
     // there, so the reset legs after it are walked rather than read.
     auto const firstReal = route_.nextReal_[start];
     auto first = route_.nodeClocks(firstReal);
-    first.addLeadRun(firstReal - start);
+    first.addLeadRun(firstReal - start, route_.holdsRest(start, firstReal));
     return route_.walkClocksAfter(first, firstReal);
 }
 
@@ -1545,7 +1557,7 @@ BreakClocks Route::SegmentAfter::extendClocks(BreakClocks const &clocks,
 
     auto const firstReal = route_.nextReal_[start];
     auto arrival = route_.nodeClocks(firstReal);
-    arrival.addLeadRun(firstReal - start);
+    arrival.addLeadRun(firstReal - start, route_.holdsRest(start, firstReal));
     auto const joined = BreakClocks::merge(clocks, edge, arrival, limits);
     return route_.walkClocksAfter(joined, firstReal);
 }
@@ -1638,6 +1650,7 @@ DriveClock Route::SegmentBefore::clockOver() const
         auto const arrival = route_.resetBounds_[inside + 1];
         auto const legStart = arrival - route_.legBreaks_[inside + 1] - 1;
         clock.trailRun = end - legStart;
+        clock.trailRest = route_.holdsRest(legStart + 1, end + 1);
     }
 
     if (inside > 0)
@@ -2094,13 +2107,14 @@ BreakClocks Route::foldClocks(size_t start,
     auto const firstReal = nextReal_[start];
     if (firstReal > end)
     {
-        clocks.addLeadRun(end - start + 1);
-        clocks.addTrailRun(end - start + 1);
+        auto const rest = holdsRest(start, end + 1);
+        clocks.addLeadRun(end - start + 1, rest);
+        clocks.addTrailRun(end - start + 1, rest);
         return clocks;
     }
 
     clocks = nodeClocks(firstReal);
-    clocks.addLeadRun(firstReal - start);
+    clocks.addLeadRun(firstReal - start, holdsRest(start, firstReal));
     return foldOn(clocks, firstReal, end, profile, limits);
 }
 
@@ -2115,7 +2129,7 @@ BreakClocks Route::extendFold(BreakClocks const &clocks,
     assert(firstReal <= end);
 
     auto arrival = nodeClocks(firstReal);
-    arrival.addLeadRun(firstReal - start);
+    arrival.addLeadRun(firstReal - start, holdsRest(start, firstReal));
     auto const joined = BreakClocks::merge(clocks, edge, arrival, limits);
 
     // The prefix structures hold this route's own profile and limits, and
@@ -2156,7 +2170,7 @@ Route::walkClocksBetween(BreakClocks clocks, size_t pos, size_t end) const
 
         extend(clocks.drive, drive.cum[legStart] - drive.cum[pos]);
         extend(clocks.work, work.cum[legStart] - work.cum[pos]);
-        clocks.addTrailRun(legBreaks_[r]);
+        clocks.addTrailRun(legBreaks_[r], legRests_[r]);
         clocks = BreakClocks::merge(clocks, edge, arrival, limits);
         pos = idx;
     }
@@ -2169,7 +2183,7 @@ Route::walkClocksBetween(BreakClocks clocks, size_t pos, size_t end) const
 
     extend(clocks.drive, drive.cum[lastReal] - drive.cum[pos]);
     extend(clocks.work, work.cum[lastReal] - work.cum[pos]);
-    clocks.addTrailRun(end - lastReal);
+    clocks.addTrailRun(end - lastReal, holdsRest(lastReal + 1, end + 1));
     return clocks;
 }
 
@@ -2183,7 +2197,7 @@ BreakClocks Route::foldOn(BreakClocks clocks,
     for (size_t idx = pos + 1; idx <= end; ++idx)
     {
         if (data.isBreak(visits[idx]))
-            clocks.addTrailRun(1);
+            clocks.addTrailRun(1, data.isRest(visits[idx]));
         else
             clocks = BreakClocks::merge(clocks,
                                         mat(locs_[idx - 1], visits[idx]),
@@ -2231,7 +2245,7 @@ BreakClocks Route::walkClocksAfter(BreakClocks clocks, size_t pos) const
 
         extend(clocks.drive, drive.cum[legStart] - drive.cum[pos]);
         extend(clocks.work, work.cum[legStart] - work.cum[pos]);
-        clocks.addTrailRun(legBreaks_[r]);
+        clocks.addTrailRun(legBreaks_[r], legRests_[r]);
         clocks = BreakClocks::merge(clocks, edge, arrival, limits);
         pos = idx;
 
@@ -2854,8 +2868,10 @@ BreakClocks Route::Proposal<Segments...>::clocks() const
                 last = other.last();
             }
             else
-                clocks.addTrailRun(
-                    other.clocks(profile, limits).drive.trailRun);
+            {
+                auto const pauses = other.clocks(profile, limits).drive;
+                clocks.addTrailRun(pauses.trailRun, pauses.trailRest);
+            }
 
             if constexpr (sizeof...(args) != 0)
                 self(self, std::forward<decltype(args)>(args)...);

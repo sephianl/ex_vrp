@@ -345,6 +345,11 @@ void Route::updateBreakLookups()
         cumBreaks_[idx + 1] = cumBreaks_[idx] + data.isBreak(visits[idx]);
 
     assert(cumBreaks_.back() == numBreaks_);
+
+    cumRests_.resize(nodes.size() + 1);
+    cumRests_[0] = 0;
+    for (size_t idx = 0; idx != nodes.size(); ++idx)
+        cumRests_[idx + 1] = cumRests_[idx] + data.isRest(visits[idx]);
 }
 
 void Route::updateClocks()
@@ -356,20 +361,27 @@ void Route::updateClocks()
 
     resetBounds_.assign(1, 0);
     legBreaks_.assign(1, 0);
+    legRests_.assign(1, false);
 
     stretchOf_.resize(size);
     stretchOf_[0] = 0;
 
     size_t breaks = 0;
+    bool rests = false;
     for (size_t idx = 1; idx != size; ++idx)
     {
         if (data.isBreak(visits[idx]))
+        {
             breaks++;
+            rests = rests || data.isRest(visits[idx]);
+        }
         else if (breaks > 0)  // then idx ends a leg carrying breaks
         {
             resetBounds_.push_back(idx);
             legBreaks_.push_back(breaks);
+            legRests_.push_back(rests);
             breaks = 0;
+            rests = false;
         }
 
         stretchOf_[idx] = resetBounds_.size() - 1;
@@ -377,6 +389,7 @@ void Route::updateClocks()
 
     resetBounds_.push_back(size - 1);
     legBreaks_.push_back(0);
+    legRests_.push_back(false);
 
     updateCum<ClockQuantity::Drive>();
     updateCum<ClockQuantity::Work>();
@@ -402,7 +415,8 @@ void Route::updateClocks()
         auto const driveStretch = drive.cum[idx - 1] - drive.start[r - 1];
         auto const workStretch = work.cum[idx - 1] - work.start[r - 1];
         auto const leg
-            = BreakPlacement::along(driveStretch, workStretch, edge, limits);
+            = BreakPlacement::along(driveStretch, workStretch, edge, limits)
+                  .withRest(legRests_[r]);
 
         auto const place
             = [&](ClockPrefix &prefix, Duration stretch, Duration own)

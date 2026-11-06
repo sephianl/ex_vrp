@@ -93,12 +93,18 @@ defmodule ExVrp.RestNodesTest do
       assert Route.duration(route([1, @rest, 2], vehicle)) == Route.duration(plain) + @rest_duration
     end
 
-    test "a rest closes the drive clock like a break" do
+    test "a rest closes the drive clock where its leg begins, a break where the clock runs out" do
       vehicle = [max_drive_between_breaks: 20, break_duration: @break_duration]
-      with_rest = Route.clock_excess(route([1, @rest, 2], vehicle))
 
-      assert with_rest == Route.clock_excess(route([1, @break, 2], vehicle))
-      assert with_rest < Route.clock_excess(route([1, 2], vehicle))
+      assert Route.clock_excess(route([1, 2], vehicle)) == 10 + 20 + 30 - 20
+      assert Route.clock_excess(route([1, @break, 2], vehicle)) == 10 + 30 - 20
+      assert Route.clock_excess(route([1, @rest, 2], vehicle)) == 20 + 30 - 20
+    end
+
+    test "a rest and a break on one leg drive the whole leg after the rest, breaking a limit into it" do
+      vehicle = [max_drive_between_breaks: 20, break_duration: @break_duration]
+
+      assert Route.clock_excess(route([1, @rest, @break, 2], vehicle)) == 30 - 20
     end
 
     test "a rest and a break on one leg both count towards the leg" do

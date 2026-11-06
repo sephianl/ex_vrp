@@ -22,6 +22,10 @@
   `duty_rule: ExVrp.DutyRule.new(rest_duration: 660)` is a rule without limits, under which a rest
   placed by `:initial_routes` stays where it was put, as before.
 - A duty rule with a limit needs a break limit and a positive `rest_duration`.
+- **A rest closes the break clocks where its leg begins**, as the duty periods count it, so all
+  of the leg's travel is driven after it and a leg longer than `max_drive_between_breaks` takes a
+  break as well. It used to fall where the clock ran out, like a break, so a rest on a long leg
+  seemed to cover the break a driver taking the rest at a stop still owed.
 
 ## 0.19.3
 
