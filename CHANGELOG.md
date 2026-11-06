@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.20.0
+
+### Added
+
+- **Duty periods and daily rests.** A vehicle type's `:duty_rule` (`ExVrp.DutyRule`) caps the
+  elapsed time between two rests, waiting included, with `max_duty`, and the travel within one
+  with `max_drive` (EU 561/2006 art. 8(2) and 6(1)), with `duty_carry_in`, `drive_carry_in` and
+  `duty_after_end` for what the driver did outside the route. The model adds a pool of rest
+  clients for a vehicle type whose rule has a limit, and the solver places them: the search
+  prices a period that overruns as the rests it lacks, each lasting the rule's `rest_duration`,
+  and `BreakRepair` puts real ones in, before the breaks, since a rest resets both break clocks.
+  Waiting before a period's first visit lengthens the rest instead of counting as duty. A route
+  left past either limit is infeasible; the excess is time warp, reported by
+  `ExVrp.Route.duty_excess/1`. The vehicle type's `max_drive` still bounds the whole route.
+- `ExVrp.Route.breaks/1` returns `rest?: true` on a rest.
+
+### Changed
+
+- **Breaking:** `VehicleType.rest_duration` moved into `:duty_rule`:
+  `duty_rule: ExVrp.DutyRule.new(rest_duration: 660)` is a rule without limits, under which a rest
+  placed by `:initial_routes` stays where it was put, as before.
+- A duty rule with a limit needs a break limit and a positive `rest_duration`.
+
 ## 0.19.3
 
 ### Added
@@ -53,6 +76,7 @@
 
   At production's 284 s on the 629-client day this is 16% more iterations: 9 of 10 seeds end
   cheaper and none dearer.
+
 - **Relocates are ruled out on their least possible duration first.** A route's duration is at
   least its travel plus its clients' service time, since waiting is never negative. Each route
   now keeps those totals, and a relocate prices the exact new travel from the edges it cuts and

@@ -4,6 +4,7 @@
 #include "../Route.h"  // ex_vrp::Route
 #include "DriveClock.h"
 #include "DurationSegment.h"
+#include "DutySegment.h"
 #include "LoadSegment.h"
 #include "ProblemData.h"
 
@@ -68,6 +69,7 @@ concept Segment = requires(T arg,
         arg.duration(profile, vehicleType)
     } -> std::convertible_to<DurationSegment>;
     { arg.clocks(profile, limits) } -> std::convertible_to<BreakClocks>;
+    { arg.duty(profile, vehicleType) } -> std::convertible_to<DutySegment>;
     { arg.load(dimension) } -> std::convertible_to<LoadSegment>;
 };
 
@@ -180,6 +182,10 @@ public:
         // The proposed route's clocks; empty without a break rule or clients.
         BreakClocks clocks() const;
 
+        // The proposed route's duty periods, past the rule check in
+        // dutyCost(). Out of line: only models with a rest rule fold it.
+        [[gnu::noinline]] DutyCost foldDutyCost() const;
+
         // missingBreaks() past its rule check. Kept out of line, so that the
         // check inlines into duration() for models without a break rule.
         [[gnu::noinline]] size_t
@@ -241,6 +247,14 @@ public:
          * breaks. Zero without a break rule.
          */
         Duration clockOverrun() const;
+
+        /**
+         * Returns the proposed route's duty past ``max_duty_period`` and
+         * driving past ``max_duty_drive`` over its duty periods, and the
+         * rests that would fix them, which duration() prices as virtual
+         * rests. Zero without a rest rule.
+         */
+        DutyCost dutyCost() const;
 
         /**
          * Returns the excess load of the proposed route.
@@ -411,6 +425,8 @@ private:
                                         Duration edge,
                                         size_t profile,
                                         BreakLimits limits) const;
+        inline DutySegment const &duty(size_t profile,
+                                       size_t vehicleType) const;
         inline LoadSegment const &load(size_t dimension) const;
     };
 
@@ -447,6 +463,8 @@ private:
         inline DurationSegment duration(size_t profile,
                                         size_t vehicleType) const;
         inline BreakClocks clocks(size_t profile, BreakLimits limits) const;
+        inline DutySegment const &duty(size_t profile,
+                                       size_t vehicleType) const;
         inline LoadSegment const &load(size_t dimension) const;
 
     private:
@@ -506,6 +524,13 @@ private:
         {
             return route_.extendFold(clocks, edge, start, end, profile, limits);
         }
+
+        // Folded node by node, like clocks(): operator segments are short,
+        // and another route's are priced for the proposal's vehicle type.
+        DutySegment duty(size_t profile, size_t vehicleType) const
+        {
+            return route_.foldDuty(start, end, profile, vehicleType);
+        }
         inline LoadSegment load(size_t dimension) const;
     };
 
@@ -527,6 +552,10 @@ private:
     // same reason: Proposal::duration() asks on every evaluation.
     bool const hasBreakRule_;
 
+    // Whether the vehicle type limits its duty periods, so its routes may
+    // need rests. A rest rule comes with a break rule (ProblemData checks).
+    bool const hasRestRule_;
+
     [[nodiscard]] static bool
     durationCostApplies(ProblemData const &data,
                         ProblemData::VehicleType const &vehicleType);
@@ -542,6 +571,8 @@ private:
     Duration driveExcess_ = 0;  // Travel past max_drive, folded into timeWarp_
     Duration totalClockExcess_ = 0;  // Drive + work clock overrun, likewise
     size_t virtualBreaks_ = 0;       // missing breaks priced in duration_
+    Duration totalDutyExcess_ = 0;   // Duty and duty drive overrun, likewise
+    size_t virtualRests_ = 0;        // missing rests priced in duration_
     Cost reloadCost_;
 
     // DurationSegment-only values (before forbidden window corrections).
@@ -683,6 +714,26 @@ private:
 
     // This whole route's clocks; empty without a break rule or clients.
     [[nodiscard]] inline BreakClocks wholeClocks() const;
+
+    // The duty periods of nodes [0, idx] and [idx, end], under this route's
+    // rest rule; empty without one, when nothing reads them.
+    std::vector<DutySegment> dutyBefore_;
+    std::vector<DutySegment> dutyAfter_;
+
+    // Node idx as the duty fold takes it, its pause lasting as on the given
+    // vehicle type.
+    [[nodiscard]] DutySegment
+    nodeDuty(size_t idx, ProblemData::VehicleType const &vehicleType) const;
+
+    // Folds the duty periods over nodes [start, end] for the given profile and
+    // vehicle type, travel joining at each located node.
+    [[nodiscard]] DutySegment foldDuty(size_t start,
+                                       size_t end,
+                                       size_t profile,
+                                       size_t vehicleType) const;
+
+    // Builds dutyBefore_ and dutyAfter_; a no-op without a rest rule.
+    void updateDuty();
 
     struct DurationSummary
     {
@@ -1116,6 +1167,20 @@ public:
     [[nodiscard]] inline Duration totalClockExcess() const;
 
     /**
+     * @return The rests this route still lacks, priced in duration() and
+     *         timeWarp() until BreakRepair places real ones.
+     */
+    [[nodiscard]] inline size_t virtualRests() const;
+
+    /**
+     * @return The true duty overrun on this route: duty past
+     *         maxDutyPeriod and driving past maxDutyDrive, summed over its
+     *         duty periods. Not part of timeWarp() (see virtualRests());
+     *         ex_vrp::Route counts it as time warp, as dutyExcess().
+     */
+    [[nodiscard]] inline Duration totalDutyExcess() const;
+
+    /**
      * @return The location node ``idx`` takes in edge lookups: its own, or,
      *         for a break, that of the nearest non-break node before it.
      */
@@ -1485,6 +1550,16 @@ BreakClocks Route::SegmentAfter::extendClocks(BreakClocks const &clocks,
     return route_.walkClocksAfter(joined, firstReal);
 }
 
+DutySegment const &
+Route::SegmentAfter::duty([[maybe_unused]] size_t profile,
+                          [[maybe_unused]] size_t vehicleType) const
+{
+    assert(profile == route_.profile());
+    assert(vehicleType == route_.vehicleType());
+    assert(route_.hasRestRule_);
+    return route_.dutyAfter_[start];
+}
+
 LoadSegment const &Route::SegmentAfter::load(size_t dimension) const
 {
     return route_.loadAfter[dimension][start];
@@ -1574,6 +1649,16 @@ DriveClock Route::SegmentBefore::clockOver() const
     }
 
     return clock;
+}
+
+DutySegment const &
+Route::SegmentBefore::duty([[maybe_unused]] size_t profile,
+                           [[maybe_unused]] size_t vehicleType) const
+{
+    assert(profile == route_.profile());
+    assert(vehicleType == route_.vehicleType());
+    assert(route_.hasRestRule_);
+    return route_.dutyBefore_[end];
 }
 
 LoadSegment const &Route::SegmentBefore::load(size_t dimension) const
@@ -2211,6 +2296,18 @@ Duration Route::totalClockExcess() const
     return totalClockExcess_;
 }
 
+size_t Route::virtualRests() const
+{
+    assert(!dirty);
+    return virtualRests_;
+}
+
+Duration Route::totalDutyExcess() const
+{
+    assert(!dirty);
+    return totalDutyExcess_;
+}
+
 size_t Route::location(size_t idx) const
 {
     assert(!dirty);
@@ -2556,7 +2653,9 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::foldDuration() const
     Duration latestEnd = 0;
     if constexpr (WithBreaks)
     {
-        extra = static_cast<Duration>(missingBreaks()) * vehType.breakDuration;
+        extra = static_cast<Duration>(missingBreaks()) * vehType.breakDuration
+                + static_cast<Duration>(dutyCost().missing)
+                      * vehType.restDuration;
         latestEnd = extra > 0 ? route()->durAt.back().startLate() : 0;
     }
 
@@ -2642,6 +2741,57 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::foldDuration() const
     };
 
     return std::apply(fn, detail::reverse(segments_));
+}
+
+template <Segment... Segments>
+DutyCost Route::Proposal<Segments...>::dutyCost() const
+{
+    if (!route()->hasRestRule_ || empty())
+        return {};
+
+    return foldDutyCost();
+}
+
+template <Segment... Segments>
+DutyCost Route::Proposal<Segments...>::foldDutyCost() const
+{
+    auto const &data = route()->data;
+    auto const profile = route()->profile();
+    auto const vehicleType = route()->vehicleType();
+    auto const limits = route()->vehicleTypeData().dutyLimits();
+    auto const &matrix = data.durationMatrix(profile);
+
+    // Left to right, travel joining at the first located node of each next
+    // segment, as in Route::updateDuty(): the fold puts it after any rest
+    // that segment leads with.
+    auto const fn = [&](auto &&segment, auto &&...args)
+    {
+        assert(segment.hasLocation());  // starts at the start depot
+        DutySegment duty = segment.duty(profile, vehicleType);
+        auto last = segment.last();
+
+        auto const merge = [&](auto const &self, auto &&other, auto &&...args)
+        {
+            Duration edge = 0;
+            if (other.hasLocation())
+            {
+                assert(!data.isBreak(last) && !data.isBreak(other.first()));
+                edge = matrix(last, other.first());
+                last = other.last();
+            }
+
+            duty = DutySegment::merge(
+                edge, duty, other.duty(profile, vehicleType), limits);
+
+            if constexpr (sizeof...(args) != 0)
+                self(self, std::forward<decltype(args)>(args)...);
+        };
+
+        merge(merge, std::forward<decltype(args)>(args)...);
+        return duty.cost(limits);
+    };
+
+    return std::apply(fn, segments_);
 }
 
 template <Segment... Segments>

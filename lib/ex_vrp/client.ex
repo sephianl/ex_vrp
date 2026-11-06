@@ -60,9 +60,11 @@ defmodule ExVrp.Client do
     a vehicle type without those limits
   - `:is_rest` - Whether this client is a rest (default: `false`): a break
     client that lasts its vehicle type's `:rest_duration` instead of its
-    `:break_duration`. Set it with `is_break: true` and `required: false`, and
-    no service duration, time window or release time, then give it a place in
-    `:initial_routes`: nothing else places one
+    `:break_duration`. `ExVrp.Model` adds them for a vehicle type that limits
+    its duty periods (see `ExVrp.VehicleType`, "Rests"), and the solver places
+    those. A rest set by hand takes `is_break: true` and `required: false`, and
+    no service duration, time window or release time; on a vehicle type
+    without a duty limit only `:initial_routes` places one
 
   ## Examples
 

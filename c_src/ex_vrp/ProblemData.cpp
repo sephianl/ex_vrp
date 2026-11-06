@@ -617,7 +617,12 @@ ProblemData::VehicleType::VehicleType(
     Duration driveCarryIn,
     Duration workCarryIn,
     Duration workAfterEnd,
-    Duration restDuration)
+    Duration restDuration,
+    Duration maxDutyPeriod,
+    Duration maxDutyDrive,
+    Duration dutyCarryIn,
+    Duration dutyDriveCarryIn,
+    Duration dutyAfterEnd)
     : numAvailable(numAvailable),
       startDepot(startDepot),
       endDepot(endDepot),
@@ -646,6 +651,11 @@ ProblemData::VehicleType::VehicleType(
       workCarryIn(workCarryIn),
       workAfterEnd(workAfterEnd),
       restDuration(restDuration),
+      maxDutyPeriod(maxDutyPeriod),
+      maxDutyDrive(maxDutyDrive),
+      dutyCarryIn(dutyCarryIn),
+      dutyDriveCarryIn(dutyDriveCarryIn),
+      dutyAfterEnd(dutyAfterEnd),
       forbiddenWindows(std::move(forbiddenWindows)),
       name(duplicate(name.data()))
 {
@@ -715,6 +725,23 @@ ProblemData::VehicleType::VehicleType(
         throw std::invalid_argument(
             "drive_carry_in, work_carry_in and work_after_end must be >= 0.");
 
+    if (maxDutyPeriod <= 0 || maxDutyDrive <= 0)
+        throw std::invalid_argument(
+            "max_duty_period and max_duty_drive must be > 0.");
+
+    // A duty limit without a rest to end the period, or one without breaks
+    // to place the rests among, is a half-configured rule: rests are placed
+    // by the same repair as breaks, and reset the same clocks.
+    if (hasRestRule() && (restDuration == 0 || !hasBreakRule()))
+        throw std::invalid_argument(
+            "max_duty_period or max_duty_drive needs a rest_duration and a "
+            "break limit.");
+
+    if (dutyCarryIn < 0 || dutyDriveCarryIn < 0 || dutyAfterEnd < 0)
+        throw std::invalid_argument(
+            "duty_carry_in, duty_drive_carry_in and duty_after_end must be "
+            ">= 0.");
+
     if (unitOvertimeCost < 0)
         throw std::invalid_argument("unit_overtime_cost must be >= 0.");
 
@@ -762,6 +789,11 @@ ProblemData::VehicleType::VehicleType(VehicleType const &vehicleType)
       workCarryIn(vehicleType.workCarryIn),
       workAfterEnd(vehicleType.workAfterEnd),
       restDuration(vehicleType.restDuration),
+      maxDutyPeriod(vehicleType.maxDutyPeriod),
+      maxDutyDrive(vehicleType.maxDutyDrive),
+      dutyCarryIn(vehicleType.dutyCarryIn),
+      dutyDriveCarryIn(vehicleType.dutyDriveCarryIn),
+      dutyAfterEnd(vehicleType.dutyAfterEnd),
       forbiddenWindows(vehicleType.forbiddenWindows),
       name(duplicate(vehicleType.name))
 {
@@ -796,6 +828,11 @@ ProblemData::VehicleType::VehicleType(VehicleType &&vehicleType)
       workCarryIn(vehicleType.workCarryIn),
       workAfterEnd(vehicleType.workAfterEnd),
       restDuration(vehicleType.restDuration),
+      maxDutyPeriod(vehicleType.maxDutyPeriod),
+      maxDutyDrive(vehicleType.maxDutyDrive),
+      dutyCarryIn(vehicleType.dutyCarryIn),
+      dutyDriveCarryIn(vehicleType.dutyDriveCarryIn),
+      dutyAfterEnd(vehicleType.dutyAfterEnd),
       forbiddenWindows(std::move(vehicleType.forbiddenWindows)),
       name(vehicleType.name)  // we can steal
 {
@@ -840,6 +877,11 @@ bool ProblemData::VehicleType::operator==(VehicleType const &other) const
         && workCarryIn == other.workCarryIn
         && workAfterEnd == other.workAfterEnd
         && restDuration == other.restDuration
+        && maxDutyPeriod == other.maxDutyPeriod
+        && maxDutyDrive == other.maxDutyDrive
+        && dutyCarryIn == other.dutyCarryIn
+        && dutyDriveCarryIn == other.dutyDriveCarryIn
+        && dutyAfterEnd == other.dutyAfterEnd
         && unitOvertimeCost == other.unitOvertimeCost
         && overtimeStart == other.overtimeStart
         && forbiddenWindows == other.forbiddenWindows

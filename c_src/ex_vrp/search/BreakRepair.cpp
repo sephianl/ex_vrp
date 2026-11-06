@@ -13,11 +13,16 @@ BreakRepair::BreakRepair(ProblemData const &data) : data(data)
 {
     for (size_t client = data.numDepots(); client != data.numLocations();
          ++client)
-        if (data.isBreak(client) && !data.isRest(client))
+        if (data.isRest(client))
+            rests_.push_back(client);
+        else if (data.isBreak(client))
             breaks_.push_back(client);
 }
 
-bool BreakRepair::hasBreaks() const { return !breaks_.empty(); }
+bool BreakRepair::hasBreaks() const
+{
+    return !breaks_.empty() || !rests_.empty();
+}
 
 void BreakRepair::addCandidates(Route const &route)
 {
@@ -171,6 +176,68 @@ bool BreakRepair::insertBreak(Route &route,
     return true;
 }
 
+Route::Node *BreakRepair::freeRest(Solution &solution) const
+{
+    for (auto const client : rests_)
+        if (!solution.nodes[client].route())
+            return &solution.nodes[client];
+
+    return nullptr;
+}
+
+bool BreakRepair::insertRest(Route &route,
+                             Solution &solution,
+                             CostEvaluator const &costEvaluator)
+{
+    auto *rest = freeRest(solution);
+    if (!rest)
+        return false;
+
+    // A rest is taken where the vehicle is, so it goes right after a located
+    // node; the travel on its leg is driven after it. Every such leg of the
+    // route is tried: routes with rests are few, and their duty prefixes make
+    // each proposal cheap.
+    auto const overrun = route.totalDutyExcess();
+    auto bestCost = std::numeric_limits<Cost>::max();
+    size_t best = 0;  // 0: no leg lowers the overrun
+    for (size_t from = 0; from + 1 < route.size(); ++from)
+    {
+        if (data.isBreak(route[from]->client()))
+            continue;
+
+        Route::Proposal const proposal(route.before(from),
+                                       BreakSegment(data, rest->client()),
+                                       route.after(from + 1));
+
+        if (proposal.dutyCost().excess >= overrun)
+            continue;
+
+        Cost deltaCost = 0;
+        costEvaluator.deltaCost<true>(deltaCost, proposal);
+
+        if (deltaCost < bestCost)
+        {
+            bestCost = deltaCost;
+            best = from + 1;
+        }
+    }
+
+    if (best == 0)
+        return false;
+
+    route.insert(best, rest);
+    route.update();
+    return true;
+}
+
+bool BreakRepair::isRedundant(Route const &route, size_t idx) const
+{
+    Route::Proposal const proposal(route.before(idx - 1), route.after(idx + 1));
+
+    return proposal.clockOverrun() <= route.totalClockExcess()
+           && proposal.dutyCost().excess <= route.totalDutyExcess();
+}
+
 bool BreakRepair::stripBreaks(Route &route) const
 {
     bool changed = false;
@@ -195,18 +262,18 @@ bool BreakRepair::removeRedundant(Route &route,
     bool changed = false;
 
     // Backwards, so a removal leaves the indices still to visit in place.
+    auto const placesRests = route.vehicleTypeData().hasRestRule();
     for (size_t idx = route.size() - 1; idx-- > 1;)
     {
         auto const client = route[idx]->client();
-        if (!data.isBreak(client) || data.isRest(client))
+        if (!data.isBreak(client) || (data.isRest(client) && !placesRests))
+            continue;
+
+        if (!isRedundant(route, idx))
             continue;
 
         Route::Proposal const proposal(route.before(idx - 1),
                                        route.after(idx + 1));
-
-        auto const after = proposal.clockOverrun();
-        if (after > route.totalClockExcess())
-            continue;
 
         Cost deltaCost = 0;
         costEvaluator.deltaCost<true>(deltaCost, proposal);
@@ -240,8 +307,13 @@ bool BreakRepair::apply(Route &route,
 
     bool changed = false;
 
-    // Each insert lowers the true overrun and takes a break from the finite
-    // pool, so this terminates.
+    // Each insert lowers the true overrun and takes a rest or break from the
+    // finite pool, so this terminates. Rests go first: they reset the clocks.
+    if (route.vehicleTypeData().hasRestRule())
+        while (route.totalDutyExcess() > 0
+               && insertRest(route, solution, costEvaluator))
+            changed = true;
+
     while (route.totalClockExcess() > 0
            && insertBreak(route, solution, costEvaluator))
         changed = true;

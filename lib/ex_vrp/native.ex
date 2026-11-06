@@ -86,6 +86,7 @@ defmodule ExVrp.Native do
     solution_route_drive_excess: 2,
     solution_route_clock_excess: 2,
     solution_route_work_clock_excess: 2,
+    solution_route_duty_excess: 2,
     solution_route_has_excess_load: 2,
     solution_route_has_time_warp: 2,
     solution_route_has_excess_distance: 2,
@@ -852,6 +853,13 @@ defmodule ExVrp.Native do
   def solution_route_work_clock_excess(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
+  Gets duty excess (duty past `:max_duty_period` plus driving past `:max_duty_drive`, over the duty
+  periods between rests) of a specific route.
+  """
+  @spec solution_route_duty_excess(reference(), non_neg_integer()) :: non_neg_integer()
+  def solution_route_duty_excess(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
   Checks if a specific route has excess load.
   """
   @spec solution_route_has_excess_load(reference(), non_neg_integer()) :: boolean()
@@ -974,10 +982,10 @@ defmodule ExVrp.Native do
   @doc """
   Returns the breaks of a route, which its schedule leaves out.
 
-  Each tuple contains: {visits_before, trip, start_service, end_service}
+  Each tuple contains: {visits_before, trip, start_service, end_service, rest?}
   """
   @spec solution_route_breaks(reference(), non_neg_integer()) ::
-          [{non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}]
+          [{non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer(), boolean()}]
   def solution_route_breaks(_solution, _route_idx), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """

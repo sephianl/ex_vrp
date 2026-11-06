@@ -10,12 +10,15 @@ defmodule ExVrp.Breaks do
 
   Each vehicle gets enough breaks to cover its horizon, plus one: the drive
   clock's horizon is `:max_drive` (else `:shift_duration`), the work clock's is
-  `:shift_duration`, and a vehicle type without one takes the cap.
+  `:shift_duration`, and a vehicle type without one takes the cap, which grows
+  with the duty periods its rests split the route into. Rest clients
+  (`ExVrp.Rests`) follow the breaks.
   """
 
   alias ExVrp.Client
   alias ExVrp.Matrix
   alias ExVrp.Model
+  alias ExVrp.Rests
   alias ExVrp.VehicleType
 
   @max_breaks_per_vehicle 12
@@ -33,12 +36,16 @@ defmodule ExVrp.Breaks do
     |> add_invalid(vehicle_types, &carry_overruns?/1, carry_overruns_message())
   end
 
-  @doc "The model with its pool of break clients appended, or unchanged when no vehicle type has limits."
+  @doc """
+  The model with its pool of break and rest clients appended, or unchanged when no vehicle type
+  has limits.
+  """
   @spec append_pool(Model.t()) :: Model.t()
   def append_pool(%Model{vehicle_types: vehicle_types} = model) do
-    vehicle_types
-    |> Enum.sum_by(&(&1.num_available * breaks_per_vehicle(&1)))
-    |> append_breaks(model)
+    num_breaks = Enum.sum_by(vehicle_types, &(&1.num_available * breaks_per_vehicle(&1)))
+    num_rests = Enum.sum_by(vehicle_types, &(&1.num_available * Rests.per_vehicle(&1)))
+
+    append_pauses(model, num_breaks, num_rests)
   end
 
   defp add_invalid(errors, vehicle_types, invalid?, message) do
@@ -89,15 +96,17 @@ defmodule ExVrp.Breaks do
   defp exceeds?(carry, limit) when is_integer(limit) and limit > 0, do: carry > limit
   defp exceeds?(_carry, _infinite_or_rejected_limit), do: false
 
-  defp append_breaks(0, model), do: model
+  defp append_pauses(model, 0, 0), do: model
 
-  defp append_breaks(pool_size, model) do
+  defp append_pauses(model, num_breaks, num_rests) do
     zeros = List.duplicate(0, length(hd(model.vehicle_types).capacity))
     break = Client.new(delivery: zeros, pickup: zeros, required: false, is_break: true)
+    rest = %{break | is_rest: true}
+    pool_size = num_breaks + num_rests
 
     %{
       model
-      | clients: model.clients ++ List.duplicate(break, pool_size),
+      | clients: model.clients ++ List.duplicate(break, num_breaks) ++ List.duplicate(rest, num_rests),
         distance_matrices: Enum.map(model.distance_matrices, &Matrix.pad(&1, pool_size)),
         duration_matrices: Enum.map(model.duration_matrices, &Matrix.pad(&1, pool_size)),
         profiles: Enum.map(model.profiles, &pad_override_row(&1, pool_size)),
@@ -111,18 +120,20 @@ defmodule ExVrp.Breaks do
   defp pad_override_row(profile, _pool_size), do: profile
 
   defp breaks_per_vehicle(%VehicleType{} = vehicle_type) do
+    cap = @max_breaks_per_vehicle * max(Rests.per_vehicle(vehicle_type), 1)
+
     [
       {vehicle_type.max_drive_between_breaks, drive_horizon(vehicle_type)},
       {vehicle_type.max_work_between_breaks, vehicle_type.shift_duration}
     ]
     |> Enum.reject(fn {limit, _horizon} -> limit == :infinity end)
-    |> Enum.map(fn {limit, horizon} -> breaks_within(horizon, limit) end)
+    |> Enum.map(fn {limit, horizon} -> breaks_within(horizon, limit, cap) end)
     |> Enum.max(fn -> 0 end)
   end
 
   defp drive_horizon(%VehicleType{max_drive: :infinity, shift_duration: shift}), do: shift
   defp drive_horizon(%VehicleType{max_drive: max_drive}), do: max_drive
 
-  defp breaks_within(:infinity, _limit), do: @max_breaks_per_vehicle
-  defp breaks_within(horizon, limit), do: min(div(horizon + limit - 1, limit) + 1, @max_breaks_per_vehicle)
+  defp breaks_within(:infinity, _limit, cap), do: cap
+  defp breaks_within(horizon, limit, cap), do: min(div(horizon + limit - 1, limit) + 1, cap)
 end

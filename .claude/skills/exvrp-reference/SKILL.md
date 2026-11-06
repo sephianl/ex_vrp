@@ -127,17 +127,40 @@ of the same route coexist, and mixing them up is the trap:
   fixed-cost terms must count clients, not ask whether the next node is a depot (SwapTails,
   Exchange). Delta exactness is covered by `break_nodes_test.exs` and SANITIZE's
   `costAfter == costBefore + deltaCost`.
-- **Rests** (0.16.0, groundwork for daily rests) are break clients flagged `isRest` that last
+- **Rests** (0.16.0) are break clients flagged `isRest` that last
   `VehicleType::restDuration` instead of `breakDuration`, through `ProblemData::pauseDuration`,
   which reads the packed `isRest_` rather than the wide `Client`. Every path that prices a break
   node must go through it, and `SegmentBetween::durationWithBreaks`
   swaps both durations when evaluating for another vehicle type. A rest closes both clocks like a
-  break, but `BreakRepair` neither places one (not in `breaks_`, and `BreakSegment` asserts it)
-  nor releases one from a route with clients; only `stripBreaks` drops it, with every break on a
-  route without clients or a break rule. Nothing places a rest yet, so the only way in is
-  `:initial_routes`, where `Solution.warm_start/1` keeps it as its index rather than a `:break`
-  marker. The search can still shed one by moving every client off its route. Covered by
-  `rest_nodes_test.exs`.
+  break. On a vehicle type without a rest rule nothing places or releases one (a warm start's
+  stays), only `stripBreaks` drops it with every break. Covered by `rest_nodes_test.exs`.
+
+### Duty periods and rests (0.20.0)
+
+A vehicle type's `ExVrp.DutyRule` (`max_duty`, `max_drive`, EU 561 art. 8(2) and 6(1)) bounds
+each **duty period**, the time between two rests, with `duty_carry_in`, `drive_carry_in` and
+`duty_after_end` joining the first and last. The NIF unpacks it into `ProblemData::VehicleType`'s
+flat `maxDutyPeriod`, `maxDutyDrive` and carries. A rule with a limit needs a break rule and a
+`rest_duration` (`ProblemData.cpp`, `ExVrp.Rests.validate/2`). `ExVrp.Rests.per_vehicle/1` sizes the rest pool,
+appended after the breaks by `ExVrp.Breaks.append_pool/1`.
+
+- **`DutySegment`** (`DutySegment.h`) measures each period as a `DurationSegment` of its own,
+  so waiting before a period's first visit lengthens the rest; waiting inside it is duty. The
+  route's own `DurationSegment` keeps the timeline with the rest as an 11 h service. It keeps
+  the head, first and tail periods open and the others closed as a `DutyCost`; merging is
+  associative, which delta exactness depends on.
+- **Canonical travel placement:** travel on a leg holding a rest is driven _after_ it, and rests
+  on one leg with nothing located between them are one boundary. Without the second rule the
+  forward and backward folds put a leg's travel in different periods (found by the move sweep in
+  `duty_periods_test.exs`). Travel joins the fold at the located node it arrives at, in
+  `search::Route::updateDuty`, `foldDuty`, `Proposal::foldDutyCost` and `ex_vrp::Route::foldDuty`.
+- **Prices:** as with breaks. The search charges `DutyCost::missing` virtual rests as
+  `restDuration` each in `summarise()`'s extra; `ex_vrp::Route::dutyExcess()` is time warp.
+  `max_drive` stays a whole-route cap beside the per-period one.
+- **Repair:** `BreakRepair::apply` places rests before breaks (a rest resets the clocks): after
+  every located node, cheapest that lowers `totalDutyExcess()`, whatever the delta.
+  `removeRedundant` releases a rest when neither overrun nor cost rises.
+- Rest-free models pay a rule check per route update and per break-path proposal only.
 
 ### Forbidden locations (`set_forbidden/2`)
 

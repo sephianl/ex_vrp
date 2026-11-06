@@ -52,6 +52,22 @@ static inline int nif_get_int64(ErlNifEnv *env, ERL_NIF_TERM term, int64_t *ip)
     return ret;
 }
 
+// nif_get_int64, reading the atom :infinity as the largest value, which
+// leaves a limit unbounded.
+static inline void
+nif_get_int64_or_infinity(ErlNifEnv *env, ERL_NIF_TERM term, int64_t *ip)
+{
+    char buf[32];
+    if (enif_get_atom(env, term, buf, sizeof(buf), ERL_NIF_LATIN1))
+    {
+        if (std::string(buf) == "infinity")
+            *ip = std::numeric_limits<int64_t>::max();
+        return;
+    }
+
+    nif_get_int64(env, term, ip);
+}
+
 // Reads a required non-negative integer field from an Elixir map, throwing
 // when the key is missing or the value does not decode.
 static size_t get_map_uint(ErlNifEnv *env, ERL_NIF_TERM map, char const *field)
@@ -710,6 +726,11 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     int64_t work_carry_in = 0;
     int64_t work_after_end = 0;
     int64_t rest_duration = 0;
+    int64_t max_duty_period = std::numeric_limits<int64_t>::max();
+    int64_t max_duty_drive = std::numeric_limits<int64_t>::max();
+    int64_t duty_carry_in = 0;
+    int64_t duty_drive_carry_in = 0;
+    int64_t duty_after_end = 0;
     int64_t unit_distance_cost = 1;
     int64_t unit_duration_cost = 0;
     int64_t profile = 0;
@@ -912,9 +933,25 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
             {
                 nif_get_int64(env, value, &break_duration);
             }
-            else if (key_str == "rest_duration")
+            else if (key_str == "duty_rule" && enif_is_map(env, value))
             {
-                nif_get_int64(env, value, &rest_duration);
+                // An ExVrp.DutyRule; nil leaves every rest field unset.
+                auto const read = [&](char const *field, int64_t *out)
+                {
+                    ERL_NIF_TERM fieldValue;
+                    if (enif_get_map_value(env,
+                                           value,
+                                           enif_make_atom(env, field),
+                                           &fieldValue))
+                        nif_get_int64_or_infinity(env, fieldValue, out);
+                };
+
+                read("rest_duration", &rest_duration);
+                read("max_duty", &max_duty_period);
+                read("max_drive", &max_duty_drive);
+                read("duty_carry_in", &duty_carry_in);
+                read("drive_carry_in", &duty_drive_carry_in);
+                read("duty_after_end", &duty_after_end);
             }
             else if (key_str == "unit_distance_cost")
             {
@@ -1088,7 +1125,12 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
         Duration(drive_carry_in),
         Duration(work_carry_in),
         Duration(work_after_end),
-        Duration(rest_duration));
+        Duration(rest_duration),
+        Duration(max_duty_period),
+        Duration(max_duty_drive),
+        Duration(duty_carry_in),
+        Duration(duty_drive_carry_in),
+        Duration(duty_after_end));
 }
 
 static_assert(std::endian::native == std::endian::little,
@@ -2249,6 +2291,30 @@ int64_t solution_route_work_clock_excess(
 
 FINE_NIF(solution_route_work_clock_excess, 0);
 
+/**
+ * Get duty excess (duty past max_duty_period plus driving past
+ * max_duty_drive, over the duty periods between rests) of a specific route in
+ * the solution.
+ */
+int64_t solution_route_duty_excess(
+    [[maybe_unused]] ErlNifEnv *env,
+    fine::ResourcePtr<SolutionResource> solution_resource,
+    int64_t route_idx)
+{
+    auto &solution = solution_resource->solution;
+    auto const &routes = solution.routes();
+
+    if (route_idx < 0 || static_cast<size_t>(route_idx) >= routes.size())
+    {
+        return 0;
+    }
+
+    return static_cast<int64_t>(
+        routes[static_cast<size_t>(route_idx)].dutyExcess());
+}
+
+FINE_NIF(solution_route_duty_excess, 0);
+
 // Test-only drive clock NIFs. A token is {:leg, drive}, a drive to the next
 // real node; {:stop, service}, service at the real node reached last (or the
 // start node); or :break, a break on the leg after it. Routes start and end
@@ -2911,8 +2977,9 @@ FINE_NIF(solution_route_schedule, 0);
 
 /**
  * Get the breaks on a route, which its schedule leaves out.
- * Returns a list of tuples: {visits_before, trip, start_service, end_service},
- * where visits_before counts the route's visits before the break.
+ * Returns a list of tuples:
+ * {visits_before, trip, start_service, end_service, is_rest}, where
+ * visits_before counts the route's visits before the break.
  */
 fine::Term
 solution_route_breaks([[maybe_unused]] ErlNifEnv *env,
@@ -2943,12 +3010,14 @@ solution_route_breaks([[maybe_unused]] ErlNifEnv *env,
             continue;
         }
 
-        ERL_NIF_TERM tuple = enif_make_tuple4(
+        ERL_NIF_TERM tuple = enif_make_tuple5(
             env,
             enif_make_int64(env, static_cast<int64_t>(visitsBefore)),
             enif_make_int64(env, static_cast<int64_t>(visit.trip)),
             enif_make_int64(env, static_cast<int64_t>(visit.startService)),
-            enif_make_int64(env, static_cast<int64_t>(visit.endService)));
+            enif_make_int64(env, static_cast<int64_t>(visit.endService)),
+            enif_make_atom(env,
+                           data.isRest(visit.location) ? "true" : "false"));
         terms.push_back(tuple);
     }
 

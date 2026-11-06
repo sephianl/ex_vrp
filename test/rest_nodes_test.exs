@@ -7,6 +7,7 @@ defmodule ExVrp.RestNodesTest do
   """
   use ExUnit.Case, async: true
 
+  alias ExVrp.DutyRule
   alias ExVrp.Model
   alias ExVrp.Native
   alias ExVrp.Route
@@ -24,7 +25,11 @@ defmodule ExVrp.RestNodesTest do
 
   defp model(vehicle_opts) do
     vehicle = vehicle(vehicle_opts)
-    model_with_vehicle_types([vehicle, Keyword.put(vehicle, :rest_duration, 2 * @rest_duration)])
+
+    model_with_vehicle_types([
+      vehicle,
+      Keyword.put(vehicle, :duty_rule, DutyRule.new(rest_duration: 2 * @rest_duration))
+    ])
   end
 
   defp model_with_vehicle_types(vehicle_types) do
@@ -48,7 +53,7 @@ defmodule ExVrp.RestNodesTest do
         capacity: [0],
         unit_distance_cost: 1,
         unit_duration_cost: 1,
-        rest_duration: @rest_duration
+        duty_rule: DutyRule.new(rest_duration: @rest_duration)
       ],
       vehicle_opts
     )
@@ -208,7 +213,7 @@ defmodule ExVrp.RestNodesTest do
 
     test "a negative rest duration is rejected" do
       assert_raise ArgumentError, ~r/rest_duration must be >= 0/, fn ->
-        [rest_duration: -1] |> model() |> Model.to_problem_data()
+        [duty_rule: DutyRule.new(rest_duration: -1)] |> model() |> Model.to_problem_data()
       end
     end
   end
