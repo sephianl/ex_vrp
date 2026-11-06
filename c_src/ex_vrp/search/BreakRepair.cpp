@@ -42,18 +42,21 @@ void BreakRepair::addCandidates(Route const &route)
     auto work = route.clockAt<ClockQuantity::Work>(0);
     size_t from = 0;    // the real node the current leg leaves
     size_t breaks = 0;  // breaks on the current leg
+    bool rest = false;  // whether one of them is a rest
     for (size_t idx = 1; idx != route.size(); ++idx)
     {
         if (data.isBreak(route[idx]->client()))
         {
             ++breaks;
+            rest = rest || data.isRest(route[idx]->client());
             continue;
         }
 
         auto const edge = durations(route.location(from), route.location(idx));
         auto const ownDrive = route.clockAt<ClockQuantity::Drive>(idx);
         auto const ownWork = route.clockAt<ClockQuantity::Work>(idx);
-        auto const leg = BreakPlacement::along(drive, work, edge, limits);
+        auto const leg
+            = BreakPlacement::along(drive, work, edge, limits).withRest(rest);
         auto const left = [&, continued = drive](size_t onLeg)
         { return DriveClock::acrossBreaks(continued, edge, onLeg, leg).after; };
 
@@ -108,6 +111,7 @@ void BreakRepair::addCandidates(Route const &route)
 
         from = idx;
         breaks = 0;
+        rest = false;
     }
 }
 
@@ -197,7 +201,13 @@ bool BreakRepair::insertRest(Route &route,
     // node; the travel on its leg is driven after it. Every such leg of the
     // route is tried: routes with rests are few, and their duty prefixes make
     // each proposal cheap.
+    // The rest that lowers the overrun most wins, the cheapest among equals:
+    // it ends a period where the period runs out, so the next one starts
+    // fresh. The cheapest alone favours a rest early in a long period, which
+    // leaves the rest of it to need another, and a route ends up resting
+    // after nearly every visit.
     auto const overrun = route.totalDutyExcess();
+    auto bestExcess = overrun;
     auto bestCost = std::numeric_limits<Cost>::max();
     size_t best = 0;  // 0: no leg lowers the overrun
     for (size_t from = 0; from + 1 < route.size(); ++from)
@@ -209,14 +219,16 @@ bool BreakRepair::insertRest(Route &route,
                                        BreakSegment(data, rest->client()),
                                        route.after(from + 1));
 
-        if (proposal.dutyCost().excess >= overrun)
+        auto const excess = proposal.dutyCost().excess;
+        if (excess >= overrun || excess > bestExcess)
             continue;
 
         Cost deltaCost = 0;
         costEvaluator.deltaCost<true>(deltaCost, proposal);
 
-        if (deltaCost < bestCost)
+        if (excess < bestExcess || deltaCost < bestCost)
         {
+            bestExcess = excess;
             bestCost = deltaCost;
             best = from + 1;
         }

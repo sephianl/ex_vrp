@@ -170,7 +170,7 @@ defmodule ExVrp.DutyPeriodsTest do
           {"a client into a route with a rest", [@c], [@a, @b, @rest], 1, 3},
           {"a client out of a route with a rest", [@a, @b, @rest, @c], [], 4, 0},
           {"a client across a rest within its period", [@a, @rest, @b, @c], [], 1, 0},
-          {"a rest onto another route", [@a, @rest, @b, @c], [@c], 2, 1}
+          {"a rest onto another route", [@a, @rest, @b], [@c], 2, 1}
         ] do
       test "moving #{name} is priced exactly" do
         {:ok, data} = Model.to_problem_data(model())
