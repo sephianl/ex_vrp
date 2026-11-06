@@ -445,7 +445,8 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     auto const limits = vehData.breakLimits();
     clockExcess_ = clocks.drive.overrun(limits.drive);
     workClockExcess_ = clocks.work.overrun(limits.work);
-    timeWarp_ += driveExcess_ + clockExcess_ + workClockExcess_;
+    dutyExcess_ = foldDuty(data).excess;
+    timeWarp_ += driveExcess_ + clockExcess_ + workClockExcess_ + dutyExcess_;
 
     makeSchedule(data);
 
@@ -466,8 +467,75 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
             timeWarp_ += visit.timeWarp;
         if (duration_ > vehData.maxDuration)
             timeWarp_ += duration_ - vehData.maxDuration;
-        timeWarp_ += driveExcess_ + clockExcess_ + workClockExcess_;
+        timeWarp_
+            += driveExcess_ + clockExcess_ + workClockExcess_ + dutyExcess_;
     }
+}
+
+ex_vrp::DutyCost Route::foldDuty(ProblemData const &data) const
+{
+    auto const &vehData = data.vehicleType(vehicleType_);
+    if (!vehData.hasRestRule() || empty())
+        return {};
+
+    // Node by node, as search::Route's prefixes: travel joins the fold at the
+    // located node it arrives at, so travel on a leg with a rest is after it.
+    auto const limits = vehData.dutyLimits();
+    auto const &durations = data.durationMatrix(vehData.profile);
+    auto const untimed = [](Duration duration)
+    {
+        return DurationSegment(
+            duration, 0, 0, std::numeric_limits<Duration>::max(), 0);
+    };
+
+    ProblemData::Depot const &start = data.location(startDepot_);
+    auto duty = DutySegment::visit(DurationSegment::merge(
+        0, {vehData, vehData.startLate}, DurationSegment(start)));
+    size_t last = startDepot_;
+
+    auto const visit = [&](size_t location, DurationSegment const &segment)
+    {
+        duty = DutySegment::merge(durations(last, location),
+                                  duty,
+                                  DutySegment::visit(segment),
+                                  limits);
+        last = location;
+    };
+
+    for (size_t tripIdx = 0; tripIdx != trips_.size(); ++tripIdx)
+    {
+        if (tripIdx > 0)
+        {
+            auto const depot = trips_[tripIdx].startDepot();
+            ProblemData::Depot const &depotData = data.location(depot);
+            visit(depot, untimed(depotData.serviceDuration));
+        }
+
+        for (auto const client : trips_[tripIdx])
+        {
+            if (data.isRest(client))
+                duty = DutySegment::merge(0, duty, DutySegment::rest(), limits);
+            else if (data.isBreak(client))
+                duty = DutySegment::merge(
+                    0,
+                    duty,
+                    DutySegment::pause(
+                        untimed(data.pauseDuration(vehData, client))),
+                    limits);
+            else
+            {
+                ProblemData::Client const &clientData = data.location(client);
+                visit(client, DurationSegment(clientData));
+            }
+        }
+    }
+
+    ProblemData::Depot const &end = data.location(endDepot_);
+    visit(endDepot_,
+          DurationSegment::merge(
+              0, DurationSegment(end), {vehData, vehData.twLate}));
+
+    return duty.cost(limits);
 }
 
 ex_vrp::BreakClocks Route::foldClocks(ProblemData const &data) const
@@ -487,7 +555,7 @@ ex_vrp::BreakClocks Route::foldClocks(ProblemData const &data) const
     auto const visit = [&](size_t location, Duration work)
     {
         if (data.isBreak(location))
-            clocks.addTrailRun(1);
+            clocks.addTrailRun(1, data.isRest(location));
         else
         {
             clocks = BreakClocks::merge(clocks,
@@ -591,9 +659,12 @@ Duration Route::clockExcess() const { return clockExcess_; }
 
 Duration Route::workClockExcess() const { return workClockExcess_; }
 
+Duration Route::dutyExcess() const { return dutyExcess_; }
+
 Duration Route::timelineTimeWarp() const
 {
-    return timeWarp_ - driveExcess_ - clockExcess_ - workClockExcess_;
+    return timeWarp_ - driveExcess_ - clockExcess_ - workClockExcess_
+           - dutyExcess_;
 }
 
 Duration Route::waitDuration() const

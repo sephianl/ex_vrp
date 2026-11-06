@@ -144,8 +144,8 @@ defmodule ExVrp.Route do
   @doc """
   Returns the time warp of this route.
 
-  Includes `drive_excess/1`, `clock_excess/1` and `work_clock_excess/1`,
-  which are penalties rather than delays: they make the route infeasible
+  Includes `drive_excess/1`, `clock_excess/1`, `work_clock_excess/1` and
+  `duty_excess/1`, which are penalties rather than delays: they make the route infeasible
   without moving `end_time/1`.
   """
   @spec time_warp(t()) :: non_neg_integer()
@@ -194,6 +194,18 @@ defmodule ExVrp.Route do
   @spec work_clock_excess(t()) :: non_neg_integer()
   def work_clock_excess(%__MODULE__{solution_ref: ref, route_idx: idx}) do
     Native.solution_route_work_clock_excess(ref, idx)
+  end
+
+  @doc """
+  Returns the duty past the vehicle type's `duty_rule.max_duty` plus the driving past its
+  `duty_rule.max_drive`, each summed over the duty periods between rests (`ExVrp.DutyRule`).
+  The vehicle type's own `:max_drive`, a whole-route cap, counts in `drive_excess/1` instead.
+
+  Also counted in `time_warp/1`.
+  """
+  @spec duty_excess(t()) :: non_neg_integer()
+  def duty_excess(%__MODULE__{solution_ref: ref, route_idx: idx}) do
+    Native.solution_route_duty_excess(ref, idx)
   end
 
   # ---------------------------------------------------------------------------
@@ -352,22 +364,29 @@ defmodule ExVrp.Route do
   `visits_before` counts this route's `visits/1` before the break, so `0` is a break before the
   first visit and `length(visits)` one after the last. Breaks taken back to back are separate
   entries with the same `visits_before`. A break takes no location: it is taken where the vehicle
-  is, between `start_service` and `end_service`. Rests come back here too, lasting the vehicle
-  type's `:rest_duration`.
+  is, between `start_service` and `end_service`. Rests come back here too, with `rest?: true`,
+  lasting the vehicle type's `:rest_duration`.
   """
   @spec breaks(t()) :: [
           %{
             visits_before: non_neg_integer(),
             trip: non_neg_integer(),
             start_service: non_neg_integer(),
-            end_service: non_neg_integer()
+            end_service: non_neg_integer(),
+            rest?: boolean()
           }
         ]
   def breaks(%__MODULE__{solution_ref: ref, route_idx: idx}) do
     ref
     |> Native.solution_route_breaks(idx)
-    |> Enum.map(fn {visits_before, trip, start_service, end_service} ->
-      %{visits_before: visits_before, trip: trip, start_service: start_service, end_service: end_service}
+    |> Enum.map(fn {visits_before, trip, start_service, end_service, rest?} ->
+      %{
+        visits_before: visits_before,
+        trip: trip,
+        start_service: start_service,
+        end_service: end_service,
+        rest?: rest?
+      }
     end)
   end
 

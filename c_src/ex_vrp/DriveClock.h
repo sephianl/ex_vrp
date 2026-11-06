@@ -55,6 +55,15 @@ struct BreakPlacement
                     {edge, room(drive, limits.drive), room(work, limits.work)}),
                 std::min(limits.drive, limits.work)};
     }
+
+    // This placement on a leg that holds a rest. A rest is taken where its
+    // leg begins, as the duty periods count it (DutySegment), so the leg's
+    // travel is all driven after it, and any further break comes a spacing
+    // into the leg.
+    [[nodiscard]] BreakPlacement withRest(bool rest) const
+    {
+        return rest ? BreakPlacement{0, spacing} : *this;
+    }
 };
 
 /**
@@ -77,13 +86,15 @@ struct BreakPlacement
  */
 struct DriveClock
 {
-    Duration head = 0;    // drive before the first internal reset
-    Duration excess = 0;  // clipped overrun of stretches wholly inside
-    Duration tail = 0;    // drive after the last internal reset
-    size_t resets = 0;    // internal legs carrying breaks
-    size_t leadRun = 0;   // breaks before the first real node
-    size_t trailRun = 0;  // breaks after the last real node
-    size_t need = 0;      // breaks lacking in stretches wholly inside
+    Duration head = 0;       // drive before the first internal reset
+    Duration excess = 0;     // clipped overrun of stretches wholly inside
+    Duration tail = 0;       // drive after the last internal reset
+    size_t resets = 0;       // internal legs carrying breaks
+    size_t leadRun = 0;      // breaks before the first real node
+    size_t trailRun = 0;     // breaks after the last real node
+    size_t need = 0;         // breaks lacking in stretches wholly inside
+    bool leadRest = false;   // whether leadRun holds a rest
+    bool trailRest = false;  // whether trailRun holds a rest
 
     bool operator==(DriveClock const &other) const = default;
 
@@ -130,6 +141,8 @@ struct DriveClock
         DriveClock out;
         out.leadRun = first.leadRun;
         out.trailRun = second.trailRun;
+        out.leadRest = first.leadRest;
+        out.trailRest = second.trailRest;
 
         if (onLeg == 0)
         {
@@ -193,8 +206,10 @@ struct BreakClocks
                                            BreakClocks const &second,
                                            BreakLimits limits)
     {
-        auto const leg = BreakPlacement::along(
-            first.drive.tail, first.work.tail, edge, limits);
+        auto const leg
+            = BreakPlacement::along(
+                  first.drive.tail, first.work.tail, edge, limits)
+                  .withRest(first.drive.trailRest || second.drive.leadRest);
 
         return {
             DriveClock::merge(
@@ -209,16 +224,21 @@ struct BreakClocks
     }
 
     // Breaks sitting on a leg: before the first real node, after the last.
-    void addLeadRun(size_t count)
+    // `rest` says whether one of them is a rest.
+    void addLeadRun(size_t count, bool rest = false)
     {
         drive.leadRun += count;
         work.leadRun += count;
+        drive.leadRest = drive.leadRest || rest;
+        work.leadRest = work.leadRest || rest;
     }
 
-    void addTrailRun(size_t count)
+    void addTrailRun(size_t count, bool rest = false)
     {
         drive.trailRun += count;
         work.trailRun += count;
+        drive.trailRest = drive.trailRest || rest;
+        work.trailRest = work.trailRest || rest;
     }
 
     [[nodiscard]] Duration overrun(BreakLimits limits) const

@@ -2,6 +2,7 @@
 #define EX_VRP_PROBLEMDATA_H
 
 #include "DriveClock.h"
+#include "DutyLimits.h"
 #include "DynamicBitset.h"
 #include "Matrix.h"
 #include "MatrixView.h"
@@ -620,6 +621,20 @@ public:
      *     join the route's first stretch.
      * work_after_end
      *     Work after the route ends, joining its last stretch.
+     * rest_duration
+     *     How long each rest client (see Client::isRest) on this vehicle
+     *     type's routes lasts.
+     * max_duty_period
+     *     Maximum elapsed time, waiting included, between two rests: a duty
+     *     period. Excess counts as time warp. Unconstrained if not provided.
+     * max_duty_drive
+     *     Maximum travel duration within one duty period. Excess counts as
+     *     time warp. Unconstrained if not provided.
+     * duty_carry_in, duty_drive_carry_in
+     *     Duty and driving since the last rest before the route starts; they
+     *     join the route's first duty period.
+     * duty_after_end
+     *     Duty after the route ends, joining its last duty period.
      * unit_distance_cost
      *     Cost per unit of distance travelled by vehicles of this type.
      * unit_duration_cost
@@ -676,10 +691,15 @@ public:
         Duration const maxDriveBetweenBreaks;  // Maximum travel between breaks
         Duration const breakDuration;          // Duration of each break
         Duration const maxWorkBetweenBreaks;   // Maximum work between breaks
-        Duration const driveCarryIn;  // Driving since the last break, at start
-        Duration const workCarryIn;   // Work since the last break, at start
-        Duration const workAfterEnd;  // Work after the route ends
-        Duration const restDuration;  // Duration of each daily rest
+        Duration const driveCarryIn;   // Driving since the last break, at start
+        Duration const workCarryIn;    // Work since the last break, at start
+        Duration const workAfterEnd;   // Work after the route ends
+        Duration const restDuration;   // Duration of each daily rest
+        Duration const maxDutyPeriod;  // Maximum elapsed time between rests
+        Duration const maxDutyDrive;   // Maximum travel between rests
+        Duration const dutyCarryIn;    // Duty since the last rest, at start
+        Duration const dutyDriveCarryIn;  // Driving since the last rest
+        Duration const dutyAfterEnd;      // Duty after the route ends
         std::vector<std::pair<Duration, Duration>> const
             forbiddenWindows;  // Forbidden time windows
         char const *name;      // Type name (for reference)
@@ -716,7 +736,12 @@ public:
             Duration driveCarryIn = 0,
             Duration workCarryIn = 0,
             Duration workAfterEnd = 0,
-            Duration restDuration = 0);
+            Duration restDuration = 0,
+            Duration maxDutyPeriod = std::numeric_limits<Duration>::max(),
+            Duration maxDutyDrive = std::numeric_limits<Duration>::max(),
+            Duration dutyCarryIn = 0,
+            Duration dutyDriveCarryIn = 0,
+            Duration dutyAfterEnd = 0);
 
         // The limit of the clock over the given quantity; max() when unset.
         [[nodiscard]] Duration breakLimit(ClockQuantity quantity) const
@@ -737,6 +762,24 @@ public:
             return maxDriveBetweenBreaks != std::numeric_limits<Duration>::max()
                    || maxWorkBetweenBreaks
                           != std::numeric_limits<Duration>::max();
+        }
+
+        // Whether duty periods are limited, so routes may need rests.
+        [[nodiscard]] bool hasRestRule() const
+        {
+            return maxDutyPeriod != std::numeric_limits<Duration>::max()
+                   || maxDutyDrive != std::numeric_limits<Duration>::max();
+        }
+
+        // What bounds each duty period, and what the route's first and last
+        // ones carry in from outside it.
+        [[nodiscard]] DutyLimits dutyLimits() const
+        {
+            return {maxDutyPeriod,
+                    maxDutyDrive,
+                    dutyCarryIn,
+                    dutyDriveCarryIn,
+                    dutyAfterEnd};
         }
 
         /**

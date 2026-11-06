@@ -96,6 +96,7 @@ defmodule ExVrp.Model do
   alias ExVrp.ClientGroup
   alias ExVrp.Depot
   alias ExVrp.Matrix
+  alias ExVrp.Rests
   alias ExVrp.SameVehicleGroup
   alias ExVrp.Shipment
   alias ExVrp.VehicleType
@@ -701,6 +702,7 @@ defmodule ExVrp.Model do
       |> validate_vehicle_reload_depots(model)
       |> validate_vehicle_forbidden_windows(model)
       |> Breaks.validate(model)
+      |> Rests.validate(model)
       |> validate_matrix_dimensions(model)
       |> validate_matrix_diagonals(model)
       |> validate_profiles(model)

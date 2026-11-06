@@ -150,6 +150,25 @@ defmodule ExVrp.VehicleType do
   `ExVrp.Route.work_clock_excess/1`. Like `drive_excess/1`, it never moves
   `end_time/1`.
 
+  ## Rests
+
+  `:duty_rule` takes an `ExVrp.DutyRule`: how long a duty period, the time
+  between two rests, may last and how much of it may be driving, and how long
+  each rest lasts. Set it on a vehicle type with a break limit: rests are
+  placed by the same pass as breaks, and a rest resets both break clocks. The
+  model then adds a pool of rest clients, which show up only in
+  `ExVrp.Route.breaks/1`, with `rest?: true`.
+
+      iex> vt = ExVrp.VehicleType.new(num_available: 1, capacity: [10],
+      ...>   break_duration: 45, max_drive_between_breaks: 270,
+      ...>   duty_rule: ExVrp.DutyRule.new(max_duty: 780, max_drive: 540, rest_duration: 660))
+      iex> {vt.duty_rule.max_duty, vt.duty_rule.max_drive}
+      {780, 540}
+
+  A period left past either limit is infeasible: the excess counts as time
+  warp, reported by `ExVrp.Route.duty_excess/1`, and never moves `end_time/1`.
+  `:max_drive` still bounds the whole route.
+
   ## Time windows
 
   `:time_windows` takes `{start, end}` tuples and is the only supported way to
@@ -161,6 +180,8 @@ defmodule ExVrp.VehicleType do
   All values are integers in your matrices' own units; the solver does not
   interpret them.
   """
+
+  alias ExVrp.DutyRule
 
   @type t :: %__MODULE__{
           num_available: pos_integer(),
@@ -180,7 +201,7 @@ defmodule ExVrp.VehicleType do
           drive_carry_in: non_neg_integer(),
           work_carry_in: non_neg_integer(),
           work_after_end: non_neg_integer(),
-          rest_duration: non_neg_integer(),
+          duty_rule: DutyRule.t() | nil,
           unit_distance_cost: non_neg_integer(),
           unit_duration_cost: non_neg_integer(),
           profile: non_neg_integer(),
@@ -214,7 +235,7 @@ defmodule ExVrp.VehicleType do
     drive_carry_in: 0,
     work_carry_in: 0,
     work_after_end: 0,
-    rest_duration: 0,
+    duty_rule: nil,
     unit_distance_cost: 1,
     unit_duration_cost: 0,
     profile: 0,
@@ -279,9 +300,8 @@ defmodule ExVrp.VehicleType do
     before the route starts, added to its first stretch (default: `0`)
   - `:work_after_end` - Work after the route ends (the last unload), added to
     its last stretch (default: `0`)
-  - `:rest_duration` - How long each daily rest lasts (default: `0`). A rest
-    is a break client flagged `:is_rest`; nothing places one yet, so it comes from
-    `:initial_routes`, and only on a vehicle type with a limit between breaks
+  - `:duty_rule` - An `ExVrp.DutyRule` limiting each duty period between two
+    rests (default: `nil`, no rests) — see "Rests" above
   - `:unit_distance_cost` - Cost per unit distance (default: `1`)
   - `:unit_duration_cost` - Cost per unit time (default: `0`)
   - `:profile` - Index of distance/duration matrix to use (default: `0`)
@@ -357,6 +377,11 @@ defmodule ExVrp.VehicleType do
       )
     )
   end
+
+  @doc "Whether the vehicle type limits driving or work between breaks, so its routes take breaks."
+  @spec break_limits?(t()) :: boolean()
+  def break_limits?(%__MODULE__{max_drive_between_breaks: :infinity, max_work_between_breaks: :infinity}), do: false
+  def break_limits?(%__MODULE__{}), do: true
 
   defp resolve_max_duration(opts) do
     defaults = %__MODULE__{num_available: 1, capacity: []}
