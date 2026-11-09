@@ -34,6 +34,7 @@
   of the leg's travel is driven after it and a leg longer than `max_drive_between_breaks` takes a
   break as well. It used to fall where the clock ran out, like a break, so a rest on a long leg
   seemed to cover the break a driver taking the rest at a stop still owed.
+- Requires `nx ~> 1.0` and `fine ~> 0.2.0`. Neighbourhoods are unchanged by the move to Nx 1.0.
 
 ## 0.19.3
 

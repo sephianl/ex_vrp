@@ -103,8 +103,8 @@ defmodule ExVrp.MixProject do
       # NIF compilation
       {:elixir_make, "~> 0.8", runtime: false},
       {:cc_precompiler, "~> 0.1", runtime: false},
-      {:fine, "~> 0.1.4"},
-      {:nx, "~> 0.10"},
+      {:fine, "~> 0.2.0"},
+      {:nx, "~> 1.0"},
 
       # Testing
       {:stream_data, "~> 1.0", only: [:test, :dev]},
@@ -115,7 +115,7 @@ defmodule ExVrp.MixProject do
       {:jason, "~> 1.4", only: [:dev, :test]},
 
       # Mix check
-      {:ex_check, "~> 0.16.0", only: [:dev, :test], runtime: false},
+      {:ex_check, "~> 0.17.0", only: [:dev, :test], runtime: false},
       # Static code analysis
       {:credo, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:sephia_credo, "~> 0.1", only: [:dev, :test], runtime: false},
