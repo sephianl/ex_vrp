@@ -38,7 +38,7 @@ jobs:
           path: cache/*.tar.gz
 
   macos-arm:
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       MIX_ENV: prod
     strategy:
