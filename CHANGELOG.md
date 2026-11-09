@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.20.0
+
+### Added
+
+- **Duty periods and daily rests.** A vehicle type's `:duty_rule` (`ExVrp.DutyRule`) caps the
+  elapsed time between two rests, waiting included, with `max_duty`, and the travel within one
+  with `max_drive` (EU 561/2006 art. 8(2) and 6(1)), with `duty_carry_in`, `drive_carry_in` and
+  `duty_after_end` for what the driver did outside the route. The model adds a pool of rest
+  clients for a vehicle type whose rule has a limit, and the solver places them: the search
+  prices a period that overruns as the rests it lacks, each lasting the rule's `rest_duration`,
+  and `BreakRepair` puts real ones in, before the breaks, since a rest resets both break clocks.
+  Waiting before a period's first visit lengthens the rest instead of counting as duty. A route
+  left past either limit is infeasible; the excess is time warp, reported by
+  `ExVrp.Route.duty_excess/1`. The vehicle type's `max_drive` still bounds the whole route.
+- `ExVrp.Route.breaks/1` returns `rest?: true` on a rest.
+- `:initial_routes` takes a `:rest` marker, given one of the model's rest clients as `:break`
+  is a break client, and `ExVrp.Solution.warm_start/1` returns one for each rest. A rest the
+  solver placed used to come back as its pool index, which a changed model gives to another
+  client or a break.
+
+### Changed
+
+- **Breaking:** `VehicleType.rest_duration` moved into `:duty_rule`:
+  `duty_rule: ExVrp.DutyRule.new(rest_duration: 660)` is a rule without limits, under which a rest
+  placed by `:initial_routes` stays where it was put, as before.
+- A duty rule with a limit needs a break limit and a positive `rest_duration`. `Model.validate/1`
+  rejects a `:duty_rule` that is not an `ExVrp.DutyRule`, and a `rest_duration` or carry that is
+  not a non-negative integer (`:infinity` used to pass and crash building the pool).
+- Under a duty rule, a vehicle type gets the breaks for each duty period rather than twelve per
+  rest: a vehicle type without a shift no longer pads every matrix with 168 breaks per vehicle.
+- **A rest closes the break clocks where its leg begins**, as the duty periods count it, so all
+  of the leg's travel is driven after it and a leg longer than `max_drive_between_breaks` takes a
+  break as well. It used to fall where the clock ran out, like a break, so a rest on a long leg
+  seemed to cover the break a driver taking the rest at a stop still owed.
+- Requires `nx ~> 1.0` and `fine ~> 0.2.0`. Neighbourhoods are unchanged by the move to Nx 1.0.
+
 ## 0.19.3
 
 ### Added
@@ -53,6 +89,7 @@
 
   At production's 284 s on the 629-client day this is 16% more iterations: 9 of 10 seeds end
   cheaper and none dearer.
+
 - **Relocates are ruled out on their least possible duration first.** A route's duration is at
   least its travel plus its clients' service time, since waiting is never negative. Each route
   now keeps those totals, and a relocate prices the exact new travel from the edges it cuts and

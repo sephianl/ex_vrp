@@ -92,16 +92,16 @@ defmodule ExVrp.Solution do
   One vehicle's warm-start visits, as `warm_start/1` returns them and `:initial_routes` takes
   them: a flat client list (a single trip), or its trips, where the first trip's `reload_depot` is
   `nil` and each later trip names the reload depot it starts from. A `:break` among the clients is
-  a break taken there.
+  a break taken there, a `:rest` a rest.
   """
   @type warm_start_visits ::
           [warm_start_client()]
           | {:trips, [%{reload_depot: non_neg_integer() | nil, clients: [warm_start_client()]}]}
 
   @typedoc """
-  A client index, or `:break` for a break taken at that point of the route.
+  A client index, or `:break` or `:rest` for a break or a rest taken at that point of the route.
   """
-  @type warm_start_client :: non_neg_integer() | :break
+  @type warm_start_client :: non_neg_integer() | :break | :rest
 
   @doc """
   Returns the total distance of the solution.
@@ -219,9 +219,10 @@ defmodule ExVrp.Solution do
   `:initial_routes` holds at most one route per vehicle type, so a solution that runs several
   routes on one vehicle type returns `{:error, {:vehicle_type_has_several_routes, vehicle_type}}`.
 
-  Each break comes back as a `:break` marker where it fell, rather than as its client index: those
-  follow the model's own clients, so they would not survive a model that changed. The next solve
-  gives every marker a break of its own, and keeps it there unless moving it pays.
+  Each break comes back as a `:break` marker where it fell, and each rest as a `:rest` marker,
+  rather than as its client index: those follow the model's own clients, so they would not survive
+  a model that changed. The next solve gives every marker a break or rest of its own, and keeps it
+  there unless moving it pays.
 
   ## Example
 
@@ -234,8 +235,7 @@ defmodule ExVrp.Solution do
           {:ok, [warm_start_visits()]}
           | {:error, {:vehicle_type_has_several_routes, non_neg_integer()}}
   def warm_start(%__MODULE__{solution_ref: ref, problem_data: problem_data}) do
-    breaks = problem_data |> Native.problem_data_break_clients() |> MapSet.new()
-    vehicle_type_trips = ref |> WarmStart.vehicle_type_trips() |> WarmStart.with_break_markers(breaks)
+    vehicle_type_trips = ref |> WarmStart.vehicle_type_trips() |> WarmStart.with_pause_markers(problem_data)
 
     vehicle_type_trips
     |> Enum.frequencies_by(fn {vehicle_type, _trips} -> vehicle_type end)

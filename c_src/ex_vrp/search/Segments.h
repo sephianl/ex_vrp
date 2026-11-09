@@ -69,6 +69,11 @@ public:
         return BreakClocks::node(0, clientData.serviceDuration);
     }
 
+    DutySegment duty(size_t profile, size_t vehicleType) const
+    {
+        return DutySegment::visit(duration(profile, vehicleType));
+    }
+
     LoadSegment load(size_t dimension) const
     {
         return {data, client, dimension};
@@ -143,6 +148,16 @@ public:
         return BreakClocks::node(0, service_);
     }
 
+    // Unlike duration(), the depot's service is in here: the Proposal fold
+    // adds it to the duration segment, but the duty fold takes the depot as
+    // it takes any located node.
+    DutySegment duty([[maybe_unused]] size_t profile,
+                     [[maybe_unused]] size_t vehicleType) const
+    {
+        return DutySegment::visit(DurationSegment(
+            service_, 0, 0, std::numeric_limits<Duration>::max(), 0));
+    }
+
     LoadSegment load([[maybe_unused]] size_t dimension) const { return {}; }
 };
 
@@ -151,7 +166,8 @@ public:
  * the solution, or for a run of ``count`` interchangeable ones taken together
  * (all priced as ``client``). A break has no location, so the Proposal folds
  * skip its edges; it only adds the break duration of the vehicle type whose
- * route it is proposed for, in an unconstrained time window.
+ * route it is proposed for, in an unconstrained time window. A rest client
+ * works the same, lasting the rest duration and ending a duty period.
  */
 class BreakSegment
 {
@@ -163,7 +179,7 @@ public:
     BreakSegment(ProblemData const &data, size_t client, size_t count = 1)
         : data(data), client(client), count(count)
     {
-        assert(data.isBreak(client) && !data.isRest(client));
+        assert(data.isBreak(client));
         assert(count >= 1);
     }
 
@@ -200,12 +216,23 @@ public:
     DurationSegment duration([[maybe_unused]] size_t profile,
                              size_t vehicleType) const
     {
-        auto const breakDuration = data.vehicleType(vehicleType).breakDuration;
-        return DurationSegment(static_cast<Duration>(count) * breakDuration,
+        auto const pause
+            = data.pauseDuration(data.vehicleType(vehicleType), client);
+        return DurationSegment(static_cast<Duration>(count) * pause,
                                0,
                                0,
                                std::numeric_limits<Duration>::max(),
                                0);
+    }
+
+    // A run of breaks is one pause; a run of rests is one boundary, since
+    // rests with nothing located between them are one (DutySegment::merge).
+    DutySegment duty(size_t profile, size_t vehicleType) const
+    {
+        if (!data.isRest(client))
+            return DutySegment::pause(duration(profile, vehicleType));
+
+        return DutySegment::rest();
     }
 
     // No location, so the Proposal fold adds trailRun to the leg it sits on.
@@ -214,8 +241,8 @@ public:
                        [[maybe_unused]] BreakLimits limits) const
     {
         BreakClocks clocks;
-        clocks.addLeadRun(count);
-        clocks.addTrailRun(count);
+        clocks.addLeadRun(count, data.isRest(client));
+        clocks.addTrailRun(count, data.isRest(client));
         return clocks;
     }
 

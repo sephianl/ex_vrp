@@ -1,6 +1,7 @@
 #ifndef EX_VRP_ROUTE_H
 #define EX_VRP_ROUTE_H
 
+#include "DutySegment.h"
 #include "Measure.h"
 #include "ProblemData.h"
 #include "RandomNumberGenerator.h"
@@ -35,6 +36,9 @@ class Route
     // Both clocks over the whole route, folded together; empty without a
     // break rule or clients.
     [[nodiscard]] BreakClocks foldClocks(ProblemData const &data) const;
+
+    // The duty periods over the whole route, as search::Route folds them.
+    [[nodiscard]] DutyCost foldDuty(ProblemData const &data) const;
 
 public:
     /**
@@ -126,6 +130,7 @@ private:
     Duration driveExcess_ = 0;       // Travel past max_drive
     Duration clockExcess_ = 0;       // Travel past max_drive_between_breaks
     Duration workClockExcess_ = 0;   // Work past max_work_between_breaks
+    Duration dutyExcess_ = 0;        // Duty and driving past the duty limits
     Duration travel_ = 0;            // Total *travel* duration on this route
     Duration service_ = 0;           // Total *service* duration on this route
     Duration breaks_ = 0;            // Total break duration on this route
@@ -272,11 +277,19 @@ public:
     [[nodiscard]] Duration workClockExcess() const;
 
     /**
+     * Duty past the vehicle type's ``max_duty_period`` plus driving past its
+     * ``max_duty_drive``, each summed over the duty periods between rests,
+     * which is also counted in :meth:`time_warp`.
+     */
+    [[nodiscard]] Duration dutyExcess() const;
+
+    /**
      * The part of :meth:`~timeWarp` that is an actual shift along the
      * timeline, used to derive clock times such as :meth:`~endTime`.
      * Excludes penalty-only terms folded into :meth:`~timeWarp` that do not
      * move when the route starts or ends (today, :meth:`~driveExcess`,
-     * :meth:`~clockExcess` and :meth:`~workClockExcess`).
+     * :meth:`~clockExcess`, :meth:`~workClockExcess` and
+     * :meth:`~dutyExcess`).
      */
     [[nodiscard]] Duration timelineTimeWarp() const;
 

@@ -4,10 +4,13 @@
 #include <bit>
 #include <cmath>
 #include <numbers>
+#include <optional>
 #include <ostream>
 #include <utility>
 
 using ex_vrp::ClockQuantity;
+using ex_vrp::DutyCost;
+using ex_vrp::DutySegment;
 using ex_vrp::search::Route;
 
 Route::Node::Node(size_t loc) : loc_(loc), idx_(0), trip_(0), route_(nullptr) {}
@@ -72,6 +75,7 @@ Route::Route(ProblemData const &data, size_t idx, size_t vehicleType)
       hasDurationCost_(durationCostApplies(data, vehicleType_)),
       hasDurationBound_(hasDurationCost_ && vehicleType_.unitDurationCost > 0),
       hasBreakRule_(vehicleType_.hasBreakRule()),
+      hasRestRule_(vehicleType_.hasRestRule()),
       reloadCost_(0),
       transferableProfiles_(data.numProfiles()),
       loadAt(data.numLoadDimensions()),
@@ -341,6 +345,11 @@ void Route::updateBreakLookups()
         cumBreaks_[idx + 1] = cumBreaks_[idx] + data.isBreak(visits[idx]);
 
     assert(cumBreaks_.back() == numBreaks_);
+
+    cumRests_.resize(nodes.size() + 1);
+    cumRests_[0] = 0;
+    for (size_t idx = 0; idx != nodes.size(); ++idx)
+        cumRests_[idx + 1] = cumRests_[idx] + data.isRest(visits[idx]);
 }
 
 void Route::updateClocks()
@@ -352,20 +361,27 @@ void Route::updateClocks()
 
     resetBounds_.assign(1, 0);
     legBreaks_.assign(1, 0);
+    legRests_.assign(1, false);
 
     stretchOf_.resize(size);
     stretchOf_[0] = 0;
 
     size_t breaks = 0;
+    bool rests = false;
     for (size_t idx = 1; idx != size; ++idx)
     {
         if (data.isBreak(visits[idx]))
+        {
             breaks++;
+            rests = rests || data.isRest(visits[idx]);
+        }
         else if (breaks > 0)  // then idx ends a leg carrying breaks
         {
             resetBounds_.push_back(idx);
             legBreaks_.push_back(breaks);
+            legRests_.push_back(rests);
             breaks = 0;
+            rests = false;
         }
 
         stretchOf_[idx] = resetBounds_.size() - 1;
@@ -373,6 +389,7 @@ void Route::updateClocks()
 
     resetBounds_.push_back(size - 1);
     legBreaks_.push_back(0);
+    legRests_.push_back(false);
 
     updateCum<ClockQuantity::Drive>();
     updateCum<ClockQuantity::Work>();
@@ -398,7 +415,8 @@ void Route::updateClocks()
         auto const driveStretch = drive.cum[idx - 1] - drive.start[r - 1];
         auto const workStretch = work.cum[idx - 1] - work.start[r - 1];
         auto const leg
-            = BreakPlacement::along(driveStretch, workStretch, edge, limits);
+            = BreakPlacement::along(driveStretch, workStretch, edge, limits)
+                  .withRest(legRests_[r]);
 
         auto const place
             = [&](ClockPrefix &prefix, Duration stretch, Duration own)
@@ -603,6 +621,92 @@ Route::SegmentBetween::durationWithBreaks(size_t profile,
     }
 
     return durSegment;
+}
+
+DutySegment Route::nodeDuty(size_t idx,
+                            ProblemData::VehicleType const &vehicleType) const
+{
+    auto const client = visits[idx];
+    if (!data.isBreak(client))
+        return DutySegment::visit(durAt[idx]);
+
+    if (data.isRest(client))
+        return DutySegment::rest();
+
+    return DutySegment::pause(
+        DurationSegment(data.pauseDuration(vehicleType, client),
+                        0,
+                        0,
+                        std::numeric_limits<Duration>::max(),
+                        0));
+}
+
+DutySegment Route::foldDuty(size_t start,
+                            size_t end,
+                            size_t profile,
+                            size_t vehicleType) const
+{
+    auto const &type = data.vehicleType(vehicleType);
+    auto const limits = type.dutyLimits();
+    auto const &durations = data.durationMatrix(profile);
+
+    // Leading breaks take no travel: the Proposal fold travels into this
+    // segment's first located node.
+    auto duty = nodeDuty(start, type);
+    auto last = data.isBreak(visits[start]) ? std::optional<size_t>{}
+                                            : std::optional{visits[start]};
+
+    for (size_t idx = start + 1; idx <= end; ++idx)
+    {
+        auto const client = visits[idx];
+        Duration edge = 0;
+        if (!data.isBreak(client))
+        {
+            if (last)
+                edge = durations(*last, client);
+
+            last = client;
+        }
+
+        duty = DutySegment::merge(edge, duty, nodeDuty(idx, type), limits);
+    }
+
+    return duty;
+}
+
+void Route::updateDuty()
+{
+    if (!hasRestRule_)
+        return;
+
+    auto const limits = vehicleType_.dutyLimits();
+    auto const &durations = data.durationMatrix(profile());
+    auto const size = nodes.size();
+
+    // Travel joins at the located node it arrives at, so a rest before that
+    // node on the leg has it driven after the rest, in both directions.
+    dutyBefore_.resize(size);
+    dutyBefore_[0] = nodeDuty(0, vehicleType_);
+    for (size_t idx = 1; idx != size; ++idx)
+    {
+        auto const edge = data.isBreak(visits[idx])
+                              ? Duration(0)
+                              : durations(locAt<true>(idx - 1), visits[idx]);
+        dutyBefore_[idx] = DutySegment::merge(
+            edge, dutyBefore_[idx - 1], nodeDuty(idx, vehicleType_), limits);
+    }
+
+    dutyAfter_.resize(size);
+    dutyAfter_[size - 1] = nodeDuty(size - 1, vehicleType_);
+    for (size_t idx = size - 1; idx-- != 0;)
+    {
+        auto const edge
+            = data.isBreak(visits[idx])
+                  ? Duration(0)
+                  : durations(visits[idx], visits[realAt<true>(idx + 1)]);
+        dutyAfter_[idx] = DutySegment::merge(
+            edge, nodeDuty(idx, vehicleType_), dutyAfter_[idx + 1], limits);
+    }
 }
 
 Route::DurationSummary Route::summariseWithBreaks(DurationSegment ds,
@@ -833,6 +937,7 @@ void Route::update()
     }
 
     updateClocks();
+    updateDuty();
 
     // Load. A dimension nothing loads holds only empty segments, so its load
     // and excess stay at the zero they start at, and nothing reads its
@@ -898,8 +1003,18 @@ void Route::update()
     totalClockExcess_ = clocks.overrun(limits);
     virtualBreaks_ = vehicleType_.hasBreakRule() ? clocks.missing(limits) : 0;
 
+    // Duty overrun likewise, as the rests that would fix it. An empty route
+    // is not driven, so its carries join no period, as in Proposal::dutyCost()
+    // and ex_vrp::Route::foldDuty().
+    auto const duty = hasRestRule_ && !empty()
+                          ? dutyAfter_[0].cost(vehicleType_.dutyLimits())
+                          : DutyCost{};
+    totalDutyExcess_ = duty.excess;
+    virtualRests_ = duty.missing;
+
     auto const extra
-        = static_cast<Duration>(virtualBreaks_) * vehicleType_.breakDuration;
+        = static_cast<Duration>(virtualBreaks_) * vehicleType_.breakDuration
+          + static_cast<Duration>(virtualRests_) * vehicleType_.restDuration;
     auto const summary = summarise(
         durAfter[0], maxDuration(), extra, durAt.back().startLate());
 

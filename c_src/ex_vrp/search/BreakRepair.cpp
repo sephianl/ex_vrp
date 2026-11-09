@@ -13,11 +13,16 @@ BreakRepair::BreakRepair(ProblemData const &data) : data(data)
 {
     for (size_t client = data.numDepots(); client != data.numLocations();
          ++client)
-        if (data.isBreak(client) && !data.isRest(client))
+        if (data.isRest(client))
+            rests_.push_back(client);
+        else if (data.isBreak(client))
             breaks_.push_back(client);
 }
 
-bool BreakRepair::hasBreaks() const { return !breaks_.empty(); }
+bool BreakRepair::hasBreaks() const
+{
+    return !breaks_.empty() || !rests_.empty();
+}
 
 void BreakRepair::addCandidates(Route const &route)
 {
@@ -37,18 +42,21 @@ void BreakRepair::addCandidates(Route const &route)
     auto work = route.clockAt<ClockQuantity::Work>(0);
     size_t from = 0;    // the real node the current leg leaves
     size_t breaks = 0;  // breaks on the current leg
+    bool rest = false;  // whether one of them is a rest
     for (size_t idx = 1; idx != route.size(); ++idx)
     {
         if (data.isBreak(route[idx]->client()))
         {
             ++breaks;
+            rest = rest || data.isRest(route[idx]->client());
             continue;
         }
 
         auto const edge = durations(route.location(from), route.location(idx));
         auto const ownDrive = route.clockAt<ClockQuantity::Drive>(idx);
         auto const ownWork = route.clockAt<ClockQuantity::Work>(idx);
-        auto const leg = BreakPlacement::along(drive, work, edge, limits);
+        auto const leg
+            = BreakPlacement::along(drive, work, edge, limits).withRest(rest);
         auto const left = [&, continued = drive](size_t onLeg)
         { return DriveClock::acrossBreaks(continued, edge, onLeg, leg).after; };
 
@@ -103,6 +111,7 @@ void BreakRepair::addCandidates(Route const &route)
 
         from = idx;
         breaks = 0;
+        rest = false;
     }
 }
 
@@ -171,6 +180,68 @@ bool BreakRepair::insertBreak(Route &route,
     return true;
 }
 
+Route::Node *BreakRepair::freeRest(Solution &solution) const
+{
+    for (auto const client : rests_)
+        if (!solution.nodes[client].route())
+            return &solution.nodes[client];
+
+    return nullptr;
+}
+
+bool BreakRepair::insertRest(Route &route,
+                             Solution &solution,
+                             CostEvaluator const &costEvaluator)
+{
+    auto *rest = freeRest(solution);
+    if (!rest)
+        return false;
+
+    // A rest is taken where the vehicle is, so it goes right after a located
+    // node; the travel on its leg is driven after it. Every such leg of the
+    // route is tried: routes with rests are few, and their duty prefixes make
+    // each proposal cheap.
+    // The rest that lowers the overrun most wins, the cheapest among equals:
+    // it ends a period where the period runs out, so the next one starts
+    // fresh. The cheapest alone favours a rest early in a long period, which
+    // leaves the rest of it to need another, and a route ends up resting
+    // after nearly every visit.
+    auto const overrun = route.totalDutyExcess();
+    auto bestExcess = overrun;
+    auto bestCost = std::numeric_limits<Cost>::max();
+    size_t best = 0;  // 0: no leg lowers the overrun
+    for (size_t from = 0; from + 1 < route.size(); ++from)
+    {
+        if (data.isBreak(route[from]->client()))
+            continue;
+
+        Route::Proposal const proposal(route.before(from),
+                                       BreakSegment(data, rest->client()),
+                                       route.after(from + 1));
+
+        auto const excess = proposal.dutyCost().excess;
+        if (excess >= overrun || excess > bestExcess)
+            continue;
+
+        Cost deltaCost = 0;
+        costEvaluator.deltaCost<true>(deltaCost, proposal);
+
+        if (excess < bestExcess || deltaCost < bestCost)
+        {
+            bestExcess = excess;
+            bestCost = deltaCost;
+            best = from + 1;
+        }
+    }
+
+    if (best == 0)
+        return false;
+
+    route.insert(best, rest);
+    route.update();
+    return true;
+}
+
 bool BreakRepair::stripBreaks(Route &route) const
 {
     bool changed = false;
@@ -195,17 +266,20 @@ bool BreakRepair::removeRedundant(Route &route,
     bool changed = false;
 
     // Backwards, so a removal leaves the indices still to visit in place.
+    auto const placesRests = route.vehicleTypeData().hasRestRule();
     for (size_t idx = route.size() - 1; idx-- > 1;)
     {
         auto const client = route[idx]->client();
-        if (!data.isBreak(client) || data.isRest(client))
+        if (!data.isBreak(client) || (data.isRest(client) && !placesRests))
             continue;
 
         Route::Proposal const proposal(route.before(idx - 1),
                                        route.after(idx + 1));
 
-        auto const after = proposal.clockOverrun();
-        if (after > route.totalClockExcess())
+        auto const raisesOverrun
+            = proposal.clockOverrun() > route.totalClockExcess()
+              || proposal.dutyCost().excess > route.totalDutyExcess();
+        if (raisesOverrun)
             continue;
 
         Cost deltaCost = 0;
@@ -238,13 +312,48 @@ bool BreakRepair::apply(Route &route,
     if (!route.vehicleTypeData().hasBreakRule() || route.empty())
         return stripBreaks(route);
 
+    // Rests go first: they reset the clocks. A break is duty, though, so one
+    // placed after the rests can push a period past its limit, and the passes
+    // repeat until neither places anything. Each insert lowers the true
+    // overrun and takes a rest or break from the finite pool, and nothing is
+    // removed in between, so this terminates.
     bool changed = false;
+    for (;;)
+    {
+        auto const placedRests = placeRests(route, solution, costEvaluator);
+        auto const placedBreaks = placeBreaks(route, solution, costEvaluator);
+        if (!placedRests && !placedBreaks)
+            break;
 
-    // Each insert lowers the true overrun and takes a break from the finite
-    // pool, so this terminates.
-    while (route.totalClockExcess() > 0
-           && insertBreak(route, solution, costEvaluator))
         changed = true;
+    }
 
     return removeRedundant(route, costEvaluator) || changed;
+}
+
+bool BreakRepair::placeRests(Route &route,
+                             Solution &solution,
+                             CostEvaluator const &costEvaluator)
+{
+    if (!route.vehicleTypeData().hasRestRule())
+        return false;
+
+    bool placed = false;
+    while (route.totalDutyExcess() > 0
+           && insertRest(route, solution, costEvaluator))
+        placed = true;
+
+    return placed;
+}
+
+bool BreakRepair::placeBreaks(Route &route,
+                              Solution &solution,
+                              CostEvaluator const &costEvaluator)
+{
+    bool placed = false;
+    while (route.totalClockExcess() > 0
+           && insertBreak(route, solution, costEvaluator))
+        placed = true;
+
+    return placed;
 }

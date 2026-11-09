@@ -35,10 +35,14 @@ namespace ex_vrp::search
  * Materialising only while overrun is positive, and releasing only what adds
  * none, cannot undo one another.
  *
- * Rest clients are break clients, so they close the stretches this pass
- * reads, but they are not in its pool: it never inserts one, and releases
- * one only with every break on a route without clients or a break rule,
- * since it could not put one back.
+ * Rests are placed the same way, first, since a rest resets the clocks the
+ * breaks answer to: while the route's true duty overrun (Route::
+ * totalDutyExcess()) is positive, try a free rest after every located node
+ * and apply the cheapest that lowers it, whatever its delta. A rest is
+ * released when its removal raises neither overrun nor the cost. On a route
+ * without a rest rule a rest is left where it was put (a warm start), since
+ * this pass could not put it back, unless the route has no clients or no
+ * break rule, when every break goes.
  */
 class BreakRepair
 {
@@ -55,6 +59,7 @@ class BreakRepair
 
     ProblemData const &data;
     std::vector<size_t> breaks_;             // every break but the rests
+    std::vector<size_t> rests_;              // the rests
     std::vector<Candidate> candidates_;      // scratch, per insert
     std::vector<Route::Node *> freeBreaks_;  // scratch, per insert
 
@@ -65,6 +70,23 @@ class BreakRepair
     void collectFreeBreaks(Solution &solution, size_t count);
 
     bool insertBreak(Route &route,
+                     Solution &solution,
+                     CostEvaluator const &costEvaluator);
+
+    // A rest not on any route, or nullptr when every one is placed.
+    Route::Node *freeRest(Solution &solution) const;
+
+    bool insertRest(Route &route,
+                    Solution &solution,
+                    CostEvaluator const &costEvaluator);
+
+    // Insert rests, then breaks, while each lowers its true overrun. Return
+    // whether they placed any.
+    bool placeRests(Route &route,
+                    Solution &solution,
+                    CostEvaluator const &costEvaluator);
+
+    bool placeBreaks(Route &route,
                      Solution &solution,
                      CostEvaluator const &costEvaluator);
 
