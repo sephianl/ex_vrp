@@ -33,6 +33,7 @@ defmodule ExVrp.VehicleType do
   | `:max_distance`          | the whole route | distance, summed over every trip       |
   | `:max_distance_per_trip` | one trip        | distance, reset at every reload        |
   | `:max_drive`             | the whole route | travel only, no service or waiting     |
+  | `:extended_drive`        | the whole route | travel past its start is priced        |
   | `:max_drive_between_breaks` | between breaks | travel only, reset at every break   |
   | `:max_work_between_breaks`  | between breaks | travel and service, reset likewise  |
   | `:shift_duration`        | the whole route | elapsed time, idle included            |
@@ -121,6 +122,25 @@ defmodule ExVrp.VehicleType do
       ExVrp.Route.drive_excess(route)
       ExVrp.Solution.drive_excess(solution)
 
+  ### Priced driving below the cap
+
+  An `ExVrp.ExtendedDrive` as `:extended_drive` marks a travel duration past
+  which driving is allowed but costs: every unit of travel beyond its
+  `:start` adds its `:unit_cost` to the route's `ExVrp.Route.duration_cost/1`.
+  `:max_drive` stays the hard cap above it. This models a limit the law lets
+  a driver exceed now and then, such as a 9-hour driving day that may run to
+  10 hours twice a week: the solver uses the extra hour only where it is
+  worth its price.
+
+      iex> vt = ExVrp.VehicleType.new(num_available: 1, capacity: [10],
+      ...>   max_drive: 600, extended_drive: ExVrp.ExtendedDrive.new(start: 540, unit_cost: 20))
+      iex> {vt.extended_drive.start, vt.max_drive}
+      {540, 600}
+
+  A route that drives 570 pays `30 * 20` on top of its duration cost and stays
+  feasible; one that drives 610 also pays for the 60 past the start and is
+  infeasible by 10.
+
   ## Breaks
 
   `:max_drive_between_breaks` and `:max_work_between_breaks` cap what a
@@ -182,6 +202,7 @@ defmodule ExVrp.VehicleType do
   """
 
   alias ExVrp.DutyRule
+  alias ExVrp.ExtendedDrive
 
   @type t :: %__MODULE__{
           num_available: pos_integer(),
@@ -195,6 +216,7 @@ defmodule ExVrp.VehicleType do
           max_distance: non_neg_integer() | :infinity,
           max_distance_per_trip: non_neg_integer() | :infinity,
           max_drive: non_neg_integer() | :infinity,
+          extended_drive: ExtendedDrive.t() | nil,
           max_drive_between_breaks: pos_integer() | :infinity,
           break_duration: non_neg_integer(),
           max_work_between_breaks: pos_integer() | :infinity,
@@ -229,6 +251,7 @@ defmodule ExVrp.VehicleType do
     max_distance: :infinity,
     max_distance_per_trip: :infinity,
     max_drive: :infinity,
+    extended_drive: nil,
     max_drive_between_breaks: :infinity,
     break_duration: 0,
     max_work_between_breaks: :infinity,
@@ -290,6 +313,9 @@ defmodule ExVrp.VehicleType do
     (default: `:infinity`). Service, waiting and reload time do not count.
     Excess counts as time warp and is reported by `ExVrp.Route.drive_excess/1`
     — see "Driving time" above
+  - `:extended_drive` - An `ExVrp.ExtendedDrive`: travel of the whole route
+    past its `:start` costs its `:unit_cost` per unit (default: `nil`,
+    nothing priced) — see "Priced driving below the cap" above
   - `:max_drive_between_breaks` - Maximum travel between two breaks (default:
     `:infinity`) — see "Breaks" above
   - `:max_work_between_breaks` - Maximum work, travel plus client and reload

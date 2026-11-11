@@ -2748,7 +2748,8 @@ std::pair<Cost, Duration> Route::Proposal<Segments...>::foldDuration() const
             = summarise(ds, maxDuration, extra, latestEnd);
         auto const overtime = vehType.overtime(endTime, duration);
         auto const cost = unitDurationCost * static_cast<Cost>(duration)
-                          + unitOvertimeCost * static_cast<Cost>(overtime);
+                          + unitOvertimeCost * static_cast<Cost>(overtime)
+                          + vehType.extendedDriveCost(ds.drive());
         // Drive excess is penalty-only, so it joins the time warp only after
         // endTime and overtime are derived above.
         return std::make_pair(cost, timeWarp + ds.driveExcess(maxDrive));

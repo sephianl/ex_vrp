@@ -222,7 +222,8 @@ defmodule ExVrp.Route do
 
   @doc """
   Returns `duration/1` priced at the vehicle type's `:unit_duration_cost`, plus
-  `overtime/1` priced at its `:unit_overtime_cost`.
+  `overtime/1` priced at its `:unit_overtime_cost`, plus the travel past its
+  `:extended_drive` start priced at that `ExVrp.ExtendedDrive`'s `:unit_cost`.
   """
   @spec duration_cost(t()) :: non_neg_integer()
   def duration_cost(%__MODULE__{solution_ref: ref, route_idx: idx}) do

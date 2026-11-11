@@ -635,6 +635,13 @@ public:
      *     join the route's first duty period.
      * duty_after_end
      *     Duty after the route ends, joining its last duty period.
+     * extended_drive_start
+     *     Travel duration past which driving is priced: every unit of the
+     *     route's travel beyond it costs ``unit_extended_drive_cost``.
+     *     ``max_drive`` stays the hard cap. Unset (the maximum representable
+     *     duration) prices nothing.
+     * unit_extended_drive_cost
+     *     Cost per unit of travel past ``extended_drive_start``. Default 0.
      * unit_distance_cost
      *     Cost per unit of distance travelled by vehicles of this type.
      * unit_duration_cost
@@ -698,8 +705,10 @@ public:
         Duration const maxDutyPeriod;  // Maximum elapsed time between rests
         Duration const maxDutyDrive;   // Maximum travel between rests
         Duration const dutyCarryIn;    // Duty since the last rest, at start
-        Duration const dutyDriveCarryIn;  // Driving since the last rest
-        Duration const dutyAfterEnd;      // Duty after the route ends
+        Duration const dutyDriveCarryIn;    // Driving since the last rest
+        Duration const dutyAfterEnd;        // Duty after the route ends
+        Duration const extendedDriveStart;  // Travel past which driving costs
+        Cost const unitExtendedDriveCost;   // Cost per unit of that travel
         std::vector<std::pair<Duration, Duration>> const
             forbiddenWindows;  // Forbidden time windows
         char const *name;      // Type name (for reference)
@@ -741,7 +750,28 @@ public:
             Duration maxDutyDrive = std::numeric_limits<Duration>::max(),
             Duration dutyCarryIn = 0,
             Duration dutyDriveCarryIn = 0,
-            Duration dutyAfterEnd = 0);
+            Duration dutyAfterEnd = 0,
+            Duration extendedDriveStart = std::numeric_limits<Duration>::max(),
+            Cost unitExtendedDriveCost = 0);
+
+        // Whether travel past extendedDriveStart is priced at all.
+        [[nodiscard]] bool pricesExtendedDrive() const
+        {
+            return unitExtendedDriveCost != 0
+                   && extendedDriveStart
+                          != std::numeric_limits<Duration>::max();
+        }
+
+        // What a route that travels for the given duration pays for the
+        // travel past extendedDriveStart.
+        [[nodiscard]] Cost extendedDriveCost(Duration drive) const
+        {
+            if (!pricesExtendedDrive() || drive <= extendedDriveStart)
+                return 0;
+
+            return unitExtendedDriveCost
+                   * static_cast<Cost>(drive - extendedDriveStart);
+        }
 
         // The limit of the clock over the given quantity; max() when unset.
         [[nodiscard]] Duration breakLimit(ClockQuantity quantity) const

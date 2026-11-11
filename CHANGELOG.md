@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.21.0
+
+### Added
+
+- **Priced driving below the cap.** A vehicle type's `:extended_drive`, an `ExVrp.ExtendedDrive`,
+  marks a travel duration (`start`) past which driving is allowed but costs `unit_cost` per unit,
+  added to the route's `ExVrp.Route.duration_cost/1` like overtime. `:max_drive` stays the hard cap above
+  it. This models a limit the law lets a driver exceed now and then, such as EU 561/2006 art.
+  6(1)'s 9-hour driving day that may run to 10 hours twice a week: the solver drives past the
+  start only where that buys more than it costs, such as an optional client's prize. It defaults
+  to `nil`, and a vehicle type without one evaluates exactly as before. `Model.validate/1` rejects
+  one that is not an `ExVrp.ExtendedDrive` with a non-negative integer start and unit cost.
+
 ## 0.20.0
 
 ### Added

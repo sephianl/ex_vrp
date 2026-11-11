@@ -436,9 +436,15 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     // still its default (0) here, so this is equivalent either way, and
     // computing it before driveExcess_ is folded into timeWarp_ below keeps
     // that invariant obviously true rather than incidental.
+    // Travel past extended_drive_start is priced with the duration, like
+    // overtime; the forbidden-window recompute below keeps it, since waiting
+    // never changes how long the vehicle drove.
+    auto const extendedDriveCost = vehData.extendedDriveCost(ds.drive());
+
     overtime_ = vehData.overtime(endTime(), duration_);
     durationCost_ = vehData.unitDurationCost * static_cast<Cost>(duration_)
-                    + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
+                    + vehData.unitOvertimeCost * static_cast<Cost>(overtime_)
+                    + extendedDriveCost;
 
     driveExcess_ = ds.driveExcess(vehData.maxDrive);
     auto const clocks = foldClocks(data);
@@ -460,7 +466,8 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
         overtime_ = vehData.overtime(schedule_.back().endService, duration_);
         durationCost_
             = vehData.unitDurationCost * static_cast<Cost>(duration_)
-              + vehData.unitOvertimeCost * static_cast<Cost>(overtime_);
+              + vehData.unitOvertimeCost * static_cast<Cost>(overtime_)
+              + extendedDriveCost;
 
         timeWarp_ = 0;
         for (auto const &visit : schedule_)

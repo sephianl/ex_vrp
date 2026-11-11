@@ -622,7 +622,9 @@ ProblemData::VehicleType::VehicleType(
     Duration maxDutyDrive,
     Duration dutyCarryIn,
     Duration dutyDriveCarryIn,
-    Duration dutyAfterEnd)
+    Duration dutyAfterEnd,
+    Duration extendedDriveStart,
+    Cost unitExtendedDriveCost)
     : numAvailable(numAvailable),
       startDepot(startDepot),
       endDepot(endDepot),
@@ -656,6 +658,8 @@ ProblemData::VehicleType::VehicleType(
       dutyCarryIn(dutyCarryIn),
       dutyDriveCarryIn(dutyDriveCarryIn),
       dutyAfterEnd(dutyAfterEnd),
+      extendedDriveStart(extendedDriveStart),
+      unitExtendedDriveCost(unitExtendedDriveCost),
       forbiddenWindows(std::move(forbiddenWindows)),
       name(duplicate(name.data()))
 {
@@ -748,6 +752,12 @@ ProblemData::VehicleType::VehicleType(
     if (overtimeStart < 0)
         throw std::invalid_argument("overtime_start must be >= 0.");
 
+    if (extendedDriveStart < 0)
+        throw std::invalid_argument("extended_drive_start must be >= 0.");
+
+    if (unitExtendedDriveCost < 0)
+        throw std::invalid_argument("unit_extended_drive_cost must be >= 0.");
+
     for (auto const &[fStart, fEnd] : this->forbiddenWindows)
     {
         if (fStart >= fEnd)
@@ -794,6 +804,8 @@ ProblemData::VehicleType::VehicleType(VehicleType const &vehicleType)
       dutyCarryIn(vehicleType.dutyCarryIn),
       dutyDriveCarryIn(vehicleType.dutyDriveCarryIn),
       dutyAfterEnd(vehicleType.dutyAfterEnd),
+      extendedDriveStart(vehicleType.extendedDriveStart),
+      unitExtendedDriveCost(vehicleType.unitExtendedDriveCost),
       forbiddenWindows(vehicleType.forbiddenWindows),
       name(duplicate(vehicleType.name))
 {
@@ -833,6 +845,8 @@ ProblemData::VehicleType::VehicleType(VehicleType &&vehicleType)
       dutyCarryIn(vehicleType.dutyCarryIn),
       dutyDriveCarryIn(vehicleType.dutyDriveCarryIn),
       dutyAfterEnd(vehicleType.dutyAfterEnd),
+      extendedDriveStart(vehicleType.extendedDriveStart),
+      unitExtendedDriveCost(vehicleType.unitExtendedDriveCost),
       forbiddenWindows(std::move(vehicleType.forbiddenWindows)),
       name(vehicleType.name)  // we can steal
 {
@@ -884,6 +898,8 @@ bool ProblemData::VehicleType::operator==(VehicleType const &other) const
         && dutyAfterEnd == other.dutyAfterEnd
         && unitOvertimeCost == other.unitOvertimeCost
         && overtimeStart == other.overtimeStart
+        && extendedDriveStart == other.extendedDriveStart
+        && unitExtendedDriveCost == other.unitExtendedDriveCost
         && forbiddenWindows == other.forbiddenWindows
         && std::strcmp(name, other.name) == 0;
     // clang-format on

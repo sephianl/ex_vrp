@@ -64,6 +64,7 @@ reproduce that cancel.
 | Capacity, multi-dim        | `capacity`, `delivery`/`pickup`                                          | penalty (load)                                         |
 | Time windows, shifts       | client/vehicle `tw_*`, `shift_duration`, overtime fields                 | penalty (time warp)                                    |
 | Time worked cap            | `max_working_duration` — travel + service, not waiting                   | penalty                                                |
+| Priced driving below a cap | `extended_drive` (`ExVrp.ExtendedDrive`) under `max_drive`               | objective, inside the duration cost like overtime      |
 | Distance caps              | `max_distance`, `max_distance_per_trip` (resets at each reload)          | penalty                                                |
 | Driver breaks              | `forbidden_windows` on VehicleType (vehicle idle in window)              | local patch, see its tests                             |
 | Breaks between limits      | `max_drive/work_between_breaks` + `break_duration`, pooled break clients | search: virtual breaks; `BreakRepair` places real ones |
