@@ -45,7 +45,7 @@ in
       go-task
       p7zip # mix bench.lit.fetch unpacks CVRPLib's .7z instance sets
     ]
-    ++ lib.optionals pkgs.stdenv.isLinux [
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
       inotify-tools
       perf # for profiling the solver locally; mix bench.speed counts with Valgrind
     ];
