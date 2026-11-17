@@ -11,8 +11,11 @@ permissions:
   contents: write
 
 jobs:
+  # The image's default g++ (GCC 15 on 26.04) compiles the released NIF, and devenv.nix pins
+  # the same major so local and A/B measurements match what ships. Moving to a newer image
+  # changes the release compiler: bump gcc in devenv.nix with it.
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     env:
       MIX_ENV: prod
     strategy:
@@ -20,19 +23,18 @@ jobs:
         otp: ["27.2"]
         elixir: ["1.18"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: erlef/setup-beam@v1
         with:
           otp-version: ${{ matrix.otp }}
           elixir-version: ${{ matrix.elixir }}
-      - run: sudo apt-get update && sudo apt-get install -y build-essential g++
       - run: mix deps.get
       - name: Precompile
         run: |
           export ELIXIR_MAKE_CACHE_DIR=$(pwd)/cache
           mkdir -p "$ELIXIR_MAKE_CACHE_DIR"
           mix elixir_make.precompile
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-otp${{ matrix.otp }}
           path: cache/*.tar.gz
@@ -46,7 +48,7 @@ jobs:
         otp: ["27.2"]
         elixir: ["1.18"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: erlef/setup-beam@v1
         with:
           otp-version: ${{ matrix.otp }}
@@ -57,26 +59,26 @@ jobs:
           export ELIXIR_MAKE_CACHE_DIR=$(pwd)/cache
           mkdir -p "$ELIXIR_MAKE_CACHE_DIR"
           mix elixir_make.precompile
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-arm-otp${{ matrix.otp }}
           path: cache/*.tar.gz
 
   release:
     needs: [linux, macos-arm]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Get version
         id: version
         run: |
           version=$(grep '@version "' mix.exs | sed 's/.*"\(.*\)".*/\1/')
           echo "version=v${version}" >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.version }}
           files: artifacts/*.tar.gz

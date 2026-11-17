@@ -6,47 +6,43 @@ on:
   pull_request:
     branches: [main]
 
+# Three jobs run in parallel, each on its own runner: `lint` (formatting, static analysis,
+# mix check, reach), `test` (unit tests, production benchmarks, quality smoke) and `asan`
+# (the suite under AddressSanitizer). Run back to back they took over a quarter of an hour.
+#
+# Every run step executes inside the devenv shell. devenv 2 runs all git hooks
+# (a full `mix check`, ~2.5 min) on each shell entry and ignores DEVENV_NO_GIT_HOOKS;
+# their failures don't fail the step, so they only cost time and print noise.
+defaults:
+  run:
+    shell: devenv -O git-hooks.enable:bool false shell bash -e {0}
+
+env:
+  # Build the NIF from this ref's source. Without it, cc_precompiler may serve the
+  # released binary (keyed on package version, not git ref), so tests + the quality
+  # smoke would run against released code instead of the code under review.
+  EX_VRP_FORCE_BUILD: "1"
+  # Fail the build on any C++ compiler warning. CI only: consumers build with other
+  # compilers, whose new warnings must not break their builds.
+  EXTRA_CXXFLAGS: "-Werror"
+  # One Mix environment for every job, so they all share one deps/_build cache.
+  MIX_ENV: test
+
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    # Every run step executes inside the devenv shell. devenv 2 runs all git hooks
-    # (a full `mix check`, ~2.5 min) on each shell entry and ignores DEVENV_NO_GIT_HOOKS;
-    # their failures don't fail the step, so they only cost time and print noise.
-    defaults:
-      run:
-        shell: devenv -O git-hooks.enable:bool false shell bash -e {0}
-    env:
-      # Build the NIF from this ref's source. Without it, cc_precompiler may serve the
-      # released binary (keyed on package version, not git ref), so tests + the quality
-      # smoke would run against released code instead of the code under review.
-      EX_VRP_FORCE_BUILD: "1"
-      # Fail the build on any C++ compiler warning. CI only: consumers build with other
-      # compilers, whose new warnings must not break their builds.
-      EXTRA_CXXFLAGS: "-Werror"
-      # One Mix environment for the whole job, so the deps and the NIF compile once.
-      # Under the default dev, `mix test` compiled everything a second time for test.
-      MIX_ENV: test
+  # The only job that saves the Mix cache: its _build is a superset of the others', as it
+  # alone holds the dialyzer PLT that `mix check` builds.
+  lint:
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Magic Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@v8
-
-      - name: Install devenv
-        shell: bash
-        run: |
-          nix profile install --accept-flake-config github:cachix/devenv/latest
+      - uses: ./.github/actions/setup-devenv
 
       - name: Cache Mix dependencies
-        uses: actions/cache@v4
-        with:
+        uses: actions/cache@v6
+        with: &mix-cache
           path: |
             deps
             _build
@@ -83,6 +79,37 @@ jobs:
         run: |
           task cpp:check
 
+      # ex_unit runs in the test job; mix check would run the suite again.
+      - name: Run full checks
+        if: github.event_name == 'pull_request'
+        run: |
+          mix check --except ex_unit
+
+      - name: Reach change-safety analysis
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          mix reach.check --changed --base origin/main
+
+  test:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-devenv
+
+      - name: Restore Mix dependencies
+        uses: actions/cache/restore@v6
+        with: *mix-cache
+
+      - name: Get dependencies
+        run: |
+          mix deps.get
+
+      - name: Compile
+        run: |
+          mix compile
+
       - name: Run tests
         run: |
           mix test
@@ -97,20 +124,21 @@ jobs:
         run: |
           mix bench.smoke
 
-      # ex_unit already ran in "Run tests"; mix check would run the suite again.
-      - name: Run full checks
-        if: github.event_name == 'pull_request'
-        run: |
-          mix check --except ex_unit
+  asan:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
 
-      - name: Reach change-safety analysis
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch --no-tags origin main:refs/remotes/origin/main
-          mix reach.check --changed --base origin/main
+      - uses: ./.github/actions/setup-devenv
 
-      # Last: it rebuilds the NIF with sanitizers and deletes it afterwards, so any Mix
-      # step after it would compile the NIF once more.
+      - name: Restore Mix dependencies
+        uses: actions/cache/restore@v6
+        with: *mix-cache
+
+      - name: Get dependencies
+        run: |
+          mix deps.get
+
       - name: Run AddressSanitizer tests
         run: |
           task test:asan

@@ -1,0 +1,19 @@
+name: Set up devenv
+description: >
+  Installs Nix and the devenv CLI, so run steps can execute inside `devenv shell`.
+  Store paths come straight from cache.nixos.org. Magic Nix Cache used to sit in front of
+  it, but it saved every path as its own Actions cache entry scoped to the PR (over a
+  thousand per run, unusable by any other PR) and spent minutes uploading them at the
+  end of each job.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31
+      with:
+        github_access_token: ${{ github.token }}
+
+    - name: Install devenv
+      shell: bash
+      run: nix profile install --accept-flake-config github:cachix/devenv/latest
