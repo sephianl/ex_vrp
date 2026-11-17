@@ -731,6 +731,8 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     int64_t duty_carry_in = 0;
     int64_t duty_drive_carry_in = 0;
     int64_t duty_after_end = 0;
+    int64_t extended_drive_start = std::numeric_limits<int64_t>::max();
+    int64_t unit_extended_drive_cost = 0;
     int64_t unit_distance_cost = 1;
     int64_t unit_duration_cost = 0;
     int64_t profile = 0;
@@ -984,6 +986,20 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
             {
                 nif_get_int64(env, value, &unit_overtime_cost);
             }
+            else if (key_str == "extended_drive" && enif_is_map(env, value))
+            {
+                // An ExVrp.ExtendedDrive; nil prices no driving.
+                ERL_NIF_TERM fieldValue;
+                if (enif_get_map_value(
+                        env, value, enif_make_atom(env, "start"), &fieldValue))
+                    nif_get_int64(env, fieldValue, &extended_drive_start);
+
+                if (enif_get_map_value(env,
+                                       value,
+                                       enif_make_atom(env, "unit_cost"),
+                                       &fieldValue))
+                    nif_get_int64(env, fieldValue, &unit_extended_drive_cost);
+            }
             else if (key_str == "reload_depots")
             {
                 unsigned len;
@@ -1130,7 +1146,9 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
         Duration(max_duty_drive),
         Duration(duty_carry_in),
         Duration(duty_drive_carry_in),
-        Duration(duty_after_end));
+        Duration(duty_after_end),
+        Duration(extended_drive_start),
+        Cost(unit_extended_drive_cost));
 }
 
 static_assert(std::endian::native == std::endian::little,

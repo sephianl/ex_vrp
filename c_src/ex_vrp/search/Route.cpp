@@ -260,6 +260,7 @@ bool Route::durationCostApplies(ProblemData const &data,
     return data.hasTimeWindows()
         || vehicleType.unitDurationCost != 0
         || hasOvertimeCost
+        || vehicleType.pricesExtendedDrive()
         || vehicleType.maxDuration != unbounded
         || vehicleType.maxDrive != unbounded
         || vehicleType.hasBreakRule();
@@ -1195,13 +1196,20 @@ void Route::update()
     timeWarp_ += driveExcess;
     driveExcess_ = driveExcess;
 
+    // Waiting never changes how long the vehicle drove, so the DS-only and
+    // the corrected duration cost price the same extended drive.
+    auto const extendedDriveCost
+        = vehicleType_.extendedDriveCost(durAfter[0].drive());
+
     overtime_ = vehicleType_.overtime(endTime, duration_);
     durationCost_ = unitDurationCost() * static_cast<Cost>(duration_)
-                    + unitOvertimeCost() * static_cast<Cost>(overtime_);
+                    + unitOvertimeCost() * static_cast<Cost>(overtime_)
+                    + extendedDriveCost;
 
     auto const overtimeDS = vehicleType_.overtime(summary.endTime, durationDS);
     durationCostDS_ = unitDurationCost() * static_cast<Cost>(durationDS)
-                      + unitOvertimeCost() * static_cast<Cost>(overtimeDS);
+                      + unitOvertimeCost() * static_cast<Cost>(overtimeDS)
+                      + extendedDriveCost;
 
     deltaBaseCost_ = distanceCost_ + penaltyCost_ + durationCostDS_;
     hasDeltaExcess_ = excessDistance_ != 0 || timeWarpDS_ != 0
