@@ -138,8 +138,10 @@ defmodule ExVrp.VehicleType do
       {540, 600}
 
   A route that drives 570 pays `30 * 20` on top of its duration cost and stays
-  feasible; one that drives 610 also pays for the 60 past the start and is
-  infeasible by 10.
+  feasible; one that drives 610 pays for all 70 past the start, the 10 over
+  `:max_drive` included, and is infeasible by 10. A start at or above
+  `:max_drive` could only price infeasible routes, so `ExVrp.Model.validate/1`
+  rejects it.
 
   ## Breaks
 

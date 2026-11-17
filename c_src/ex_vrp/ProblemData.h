@@ -763,14 +763,15 @@ public:
         }
 
         // What a route that travels for the given duration pays for the
-        // travel past extendedDriveStart.
+        // travel past extendedDriveStart. An unset start is never exceeded
+        // and a zero price multiplies to zero, so this hot path needs no
+        // pricesExtendedDrive() check.
         [[nodiscard]] Cost extendedDriveCost(Duration drive) const
         {
-            if (!pricesExtendedDrive() || drive <= extendedDriveStart)
-                return 0;
-
-            return unitExtendedDriveCost
-                   * static_cast<Cost>(drive - extendedDriveStart);
+            return drive > extendedDriveStart
+                       ? unitExtendedDriveCost
+                             * static_cast<Cost>(drive - extendedDriveStart)
+                       : 0;
         }
 
         // The limit of the clock over the given quantity; max() when unset.

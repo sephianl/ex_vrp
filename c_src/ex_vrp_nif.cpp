@@ -992,8 +992,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
                 ERL_NIF_TERM fieldValue;
                 if (enif_get_map_value(
                         env, value, enif_make_atom(env, "start"), &fieldValue))
-                    nif_get_int64_or_infinity(
-                        env, fieldValue, &extended_drive_start);
+                    nif_get_int64(env, fieldValue, &extended_drive_start);
 
                 if (enif_get_map_value(env,
                                        value,

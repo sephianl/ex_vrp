@@ -431,16 +431,16 @@ Route::Route(ProblemData const &data, Trips trips, size_t vehType)
     slack_ = ds.slack();
     timeWarp_ = ds.timeWarp(vehData.maxDuration);
 
-    // overtime_ reads timeWarp_ through endTime(), which subtracts
-    // timelineTimeWarp() rather than timeWarp_ directly; driveExcess_ is
-    // still its default (0) here, so this is equivalent either way, and
-    // computing it before driveExcess_ is folded into timeWarp_ below keeps
-    // that invariant obviously true rather than incidental.
     // Travel past extended_drive_start is priced with the duration, like
     // overtime; the forbidden-window recompute below keeps it, since waiting
     // never changes how long the vehicle drove.
     auto const extendedDriveCost = vehData.extendedDriveCost(ds.drive());
 
+    // overtime_ reads timeWarp_ through endTime(), which subtracts
+    // timelineTimeWarp() rather than timeWarp_ directly; driveExcess_ is
+    // still its default (0) here, so this is equivalent either way, and
+    // computing it before driveExcess_ is folded into timeWarp_ below keeps
+    // that invariant obviously true rather than incidental.
     overtime_ = vehData.overtime(endTime(), duration_);
     durationCost_ = vehData.unitDurationCost * static_cast<Cost>(duration_)
                     + vehData.unitOvertimeCost * static_cast<Cost>(overtime_)

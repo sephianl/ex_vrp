@@ -9,9 +9,13 @@
   added to the route's `ExVrp.Route.duration_cost/1` like overtime. `:max_drive` stays the hard cap above
   it. This models a limit the law lets a driver exceed now and then, such as EU 561/2006 art.
   6(1)'s 9-hour driving day that may run to 10 hours twice a week: the solver drives past the
-  start only where that buys more than it costs, such as an optional client's prize. It defaults
-  to `nil`, and a vehicle type without one evaluates exactly as before. `Model.validate/1` rejects
-  one that is not an `ExVrp.ExtendedDrive` with a non-negative integer start and unit cost.
+  start only where that buys more than it costs, such as an optional client's prize. The one
+  exception is the last-resort pass that adds trips to multi-trip vehicles: it prices a trip by
+  prize and distance alone, on purpose, so it may still place such a client. Travel past
+  `:max_drive` is priced too, on top of its time-warp penalty. It defaults to `nil`, and a vehicle
+  type without one evaluates exactly as before. `Model.validate/1` rejects one that is not an
+  `ExVrp.ExtendedDrive` with a non-negative integer start and unit cost, or whose start is not
+  below a finite `:max_drive`.
 
 ## 0.20.0
 
