@@ -48,9 +48,10 @@ mix bench.lit.report run.jsonl --html report.html
 
 Requires C++20 compiler (gcc 11+ or clang 14+).
 
-> **Compiler matters for speed:** the Linux release NIF is built with ubuntu-latest's GCC 13, and
+> **Compiler matters for speed:** the Linux release NIF is built with ubuntu-26.04's GCC 15, and
 > GCC 13, GCC 15 and Clang inline the search differently enough to move it by 5–10%. devenv pins
-> GCC 13 (`devenv.nix`) so local builds and the CI A/B measure what ships. Measure solver speed as
+> GCC 15 (`devenv.nix`) so local builds and the CI A/B measure what ships; the workflows pin the
+> runner image rather than use `ubuntu-latest`, so an image change can't swap the compiler silently. Measure solver speed as
 > instructions at a fixed iteration count (`mix bench.speed`), not wall-clock on a busy machine. Keep the
 > break-free path free of break work: break-only code goes in `[[gnu::noinline]]` helpers, and the
 > small hot accessors are `[[gnu::always_inline]]`, so no compiler's size heuristics evict them.

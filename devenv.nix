@@ -13,7 +13,7 @@ in
   process.managers.process-compose.tui.enable = false;
   cachix.enable = false;
 
-  # The Linux release NIF is built with ubuntu-latest's g++, GCC 13
+  # The Linux release NIF is built with ubuntu-26.04's g++, GCC 15
   # (.github/workflows/precompile.yml). Compilers, and GCC versions, inline the
   # search differently enough to move its speed by several percent, so local runs
   # and the CI A/B build with the same; the Makefile still switches to clang++ for
@@ -34,7 +34,7 @@ in
     with pkgs;
     [
       gnumake
-      gcc13 # the major version ubuntu-latest builds the release NIF with
+      gcc15 # the major version ubuntu-26.04 builds the release NIF with
       # C++ linting, formatting, and sanitizer support
       clang
       clang-tools # provides clang-format, clang-tidy

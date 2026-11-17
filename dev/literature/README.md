@@ -16,7 +16,7 @@ Step by step, for a person or an agent. Every step says what to expect; if a ste
 give that, stop and report it instead of working around it.
 
 **1. Set up the checkout.** In the repo root, enter the dev shell (`devenv shell`, or let
-direnv load it). It provides Elixir, GCC 13 and `7z`. Then:
+direnv load it). It provides Elixir, GCC 15 and `7z`. Then:
 
 ```bash
 mix deps.get && mix compile

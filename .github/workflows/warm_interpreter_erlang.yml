@@ -17,19 +17,19 @@ on:
 
 jobs:
   warm:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v27
+        uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Restore the interpreter-only Erlang
         id: interpreter-erlang
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ~/interpreter-erlang-cache
           key: interpreter-erlang-${{ runner.os }}-${{ hashFiles('dev/ab_benchmark/interpreter_erlang.nix', 'devenv.lock') }}
@@ -40,7 +40,7 @@ jobs:
 
       - name: Save the interpreter-only Erlang
         if: steps.interpreter-erlang.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ~/interpreter-erlang-cache
           key: ${{ steps.interpreter-erlang.outputs.cache-primary-key }}

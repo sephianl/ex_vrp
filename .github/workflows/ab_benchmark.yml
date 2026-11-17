@@ -15,7 +15,7 @@ on:
 jobs:
   quality:
     if: contains(github.event.pull_request.labels.*.name, 'benchmark') && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 150
     # Every run step executes inside the devenv shell. devenv 2 runs all git hooks
     # (a full `mix check`, ~2.5 min) on each shell entry and ignores DEVENV_NO_GIT_HOOKS;
@@ -29,26 +29,15 @@ jobs:
       # get the identical prebuilt solver and every A/B comparison would falsely show "no change".
       EX_VRP_FORCE_BUILD: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Magic Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@v8
-
-      - name: Install devenv
-        shell: bash
-        run: |
-          nix profile install --accept-flake-config github:cachix/devenv/latest
+      - uses: ./.github/actions/setup-devenv
 
       - name: Cache Mix dependencies
-        uses: actions/cache@v4
-        with:
+        uses: actions/cache@v6
+        with: &mix-cache
           path: |
             deps
             _build
@@ -59,7 +48,7 @@ jobs:
       # HEAD run: solver code (lib/ + c_src/) is at the PR head commit.
       # The benchmark harness (dev/, priv/benchmark_data/, mix tasks) is also at head.
       # --budget-cap keeps total runtime bounded; tune this value to fit the runner's time budget.
-      # Four seeds because ubuntu-latest has four cores: seeds solve concurrently, so this is the
+      # Four seeds because ubuntu-26.04 has four cores: seeds solve concurrently, so this is the
       # most samples obtainable at no extra wall-clock, and a fifth would queue behind the others
       # and then solve on an idle machine, which biases its result. See Runner's moduledoc.
       - name: Build + run HEAD
@@ -92,14 +81,14 @@ jobs:
           mix bench.run --out /tmp/results-base.json --ref base --seeds 1,2,3,4 --budget-cap 60
 
       - name: Upload quality results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: quality-results
           path: /tmp/results-*.json
 
   speed:
     if: contains(github.event.pull_request.labels.*.name, 'benchmark') && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 150
     defaults:
       run:
@@ -107,40 +96,24 @@ jobs:
     env:
       EX_VRP_FORCE_BUILD: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Magic Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@v8
-
-      - name: Install devenv
-        shell: bash
-        run: |
-          nix profile install --accept-flake-config github:cachix/devenv/latest
+      - uses: ./.github/actions/setup-devenv
 
       - name: Cache Mix dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            deps
-            _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-mix-
+        uses: actions/cache@v6
+        with: *mix-cache
 
       # Built from source it takes about twelve minutes, so it is kept as a Nix binary cache in
       # the Actions cache, keyed on what it is built from. `warm_interpreter_erlang.yml` saves
       # it from main, which every PR can restore; a PR that changes the key builds and saves
-      # its own.
+      # its own. GitHub evicts a cache nobody restores for seven days, so after a quiet week
+      # this builds it again.
       - name: Restore the interpreter-only Erlang
         id: interpreter-erlang
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ~/interpreter-erlang-cache
           key: interpreter-erlang-${{ runner.os }}-${{ hashFiles('dev/ab_benchmark/interpreter_erlang.nix', 'devenv.lock') }}
@@ -150,7 +123,7 @@ jobs:
 
       - name: Save the interpreter-only Erlang
         if: steps.interpreter-erlang.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ~/interpreter-erlang-cache
           key: ${{ steps.interpreter-erlang.outputs.cache-primary-key }}
@@ -182,42 +155,42 @@ jobs:
           mix bench.speed --out "$RUNNER_TEMP/speed-base.json" --ref base
 
       - name: Upload speed results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: speed-results
           path: ${{ runner.temp }}/speed-*.json
 
+  # Only compares the JSON the other two jobs produced, so it skips devenv and its C/C++
+  # toolchain, which took minutes to download, and runs on setup-beam's Erlang and Elixir.
+  # Their versions follow devenv.nix's up to the patch release, which only changes what
+  # compiles bench.compare, never a measurement.
   report:
     needs: [quality, speed]
     if: always() && needs.quality.result != 'skipped'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
-    defaults:
-      run:
-        shell: devenv -O git-hooks.enable:bool false shell bash -e {0}
-    env:
-      EX_VRP_FORCE_BUILD: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
+      - uses: erlef/setup-beam@v1
+        id: beam
         with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          otp-version: "28"
+          elixir-version: "1.20"
 
-      - name: Setup Magic Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@v8
-
-      - name: Install devenv
-        shell: bash
-        run: |
-          nix profile install --accept-flake-config github:cachix/devenv/latest
+      - name: Cache Mix dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-report-otp${{ steps.beam.outputs.otp-version }}-elixir${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
 
       - name: Download results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/results
           merge-multiple: true
@@ -228,8 +201,6 @@ jobs:
       - name: Compare
         run: |
           set -o pipefail
-          mix local.hex --force --if-missing
-          mix local.rebar --force --if-missing
           mix deps.get
           mix bench.compare "$RUNNER_TEMP/results/results-base.json" "$RUNNER_TEMP/results/results-head.json" \
             --speed-base "$RUNNER_TEMP/results/speed-base.json" --speed-head "$RUNNER_TEMP/results/speed-head.json" \
@@ -237,7 +208,7 @@ jobs:
 
       - name: Post report comment
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
