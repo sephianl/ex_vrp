@@ -35,10 +35,6 @@ class Solution
     // if any: the route client must then join.
     Route *sameVehicleRoute(size_t client);
 
-    // Whether client may join route: reachable on its profile, and on the
-    // route its same-vehicle group requires, if any.
-    bool mayJoinStrictly(size_t client, Route const *route);
-
     // insert() for a shipment delivery. Its pickup is either routed, and the
     // delivery goes after it on its trip, or it is inserted together with the
     // pickup at the best pair of positions.
@@ -57,6 +53,10 @@ public:
     std::vector<Route> routes;       // size numVehicles(), ordered by type
 
     Solution(ProblemData const &data);
+
+    // Whether client may join route: reachable on its profile, and on the
+    // route its same-vehicle group requires, if any.
+    bool mayJoinStrictly(size_t client, Route const *route);
 
     // Converts the given solution into our node-based representation.
     void load(ex_vrp::Solution const &solution);

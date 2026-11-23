@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.21.1
+
+### Fixed
+
+- **A required client in several same-vehicle groups no longer splits one of them.** When the
+  search removed such a client, its partners in the other groups placed freely, apart, and putting
+  it back split a group whatever route it took. Two moves for unrouted clients (taking an optional
+  client's place, and a delivery going in after its pickup) also placed a client without asking
+  its own groups. On a Zelo replan that kept its docks, every candidate stayed infeasible and the
+  run never got past its warm start: 68 of 160 clients before, 148–156 now.
+  `Model.to_problem_data/1` now merges the groups that share a required client. A required client
+  is visited in every feasible solution, so this changes no solution's feasibility. Groups that
+  share only an optional client stay separate: with that client unvisited, its partners may still
+  ride apart. `ExVrp.SameVehicleGroup` documents the rule.
+
 ## 0.21.0
 
 ### Added

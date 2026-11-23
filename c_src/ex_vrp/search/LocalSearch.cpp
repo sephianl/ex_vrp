@@ -960,11 +960,12 @@ void LocalSearch::applyOptionalClientMoves(Route::Node *U,
 
         // Check same-vehicle constraint for V before removing it. U takes
         // V's place on V's route, so U must be allowed to go there — this is
-        // an insertion, and it does not pass through Solution::insert. V goes
+        // an insertion, and it does not pass through Solution::insert, so U's
+        // reachability and own same-vehicle groups are asked here. V goes
         // alone, so a pickup with its delivery on board may not.
         if (!vData.required && !wouldViolateSameVehicle(V, nullptr)
-            && !wouldViolateForbidden(U, route)
             && !carriesRoutedDelivery(V, data)
+            && solution_.mayJoinStrictly(U->client(), route)
             && inplaceImproves(U, V, data, costEvaluator))
         {
             searchSpace_.markPromising(V);
@@ -983,7 +984,7 @@ void LocalSearch::insertAfterPickupEjecting(Route::Node *U,
 {
     auto *pickup = U->partner();
     auto *route = pickup->route();
-    if (!route || wouldViolateForbidden(U, route))
+    if (!route || !solution_.mayJoinStrictly(U->client(), route))
         return;
 
     // U goes where it is cheapest after its pickup, on the pickup's trip.
