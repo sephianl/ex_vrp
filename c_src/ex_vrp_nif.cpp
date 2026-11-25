@@ -737,6 +737,7 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
     int64_t unit_duration_cost = 0;
     int64_t profile = 0;
     std::optional<int64_t> max_duration = std::nullopt;
+    std::optional<int64_t> start_late = std::nullopt;
     int64_t unit_overtime_cost = 0;
     std::vector<int64_t> reload_depots_vec;
     int64_t max_reloads = std::numeric_limits<int64_t>::max();
@@ -986,6 +987,12 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
             {
                 nif_get_int64(env, value, &unit_overtime_cost);
             }
+            else if (key_str == "start_late" && enif_is_number(env, value))
+            {
+                int64_t parsed = 0;
+                nif_get_int64(env, value, &parsed);
+                start_late = parsed;
+            }
             else if (key_str == "extended_drive" && enif_is_map(env, value))
             {
                 // An ExVrp.ExtendedDrive; nil prices no driving.
@@ -1123,7 +1130,8 @@ ProblemData::VehicleType decode_vehicle_type([[maybe_unused]] ErlNifEnv *env,
         Cost(unit_distance_cost),
         Cost(unit_duration_cost),
         static_cast<size_t>(profile),
-        std::nullopt,  // startLate
+        start_late ? std::optional<Duration>(Duration(*start_late))
+                   : std::nullopt,
         std::move(initial_loads),
         std::move(reload_depots),
         static_cast<size_t>(max_reloads),
