@@ -104,7 +104,9 @@ defmodule ExVrp.ABBenchmark.Loader do
   defp migrate_model(%{__struct__: Model} = model) do
     model
     |> restruct()
-    |> Map.update!(:vehicle_types, fn vts -> Enum.map(vts, &restruct/1) end)
+    |> Map.update!(:vehicle_types, fn vts ->
+      Enum.map(vts, &(&1 |> restruct() |> unset_start_late_before_its_window()))
+    end)
     |> Map.update!(:clients, fn cs -> Enum.map(cs, &restruct/1) end)
     |> Map.update!(:depots, fn ds -> Enum.map(ds, &restruct/1) end)
     |> Map.update!(:client_groups, fn cgs -> Enum.map(cgs, &restruct/1) end)
@@ -112,4 +114,11 @@ defmodule ExVrp.ABBenchmark.Loader do
   end
 
   defp restruct(%{__struct__: module} = s), do: struct(module, Map.from_struct(s))
+
+  # Before 0.22.0 `:start_late` defaulted to 0 and never reached the core, so a capture from then
+  # carries 0 meaning "not set": a latest start before the window opens, which the core rejects.
+  defp unset_start_late_before_its_window(%{start_late: start_late, tw_early: tw_early} = vehicle_type)
+       when is_integer(start_late) and start_late < tw_early, do: %{vehicle_type | start_late: nil}
+
+  defp unset_start_late_before_its_window(vehicle_type), do: vehicle_type
 end

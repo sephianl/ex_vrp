@@ -25,7 +25,12 @@ defmodule ExVrp.ABBenchmark.Solve do
     do: %{"objective" => nil, "feasible" => false, "time_ms" => time_ms, "iterations" => 0}
 
   @dialyzer {:nowarn_function, run_solver: 4}
-  defp run_solver(%Instance{model: model, penalty_params: penalty_params, initial_routes: initial_routes}, budget_s, seed, on_progress) do
+  defp run_solver(
+         %Instance{model: model, penalty_params: penalty_params, initial_routes: initial_routes},
+         budget_s,
+         seed,
+         on_progress
+       ) do
     ExVrp.solve(
       model,
       [

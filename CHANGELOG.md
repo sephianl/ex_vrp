@@ -9,7 +9,9 @@
   late as its first stop allowed and wait before it at no cost. It defaults to `nil`, the end of
   the first time window, which evaluates exactly as before. Set it to the start of the window and
   the time before the first stop counts in the route's duration: a vehicle already on the road
-  cannot wait at its position for free.
+  cannot wait at its position for free. Before this the default was `0`, so a model serialized
+  with an older release carries `start_late: 0`; the core now rejects that when the vehicle
+  type's window opens later, so set it back to `nil` when loading such a model.
 
 ### Fixed
 

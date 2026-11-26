@@ -81,7 +81,9 @@ defmodule ExVrp.ABBenchmark.Corpus do
     |> Path.join("insertion/*_model.etf")
     |> Path.wildcard()
     |> Enum.sort()
-    |> Enum.map(&%Entry{id: "ins_" <> Path.basename(&1, "_model.etf"), variant: :production_insertion, kind: :etf, path: &1})
+    |> Enum.map(
+      &%Entry{id: "ins_" <> Path.basename(&1, "_model.etf"), variant: :production_insertion, kind: :etf, path: &1}
+    )
   end
 
   defp insertion_entries(false = _supported), do: []

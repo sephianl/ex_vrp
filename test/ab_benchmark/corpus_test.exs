@@ -85,14 +85,16 @@ defmodule ExVrp.ABBenchmark.CorpusTest do
     assert length(entries) == 6
 
     for entry <- entries do
-      assert %Instance{model: model, initial_routes: [_ | _]} = Loader.load(entry)
+      assert %Instance{model: model, initial_routes: initial_routes} = Loader.load(entry)
+      assert initial_routes != []
       assert model.shipments != []
       assert Model.validate(model) == :ok
     end
   end
 
   test "every literature file referenced by the corpus exists on disk" do
-    for e <- Corpus.entries(), e.variant not in [:production, :production_breaks, :production_shipments, :production_insertion] do
+    for e <- Corpus.entries(),
+        e.variant not in [:production, :production_breaks, :production_shipments, :production_insertion] do
       assert File.exists?(e.path), "missing corpus file: #{e.path}"
     end
   end
