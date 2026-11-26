@@ -60,7 +60,7 @@ defmodule ExVrp.VehicleTypeTest do
       assert vt.max_distance == :infinity
       assert vt.unit_distance_cost == 1
       assert vt.unit_duration_cost == 0
-      assert vt.start_late == 0
+      assert vt.start_late == nil
       assert vt.max_duration == :infinity
       assert vt.name == ""
     end

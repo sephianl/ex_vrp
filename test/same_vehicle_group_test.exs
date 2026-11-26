@@ -2,6 +2,7 @@ defmodule ExVrp.SameVehicleGroupTest do
   use ExUnit.Case, async: true
 
   alias ExVrp.Model
+  alias ExVrp.Native
   alias ExVrp.SameVehicleGroup
   alias ExVrp.Solution
 
@@ -205,6 +206,125 @@ defmodule ExVrp.SameVehicleGroupTest do
 
       assert {:error, errors} = Model.validate(model)
       assert Enum.any?(errors, &String.contains?(&1, "duplicate"))
+    end
+  end
+
+  describe "merge_through/2" do
+    test "merges groups that share a linking client, in the first one's place and name" do
+      groups = [
+        SameVehicleGroup.new(clients: [1, 2], name: "first"),
+        SameVehicleGroup.new(clients: [3, 4], name: "apart"),
+        SameVehicleGroup.new(clients: [1, 5], name: "second")
+      ]
+
+      assert [%{clients: [1, 2, 5], name: "first"}, %{clients: [3, 4], name: "apart"}] =
+               SameVehicleGroup.merge_through(groups, MapSet.new([1]))
+    end
+
+    test "leaves groups apart that share only a client that does not link" do
+      groups = [SameVehicleGroup.new(clients: [1, 2]), SameVehicleGroup.new(clients: [1, 3])]
+
+      assert SameVehicleGroup.merge_through(groups, MapSet.new([2, 3])) == groups
+    end
+
+    test "merges a chain of groups that only meet through each other" do
+      groups = [
+        SameVehicleGroup.new(clients: [1, 2]),
+        SameVehicleGroup.new(clients: [3, 4]),
+        SameVehicleGroup.new(clients: [2, 3])
+      ]
+
+      assert [%{clients: clients}] = SameVehicleGroup.merge_through(groups, MapSet.new([2, 3]))
+      assert Enum.sort(clients) == [1, 2, 3, 4]
+    end
+
+    test "keeps the first group's name when a later group joins two merged ones" do
+      groups = [
+        SameVehicleGroup.new(clients: [1, 2], name: "a"),
+        SameVehicleGroup.new(clients: [3, 4], name: "b"),
+        SameVehicleGroup.new(clients: [1, 5], name: "c"),
+        SameVehicleGroup.new(clients: [3, 1], name: "d")
+      ]
+
+      assert [%{clients: clients, name: "a"}] = SameVehicleGroup.merge_through(groups, MapSet.new([1, 3]))
+      assert Enum.sort(clients) == [1, 2, 3, 4, 5]
+    end
+
+    test "leaves disjoint groups as they are" do
+      groups = [SameVehicleGroup.new(clients: [1, 2]), SameVehicleGroup.new(clients: [3, 4])]
+
+      assert SameVehicleGroup.merge_through(groups, MapSet.new([1, 2, 3, 4])) == groups
+    end
+  end
+
+  describe "a client in two groups" do
+    @describetag :nif_required
+
+    defp shared_client_model(shared_required) do
+      model =
+        Model.new()
+        |> Model.add_depot([])
+        |> Model.add_client(delivery: [1], required: shared_required, prize: 1_000)
+        |> Model.add_client(delivery: [1])
+        |> Model.add_client(delivery: [1])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [10])
+        |> Model.add_vehicle_type(num_available: 1, capacity: [10])
+        |> Model.set_euclidean_matrices([{0, 0}, {0, 10}, {10, 0}, {-10, 0}])
+        |> Model.add_same_vehicle_group([0, 1])
+        |> Model.add_same_vehicle_group([0, 2])
+
+      {:ok, problem_data} = Model.to_problem_data(model)
+      problem_data
+    end
+
+    defp violations_with_partners_apart(problem_data) do
+      {:ok, solution} = Native.create_solution_from_routes_with_types(problem_data, [{0, [2]}, {1, [3]}])
+      Native.solution_num_same_vehicle_violations(solution)
+    end
+
+    test "ties its partners together when it is required" do
+      assert violations_with_partners_apart(shared_client_model(true)) == 1
+    end
+
+    test "lets its partners ride apart while it is optional and unvisited" do
+      assert violations_with_partners_apart(shared_client_model(false)) == 0
+    end
+  end
+
+  describe "a required client shared by groups of optional clients" do
+    @describetag :nif_required
+
+    @fixture "priv/benchmark_data/regression/required_client_in_overlapping_groups.etf"
+
+    @doc """
+    A keep-docks replan from Zelo: 68 staged clients locked to their vehicles, 92 new optional
+    ones, and twelve groups pairing a staged client with new ones; four staged clients (required,
+    some of them shipment deliveries) are in two or three groups each. Perturbation removes such
+    a client, its optional partners spread over routes, and putting it back split a group whatever
+    route it took; separately, an optional client taking another's place, or a delivery going in
+    after its pickup, joined a route without its own group being asked. Every candidate then
+    stayed infeasible and the run never left the warm start's 68 clients. Each seed below needs
+    both halves of the fix: seed 5 the merge through required clients, seeds 2 and 7 the checks
+    in `LocalSearch`.
+    """
+    for seed <- [2, 5, 7] do
+      test "gets past the warm start on seed #{seed}" do
+        %{model: model, penalty_params: penalty_params, initial_routes: initial_routes} =
+          @fixture |> File.read!() |> Base.decode64!() |> :erlang.binary_to_term()
+
+        {:ok, result} =
+          ExVrp.Solver.solve(model,
+            max_iterations: 30,
+            num_starts: 1,
+            seed: unquote(seed),
+            penalty_params: penalty_params,
+            initial_routes: initial_routes
+          )
+
+        assert Solution.feasible?(result.best)
+        assert Solution.num_same_vehicle_violations(result.best) == 0
+        assert Solution.num_clients(result.best) > 140
+      end
     end
   end
 

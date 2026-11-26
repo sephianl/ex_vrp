@@ -6,6 +6,11 @@ defmodule ExVrp.SameVehicleGroup do
   same route. It is allowed to visit only a subset of the group (or none
   at all), but any visited clients must share a vehicle.
 
+  A client may be in several groups, and each group is its own rule. When
+  `a` is grouped with `b` and with `c`, then `b` and `c` share a vehicle
+  only while `a` is visited: leave `a` out, and they may ride apart. A
+  required `a` is always visited, so its groups always act as one.
+
   ## PyVRP Parity
 
   This module mirrors PyVRP's `SameVehicleGroup` class.
@@ -84,4 +89,37 @@ defmodule ExVrp.SameVehicleGroup do
   """
   @spec empty?(t()) :: boolean()
   def empty?(%__MODULE__{clients: clients}), do: clients == []
+
+  @doc """
+  The groups with every two that share one of `linking_clients` merged into one, in the place
+  and under the name of the first of them.
+
+  Give it the required clients. A required client is visited in every feasible solution, so the
+  groups it is in already share its vehicle, and merging them changes no solution's feasibility.
+  It does tell the search: the search only asks a client's group for a routed member, so with a
+  shared required client out of the solution its partners would place freely, apart, and putting
+  it back would split one group whatever route it took. A shared optional client links nothing:
+  with it unvisited, its partners may ride apart.
+  """
+  @spec merge_through([t()], MapSet.t(non_neg_integer())) :: [t()]
+  def merge_through(groups, linking_clients), do: Enum.reduce(groups, [], &merge_into(&1, &2, linking_clients))
+
+  defp merge_into(group, merged, linking_clients) do
+    {linked, apart} =
+      merged
+      |> Enum.with_index()
+      |> Enum.split_with(fn {earlier, _position} -> linked?(earlier, group, linking_clients) end)
+
+    place_merged(Enum.map(apart, &elem(&1, 0)), linked, group)
+  end
+
+  defp place_merged(apart, [], group), do: apart ++ [group]
+
+  defp place_merged(apart, [{first, position} | _rest] = linked, %__MODULE__{clients: clients}) do
+    merged_clients = linked |> Enum.flat_map(fn {earlier, _position} -> earlier.clients end) |> Kernel.++(clients)
+    List.insert_at(apart, position, %{first | clients: Enum.uniq(merged_clients)})
+  end
+
+  defp linked?(%__MODULE__{clients: clients}, %__MODULE__{clients: others}, linking_clients),
+    do: Enum.any?(clients, &(&1 in others and MapSet.member?(linking_clients, &1)))
 end

@@ -13,6 +13,11 @@ defmodule ExVrp.ABBenchmark.Corpus do
   Shipments work the same way: the Li & Lim `:pdptw` instances and every
   production instance's `:production_shipments` twin, whose loader pairs some
   of its clients into shipments, exist only on a base that has shipments.
+
+  `:production_insertion` instances are Zelo adding orders to a day already under way, solved
+  from the routes it started from: shipments loaded at the depot, trucks on the road that start
+  when they drive on (`:start_late`), and EU 561 breaks, all as captured. They have no twins, and
+  need a base with shipments and `:start_late`.
   """
 
   defmodule Entry do
@@ -65,8 +70,24 @@ defmodule ExVrp.ABBenchmark.Corpus do
       curated_entries() ++
       pdptw_entries(shipments?) ++
       production_entries() ++
-      production_break_entries(breaks_supported?()) ++ production_shipment_entries(shipments?)
+      production_break_entries(breaks_supported?()) ++
+      production_shipment_entries(shipments?) ++ insertion_entries(shipments? and start_late_supported?())
   end
+
+  @doc "The `:production_insertion` entries, whatever the solver under test supports."
+  @spec insertion_entries() :: [Entry.t()]
+  def insertion_entries do
+    @data_dir
+    |> Path.join("insertion/*_model.etf")
+    |> Path.wildcard()
+    |> Enum.sort()
+    |> Enum.map(
+      &%Entry{id: "ins_" <> Path.basename(&1, "_model.etf"), variant: :production_insertion, kind: :etf, path: &1}
+    )
+  end
+
+  defp insertion_entries(false = _supported), do: []
+  defp insertion_entries(true), do: insertion_entries()
 
   @spec bks(String.t()) :: number() | nil
   def bks(id), do: Map.get(bks_map(), id)
@@ -128,4 +149,6 @@ defmodule ExVrp.ABBenchmark.Corpus do
   end
 
   defp shipments_supported?, do: ExVrp.Model |> struct() |> Map.has_key?(:shipments)
+
+  defp start_late_supported?, do: ExVrp.VehicleType |> struct() |> Map.has_key?(:start_late)
 end

@@ -25,7 +25,8 @@ defmodule ExVrp.ABBenchmark.CorpusTest do
                :pdptw,
                :production,
                :production_breaks,
-               :production_shipments
+               :production_shipments,
+               :production_insertion
              ]
 
       assert e.kind in [:vrplib, :etf]
@@ -79,8 +80,21 @@ defmodule ExVrp.ABBenchmark.CorpusTest do
     end
   end
 
+  test "an insertion instance loads with the routes it is solved from" do
+    entries = Corpus.insertion_entries()
+    assert length(entries) == 6
+
+    for entry <- entries do
+      assert %Instance{model: model, initial_routes: initial_routes} = Loader.load(entry)
+      assert initial_routes != []
+      assert model.shipments != []
+      assert Model.validate(model) == :ok
+    end
+  end
+
   test "every literature file referenced by the corpus exists on disk" do
-    for e <- Corpus.entries(), e.variant not in [:production, :production_breaks, :production_shipments] do
+    for e <- Corpus.entries(),
+        e.variant not in [:production, :production_breaks, :production_shipments, :production_insertion] do
       assert File.exists?(e.path), "missing corpus file: #{e.path}"
     end
   end

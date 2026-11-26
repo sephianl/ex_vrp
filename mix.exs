@@ -1,7 +1,7 @@
 defmodule ExVrp.MixProject do
   use Mix.Project
 
-  @version "0.21.0"
+  @version "0.22.0"
   @github_url "https://github.com/sephianl/ex_vrp"
 
   def project do

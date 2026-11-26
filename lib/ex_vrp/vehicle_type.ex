@@ -229,7 +229,7 @@ defmodule ExVrp.VehicleType do
           unit_distance_cost: non_neg_integer(),
           unit_duration_cost: non_neg_integer(),
           profile: non_neg_integer(),
-          start_late: non_neg_integer(),
+          start_late: non_neg_integer() | nil,
           max_duration: non_neg_integer() | :infinity,
           unit_overtime_cost: non_neg_integer(),
           overtime_start: non_neg_integer() | :infinity,
@@ -264,7 +264,7 @@ defmodule ExVrp.VehicleType do
     unit_distance_cost: 1,
     unit_duration_cost: 0,
     profile: 0,
-    start_late: 0,
+    start_late: nil,
     max_duration: nil,
     unit_overtime_cost: 0,
     overtime_start: :infinity,
@@ -333,7 +333,10 @@ defmodule ExVrp.VehicleType do
   - `:unit_distance_cost` - Cost per unit distance (default: `1`)
   - `:unit_duration_cost` - Cost per unit time (default: `0`)
   - `:profile` - Index of distance/duration matrix to use (default: `0`)
-  - `:start_late` - Latest allowed start time (default: `0`)
+  - `:start_late` - Latest time the route may start (default: `nil`, the end of the first
+    time window). Set it to the start of the window to start the route right away, so time
+    spent before the first stop counts in the route's duration: a vehicle already on the road
+    cannot wait at its position at no cost
   - `:max_duration` - Hard maximum route duration, independent of `:shift_duration`
     but defaulting to it, i.e. a route may not run longer than its nominal shift
     unless you say otherwise. Measures **elapsed** time from route start to route

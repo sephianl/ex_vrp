@@ -1244,11 +1244,22 @@ defmodule ExVrp.Model do
     case validate(model) do
       :ok ->
         model
+        |> with_groups_merged_through_required_clients()
         |> Breaks.append_pool()
         |> ExVrp.Native.create_problem_data()
 
       {:error, _reason} = error ->
         error
     end
+  end
+
+  defp with_groups_merged_through_required_clients(%__MODULE__{same_vehicle_groups: groups} = model),
+    do: %{model | same_vehicle_groups: SameVehicleGroup.merge_through(groups, required_locations(model))}
+
+  defp required_locations(%__MODULE__{clients: clients, depots: depots}) do
+    clients
+    |> Enum.with_index(length(depots))
+    |> Enum.filter(fn {client, _location} -> client.required end)
+    |> MapSet.new(fn {_client, location} -> location end)
   end
 end
