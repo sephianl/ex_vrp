@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.21.1
+## 0.22.0
+
+### Added
+
+- **A route can be made to start when its vehicle drives on.** A vehicle type's `:start_late`
+  (latest start) now reaches the core; the NIF used to pass none, so every route could start as
+  late as its first stop allowed and wait before it at no cost. It defaults to `nil`, the end of
+  the first time window, which evaluates exactly as before. Set it to the start of the window and
+  the time before the first stop counts in the route's duration: a vehicle already on the road
+  cannot wait at its position for free.
 
 ### Fixed
 
