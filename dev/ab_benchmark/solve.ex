@@ -15,8 +15,8 @@ defmodule ExVrp.ABBenchmark.Solve do
   alias ExVrp.StoppingCriteria
 
   @spec solve(Instance.t(), number(), integer(), (map() -> any()) | nil) :: map()
-  def solve(%Instance{model: model, penalty_params: penalty_params}, budget_s, seed, on_progress) do
-    {elapsed_us, outcome} = :timer.tc(fn -> run_solver(model, penalty_params, budget_s, seed, on_progress) end)
+  def solve(%Instance{} = instance, budget_s, seed, on_progress) do
+    {elapsed_us, outcome} = :timer.tc(fn -> run_solver(instance, budget_s, seed, on_progress) end)
     seed_record(outcome, div(elapsed_us, 1000))
   end
 
@@ -24,18 +24,24 @@ defmodule ExVrp.ABBenchmark.Solve do
   def infeasible_record(time_ms),
     do: %{"objective" => nil, "feasible" => false, "time_ms" => time_ms, "iterations" => 0}
 
-  @dialyzer {:nowarn_function, run_solver: 5}
-  defp run_solver(model, penalty_params, budget_s, seed, on_progress) do
-    ExVrp.solve(model,
-      stop: StoppingCriteria.max_runtime(budget_s),
-      seed: seed,
-      num_starts: 1,
-      penalty_params: penalty_params,
-      on_progress: on_progress
+  @dialyzer {:nowarn_function, run_solver: 4}
+  defp run_solver(%Instance{model: model, penalty_params: penalty_params, initial_routes: initial_routes}, budget_s, seed, on_progress) do
+    ExVrp.solve(
+      model,
+      [
+        stop: StoppingCriteria.max_runtime(budget_s),
+        seed: seed,
+        num_starts: 1,
+        penalty_params: penalty_params,
+        on_progress: on_progress
+      ] ++ warm_start(initial_routes)
     )
   rescue
     e in [ArgumentError, RuntimeError, MatchError, ErlangError] -> {:error, Exception.message(e)}
   end
+
+  defp warm_start(nil = _cold), do: []
+  defp warm_start(initial_routes), do: [initial_routes: initial_routes]
 
   defp seed_record({:ok, %{best: best} = result}, time_ms) do
     record = %{

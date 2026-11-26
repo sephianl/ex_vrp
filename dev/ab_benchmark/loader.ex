@@ -10,7 +10,9 @@ defmodule ExVrp.ABBenchmark.Loader do
   capture because they follow its cost scale: Zelo models are priced in micro-euros,
   where the default ceiling of 100 000 per unit of time warp makes a vehicle's fixed
   cost worth hours of lateness, so solving such a model under the defaults measures
-  a regime production never runs in. A bare model is solved under the defaults.
+  a regime production never runs in. A bare model is solved under the defaults. A capture of
+  Zelo adding orders to a planned day also holds the routes it started from
+  (`:initial_routes`), since that solve only ever starts from them.
 
   ETF deserialization runs without `[:safe]` on purpose: these are trusted,
   repo-local production model snapshots that legitimately carry atoms not yet
@@ -89,8 +91,12 @@ defmodule ExVrp.ABBenchmark.Loader do
     |> to_instance()
   end
 
-  defp to_instance(%{model: model, penalty_params: %{__struct__: PenaltyManager.Params} = penalty_params}) do
-    %Instance{model: migrate_model(model), penalty_params: restruct(penalty_params)}
+  defp to_instance(%{model: model, penalty_params: %{__struct__: PenaltyManager.Params} = penalty_params} = capture) do
+    %Instance{
+      model: migrate_model(model),
+      penalty_params: restruct(penalty_params),
+      initial_routes: Map.get(capture, :initial_routes)
+    }
   end
 
   defp to_instance(%{__struct__: Model} = model), do: %Instance{model: migrate_model(model)}
